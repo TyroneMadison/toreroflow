@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Toreroflow Liquid Glass v3</title>
+<style>
+  :root{
+    --bg-0:#030208;
+    --bg-1:#080611;
+    --glass:rgba(255,255,255,0.05);
+    --glass-2:rgba(255,255,255,0.085);
+    --glass-3:rgba(255,255,255,0.13);
+    --brd:rgba(255,255,255,0.12);
+    --brd-soft:rgba(255,255,255,0.07);
+    --txt:rgba(255,255,255,0.94);
+    --txt-2:rgba(255,255,255,0.58);
+    --txt-3:rgba(255,255,255,0.36);
+    --v:#8b7bff;
+    --b:#4ea8ff;
+    --green:#57d6a0;
+    --amber:#ffcf6b;
+    --red:#ff6b7a;
+    --grad:linear-gradient(135deg,#8b7bff 0%,#4ea8ff 100%);
+    --radius:26px;
+    --radius-sm:16px;
+    --shadow:0 24px 60px rgba(0,0,0,.6);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--font);color:var(--txt);background:var(--bg-0);overflow:hidden;-webkit-font-smoothing:antialiased;letter-spacing:.1px}
+
+  /* darker midnight field, purple and blue only, kept subtle */
+  .field{position:fixed;inset:0;overflow:hidden;z-index:0;background:
+     radial-gradient(900px 620px at 14% -12%, rgba(96,74,190,.20), transparent 60%),
+     radial-gradient(820px 520px at 102% -6%, rgba(48,86,190,.15), transparent 55%),
+     linear-gradient(180deg,#080611 0%,#040309 55%,#030207 100%);}
+  .blob{position:absolute;border-radius:50%;filter:blur(90px);opacity:.26;mix-blend-mode:screen;animation:drift 30s ease-in-out infinite}
+  .b1{width:520px;height:520px;left:-8%;top:2%;background:radial-gradient(circle,#6a4fd6,transparent 66%)}
+  .b2{width:460px;height:460px;right:-6%;top:-10%;background:radial-gradient(circle,#2f5bd0,transparent 66%);animation-delay:-12s}
+  @keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,26px) scale(1.06)}}
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.045;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+
+  .glass{background:var(--glass);backdrop-filter:blur(38px) saturate(150%);-webkit-backdrop-filter:blur(38px) saturate(150%);border:1px solid var(--brd);box-shadow:inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.25), var(--shadow);border-radius:var(--radius)}
+  .glass-sm{background:var(--glass);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);border:1px solid var(--brd-soft);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);border-radius:var(--radius-sm)}
+
+  .app{position:relative;z-index:2;height:100vh;padding:18px;display:grid;grid-template-columns:248px 1fr;gap:18px}
+  @media(max-width:1200px){.app{grid-template-columns:220px 1fr}}
+
+  /* sidebar */
+  .side{display:flex;flex-direction:column;padding:20px 16px;gap:8px}
+  .brand{display:flex;align-items:center;gap:12px;padding:4px 8px 18px}
+  .brandpic{width:44px;height:44px;border-radius:14px;overflow:hidden;flex:0 0 auto;position:relative;border:1px solid rgba(255,255,255,.22);box-shadow:0 8px 22px rgba(90,80,220,.4), inset 0 1px 0 rgba(255,255,255,.4)}
+  .brandpic::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(139,123,255,.25),transparent 60%);mix-blend-mode:screen}
+  .brandpic img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+  .logo{width:44px;height:44px;border-radius:14px;background:var(--grad);display:grid;place-items:center;flex:0 0 auto;box-shadow:0 8px 22px rgba(90,80,220,.45), inset 0 1px 0 rgba(255,255,255,.55)}
+  .logo svg{width:24px;height:24px;fill:#fff;filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+  .brand h1{font-size:20px;font-weight:680;letter-spacing:.2px;line-height:1}
+  .brand h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brand small{display:block;font-size:10px;color:var(--txt-3);letter-spacing:1.4px;text-transform:uppercase;margin-top:4px}
+
+  .navlabel{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt-3);padding:14px 12px 6px}
+  .nav{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:13px;color:var(--txt-2);cursor:pointer;font-size:14px;font-weight:500;transition:.18s;position:relative}
+  .nav svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.9;fill:none;flex:0 0 auto}
+  .nav:hover{background:var(--glass-2);color:var(--txt)}
+  .nav.active{background:var(--glass-2);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+  .nav.active::before{content:"";position:absolute;left:-16px;top:50%;transform:translateY(-50%);width:4px;height:22px;border-radius:4px;background:var(--grad);box-shadow:0 0 12px rgba(120,120,255,.8)}
+  .nav .badge{margin-left:auto;font-size:11px;font-weight:600;background:var(--grad);color:#0b0b18;padding:1px 7px;border-radius:20px}
+
+  .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+  .client-pill{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:14px;cursor:pointer}
+  .client-pill:hover{background:var(--glass-2)}
+  .avatar{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:13px;font-weight:700;color:#0b0b18;flex:0 0 auto}
+  .client-pill .meta{line-height:1.25;overflow:hidden}
+  .client-pill .meta b{font-size:13px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .client-pill .meta span{font-size:11px;color:var(--txt-3)}
+  .chev{margin-left:auto;color:var(--txt-3)}
+  .chev svg{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none}
+
+  .main{overflow:hidden;display:flex;flex-direction:column;min-width:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:18px 24px}
+  .topbar .h{min-width:0}
+  .topbar h2{font-size:22px;font-weight:650;letter-spacing:.2px}
+  .topbar p{font-size:13px;color:var(--txt-2);margin-top:2px}
+  .search{margin-left:auto;display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);min-width:200px;color:var(--txt-3);font-size:13px}
+  .search svg{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none}
+  .iconbtn{width:40px;height:40px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);display:grid;place-items:center;color:var(--txt-2);cursor:pointer;transition:.18s;position:relative}
+  .iconbtn:hover{color:#fff;background:var(--glass-2)}
+  .iconbtn svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.9;fill:none}
+  .dot{position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--v);box-shadow:0 0 8px var(--v)}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:13px;border:none;font-family:var(--font);font-size:13.5px;font-weight:600;cursor:pointer;color:#0b0b18;background:var(--grad);box-shadow:0 10px 26px rgba(80,90,220,.42), inset 0 1px 0 rgba(255,255,255,.5);transition:.18s}
+  .btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
+  .btn svg{width:16px;height:16px;stroke:#0b0b18;stroke-width:2.3;fill:none}
+  .btn.ghost{background:var(--glass-2);color:var(--txt);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);border:1px solid var(--brd-soft)}
+  .btn.ghost svg{stroke:var(--txt)}
+
+  .stage{flex:1;overflow:auto;padding:2px 24px 24px}
+  .stage::-webkit-scrollbar{width:8px}
+  .stage::-webkit-scrollbar-thumb{background:var(--glass-3);border-radius:8px}
+
+  .screen{display:none;animation:rise .5s cubic-bezier(.2,.7,.2,1)}
+  .screen.active{display:block}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  .split{display:grid;grid-template-columns:1fr 336px;gap:18px}
+  @media(max-width:1150px){.split{grid-template-columns:1fr}}
+
+  .card{padding:20px}
+  .card h3{font-size:15px;font-weight:620;display:flex;align-items:center;gap:9px}
+  .card .sub{font-size:12.5px;color:var(--txt-3);margin-top:2px}
+  .rowhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .link{font-size:12.5px;color:var(--b);cursor:pointer;font-weight:500}
+
+  /* liquid glass platform tiles with real logos */
+  .pf{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;position:relative;overflow:hidden;
+      background:rgba(255,255,255,.055);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%);
+      border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 4px 10px rgba(0,0,0,.3)}
+  .pf::before{content:"";position:absolute;inset:0;opacity:.55}
+  .pf svg{width:58%;height:58%;position:relative;z-index:1}
+  .pf.ig{color:#fff}
+  .pf.ig::before{background:radial-gradient(circle at 28% 22%,#feda75,transparent 52%),radial-gradient(circle at 72% 78%,#d62976,transparent 54%),radial-gradient(circle at 92% 32%,#7a34c9,transparent 55%)}
+  .pf.tt{color:#fff}
+  .pf.tt::before{background:radial-gradient(circle at 30% 30%,#25f4ee,transparent 52%),radial-gradient(circle at 74% 72%,#fe2c55,transparent 52%)}
+  .pf.tt svg{filter:drop-shadow(1px 0 0 rgba(254,44,85,.55)) drop-shadow(-1px 0 0 rgba(37,244,238,.55))}
+  .pf.yt{color:#ff4237}
+  .pf.yt::before{background:radial-gradient(circle at 50% 50%,rgba(255,66,55,.42),transparent 60%)}
+  .pf.sc{color:#ffe600}
+  .pf.sc::before{background:radial-gradient(circle at 50% 38%,rgba(255,230,0,.42),transparent 60%)}
+  .pf.sm{width:22px;height:22px;border-radius:7px}
+  .pf.lg{width:38px;height:38px;border-radius:12px}
+
+  /* upload */
+  .drop{padding:24px;border:1.5px dashed rgba(255,255,255,.22);border-radius:var(--radius);text-align:center;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));transition:.2s}
+  .drop:hover{border-color:rgba(139,123,255,.65);background:linear-gradient(180deg,rgba(139,123,255,.08),rgba(78,168,255,.03))}
+  .drop .ring{width:56px;height:56px;border-radius:18px;background:var(--grad);display:grid;place-items:center;margin:0 auto 14px;box-shadow:0 12px 30px rgba(80,90,220,.45), inset 0 1px 0 rgba(255,255,255,.5)}
+  .drop .ring svg{width:26px;height:26px;stroke:#0b0b18;stroke-width:2.2;fill:none}
+  .drop b{font-size:16px;font-weight:620}
+  .drop p{font-size:12.5px;color:var(--txt-2);margin-top:5px}
+  .drop .pills{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+  .mini{font-size:11px;color:var(--txt-2);padding:5px 11px;border-radius:20px;background:var(--glass-2);border:1px solid var(--brd-soft)}
+
+  .job{display:grid;grid-template-columns:150px 1fr;gap:18px;padding:18px;margin-top:18px}
+  .thumb{border-radius:16px;aspect-ratio:9/16;position:relative;overflow:hidden;background:linear-gradient(160deg,#241f45,#101a30 60%,#0c1428);box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+  .thumb::after{content:"";position:absolute;inset:0;background:radial-gradient(130px 130px at 62% 28%,rgba(139,123,255,.4),transparent 60%),radial-gradient(150px 150px at 28% 82%,rgba(78,168,255,.34),transparent 60%)}
+  .thumb .play{position:absolute;inset:0;margin:auto;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center;z-index:2;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+  .thumb .play svg{width:16px;height:16px;fill:#111;margin-left:2px}
+  .thumb .cap{position:absolute;left:8px;right:8px;bottom:10px;z-index:2;text-align:center;font-size:9.5px;font-weight:800;line-height:1.4}
+  .thumb .cap i{font-style:normal;background:rgba(0,0,0,.5);padding:2px 4px;border-radius:4px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  .thumb .cap i.on{background:var(--grad);color:#0b0b18}
+  .thumb .dur{position:absolute;top:8px;right:8px;z-index:2;font-size:9px;font-weight:700;background:rgba(0,0,0,.55);padding:2px 6px;border-radius:6px}
+
+  .job .body{min-width:0}
+  .job .body .name{font-size:15px;font-weight:620;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tag{font-size:10px;font-weight:700;letter-spacing:.4px;padding:2px 8px;border-radius:20px;text-transform:uppercase}
+  .tag.ai{background:rgba(139,123,255,.2);color:#c9c0ff;border:1px solid rgba(139,123,255,.4)}
+  .tag.ok{background:rgba(87,214,160,.15);color:#9cf0cb;border:1px solid rgba(87,214,160,.32)}
+  .transcript{font-size:12.5px;color:var(--txt-2);line-height:1.7;margin-top:10px;background:rgba(0,0,0,.22);border-radius:12px;padding:11px 13px;border:1px solid var(--brd-soft)}
+  .transcript .w.hot{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700}
+
+  .toggles{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .pt{display:flex;align-items:center;gap:10px;padding:9px 13px 9px 9px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);cursor:pointer;transition:.18s}
+  .pt.on{background:var(--glass-2);border-color:var(--brd)}
+  .pt .info{line-height:1.15}
+  .pt .info b{display:block;font-size:12.5px;font-weight:600}
+  .pt .info span{display:block;font-size:10.5px;color:var(--txt-3);margin-top:3px}
+  .switch{width:34px;height:20px;border-radius:20px;background:rgba(255,255,255,.16);position:relative;transition:.2s;flex:0 0 auto}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 2px 5px rgba(0,0,0,.4)}
+  .pt.on .switch{background:var(--grad)}
+  .pt.on .switch::after{left:16px}
+
+  .schedrow{display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap}
+  .timechip{display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);font-size:12.5px}
+  .timechip svg{width:15px;height:15px;stroke:var(--b);stroke-width:2;fill:none}
+  .timechip b{font-weight:600}
+
+  .queue-item{display:flex;align-items:center;gap:12px;padding:11px;border-radius:15px;transition:.18s;cursor:pointer}
+  .queue-item:hover{background:var(--glass-2)}
+  .qthumb{width:44px;height:56px;border-radius:11px;flex:0 0 auto;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+  .queue-item .qmeta{min-width:0;flex:1}
+  .queue-item .qmeta b{font-size:12.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .queue-item .qmeta span{font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:6px;margin-top:5px}
+
+  .best{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border-radius:13px;background:rgba(0,0,0,.2);margin-top:8px;border:1px solid var(--brd-soft)}
+  .best .l{display:flex;align-items:center;gap:10px;font-size:12.5px}
+  .best b{font-size:12.5px;color:var(--b)}
+
+  /* calendar */
+  .calbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+  .seg{display:flex;background:var(--glass);border:1px solid var(--brd-soft);border-radius:12px;padding:3px}
+  .seg span{font-size:12.5px;padding:7px 14px;border-radius:9px;color:var(--txt-2);cursor:pointer}
+  .seg span.on{background:var(--glass-3);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+  .filterchip{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2);padding:7px 12px;border-radius:20px;background:var(--glass);border:1px solid var(--brd-soft);cursor:pointer}
+  .filterchip .d{width:8px;height:8px;border-radius:50%}
+
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;padding:16px}
+  .col{min-height:430px}
+  .colhead{text-align:center;padding:8px 0 12px}
+  .colhead .dow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--txt-3)}
+  .colhead .dnum{font-size:17px;font-weight:600;margin-top:3px}
+  .colhead.today .dnum{width:34px;height:34px;line-height:34px;margin:3px auto 0;border-radius:50%;background:var(--grad);color:#0b0b18}
+  .slotwrap{display:flex;flex-direction:column;gap:8px;padding:0 3px}
+  .ev{border-radius:12px;padding:8px;position:relative;overflow:hidden;cursor:pointer;transition:.18s;border:1px solid var(--brd-soft);background:var(--glass)}
+  .ev:hover{transform:translateY(-2px);background:var(--glass-2)}
+  .ev::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+  .ev.v::before{background:var(--v)}.ev.b::before{background:var(--b)}
+  .ev .t1{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--txt-3)}
+  .ev .t2{font-size:11.5px;font-weight:600;margin-top:5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ev .evthumb{width:100%;height:52px;border-radius:8px;margin-top:7px;position:relative;overflow:hidden}
+  .ghost-ev{border:1.5px dashed var(--brd-soft);border-radius:12px;padding:14px 8px;text-align:center;font-size:11px;color:var(--txt-3);cursor:pointer}
+  .ghost-ev:hover{border-color:var(--v);color:var(--txt-2)}
+
+  /* analytics */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  @media(max-width:1150px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{padding:16px 16px 14px}
+  .kpi .lab{font-size:11.5px;color:var(--txt-3)}
+  .kpi .val{font-size:26px;font-weight:680;margin-top:8px;letter-spacing:.3px}
+  .kpi .foot{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+  .delta{font-size:11.5px;font-weight:600;display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:20px}
+  .delta.up{color:#9cf0cb;background:rgba(87,214,160,.13)}
+  .delta.dn{color:#ff9aa5;background:rgba(255,107,122,.13)}
+  .delta svg{width:11px;height:11px;stroke:currentColor;stroke-width:2.4;fill:none}
+  .spark{width:74px;height:26px}
+
+  .chartcard{padding:20px;margin-top:16px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap}
+  .legend .li{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2)}
+  .legend .d{width:9px;height:9px;border-radius:3px}
+  .chart{width:100%;height:230px;margin-top:6px}
+  .gridline{stroke:rgba(255,255,255,.06);stroke-width:1}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:1150px){.two{grid-template-columns:1fr}}
+  .donutwrap{display:flex;align-items:center;gap:18px}
+  .dleg{display:flex;flex-direction:column;gap:9px;flex:1}
+  .dleg .row{display:flex;align-items:center;gap:9px;font-size:12.5px}
+  .dleg .row b{margin-left:auto;font-weight:600}
+  .dleg .d{width:10px;height:10px;border-radius:3px}
+  .bars{display:flex;align-items:flex-end;gap:16px;height:150px;padding:8px 6px 0}
+  .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%}
+  .bar .fill{width:100%;border-radius:9px 9px 4px 4px;box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+  .bar .bl{font-size:11px;color:var(--txt-3)}
+  .bar .bv{font-size:11.5px;font-weight:600}
+
+  .toppost{display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;transition:.18s;cursor:pointer}
+  .toppost:hover{background:var(--glass-2)}
+  .rank{font-size:13px;font-weight:700;color:var(--txt-3);width:16px;text-align:center}
+  .toppost .tmeta{min-width:0;flex:1}
+  .toppost .tmeta b{font-size:12.5px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .toppost .tmeta span{font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:6px;margin-top:4px}
+  .toppost .v{text-align:right}
+  .toppost .v b{font-size:13px;font-weight:650;display:block}
+  .toppost .v span{font-size:10.5px;color:var(--green)}
+
+  /* accounts */
+  .clients{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:1150px){.clients{grid-template-columns:repeat(2,1fr)}}
+  .cc{padding:18px;transition:.2s;cursor:pointer}
+  .cc:hover{transform:translateY(-3px)}
+  .cc .top{display:flex;align-items:center;gap:12px}
+  .cc .top .meta b{font-size:15px;font-weight:620;display:block}
+  .cc .top .meta span{font-size:11.5px;color:var(--txt-3)}
+  .cc .plat{display:flex;gap:7px;margin:16px 0}
+  .cc .stat{display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px}
+  .cc .stat .big{font-size:22px;font-weight:680}
+  .cc .stat .lab{font-size:11px;color:var(--txt-3)}
+  .health{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:4px 9px;border-radius:20px;margin-top:4px}
+  .health.ok{background:rgba(87,214,160,.13);color:#9cf0cb}
+  .health.warn{background:rgba(255,207,107,.15);color:var(--amber)}
+  .health .d{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+  .add-cc{border:1.5px dashed var(--brd);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--txt-2);cursor:pointer;min-height:210px;transition:.2s}
+  .add-cc:hover{border-color:var(--v);color:#fff;background:var(--glass)}
+  .add-cc .plus{width:48px;height:48px;border-radius:15px;background:var(--glass-2);display:grid;place-items:center}
+  .add-cc .plus svg{width:22px;height:22px;stroke:currentColor;stroke-width:2;fill:none}
+  .note{font-size:11px;color:var(--txt-3);text-align:center;padding:14px 0 2px}
+</style>
+</head>
+<body>
+<div class="field"><div class="blob b1"></div><div class="blob b2"></div></div>
+<div class="grain"></div>
+
+<svg style="display:none">
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M5 12l7-7 7 7M12 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></symbol>
+  <!-- platform logos -->
+  <symbol id="p-ig" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5.2" fill="none" stroke="currentColor" stroke-width="2.1"/><circle cx="12" cy="12" r="4.1" fill="none" stroke="currentColor" stroke-width="2.1"/><circle cx="17.2" cy="6.8" r="1.35" fill="currentColor"/></symbol>
+  <symbol id="p-tt" viewBox="0 0 24 24"><path d="M14.2 3c.28 2.28 1.86 3.96 4.1 4.24v3.02c-1.55 0-2.98-.5-4.1-1.36v6.13c0 3.3-2.62 5.66-5.72 5.38-2.6-.24-4.47-2.36-4.28-5 .18-2.44 2.24-4.3 4.7-4.3.38 0 .76.04 1.1.12v3.06a2.3 2.3 0 0 0-1.1-.28c-1.26 0-2.24 1.06-2.06 2.34.12 1.06 1.06 1.9 2.14 1.9 1.26 0 2.28-.98 2.28-2.24V3h2.94z" fill="currentColor"/></symbol>
+  <symbol id="p-yt" viewBox="0 0 24 24"><rect x="2" y="5.2" width="20" height="13.6" rx="4.2" fill="currentColor"/><path d="M10 8.7v6.6l5.6-3.3z" fill="#0a0710"/></symbol>
+  <symbol id="p-sc" viewBox="0 0 24 24"><path d="M12 2.7c2.5 0 4.3 1.9 4.4 4.5.02.55.01 1.15-.06 1.78.32.2.72.28 1.05.16.6-.12 1.16.22 1.16.82 0 .5-.5.78-1.08.98-.5.17-1.16.3-1.28.78-.1.42.22.82.6 1.3.6.76 1.55 1.44 2.6 1.74.4.12.6.42.48.8-.22.68-1.66.98-2.54 1.08-.2.02-.3.2-.4.5-.1.4-.22.8-.62.9-.5.12-1.1-.18-1.9-.18-.9 0-1.56.48-2.42.9-.6.28-1.18.28-1.78 0-.86-.42-1.52-.9-2.42-.9-.8 0-1.4.3-1.9.18-.4-.1-.52-.5-.62-.9-.1-.3-.2-.48-.4-.5-.88-.1-2.32-.4-2.54-1.08-.12-.38.08-.68.48-.8 1.05-.3 2-.98 2.6-1.74.38-.48.7-.88.6-1.3-.12-.48-.78-.6-1.28-.78-.58-.2-1.08-.48-1.08-.98 0-.6.56-.94 1.16-.82.33.12.73.04 1.05-.16-.07-.63-.08-1.23-.06-1.78C7.7 4.6 9.5 2.7 12 2.7z" fill="currentColor"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="side glass">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg></div>
+      <div><h1><span>Toreroflow</span></h1><small>by Torerone</small></div>
+    </div>
+
+    <div class="navlabel">Create</div>
+    <div class="nav active" data-target="upload"><svg><use href="#i-upload"/></svg> Upload &amp; Schedule</div>
+    <div class="nav" data-target="calendar"><svg><use href="#i-cal"/></svg> Calendar <span class="badge">14</span></div>
+
+    <div class="navlabel">Measure</div>
+    <div class="nav" data-target="analytics"><svg><use href="#i-chart"/></svg> Analytics</div>
+    <div class="nav" data-target="accounts"><svg><use href="#i-users"/></svg> Accounts</div>
+
+    <div class="navlabel">Workspace</div>
+    <div class="nav" data-target="upload"><svg><use href="#i-sliders"/></svg> Automations</div>
+
+    <div class="side-foot">
+      <div class="client-pill glass-sm">
+        <div class="avatar" style="background:linear-gradient(135deg,#8b7bff,#4ea8ff)">HF</div>
+        <div class="meta"><b>Halo Fitness</b><span>Active client</span></div>
+        <div class="chev"><svg><use href="#i-chev"/></svg></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main glass">
+    <!-- UPLOAD -->
+    <section class="screen active" data-screen="upload">
+      <div class="topbar">
+        <div class="h"><h2>Upload &amp; Schedule</h2><p>Drop a video, Toreroflow captions, formats, and queues it for every platform.</p></div>
+        <div class="search"><svg><use href="#i-search"/></svg> Search content</div>
+        <div class="iconbtn"><svg><use href="#i-bell"/></svg><span class="dot"></span></div>
+      </div>
+      <div class="stage">
+        <div class="split">
+          <div>
+            <div class="drop">
+              <div class="ring"><svg><use href="#i-up"/></svg></div>
+              <b>Drop videos here</b>
+              <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
+              <div class="pills"><span class="mini">Auto captions</span><span class="mini">Auto reframe 9:16</span><span class="mini">Best time detect</span><span class="mini">Per client presets</span></div>
+            </div>
+
+            <div class="job glass-sm">
+              <div class="thumb">
+                <span class="dur">0:38</span>
+                <div class="play"><svg><use href="#i-play"/></svg></div>
+                <div class="cap"><i class="on">POSTURE</i> <i>fix in</i> <i>60s</i></div>
+              </div>
+              <div class="body">
+                <div class="name">posture-reset-final.mp4 <span class="tag ai">AI processed</span></div>
+                <div class="transcript"><span class="w">Three moves to</span> <span class="w hot">fix your posture</span> <span class="w">in under a minute.</span> <span class="w hot">Save this</span> <span class="w">for later.</span></div>
+
+                <div class="toggles">
+                  <div class="pt on"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><div class="info"><b>Reels</b><span>@halofitness</span></div><div class="switch"></div></div>
+                  <div class="pt on"><span class="pf tt"><svg><use href="#p-tt"/></svg></span><div class="info"><b>TikTok</b><span>@halo.fit</span></div><div class="switch"></div></div>
+                  <div class="pt on"><span class="pf yt"><svg><use href="#p-yt"/></svg></span><div class="info"><b>Shorts</b><span>Halo Fitness</span></div><div class="switch"></div></div>
+                  <div class="pt"><span class="pf sc"><svg><use href="#p-sc"/></svg></span><div class="info"><b>Spotlight</b><span>@halofit</span></div><div class="switch"></div></div>
+                </div>
+
+                <div class="schedrow">
+                  <div class="timechip"><svg><use href="#i-clock"/></svg> Best time <b>Tomorrow, 6:40 PM</b></div>
+                  <span class="tag ok">Captions ready</span>
+                  <button class="btn" style="margin-left:auto"><svg><use href="#i-bolt"/></svg> Schedule all</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card glass">
+              <div class="rowhead"><h3>Up next in queue</h3><span class="link">View all</span></div>
+              <div class="queue-item">
+                <div class="qthumb" style="background:linear-gradient(160deg,#31266b,#141f3f)"></div>
+                <div class="qmeta"><b>5 protein myths, busted</b><span><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> Today 5:15 PM</span></div>
+              </div>
+              <div class="queue-item">
+                <div class="qthumb" style="background:linear-gradient(160deg,#1a2a55,#122f4a)"></div>
+                <div class="qmeta"><b>Morning mobility flow</b><span><span class="pf sm yt"><svg><use href="#p-yt"/></svg></span><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> Today 8:00 PM</span></div>
+              </div>
+              <div class="queue-item">
+                <div class="qthumb" style="background:linear-gradient(160deg,#3a2360,#231a5a)"></div>
+                <div class="qmeta"><b>Client transformation reel</b><span><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> Tomorrow 12:30 PM</span></div>
+              </div>
+            </div>
+
+            <div class="card glass" style="margin-top:16px">
+              <h3><svg style="width:16px;height:16px;stroke:var(--v);fill:none;stroke-width:2" viewBox="0 0 24 24"><use href="#i-bolt"/></svg> Smart timing</h3>
+              <div class="sub" style="margin-bottom:8px">Best windows for Halo Fitness this week</div>
+              <div class="best"><div class="l"><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> Instagram Reels</div><b>6:40 PM</b></div>
+              <div class="best"><div class="l"><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> TikTok</div><b>7:20 PM</b></div>
+              <div class="best"><div class="l"><span class="pf sm yt"><svg><use href="#p-yt"/></svg></span> YouTube Shorts</div><b>3:10 PM</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CALENDAR -->
+    <section class="screen" data-screen="calendar">
+      <div class="topbar">
+        <div class="h"><h2>Content Calendar</h2><p>14 posts scheduled across 5 clients this week.</p></div>
+        <button class="btn ghost"><svg><use href="#i-plus"/></svg> New post</button>
+        <div class="iconbtn"><svg><use href="#i-bell"/></svg><span class="dot"></span></div>
+      </div>
+      <div class="stage">
+        <div class="calbar">
+          <div class="seg"><span>Day</span><span class="on">Week</span><span>Month</span></div>
+          <div class="filterchip"><span class="d" style="background:var(--v)"></span> Halo Fitness</div>
+          <div class="filterchip" style="opacity:.65"><svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><use href="#i-globe"/></svg> All platforms</div>
+          <div style="margin-left:auto;font-size:13px;color:var(--txt-2)">Jul 20 to 26, 2026</div>
+        </div>
+        <div class="cal glass">
+          <div class="col"><div class="colhead"><div class="dow">Mon</div><div class="dnum">20</div></div><div class="slotwrap">
+            <div class="ev v"><div class="t1"><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> 5:15 PM</div><div class="t2">5 protein myths busted</div><div class="evthumb" style="background:linear-gradient(160deg,#31266b,#141f3f)"></div></div>
+            <div class="ev b"><div class="t1"><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> 8:00 PM</div><div class="t2">Mobility flow</div></div>
+          </div></div>
+          <div class="col"><div class="colhead"><div class="dow">Tue</div><div class="dnum">21</div></div><div class="slotwrap">
+            <div class="ev b"><div class="t1"><span class="pf sm yt"><svg><use href="#p-yt"/></svg></span> 3:10 PM</div><div class="t2">Form check: squats</div><div class="evthumb" style="background:linear-gradient(160deg,#142f4a,#122540)"></div></div>
+            <div class="ghost-ev">+ Add post</div>
+          </div></div>
+          <div class="col"><div class="colhead"><div class="dow">Wed</div><div class="dnum">22</div></div><div class="slotwrap">
+            <div class="ev v"><div class="t1"><span class="pf sm sc"><svg><use href="#p-sc"/></svg></span> 12:30 PM</div><div class="t2">Transformation reel</div></div>
+            <div class="ev v"><div class="t1"><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> 6:40 PM</div><div class="t2">Posture fix in 60s</div><div class="evthumb" style="background:linear-gradient(160deg,#2a2350,#0c1a2a)"></div></div>
+          </div></div>
+          <div class="col"><div class="colhead today"><div class="dow">Thu</div><div class="dnum">23</div></div><div class="slotwrap">
+            <div class="ev b"><div class="t1"><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> 7:20 PM</div><div class="t2">Posture fix in 60s</div></div>
+            <div class="ev b"><div class="t1"><span class="pf sm yt"><svg><use href="#p-yt"/></svg></span> 5:00 PM</div><div class="t2">Meal prep in 10 min</div><div class="evthumb" style="background:linear-gradient(160deg,#31266b,#142f4a)"></div></div>
+          </div></div>
+          <div class="col"><div class="colhead"><div class="dow">Fri</div><div class="dnum">24</div></div><div class="slotwrap">
+            <div class="ev v"><div class="t1"><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> 6:40 PM</div><div class="t2">Weekend workout drop</div><div class="evthumb" style="background:linear-gradient(160deg,#3a2360,#231a5a)"></div></div>
+            <div class="ev v"><div class="t1"><span class="pf sm sc"><svg><use href="#p-sc"/></svg></span> 9:00 PM</div><div class="t2">Behind the scenes</div></div>
+            <div class="ev b"><div class="t1"><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> 7:30 PM</div><div class="t2">Q and A duet</div></div>
+          </div></div>
+          <div class="col"><div class="colhead"><div class="dow">Sat</div><div class="dnum">25</div></div><div class="slotwrap">
+            <div class="ev b"><div class="t1"><span class="pf sm yt"><svg><use href="#p-yt"/></svg></span> 11:00 AM</div><div class="t2">Full 20 min HIIT</div><div class="evthumb" style="background:linear-gradient(160deg,#1a2a55,#122f4a)"></div></div>
+            <div class="ghost-ev">+ Add post</div>
+          </div></div>
+          <div class="col"><div class="colhead"><div class="dow">Sun</div><div class="dnum">26</div></div><div class="slotwrap">
+            <div class="ev v"><div class="t1"><span class="pf sm ig"><svg><use href="#p-ig"/></svg></span> 10:00 AM</div><div class="t2">Sunday reset routine</div></div>
+            <div class="ev b"><div class="t1"><span class="pf sm tt"><svg><use href="#p-tt"/></svg></span> 6:00 PM</div><div class="t2">Weekly recap</div><div class="evthumb" style="background:linear-gradient(160deg,#2a2350,#141f3f)"></div></div>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section class="screen" data-screen="analytics">
+      <div class="topbar">
+        <div class="h"><h2>Client Analytics</h2><p>Halo Fitness, last 30 days across all platforms.</p></div>
+        <div class="client-pill glass-sm" style="padding:8px 12px"><div class="avatar" style="width:26px;height:26px;border-radius:8px;font-size:11px;background:linear-gradient(135deg,#8b7bff,#4ea8ff)">HF</div><div class="meta"><b style="font-size:12.5px">Halo Fitness</b></div><div class="chev"><svg><use href="#i-chev"/></svg></div></div>
+        <button class="btn"><svg><use href="#i-dl"/></svg> Export report</button>
+      </div>
+      <div class="stage">
+        <div class="kpis">
+          <div class="kpi glass"><div class="lab">Total views</div><div class="val">2.41M</div><div class="foot"><span class="delta up"><svg><use href="#i-up"/></svg> 34%</span><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#4ea8ff" stroke-width="2" points="0,20 12,18 24,19 36,12 48,14 60,6 74,3"/></svg></div></div>
+          <div class="kpi glass"><div class="lab">Reach</div><div class="val">1.08M</div><div class="foot"><span class="delta up"><svg><use href="#i-up"/></svg> 21%</span><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#8b7bff" stroke-width="2" points="0,18 12,20 24,14 36,15 48,9 60,10 74,5"/></svg></div></div>
+          <div class="kpi glass"><div class="lab">Engagement rate</div><div class="val">7.9%</div><div class="foot"><span class="delta up"><svg><use href="#i-up"/></svg> 1.4pt</span><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#4ea8ff" stroke-width="2" points="0,16 12,14 24,17 36,11 48,12 60,8 74,6"/></svg></div></div>
+          <div class="kpi glass"><div class="lab">Followers gained</div><div class="val">+18.6K</div><div class="foot"><span class="delta up"><svg><use href="#i-up"/></svg> 52%</span><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#8b7bff" stroke-width="2" points="0,22 12,19 24,16 36,15 48,10 60,7 74,3"/></svg></div></div>
+          <div class="kpi glass"><div class="lab">Avg watch time</div><div class="val">14.2s</div><div class="foot"><span class="delta dn"><svg style="transform:rotate(180deg)"><use href="#i-up"/></svg> 3%</span><svg class="spark" viewBox="0 0 74 26"><polyline fill="none" stroke="#6f7ba0" stroke-width="2" points="0,8 12,10 24,9 36,12 48,11 60,14 74,13"/></svg></div></div>
+        </div>
+
+        <div class="chartcard glass">
+          <div class="rowhead"><div><h3>Views over time</h3><div class="sub">Daily views, all platforms combined</div></div>
+            <div class="legend"><div class="li"><span class="d" style="background:#4ea8ff"></span> Views</div><div class="li" style="color:var(--txt-3)"><span class="d" style="background:rgba(255,255,255,.22)"></span> Prev period</div></div>
+          </div>
+          <svg class="chart" viewBox="0 0 720 230" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ea8ff" stop-opacity="0.4"/><stop offset="1" stop-color="#4ea8ff" stop-opacity="0"/></linearGradient>
+              <linearGradient id="line" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#4ea8ff"/></linearGradient>
+            </defs>
+            <line class="gridline" x1="0" y1="40" x2="720" y2="40"/><line class="gridline" x1="0" y1="100" x2="720" y2="100"/><line class="gridline" x1="0" y1="160" x2="720" y2="160"/>
+            <polyline fill="none" stroke="rgba(255,255,255,.2)" stroke-width="2" stroke-dasharray="4 5" points="0,150 72,140 144,150 216,120 288,128 360,104 432,110 504,96 576,102 648,88 720,84"/>
+            <path d="M0,178 L72,158 L144,168 L216,132 L288,142 L360,104 L432,116 L504,82 L576,96 L648,58 L720,46 L720,230 L0,230 Z" fill="url(#area)"/>
+            <polyline fill="none" stroke="url(#line)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="0,178 72,158 144,168 216,132 288,142 360,104 432,116 504,82 576,96 648,58 720,46"/>
+            <circle cx="720" cy="46" r="5" fill="#4ea8ff"/><circle cx="720" cy="46" r="10" fill="#4ea8ff" opacity="0.25"/><circle cx="504" cy="82" r="4" fill="#8b7bff"/>
+          </svg>
+        </div>
+
+        <div class="two">
+          <div class="card glass"><h3>Platform mix</h3><div class="sub" style="margin-bottom:14px">Share of total views</div>
+            <div class="donutwrap">
+              <svg width="130" height="130" viewBox="0 0 130 130">
+                <g transform="rotate(-90 65 65)" fill="none" stroke-width="16">
+                  <circle cx="65" cy="65" r="54" stroke="rgba(255,255,255,.06)"/>
+                  <circle cx="65" cy="65" r="54" stroke="#d62976" stroke-dasharray="129 210" stroke-dashoffset="0"/>
+                  <circle cx="65" cy="65" r="54" stroke="#25f4ee" stroke-dasharray="105 234" stroke-dashoffset="-129"/>
+                  <circle cx="65" cy="65" r="54" stroke="#ff4237" stroke-dasharray="75 264" stroke-dashoffset="-234"/>
+                  <circle cx="65" cy="65" r="54" stroke="#ffe600" stroke-dasharray="30 309" stroke-dashoffset="-309"/>
+                </g>
+                <text x="65" y="61" text-anchor="middle" fill="#fff" font-size="20" font-weight="700" font-family="sans-serif">2.4M</text>
+                <text x="65" y="78" text-anchor="middle" fill="rgba(255,255,255,.5)" font-size="10" font-family="sans-serif">views</text>
+              </svg>
+              <div class="dleg">
+                <div class="row"><span class="d" style="background:#d62976"></span> Instagram <b>38%</b></div>
+                <div class="row"><span class="d" style="background:#25f4ee"></span> TikTok <b>31%</b></div>
+                <div class="row"><span class="d" style="background:#ff4237"></span> YouTube <b>22%</b></div>
+                <div class="row"><span class="d" style="background:#ffe600"></span> Snapchat <b>9%</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="card glass"><h3>Reach by platform</h3><div class="sub" style="margin-bottom:6px">Accounts reached, last 30 days</div>
+            <div class="bars">
+              <div class="bar"><div class="bv">412K</div><div class="fill" style="height:78%;background:linear-gradient(180deg,#8b7bff,#5a48c0)"></div><div class="bl">IG</div></div>
+              <div class="bar"><div class="bv">336K</div><div class="fill" style="height:64%;background:linear-gradient(180deg,#5e9bff,#3f6fd0)"></div><div class="bl">TikTok</div></div>
+              <div class="bar"><div class="bv">238K</div><div class="fill" style="height:46%;background:linear-gradient(180deg,#4ea8ff,#3579c0)"></div><div class="bl">YT</div></div>
+              <div class="bar"><div class="bv">96K</div><div class="fill" style="height:20%;background:linear-gradient(180deg,#7a86c0,#525d90)"></div><div class="bl">Snap</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="note">Report auto refreshes daily. Export as branded PDF or shareable client link.</div>
+      </div>
+    </section>
+
+    <!-- ACCOUNTS -->
+    <section class="screen" data-screen="accounts">
+      <div class="topbar">
+        <div class="h"><h2>Accounts</h2><p>5 clients, 17 connected profiles across 4 platforms.</p></div>
+        <div class="search"><svg><use href="#i-search"/></svg> Find client</div>
+        <button class="btn"><svg><use href="#i-plus"/></svg> Add client</button>
+      </div>
+      <div class="stage">
+        <div class="clients">
+          <div class="cc glass">
+            <div class="top"><div class="avatar lg" style="width:44px;height:44px;border-radius:13px;font-size:15px;background:linear-gradient(135deg,#8b7bff,#4ea8ff)">HF</div><div class="meta"><b>Halo Fitness</b><span>Growth plan, 4 profiles</span></div></div>
+            <div class="plat"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><span class="pf tt"><svg><use href="#p-tt"/></svg></span><span class="pf yt"><svg><use href="#p-yt"/></svg></span><span class="pf sc"><svg><use href="#p-sc"/></svg></span></div>
+            <div class="stat"><div><div class="big">248K</div><div class="lab">total followers</div></div><span class="delta up"><svg><use href="#i-up"/></svg> 8.1%</span></div>
+            <div class="health ok"><span class="d"></span> All connected</div>
+          </div>
+          <div class="cc glass">
+            <div class="top"><div class="avatar lg" style="width:44px;height:44px;border-radius:13px;font-size:15px;background:linear-gradient(135deg,#a07bff,#6a5bff)">NS</div><div class="meta"><b>Nova Skincare</b><span>Growth plan, 3 profiles</span></div></div>
+            <div class="plat"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><span class="pf tt"><svg><use href="#p-tt"/></svg></span><span class="pf yt"><svg><use href="#p-yt"/></svg></span></div>
+            <div class="stat"><div><div class="big">173K</div><div class="lab">total followers</div></div><span class="delta up"><svg><use href="#i-up"/></svg> 12%</span></div>
+            <div class="health ok"><span class="d"></span> All connected</div>
+          </div>
+          <div class="cc glass">
+            <div class="top"><div class="avatar lg" style="width:44px;height:44px;border-radius:13px;font-size:15px;background:linear-gradient(135deg,#4ea8ff,#6a5bff)">AA</div><div class="meta"><b>Apex Athletics</b><span>Scale plan, 4 profiles</span></div></div>
+            <div class="plat"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><span class="pf tt"><svg><use href="#p-tt"/></svg></span><span class="pf yt"><svg><use href="#p-yt"/></svg></span><span class="pf sc"><svg><use href="#p-sc"/></svg></span></div>
+            <div class="stat"><div><div class="big">521K</div><div class="lab">total followers</div></div><span class="delta up"><svg><use href="#i-up"/></svg> 5.4%</span></div>
+            <div class="health warn"><span class="d"></span> TikTok needs reconnect</div>
+          </div>
+          <div class="cc glass">
+            <div class="top"><div class="avatar lg" style="width:44px;height:44px;border-radius:13px;font-size:15px;background:linear-gradient(135deg,#6a5bff,#4ea8ff)">BC</div><div class="meta"><b>Bloom Cafe</b><span>Starter plan, 2 profiles</span></div></div>
+            <div class="plat"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><span class="pf tt"><svg><use href="#p-tt"/></svg></span></div>
+            <div class="stat"><div><div class="big">64K</div><div class="lab">total followers</div></div><span class="delta up"><svg><use href="#i-up"/></svg> 19%</span></div>
+            <div class="health ok"><span class="d"></span> All connected</div>
+          </div>
+          <div class="cc glass">
+            <div class="top"><div class="avatar lg" style="width:44px;height:44px;border-radius:13px;font-size:15px;background:linear-gradient(135deg,#8b7bff,#5e9bff)">VM</div><div class="meta"><b>Vertex Media</b><span>Scale plan, 4 profiles</span></div></div>
+            <div class="plat"><span class="pf ig"><svg><use href="#p-ig"/></svg></span><span class="pf tt"><svg><use href="#p-tt"/></svg></span><span class="pf yt"><svg><use href="#p-yt"/></svg></span><span class="pf sc"><svg><use href="#p-sc"/></svg></span></div>
+            <div class="stat"><div><div class="big">389K</div><div class="lab">total followers</div></div><span class="delta up"><svg><use href="#i-up"/></svg> 6.8%</span></div>
+            <div class="health ok"><span class="d"></span> All connected</div>
+          </div>
+          <div class="add-cc"><div class="plus"><svg><use href="#i-plus"/></svg></div><div style="text-align:center"><b style="font-size:14px">Add a new client</b><div style="font-size:11.5px;color:var(--txt-3);margin-top:3px">Connect Instagram, TikTok, YouTube, Snapchat</div></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const navs=document.querySelectorAll('[data-target]');
+  const screens=document.querySelectorAll('[data-screen]');
+  function show(id){
+    let found=false;
+    screens.forEach(s=>{const on=s.dataset.screen===id;s.classList.toggle('active',on);if(on)found=true;});
+    if(!found){show('upload');return;}
+    navs.forEach(n=>n.classList.toggle('active',n.dataset.target===id));
+    if(location.hash!=='#'+id){history.replaceState(null,'','#'+id);}
+  }
+  navs.forEach(n=>n.addEventListener('click',()=>show(n.dataset.target)));
+  window.addEventListener('hashchange',()=>show(location.hash.slice(1)||'upload'));
+  document.querySelectorAll('.pt').forEach(p=>p.addEventListener('click',()=>p.classList.toggle('on')));
+  show((location.hash||'#upload').slice(1)||'upload');
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "toreroflow",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Toreroflow — social media command center for Torerone. Desktop app + cloud backend.",
+  "scripts": {
+    "dev:api": "pnpm --filter @toreroflow/api dev",
+    "dev:desktop": "pnpm --filter @toreroflow/desktop dev",
+    "tauri": "pnpm --filter @toreroflow/desktop tauri",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @toreroflow/db generate",
+    "db:migrate": "pnpm --filter @toreroflow/db migrate:dev",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

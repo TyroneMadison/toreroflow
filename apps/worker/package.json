@@ -1,0 +1,20 @@
+{
+  "name": "@toreroflow/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@toreroflow/core": "workspace:*",
+    "@toreroflow/db": "workspace:*",
+    "@toreroflow/publishers": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

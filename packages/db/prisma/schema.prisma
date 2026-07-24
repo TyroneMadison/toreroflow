@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  owner
+  viewer
+}
+
+enum Platform {
+  instagram
+  tiktok
+  youtube
+  snapchat
+}
+
+enum SocialAccountStatus {
+  connected
+  needs_reconnect
+  error
+}
+
+enum MediaAssetStatus {
+  uploaded
+  processing
+  ready
+  failed
+}
+
+enum RenderStatus {
+  queued
+  processing
+  ready
+  failed
+}
+
+enum PostStatus {
+  draft
+  scheduled
+  publishing
+  posted
+  failed
+}
+
+enum PostTargetStatus {
+  scheduled
+  publishing
+  posted
+  failed
+}
+
+enum ScheduleSource {
+  best_time
+  manual
+}
+
+enum JobStatus {
+  queued
+  active
+  completed
+  failed
+}
+
+model Agency {
+  id         String   @id @default(cuid())
+  name       String
+  ownerEmail String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users   User[]
+  clients Client[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  agencyId     String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(owner)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id])
+  posts  Post[]
+}
+
+model Client {
+  id         String    @id @default(cuid())
+  agencyId   String
+  name       String
+  avatarSeed String?
+  plan       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  agency         Agency          @relation(fields: [agencyId], references: [id])
+  socialAccounts SocialAccount[]
+  mediaAssets    MediaAsset[]
+  posts          Post[]
+  scheduleSlots  ScheduleSlot[]
+
+  @@index([agencyId])
+}
+
+model SocialAccount {
+  id                String              @id @default(cuid())
+  clientId          String
+  platform          Platform
+  handle            String
+  providerAccountId String?
+  status            SocialAccountStatus @default(connected)
+  /// Encrypted blob (libsodium sealed box / KMS). Never store plaintext tokens.
+  tokensEncrypted   String?
+  scopes            String[]            @default([])
+  connectedAt       DateTime            @default(now())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deletedAt         DateTime?
+
+  client          Client           @relation(fields: [clientId], references: [id])
+  postTargets     PostTarget[]
+  metricSnapshots MetricSnapshot[]
+
+  @@index([clientId, platform])
+}
+
+model MediaAsset {
+  id           String           @id @default(cuid())
+  clientId     String
+  storageKey   String
+  originalName String
+  durationSec  Float?
+  width        Int?
+  height       Int?
+  status       MediaAssetStatus @default(uploaded)
+  /// Timestamped transcript from the captions service: [{ start, end, text }]
+  transcript   Json?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  client  Client   @relation(fields: [clientId], references: [id])
+  renders Render[]
+  posts   Post[]
+
+  @@index([clientId, status])
+}
+
+model Render {
+  id           String       @id @default(cuid())
+  mediaAssetId String
+  platform     Platform
+  aspect       String       @default("9:16")
+  storageKey   String
+  captionStyle String?
+  status       RenderStatus @default(queued)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id])
+
+  @@index([mediaAssetId])
+}
+
+model Post {
+  id           String     @id @default(cuid())
+  clientId     String
+  mediaAssetId String?
+  createdById  String
+  status       PostStatus @default(draft)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  client     Client       @relation(fields: [clientId], references: [id])
+  mediaAsset MediaAsset?  @relation(fields: [mediaAssetId], references: [id])
+  createdBy  User         @relation(fields: [createdById], references: [id])
+  targets    PostTarget[]
+
+  @@index([clientId, status])
+}
+
+model PostTarget {
+  id              String           @id @default(cuid())
+  postId          String
+  socialAccountId String
+  platform        Platform
+  caption         String?
+  hashtags        String[]         @default([])
+  scheduledAt     DateTime?
+  status          PostTargetStatus @default(scheduled)
+  remotePostId    String?
+  remoteUrl       String?
+  error           String?
+  publishedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  post          Post          @relation(fields: [postId], references: [id])
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+  postMetrics   PostMetric[]
+
+  @@index([status, scheduledAt])
+  @@index([socialAccountId])
+}
+
+model ScheduleSlot {
+  id        String         @id @default(cuid())
+  clientId  String
+  platform  Platform
+  dayOfWeek Int
+  hourLocal Int
+  source    ScheduleSource @default(manual)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId, platform])
+}
+
+model MetricSnapshot {
+  id              String   @id @default(cuid())
+  socialAccountId String
+  capturedAt      DateTime
+  views           Int?
+  reach           Int?
+  followers       Int?
+  engagementRate  Float?
+  avgWatchSec     Float?
+  raw             Json?
+  createdAt       DateTime @default(now())
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+
+  @@index([socialAccountId, capturedAt])
+}
+
+model PostMetric {
+  id           String   @id @default(cuid())
+  postTargetId String
+  capturedAt   DateTime
+  views        Int?
+  likes        Int?
+  comments     Int?
+  shares       Int?
+  saves        Int?
+  createdAt    DateTime @default(now())
+
+  postTarget PostTarget @relation(fields: [postTargetId], references: [id])
+
+  @@index([postTargetId, capturedAt])
+}
+
+/// Mirror of queue state so the UI can show job health without talking to Redis.
+model Job {
+  id        String    @id @default(cuid())
+  type      String
+  refId     String?
+  status    JobStatus @default(queued)
+  attempts  Int       @default(0)
+  lastError String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([type, status])
+}

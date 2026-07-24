@@ -1,0 +1,32 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# rust / tauri
+apps/desktop/src-tauri/target/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# db local artifacts
+*.db
+*.sqlite
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
