@@ -19,6 +19,12 @@ const TOKEN_TTL = "30d";
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
 
+  /** First-run detection for the desktop app: register vs login screen. */
+  app.get("/auth/bootstrap", async () => {
+    const users = await prisma.user.count();
+    return { needsSetup: users === 0 };
+  });
+
   const signToken = (user: { id: string; agencyId: string }): string =>
     app.jwt.sign({ sub: user.id, agencyId: user.agencyId }, { expiresIn: TOKEN_TTL });
 

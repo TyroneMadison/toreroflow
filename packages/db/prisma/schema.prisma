@@ -105,6 +105,7 @@ model Client {
   mediaAssets    MediaAsset[]
   posts          Post[]
   scheduleSlots  ScheduleSlot[]
+  workflows      Workflow[]
 
   @@index([agencyId])
 }
@@ -208,6 +209,23 @@ model PostTarget {
 
   @@index([status, scheduledAt])
   @@index([socialAccountId])
+}
+
+/// Repurpose.io-style fan-out rule: a video posted to sourcePlatform for this
+/// client is automatically republished to every platform in destinations.
+model Workflow {
+  id             String     @id @default(cuid())
+  clientId       String
+  name           String
+  sourcePlatform Platform
+  destinations   Platform[] @default([])
+  enabled        Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId, enabled])
 }
 
 model ScheduleSlot {
