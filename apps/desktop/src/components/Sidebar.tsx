@@ -19,6 +19,10 @@ interface NavItemDef {
   badge?: string;
 }
 
+const OVERVIEW_NAV: NavItemDef[] = [
+  { target: "dashboard", icon: "#i-globe", label: "Dashboard" },
+];
+
 const CREATE_NAV: NavItemDef[] = [
   { target: "upload", icon: "#i-upload", label: "Upload & Schedule" },
   { target: "calendar", icon: "#i-cal", label: "Calendar" },
@@ -102,6 +106,9 @@ export default function Sidebar({
           <small>by Torerone</small>
         </div>
       </div>
+
+      <div className="navlabel">Overview</div>
+      {renderNav(OVERVIEW_NAV)}
 
       <div className="navlabel">Create</div>
       {renderNav(CREATE_NAV)}

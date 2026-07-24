@@ -61,7 +61,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
       <div className="modal-head">
         <div>
           <h3>{data?.client.name ?? "Client"} - analytics</h3>
-          <p>Live metrics land daily starting in M5; suggestions work now.</p>
+          <p>Live metrics land daily once ingestion starts; suggestions work now.</p>
         </div>
         <div className="modal-x" onClick={onClose}>
           <svg>

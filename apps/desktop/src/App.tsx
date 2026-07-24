@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import IconDefs from "./components/IconDefs";
 import Sidebar from "./components/Sidebar";
+import DashboardScreen from "./screens/DashboardScreen";
 import UploadSchedule, { type UploadJob } from "./screens/UploadSchedule";
 import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
@@ -15,6 +16,7 @@ import { AppStateProvider, useAppState } from "./state/AppState";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
 export type ScreenId =
+  | "dashboard"
   | "upload"
   | "calendar"
   | "analytics"
@@ -30,7 +32,7 @@ type ModalState =
 
 function Shell() {
   const { authReady, user } = useAppState();
-  const [activeScreen, setActiveScreen] = useState<ScreenId>("upload");
+  const [activeScreen, setActiveScreen] = useState<ScreenId>("dashboard");
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [modal, setModal] = useState<ModalState>(null);
 
@@ -72,6 +74,13 @@ function Shell() {
           onOpenConnect={openConnect}
         />
         <main className="main glass">
+          {activeScreen === "dashboard" && (
+            <DashboardScreen
+              key="dashboard"
+              onOpenInsights={openInsights}
+              onOpenConnect={openConnect}
+            />
+          )}
           {activeScreen === "upload" && (
             <UploadSchedule key="upload" onPreview={openPreview} onOpenConnect={openConnect} />
           )}

@@ -99,7 +99,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           <h2>Upload &amp; Schedule</h2>
           <p>
             {selectedClient
-              ? `Drop a video for ${selectedClient.name} - captioning, formatting, and queueing land in M2/M3.`
+              ? `Drop a video for ${selectedClient.name}.`
               : "Pick or add a brand in the sidebar, then drop a video."}
           </p>
         </div>
@@ -137,9 +137,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               <b>{reading ? "Reading video…" : "Drop videos here"}</b>
               <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
               <div className="pills">
-                <span className="mini">Auto captions · M2</span>
-                <span className="mini">Auto reframe 9:16 · M2</span>
-                <span className="mini">Best time detect · M5</span>
+                <span className="mini">Auto captions</span>
+                <span className="mini">Auto reframe 9:16</span>
+                <span className="mini">Best time detect</span>
               </div>
             </div>
 
@@ -162,11 +162,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 <div className="body">
                   <div className="name">
                     {job.name}
-                    <span
-                      className="tag ai"
-                      title="Transcription and AI captions arrive with the M2 media pipeline"
-                    >
-                      Captions · M2
+                    <span className="tag ai" title="Transcription and AI captions coming soon">
+                      Captions soon
                     </span>
                   </div>
 
@@ -209,13 +206,13 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                     <button
                       className="btn"
                       style={{ marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }}
-                      title="Scheduling & publishing activate in M3"
+                      title="Scheduling & publishing coming soon"
                       disabled
                     >
                       <svg>
                         <use href="#i-bolt" />
                       </svg>{" "}
-                      Schedule all · M3
+                      Schedule all
                     </button>
                   </div>
                 </div>
@@ -254,8 +251,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 Smart timing
               </h3>
               <div className="sub" style={{ marginBottom: 8 }}>
-                Best posting windows are computed from each account's own history - they appear
-                once analytics ingestion starts (M5).
+                Best posting windows are computed from each account's own history. They appear
+                once analytics ingestion starts.
               </div>
             </div>
           </div>

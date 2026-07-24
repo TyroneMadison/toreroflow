@@ -54,7 +54,7 @@ export default function AnalyticsScreen() {
           <h2>Client Analytics</h2>
           <p>
             {selectedClient
-              ? `${selectedClient.name} - data fills in once daily ingestion starts (M5).`
+              ? `${selectedClient.name} - data fills in once daily ingestion starts.`
               : "Select a brand in the sidebar to see its analytics."}
           </p>
         </div>
@@ -62,12 +62,12 @@ export default function AnalyticsScreen() {
           className="btn"
           disabled
           style={{ opacity: 0.55, cursor: "not-allowed" }}
-          title="Branded PDF & share-link exports arrive in M5"
+          title="Branded PDF & share-link exports arrive with analytics ingestion"
         >
           <svg>
             <use href="#i-dl" />
           </svg>{" "}
-          Export report · M5
+          Export report
         </button>
       </div>
       <div className="stage">
@@ -109,8 +109,8 @@ export default function AnalyticsScreen() {
                 </div>
                 <b>No analytics history yet</b>
                 <p>
-                  Daily metric snapshots begin with M5. Connected accounts will start filling
-                  this chart automatically.
+                  Connected accounts will start filling this chart automatically once daily
+                  ingestion is live.
                 </p>
               </div>
             </div>
@@ -140,7 +140,7 @@ export default function AnalyticsScreen() {
                 </div>
                 <div className="empty" style={{ padding: "14px 8px" }}>
                   <b>Appears with real data</b>
-                  <p>The donut and reach bars render from live metrics in M5.</p>
+                  <p>The donut and reach bars render once live metrics arrive.</p>
                 </div>
               </div>
             </div>

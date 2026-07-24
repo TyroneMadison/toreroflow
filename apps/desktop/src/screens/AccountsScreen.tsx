@@ -123,7 +123,7 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
                 <div className="stat">
                   <div>
                     <div className="big">-</div>
-                    <div className="lab">followers (data in M5)</div>
+                    <div className="lab">total followers</div>
                   </div>
                 </div>
                 <div className={`health ${needsFix ? "warn" : connected.length ? "ok" : "warn"}`}>

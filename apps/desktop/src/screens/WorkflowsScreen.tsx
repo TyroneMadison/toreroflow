@@ -70,7 +70,7 @@ export default function WorkflowsScreen() {
           <h2>Workflows</h2>
           <p>
             Repurpose-style fan-out: upload to one platform, auto-publish to the rest.
-            Rules save now; auto-posting fires with the M3 publishing engine.
+            Rules save now; auto-posting activates when publishing goes live.
           </p>
         </div>
       </div>

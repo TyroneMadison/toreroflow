@@ -104,8 +104,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                     ? "checking…"
                     : "desktop app only"
                   : autostart
-                    ? "Toreroflow launches when Windows signs in"
-                    : "off"}
+                    ? "On"
+                    : "Off"}
               </span>
             </div>
             <div className={`switch${autostart ? " on" : ""}`} style={{ marginLeft: "auto" }} />

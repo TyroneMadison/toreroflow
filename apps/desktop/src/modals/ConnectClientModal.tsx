@@ -12,7 +12,7 @@ interface ConnectClientModalProps {
 
 /**
  * Enroll a brand, then connect its platforms. Connections use the dry-run
- * provider until a real publishing provider is configured (M1 decision).
+ * provider until a real publishing provider is configured.
  */
 export default function ConnectClientModal({ onClose }: ConnectClientModalProps) {
   const { refreshClients, clients, selectClient } = useAppState();
