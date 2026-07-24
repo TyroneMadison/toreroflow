@@ -9,12 +9,20 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
-### Up next — M1 · Clients & connections
+### Added — M1 in progress
 
-- Client CRUD wired from the Add Client modal to the API
-- Publishing provider integration (evaluating Ayrshare / Blotato / Zernio / self-hosted Postiz — Snapchat coverage and per-account pricing decide it)
-- Per-platform OAuth connect flow with encrypted token storage
-- Connection health states (connected / needs reconnect / error) live in the Accounts screen
+- Operator auth in the app: first-run register / login gate with JWT sessions
+- Real client (brand) management end-to-end: enroll, list, delete — demo data removed from every screen
+- Sidebar brand dropdown: empty until a brand is added, per-brand selection drives the whole app
+- Settings screen: **Run upon startup** (Tauri autostart) and **Connected Accounts** with per-platform connect/disconnect per client (dry-run provider until the real provider is chosen)
+- Workflows: repurpose-style fan-out rules (source platform → destinations) with enable/pause/delete; rules execute when M3 publishing lands
+- Upload: real drag & drop, thumbnails extracted from the dropped video, click-to-preview player, platform toggles bound to connected accounts
+- Per-client analytics modal with AI growth suggestions (Claude-powered; needs `ANTHROPIC_API_KEY`)
+- API: client/account/workflow routes, `GET /clients/:id/analytics`, `POST /clients/:id/suggestions`, `GET /auth/bootstrap`
+
+### Still open for M1
+
+- Publishing provider decision (Ayrshare / Blotato / Zernio / self-hosted Postiz — Snapchat coverage and per-account pricing decide it) → real OAuth replaces dry-run connections
 
 ---
 
