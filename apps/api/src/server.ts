@@ -29,7 +29,7 @@ export async function buildServer(
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? true });
 
-  // origin: true — desktop webview origins vary between dev
+  // origin: true - desktop webview origins vary between dev
   // (http://localhost:1420) and prod (tauri.localhost); tighten in M6.
   await app.register(cors, { origin: true });
   await app.register(jwt, { secret: env.JWT_SECRET });

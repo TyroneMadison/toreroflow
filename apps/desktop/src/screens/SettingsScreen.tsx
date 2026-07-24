@@ -95,7 +95,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             <div>
               <h3>Connected Accounts</h3>
               <div className="sub">
-                One profile per enrolled client — connect or disconnect each platform.
+                One profile per enrolled client - connect or disconnect each platform.
                 Connections run in dry-run mode until a publishing provider is configured.
               </div>
             </div>

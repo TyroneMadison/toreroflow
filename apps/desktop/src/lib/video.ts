@@ -1,5 +1,5 @@
 export interface VideoProbe {
-  /** Object URL of the source file — usable as a <video src> for preview. */
+  /** Object URL of the source file - usable as a <video src> for preview. */
   url: string;
   /** JPEG data URL captured from the video itself (no generation involved). */
   thumbnail: string;

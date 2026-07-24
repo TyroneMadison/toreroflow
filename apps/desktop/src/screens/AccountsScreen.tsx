@@ -116,13 +116,13 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
                     connected.map((a) => <Pf key={a.id} p={PF_ID[a.platform]} />)
                   ) : (
                     <span style={{ fontSize: 11.5, color: "var(--txt-3)" }}>
-                      No platforms connected — use Settings → Connected Accounts
+                      No platforms connected - use Settings → Connected Accounts
                     </span>
                   )}
                 </div>
                 <div className="stat">
                   <div>
-                    <div className="big">—</div>
+                    <div className="big">-</div>
                     <div className="lab">followers (data in M5)</div>
                   </div>
                 </div>

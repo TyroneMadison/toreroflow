@@ -9,10 +9,10 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
-### Added — M1 in progress
+### Added - M1 in progress
 
 - Operator auth in the app: first-run register / login gate with JWT sessions
-- Real client (brand) management end-to-end: enroll, list, delete — demo data removed from every screen
+- Real client (brand) management end-to-end: enroll, list, delete - demo data removed from every screen
 - Sidebar brand dropdown: empty until a brand is added, per-brand selection drives the whole app
 - Settings screen: **Run upon startup** (Tauri autostart) and **Connected Accounts** with per-platform connect/disconnect per client (dry-run provider until the real provider is chosen)
 - Workflows: repurpose-style fan-out rules (source platform → destinations) with enable/pause/delete; rules execute when M3 publishing lands
@@ -22,25 +22,25 @@ release with its acceptance checks listed.
 
 ### Still open for M1
 
-- Publishing provider decision (Ayrshare / Blotato / Zernio / self-hosted Postiz — Snapchat coverage and per-account pricing decide it) → real OAuth replaces dry-run connections
+- Publishing provider decision (Ayrshare / Blotato / Zernio / self-hosted Postiz - Snapchat coverage and per-account pricing decide it) → real OAuth replaces dry-run connections
 
 ---
 
-## [0.1.0] — 2026-07-24 · M0 "Scaffold & shell"
+## [0.1.0] - 2026-07-24 · M0 "Scaffold & shell"
 
 ### Added
 
 - **Monorepo** (pnpm workspaces): `apps/desktop`, `apps/api`, `apps/worker`, `apps/captions`, `packages/db`, `packages/core`, `packages/publishers`, `packages/media` (spec §6)
-- **Database**: full Prisma schema for all 12 entities — Agency, User, Client, SocialAccount, MediaAsset, Render, Post, PostTarget, ScheduleSlot, MetricSnapshot, PostMetric, Job — with `init` migration applied to PostgreSQL (spec §7)
-- **API** (Fastify 5): `GET /health`, first-run operator auth — `POST /auth/register` (locks after the first operator), `POST /auth/login`, `GET /auth/me` — bcrypt password hashing, JWT sessions, zod validation
-- **Desktop app** (Tauri v2 + React 18 + Vite): faithful port of the liquid-glass prototype — Upload & Schedule, Content Calendar, Client Analytics, and Accounts screens plus the Add Client and Post Composer modals, dark/light themes, and a live API health indicator in the sidebar
+- **Database**: full Prisma schema for all 12 entities - Agency, User, Client, SocialAccount, MediaAsset, Render, Post, PostTarget, ScheduleSlot, MetricSnapshot, PostMetric, Job - with `init` migration applied to PostgreSQL (spec §7)
+- **API** (Fastify 5): `GET /health`, first-run operator auth - `POST /auth/register` (locks after the first operator), `POST /auth/login`, `GET /auth/me` - bcrypt password hashing, JWT sessions, zod validation
+- **Desktop app** (Tauri v2 + React 18 + Vite): faithful port of the liquid-glass prototype - Upload & Schedule, Content Calendar, Client Analytics, and Accounts screens plus the Add Client and Post Composer modals, dark/light themes, and a live API health indicator in the sidebar
 - **Publishing adapter** interface with a dry-run provider, so the entire pipeline can run without touching live accounts (spec §8)
 - **Media profiles**: per-platform 9:16 encode profile table, ready for the M2 ffmpeg pipeline (spec §9)
 - **Dev infra**: Docker Compose for Postgres 16 + Redis 7, `.env.example`, brand icon set generated from the violet→blue thumbs-up tile
 
 ### Fixed
 
-- Vite dev-server crash on Windows (`EBUSY` watching cargo's locked build artifacts) — `src-tauri/**` excluded from the file watcher
+- Vite dev-server crash on Windows (`EBUSY` watching cargo's locked build artifacts) - `src-tauri/**` excluded from the file watcher
 
 ### Acceptance
 

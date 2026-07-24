@@ -10,7 +10,7 @@ interface ClientInsightsModalProps {
 }
 
 function fmt(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
@@ -60,7 +60,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
     <Modal maxWidth={640} onClose={onClose}>
       <div className="modal-head">
         <div>
-          <h3>{data?.client.name ?? "Client"} — analytics</h3>
+          <h3>{data?.client.name ?? "Client"} - analytics</h3>
           <p>Live metrics land daily starting in M5; suggestions work now.</p>
         </div>
         <div className="modal-x" onClick={onClose}>
@@ -100,7 +100,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
           ))
         ) : (
           <p style={{ fontSize: 12.5, color: "var(--txt-3)", marginTop: 4 }}>
-            No platforms connected yet — connect them in Settings → Connected Accounts.
+            No platforms connected yet - connect them in Settings → Connected Accounts.
           </p>
         )}
 

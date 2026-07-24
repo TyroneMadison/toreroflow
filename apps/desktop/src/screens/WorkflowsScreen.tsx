@@ -189,7 +189,7 @@ export default function WorkflowsScreen() {
                         <div
                           className={`switch${w.enabled ? " on" : ""}`}
                           style={{ cursor: "pointer" }}
-                          title={w.enabled ? "Enabled — click to pause" : "Paused — click to enable"}
+                          title={w.enabled ? "Enabled - click to pause" : "Paused - click to enable"}
                           onClick={() => void toggleEnabled(w)}
                         />
                         <span

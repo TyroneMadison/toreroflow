@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="docs/logo.png" width="110" alt="Toreroflow — white thumbs-up on a violet-to-blue gradient tile" />
+<img src="docs/logo.png" width="110" alt="Toreroflow - white thumbs-up on a violet-to-blue gradient tile" />
 
 # Toreroflow
 
 **The social media command center · by Torerone**
 
 Drop a video in → it gets captioned, reframed to 9:16, scheduled at the best time, and posted to
-**Instagram · TikTok · YouTube · Snapchat** for every client — with all the analytics rolled up
+**Instagram · TikTok · YouTube · Snapchat** for every client - with all the analytics rolled up
 into client-ready reports.
 
 <br/>
@@ -21,7 +21,7 @@ into client-ready reports.
 
 <br/>
 
-<img src="docs/screens/upload-dark.png" width="920" alt="Toreroflow — Upload & Schedule screen (dark)" />
+<img src="docs/screens/upload-dark.png" width="920" alt="Toreroflow - Upload & Schedule screen (dark)" />
 
 </div>
 
@@ -31,15 +31,15 @@ into client-ready reports.
 
 | | Feature | Status |
 |---|---|---|
-| 🎛️ | **Multi-account management** — clients, connected profiles, connection health | 🟣 UI live (M0) · wiring in M1 |
-| 🎬 | **Video intake** — drag & drop, local media library | ⚪ M2 |
-| 💬 | **Auto captioning** — transcription + styled burned-in captions (Bold pop, Karaoke, Minimal, Neon) | ⚪ M2 |
-| 📐 | **Auto formatting** — per-platform 9:16 reframe & transcode profiles | ⚪ M2 |
-| ✍️ | **AI captions & hooks** — Claude drafts per-platform copy, human approves | ⚪ M2 |
-| 🗓️ | **Scheduling** — calendar & queue, days ahead, per client & platform | ⚪ M3–M4 |
-| 🚀 | **Auto publishing** — cloud workers post at the scheduled moment, with retries | ⚪ M3 |
-| ⏰ | **Best-time engine** — posting windows computed from each account's own history | ⚪ M5 |
-| 📊 | **Analytics** — KPIs, trends, platform mix, top posts, branded PDF exports | 🟣 UI live (M0) · data in M5 |
+| 🎛️ | **Multi-account management** - clients, connected profiles, connection health | 🟣 UI live (M0) · wiring in M1 |
+| 🎬 | **Video intake** - drag & drop, local media library | ⚪ M2 |
+| 💬 | **Auto captioning** - transcription + styled burned-in captions (Bold pop, Karaoke, Minimal, Neon) | ⚪ M2 |
+| 📐 | **Auto formatting** - per-platform 9:16 reframe & transcode profiles | ⚪ M2 |
+| ✍️ | **AI captions & hooks** - Claude drafts per-platform copy, human approves | ⚪ M2 |
+| 🗓️ | **Scheduling** - calendar & queue, days ahead, per client & platform | ⚪ M3–M4 |
+| 🚀 | **Auto publishing** - cloud workers post at the scheduled moment, with retries | ⚪ M3 |
+| ⏰ | **Best-time engine** - posting windows computed from each account's own history | ⚪ M5 |
+| 📊 | **Analytics** - KPIs, trends, platform mix, top posts, branded PDF exports | 🟣 UI live (M0) · data in M5 |
 
 ## 🖥️ The app
 
@@ -55,7 +55,7 @@ into client-ready reports.
 </table>
 
 <details>
-  <summary>☀️ <b>Light mode</b> (full theme parity — click to expand)</summary>
+  <summary>☀️ <b>Light mode</b> (full theme parity - click to expand)</summary>
   <br/>
   <img src="docs/screens/upload-light.png" alt="Upload & Schedule screen in light mode" />
 </details>
@@ -63,7 +63,7 @@ into client-ready reports.
 ## 🏗️ Architecture
 
 The desktop app is the control room; a small always-on cloud backend is the engine that actually
-posts on schedule and pulls analytics — a closed laptop can't fire a 6:40 PM post, a server can.
+posts on schedule and pulls analytics - a closed laptop can't fire a 6:40 PM post, a server can.
 
 ```mermaid
 flowchart LR
@@ -98,7 +98,7 @@ from a unified provider (v1) to direct platform APIs later without touching the 
 ```
 apps/
   desktop/     Tauri v2 + React client (the app itself)
-  api/         Fastify API — health + operator auth
+  api/         Fastify API - health + operator auth
   worker/      BullMQ workers (M2+)
   captions/    Python faster-whisper microservice (M2+)
 packages/
@@ -107,7 +107,7 @@ packages/
   publishers/  publishing adapter + dry-run provider
   media/       per-platform encode profiles, ffmpeg helpers (M2+)
 infra/         docker-compose: Postgres 16 + Redis 7
-design/        liquid-glass prototype — the visual source of truth
+design/        liquid-glass prototype - the visual source of truth
 ```
 
 ## 🚀 Getting started
@@ -125,17 +125,17 @@ pnpm --filter @toreroflow/desktop tauri dev   # launch the app
 
 ## 🗺️ Roadmap
 
-- [x] **M0 · Scaffold & shell** — monorepo, DB schema, auth API, full UI port ✅ `v0.1.0`
-- [ ] **M1 · Clients & connections** — client CRUD, publishing provider, OAuth per platform
-- [ ] **M2 · Upload & media pipeline** — storage, transcription, AI captions, 9:16 renders
-- [ ] **M3 · Scheduling & publishing** — delayed jobs, dry-run → sandbox → live, retries
-- [ ] **M4 · Calendar** — drag-to-reschedule across week & month views
-- [ ] **M5 · Analytics** — daily metric ingestion, dashboards, branded PDF exports
-- [ ] **M6 · Package & polish** — signed installers, auto-update, theme & state polish
+- [x] **M0 · Scaffold & shell** - monorepo, DB schema, auth API, full UI port ✅ `v0.1.0`
+- [ ] **M1 · Clients & connections** - client CRUD, publishing provider, OAuth per platform
+- [ ] **M2 · Upload & media pipeline** - storage, transcription, AI captions, 9:16 renders
+- [ ] **M3 · Scheduling & publishing** - delayed jobs, dry-run → sandbox → live, retries
+- [ ] **M4 · Calendar** - drag-to-reschedule across week & month views
+- [ ] **M5 · Analytics** - daily metric ingestion, dashboards, branded PDF exports
+- [ ] **M6 · Package & polish** - signed installers, auto-update, theme & state polish
 
 ## 📝 Changelog
 
-Every milestone lands as a tagged release with its acceptance checks — see **[CHANGELOG.md](CHANGELOG.md)**.
+Every milestone lands as a tagged release with its acceptance checks - see **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 

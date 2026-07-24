@@ -37,7 +37,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       <div className="topbar">
         <div className="h">
           <h2>Content Calendar</h2>
-          <p>Nothing scheduled yet — scheduling goes live with the M3 publishing engine.</p>
+          <p>Nothing scheduled yet - scheduling goes live with the M3 publishing engine.</p>
         </div>
         <button className="btn ghost" onClick={onNewPost}>
           <svg>

@@ -264,7 +264,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   /**
    * AI growth suggestions for a client. Uses the operator's ANTHROPIC_API_KEY;
    * without one the endpoint explains how to enable it instead of failing
-   * silently. Daily metric ingestion arrives in M5 — until then suggestions
+   * silently. Daily metric ingestion arrives in M5 - until then suggestions
    * lean on the client profile and connection state.
    */
   app.post<{ Params: { id: string } }>(

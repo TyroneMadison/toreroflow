@@ -1,6 +1,6 @@
 import type { Platform } from "@toreroflow/core";
 
-/** Spec Section 8 — every provider (unified or direct) implements this. */
+/** Spec Section 8 - every provider (unified or direct) implements this. */
 export interface SocialAccountRef {
   id: string;
   platform: Platform;

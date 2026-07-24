@@ -53,7 +53,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             ...prev,
           ]);
         } catch {
-          // Unreadable codec — skip the file rather than crash the drop.
+          // Unreadable codec - skip the file rather than crash the drop.
         }
       }
     } finally {
@@ -99,7 +99,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           <h2>Upload &amp; Schedule</h2>
           <p>
             {selectedClient
-              ? `Drop a video for ${selectedClient.name} — captioning, formatting, and queueing land in M2/M3.`
+              ? `Drop a video for ${selectedClient.name} - captioning, formatting, and queueing land in M2/M3.`
               : "Pick or add a brand in the sidebar, then drop a video."}
           </p>
         </div>
@@ -185,7 +185,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           title={
                             connected
                               ? undefined
-                              : "Not connected — connect this platform in Settings"
+                              : "Not connected - connect this platform in Settings"
                           }
                           onClick={() =>
                             connected ? toggleTarget(job.id, platform) : onOpenConnect()
@@ -254,7 +254,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 Smart timing
               </h3>
               <div className="sub" style={{ marginBottom: 8 }}>
-                Best posting windows are computed from each account's own history — they appear
+                Best posting windows are computed from each account's own history - they appear
                 once analytics ingestion starts (M5).
               </div>
             </div>

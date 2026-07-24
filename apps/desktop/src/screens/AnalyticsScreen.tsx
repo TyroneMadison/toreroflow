@@ -5,7 +5,7 @@ import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
 function fmt(n: number | null | undefined): string {
-  if (n == null) return "—";
+  if (n == null) return "-";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
@@ -43,8 +43,8 @@ export default function AnalyticsScreen() {
     { label: "Total views", value: fmt(data?.totals.views ?? null) },
     { label: "Reach", value: fmt(data?.totals.reach ?? null) },
     { label: "Followers", value: fmt(data?.totals.followers ?? null) },
-    { label: "Engagement rate", value: "—" },
-    { label: "Avg watch time", value: "—" },
+    { label: "Engagement rate", value: "-" },
+    { label: "Avg watch time", value: "-" },
   ];
 
   return (
@@ -54,7 +54,7 @@ export default function AnalyticsScreen() {
           <h2>Client Analytics</h2>
           <p>
             {selectedClient
-              ? `${selectedClient.name} — data fills in once daily ingestion starts (M5).`
+              ? `${selectedClient.name} - data fills in once daily ingestion starts (M5).`
               : "Select a brand in the sidebar to see its analytics."}
           </p>
         </div>
@@ -121,7 +121,7 @@ export default function AnalyticsScreen() {
                 <div className="sub" style={{ marginBottom: 10 }}>
                   {data?.accounts.length
                     ? "Latest snapshot per account"
-                    : "No platforms connected yet — connect them in Settings"}
+                    : "No platforms connected yet - connect them in Settings"}
                 </div>
                 {data?.accounts.map((a) => (
                   <div className="best" key={a.id}>

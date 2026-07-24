@@ -1,5 +1,5 @@
 /**
- * Toreroflow design tokens — spec Section 13, matching
+ * Toreroflow design tokens - spec Section 13, matching
  * design/toreroflow-liquid-glass-v4.html exactly.
  */
 

@@ -8,7 +8,7 @@ import {
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 
-/** Uniform body for wrong email OR wrong password — never reveal which. */
+/** Uniform body for wrong email OR wrong password - never reveal which. */
 const INVALID_CREDENTIALS = { error: "invalid credentials" } as const;
 const UNAUTHORIZED = { error: "unauthorized" } as const;
 
@@ -32,7 +32,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const body = registerSchema.parse(request.body);
 
     // M0 rule (spec Section 12 M0 "operator auth"; assumption per Section 0
-    // rule 6): registration is only allowed while the User table is empty —
+    // rule 6): registration is only allowed while the User table is empty -
     // this is first-run operator setup for the solo agency operator. Any
     // later registration attempt returns 409. Additional users (e.g. client
     // viewers) arrive via invites in a later milestone, not open signup.
