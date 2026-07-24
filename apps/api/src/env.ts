@@ -25,6 +25,7 @@ export interface Env {
   SUGGESTIONS_MODEL: string;
   /** dryrun until a real provider (Ayrshare/Blotato/Zernio/Postiz) is chosen in M1. */
   PUBLISH_PROVIDER: string;
+  PUBLISH_PROVIDER_API_KEY: string;
 }
 
 export const env: Env = {
@@ -34,4 +35,5 @@ export const env: Env = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   SUGGESTIONS_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
+  PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
 };

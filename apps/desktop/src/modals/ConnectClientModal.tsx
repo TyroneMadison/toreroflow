@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import Pf from "../components/Pf";
 import { api } from "../lib/api";
+import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -20,6 +21,22 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
   const [connected, setConnected] = useState<Set<Platform>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [awaitingAuth, setAwaitingAuth] = useState(false);
+
+  // Keep the connected set in step with the server after every refresh/sync.
+  useEffect(() => {
+    if (!clientId) return;
+    const current = clients.find((c) => c.id === clientId);
+    if (current) {
+      setConnected(
+        new Set(
+          current.accounts
+            .filter((a) => a.status === "connected")
+            .map((a) => a.platform),
+        ),
+      );
+    }
+  }, [clients, clientId]);
 
   const createClient = async () => {
     if (!name.trim()) return;
@@ -43,11 +60,34 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     setBusy(platform);
     setError(null);
     try {
-      await api.post(`/clients/${clientId}/accounts/${platform}`, {});
-      setConnected((prev) => new Set(prev).add(platform));
-      await refreshClients();
+      const res = await api.post<{ authUrl?: string }>(
+        `/clients/${clientId}/accounts/${platform}`,
+        {},
+      );
+      if (res.authUrl) {
+        await openExternal(res.authUrl);
+        setAwaitingAuth(true);
+      } else {
+        setConnected((prev) => new Set(prev).add(platform));
+        await refreshClients();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not connect");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const syncAccounts = async () => {
+    if (!clientId) return;
+    setBusy("sync");
+    setError(null);
+    try {
+      await api.post(`/clients/${clientId}/accounts/sync`, {});
+      await refreshClients();
+      setAwaitingAuth(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "sync failed");
     } finally {
       setBusy(null);
     }
@@ -131,6 +171,15 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
         {error && <div className="autherr">{error}</div>}
       </div>
       <div className="modal-foot">
+        {awaitingAuth && (
+          <button
+            className="btn ghost"
+            disabled={busy === "sync"}
+            onClick={() => void syncAccounts()}
+          >
+            {busy === "sync" ? "Syncing…" : "Sync connected"}
+          </button>
+        )}
         <button className="btn" onClick={onClose}>
           Done
         </button>

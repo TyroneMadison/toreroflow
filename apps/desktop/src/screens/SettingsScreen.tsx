@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Pf from "../components/Pf";
 import { api } from "../lib/api";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
+import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -14,6 +15,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [pendingSync, setPendingSync] = useState<string | null>(null);
 
   useEffect(() => {
     void getAutostart().then(setAutostartState);
@@ -33,8 +35,28 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const connect = async (clientId: string, platform: Platform) => {
     setBusyKey(`${clientId}:${platform}`);
     try {
-      await api.post(`/clients/${clientId}/accounts/${platform}`, {});
+      const res = await api.post<{ authUrl?: string }>(
+        `/clients/${clientId}/accounts/${platform}`,
+        {},
+      );
+      if (res.authUrl) {
+        // Real provider: finish OAuth in the browser, then sync back.
+        await openExternal(res.authUrl);
+        setPendingSync(clientId);
+      } else {
+        await refreshClients();
+      }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const sync = async (clientId: string) => {
+    setBusyKey(`sync:${clientId}`);
+    try {
+      await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
+      setPendingSync((p) => (p === clientId ? null : p));
     } finally {
       setBusyKey(null);
     }
@@ -118,7 +140,24 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
 
           {clients.map((client) => (
             <div key={client.id} style={{ marginTop: 14 }}>
-              <div className="flabel">{client.name}</div>
+              <div
+                className="flabel"
+                style={{ display: "flex", gap: 12, alignItems: "center" }}
+              >
+                {client.name}
+                <span
+                  className="link"
+                  style={{ textTransform: "none", letterSpacing: 0 }}
+                  onClick={() => void sync(client.id)}
+                >
+                  {busyKey === `sync:${client.id}` ? "Syncing…" : "Sync accounts"}
+                </span>
+              </div>
+              {pendingSync === client.id && (
+                <p style={{ fontSize: 12, color: "var(--amber)", margin: "2px 0 6px" }}>
+                  Finish authorizing in your browser, then click Sync accounts.
+                </p>
+              )}
               {PLATFORMS.map((platform) => {
                 const account = client.accounts.find(
                   (a) => a.platform === platform && a.status === "connected",

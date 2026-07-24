@@ -4,9 +4,11 @@ import {
   connectAccountSchema,
   createClientSchema,
   platformSchema,
+  PLATFORMS,
+  type Platform,
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
-import { DryRunPublisher } from "@toreroflow/publishers";
+import { DryRunPublisher, ZernioError, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -51,6 +53,25 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   const anthropic = env.ANTHROPIC_API_KEY
     ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
     : null;
+  const zernio =
+    env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
+      ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
+      : null;
+
+  /** Zernio profile backing this client, created on first use. */
+  const ensureProviderProfile = async (client: {
+    id: string;
+    name: string;
+    providerProfileId: string | null;
+  }): Promise<string> => {
+    if (client.providerProfileId) return client.providerProfileId;
+    const profileId = await zernio!.createProfile(client.name);
+    await prisma.client.update({
+      where: { id: client.id },
+      data: { providerProfileId: profileId },
+    });
+    return profileId;
+  };
 
   app.addHook("onRequest", requireAuth);
 
@@ -142,6 +163,21 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!client) return reply.status(404).send(NOT_FOUND);
 
+      // Real provider: hand back the hosted OAuth URL. The operator finishes
+      // authorization in the browser, then the app imports via /accounts/sync.
+      if (zernio) {
+        try {
+          const profileId = await ensureProviderProfile(client);
+          const authUrl = await zernio.connectUrl(platform, profileId);
+          return reply.send({ authUrl, platform });
+        } catch (error) {
+          if (error instanceof ZernioError) {
+            return reply.status(502).send({ error: `Zernio: ${error.message}` });
+          }
+          throw error;
+        }
+      }
+
       const publisher = new DryRunPublisher(platform);
       const init = await publisher.handleCallback({ state: client.id });
       const handle = body.handle ?? init.handle;
@@ -179,6 +215,68 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         status: account.status,
         connectedAt: account.connectedAt,
       });
+    },
+  );
+
+  /** Import accounts the operator connected on the provider's hosted page. */
+  app.post<{ Params: { id: string } }>(
+    "/clients/:id/accounts/sync",
+    async (request, reply) => {
+      if (!zernio) {
+        return reply.status(400).send({ error: "no publishing provider configured" });
+      }
+      const client = await prisma.client.findFirst({
+        where: {
+          id: request.params.id,
+          agencyId: request.user.agencyId,
+          deletedAt: null,
+        },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      try {
+        const profileId = await ensureProviderProfile(client);
+        const remote = await zernio.accountsForProfile(profileId);
+        const valid = remote.filter((a) =>
+          (PLATFORMS as readonly string[]).includes(a.platform),
+        );
+        for (const a of valid) {
+          const platform = a.platform as Platform;
+          const handle = a.username ?? a.displayName ?? a.name ?? a.platform;
+          const existing = await prisma.socialAccount.findFirst({
+            where: { clientId: client.id, platform, deletedAt: null },
+          });
+          if (existing) {
+            await prisma.socialAccount.update({
+              where: { id: existing.id },
+              data: {
+                handle,
+                status: "connected",
+                providerAccountId: a._id,
+                connectedAt: new Date(),
+              },
+            });
+          } else {
+            await prisma.socialAccount.create({
+              data: {
+                clientId: client.id,
+                platform,
+                handle,
+                status: "connected",
+                providerAccountId: a._id,
+                // Tokens stay with the provider; this marks custody, not a secret.
+                tokensEncrypted: "provider:zernio",
+              },
+            });
+          }
+        }
+        return { imported: valid.length };
+      } catch (error) {
+        if (error instanceof ZernioError) {
+          return reply.status(502).send({ error: `Zernio: ${error.message}` });
+        }
+        throw error;
+      }
     },
   );
 

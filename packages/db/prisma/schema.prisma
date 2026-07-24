@@ -91,11 +91,13 @@ model User {
 }
 
 model Client {
-  id         String    @id @default(cuid())
-  agencyId   String
-  name       String
-  avatarSeed String?
-  plan       String?
+  id                String    @id @default(cuid())
+  agencyId          String
+  name              String
+  avatarSeed        String?
+  plan              String?
+  /// Publishing provider workspace id (Zernio profile _id) backing this client.
+  providerProfileId String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?

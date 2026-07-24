@@ -1,5 +1,7 @@
 import type { Platform } from "@toreroflow/core";
 
+export * from "./zernio";
+
 /** Spec Section 8 - every provider (unified or direct) implements this. */
 export interface SocialAccountRef {
   id: string;
