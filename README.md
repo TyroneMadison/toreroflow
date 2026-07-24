@@ -140,5 +140,5 @@ Every milestone lands as a tagged release with its acceptance checks — see **[
 ---
 
 <div align="center">
-  <sub>Built by <b>Torerone</b> · shipped with <a href="https://claude.com/claude-code">Claude Code</a></sub>
+  <sub>Built by <b>Torerone</b></sub>
 </div>
