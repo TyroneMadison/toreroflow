@@ -1,21 +1,38 @@
 import { useCallback, useEffect, useState } from "react";
 import IconDefs from "./components/IconDefs";
 import Sidebar from "./components/Sidebar";
-import UploadSchedule from "./screens/UploadSchedule";
+import UploadSchedule, { type UploadJob } from "./screens/UploadSchedule";
 import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import AccountsScreen from "./screens/AccountsScreen";
+import WorkflowsScreen from "./screens/WorkflowsScreen";
+import SettingsScreen from "./screens/SettingsScreen";
+import AuthScreen from "./screens/AuthScreen";
 import ConnectClientModal from "./modals/ConnectClientModal";
-import ComposerModal from "./modals/ComposerModal";
+import ClientInsightsModal from "./modals/ClientInsightsModal";
+import PreviewModal from "./modals/PreviewModal";
+import { AppStateProvider, useAppState } from "./state/AppState";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
-export type ScreenId = "upload" | "calendar" | "analytics" | "accounts";
-export type ModalId = "connect" | "composer" | null;
+export type ScreenId =
+  | "upload"
+  | "calendar"
+  | "analytics"
+  | "accounts"
+  | "workflows"
+  | "settings";
 
-export default function App() {
+type ModalState =
+  | { kind: "connect" }
+  | { kind: "insights"; clientId: string }
+  | { kind: "preview"; name: string; url: string }
+  | null;
+
+function Shell() {
+  const { authReady, user } = useAppState();
   const [activeScreen, setActiveScreen] = useState<ScreenId>("upload");
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
-  const [openModal, setOpenModal] = useState<ModalId>(null);
+  const [modal, setModal] = useState<ModalState>(null);
 
   useEffect(() => {
     applyTheme(theme);
@@ -25,42 +42,78 @@ export default function App() {
     setTheme((t) => (t === "light" ? "dark" : "light"));
   }, []);
 
-  const openConnect = useCallback(() => setOpenModal("connect"), []);
-  const openComposer = useCallback(() => setOpenModal("composer"), []);
-  const closeModal = useCallback(() => setOpenModal(null), []);
+  const openConnect = useCallback(() => setModal({ kind: "connect" }), []);
+  const openInsights = useCallback(
+    (clientId: string) => setModal({ kind: "insights", clientId }),
+    [],
+  );
+  const openPreview = useCallback(
+    (job: UploadJob) => setModal({ kind: "preview", name: job.name, url: job.url }),
+    [],
+  );
+  const closeModal = useCallback(() => setModal(null), []);
+
+  if (!authReady) {
+    return null;
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
 
   return (
     <>
-      <div className="field">
-        <div className="blob b1" />
-        <div className="blob b2" />
-      </div>
-      <div className="grain" />
-      <IconDefs />
-
       <div className="app">
         <Sidebar
           activeScreen={activeScreen}
           onNavigate={setActiveScreen}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onOpenConnect={openConnect}
         />
         <main className="main glass">
           {activeScreen === "upload" && (
-            <UploadSchedule key="upload" onOpenComposer={openComposer} />
+            <UploadSchedule key="upload" onPreview={openPreview} onOpenConnect={openConnect} />
           )}
           {activeScreen === "calendar" && (
-            <CalendarScreen key="calendar" onOpenComposer={openComposer} />
+            <CalendarScreen key="calendar" onNewPost={() => setActiveScreen("upload")} />
           )}
           {activeScreen === "analytics" && <AnalyticsScreen key="analytics" />}
           {activeScreen === "accounts" && (
-            <AccountsScreen key="accounts" onOpenConnect={openConnect} />
+            <AccountsScreen
+              key="accounts"
+              onOpenConnect={openConnect}
+              onOpenInsights={openInsights}
+            />
+          )}
+          {activeScreen === "workflows" && <WorkflowsScreen key="workflows" />}
+          {activeScreen === "settings" && (
+            <SettingsScreen key="settings" onOpenConnect={openConnect} />
           )}
         </main>
       </div>
 
-      {openModal === "connect" && <ConnectClientModal onClose={closeModal} />}
-      {openModal === "composer" && <ComposerModal onClose={closeModal} />}
+      {modal?.kind === "connect" && <ConnectClientModal onClose={closeModal} />}
+      {modal?.kind === "insights" && (
+        <ClientInsightsModal clientId={modal.clientId} onClose={closeModal} />
+      )}
+      {modal?.kind === "preview" && (
+        <PreviewModal name={modal.name} url={modal.url} onClose={closeModal} />
+      )}
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <AppStateProvider>
+      <div className="field">
+        <div className="blob b1" />
+        <div className="blob b2" />
+      </div>
+      <div className="grain" />
+      <IconDefs />
+      <Shell />
+    </AppStateProvider>
   );
 }

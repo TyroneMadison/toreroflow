@@ -365,3 +365,25 @@
   .qstate{display:flex;background:var(--glass);border:1px solid var(--brd-soft);border-radius:10px;padding:2px}
   .qstate span{font-size:10.5px;padding:4px 9px;border-radius:7px;color:var(--txt-3);cursor:pointer}
   .qstate span.on{background:var(--glass-3);color:var(--txt)}
+
+/* ---- M1 additions (auth, brand dropdown, settings, suggestions) ---- */
+.authwrap{position:relative;z-index:2;height:100vh;display:grid;place-items:center;padding:24px}
+.authcard{width:min(400px,92vw);padding:28px}
+.authcard h2{font-size:20px;font-weight:650;margin-bottom:4px}
+.authcard .sub2{font-size:12.5px;color:var(--txt-3);margin-bottom:6px}
+.autherr{margin-top:12px;font-size:12.5px;color:var(--red)}
+.brandwrap{position:relative}
+.brandmenu{position:absolute;left:0;right:0;bottom:calc(100% + 8px);padding:8px;border-radius:16px;z-index:40;display:flex;flex-direction:column;gap:2px;max-height:280px;overflow:auto}
+.brandmenu .bm-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:11px;cursor:pointer;font-size:13px;color:var(--txt-2)}
+.brandmenu .bm-item:hover{background:var(--glass-2);color:var(--txt)}
+.brandmenu .bm-item.on{background:var(--glass-2);color:var(--txt)}
+.brandmenu .bm-add{border-top:1px solid var(--brd-soft);margin-top:6px;padding-top:10px;color:var(--b);font-weight:600}
+.setsec{margin-bottom:16px}
+.jobthumb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.dangerbtn{padding:8px 15px;border-radius:11px;border:1px solid rgba(255,107,122,.35);font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;background:rgba(255,107,122,.12);color:var(--red)}
+.previewvid{width:100%;max-height:70vh;border-radius:14px;background:#000;display:block}
+.sugg{display:flex;gap:10px;padding:10px 12px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);margin-top:8px}
+.sugg .cat{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:rgba(139,123,255,.2);color:#c9c0ff;height:fit-content;flex:0 0 auto}
+.sugg .body b{font-size:12.5px;display:block}
+.sugg .body p{font-size:12px;color:var(--txt-2);margin-top:3px;line-height:1.5}
+[data-theme="light"] .sugg .cat{color:#5a48c0}

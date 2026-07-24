@@ -1,92 +1,51 @@
-import Pf, { type PlatformId } from "../components/Pf";
+import { useState } from "react";
+import Pf from "../components/Pf";
+import { api } from "../lib/api";
+import { PF_ID } from "../lib/platforms";
+import { useAppState } from "../state/AppState";
 
 interface AccountsScreenProps {
-  onOpenConnect: () => void;
+  onOpenConnect(): void;
+  onOpenInsights(clientId: string): void;
 }
 
-interface ClientCard {
-  initials: string;
-  gradient: string;
-  name: string;
-  plan: string;
-  platforms: PlatformId[];
-  followers: string;
-  delta: string;
-  health: "ok" | "warn";
-  healthText: string;
-}
-
-const CLIENTS: ClientCard[] = [
-  {
-    initials: "HF",
-    gradient: "linear-gradient(135deg,#8b7bff,#4ea8ff)",
-    name: "Halo Fitness",
-    plan: "Growth plan, 4 profiles",
-    platforms: ["ig", "tt", "yt", "sc"],
-    followers: "248K",
-    delta: "8.1%",
-    health: "ok",
-    healthText: "All connected",
-  },
-  {
-    initials: "NS",
-    gradient: "linear-gradient(135deg,#a07bff,#6a5bff)",
-    name: "Nova Skincare",
-    plan: "Growth plan, 3 profiles",
-    platforms: ["ig", "tt", "yt"],
-    followers: "173K",
-    delta: "12%",
-    health: "ok",
-    healthText: "All connected",
-  },
-  {
-    initials: "AA",
-    gradient: "linear-gradient(135deg,#4ea8ff,#6a5bff)",
-    name: "Apex Athletics",
-    plan: "Scale plan, 4 profiles",
-    platforms: ["ig", "tt", "yt", "sc"],
-    followers: "521K",
-    delta: "5.4%",
-    health: "warn",
-    healthText: "TikTok needs reconnect",
-  },
-  {
-    initials: "BC",
-    gradient: "linear-gradient(135deg,#6a5bff,#4ea8ff)",
-    name: "Bloom Cafe",
-    plan: "Starter plan, 2 profiles",
-    platforms: ["ig", "tt"],
-    followers: "64K",
-    delta: "19%",
-    health: "ok",
-    healthText: "All connected",
-  },
-  {
-    initials: "VM",
-    gradient: "linear-gradient(135deg,#8b7bff,#5e9bff)",
-    name: "Vertex Media",
-    plan: "Scale plan, 4 profiles",
-    platforms: ["ig", "tt", "yt", "sc"],
-    followers: "389K",
-    delta: "6.8%",
-    health: "ok",
-    healthText: "All connected",
-  },
+const AVATAR_GRADIENTS = [
+  "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+  "linear-gradient(135deg,#a07bff,#6a5bff)",
+  "linear-gradient(135deg,#4ea8ff,#6a5bff)",
+  "linear-gradient(135deg,#6a5bff,#4ea8ff)",
+  "linear-gradient(135deg,#8b7bff,#5e9bff)",
 ];
 
-export default function AccountsScreen({ onOpenConnect }: AccountsScreenProps) {
+export default function AccountsScreen({ onOpenConnect, onOpenInsights }: AccountsScreenProps) {
+  const { clients, refreshClients, selectedClientId, selectClient } = useAppState();
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const totalProfiles = clients.reduce((n, c) => n + c.accounts.length, 0);
+
+  const deleteClient = async (clientId: string) => {
+    setDeletingId(clientId);
+    try {
+      await api.del(`/clients/${clientId}`);
+      if (selectedClientId === clientId) selectClient(null);
+      await refreshClients();
+    } finally {
+      setDeletingId(null);
+      setConfirmingId(null);
+    }
+  };
+
   return (
     <section className="screen active" data-screen="accounts">
       <div className="topbar">
         <div className="h">
           <h2>Accounts</h2>
-          <p>5 clients, 17 connected profiles across 4 platforms.</p>
-        </div>
-        <div className="search">
-          <svg>
-            <use href="#i-search" />
-          </svg>{" "}
-          Find client
+          <p>
+            {clients.length
+              ? `${clients.length} ${clients.length === 1 ? "brand" : "brands"}, ${totalProfiles} connected ${totalProfiles === 1 ? "profile" : "profiles"}.`
+              : "No brands enrolled yet."}
+          </p>
         </div>
         <button className="btn" onClick={onOpenConnect}>
           <svg>
@@ -97,48 +56,87 @@ export default function AccountsScreen({ onOpenConnect }: AccountsScreenProps) {
       </div>
       <div className="stage">
         <div className="clients">
-          {CLIENTS.map((client) => (
-            <div key={client.name} className="cc glass">
-              <div className="top">
-                <div
-                  className="avatar lg"
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 13,
-                    fontSize: 15,
-                    background: client.gradient,
-                  }}
-                >
-                  {client.initials}
+          {clients.map((client, i) => {
+            const connected = client.accounts.filter((a) => a.status === "connected");
+            const needsFix = client.accounts.some((a) => a.status !== "connected");
+            return (
+              <div
+                className="cc glass"
+                key={client.id}
+                onClick={() => onOpenInsights(client.id)}
+              >
+                <div className="top">
+                  <div
+                    className="avatar lg"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 13,
+                      fontSize: 15,
+                      background: AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length],
+                    }}
+                  >
+                    {client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="meta">
+                    <b>{client.name}</b>
+                    <span>
+                      {client.plan ?? "No plan"}, {client.accounts.length}{" "}
+                      {client.accounts.length === 1 ? "profile" : "profiles"}
+                    </span>
+                  </div>
+                  <div
+                    className="iconbtn"
+                    style={{ marginLeft: "auto", width: 32, height: 32 }}
+                    title={confirmingId === client.id ? "Click again to delete" : "Delete brand"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirmingId === client.id) void deleteClient(client.id);
+                      else {
+                        setConfirmingId(client.id);
+                        setTimeout(() => setConfirmingId((c) => (c === client.id ? null : c)), 3000);
+                      }
+                    }}
+                  >
+                    {deletingId === client.id ? (
+                      <span style={{ fontSize: 10 }}>…</span>
+                    ) : confirmingId === client.id ? (
+                      <span style={{ fontSize: 10, color: "var(--red)", fontWeight: 700 }}>
+                        SURE?
+                      </span>
+                    ) : (
+                      <svg style={{ stroke: "var(--red)" }}>
+                        <use href="#i-x" />
+                      </svg>
+                    )}
+                  </div>
                 </div>
-                <div className="meta">
-                  <b>{client.name}</b>
-                  <span>{client.plan}</span>
+                <div className="plat">
+                  {connected.length ? (
+                    connected.map((a) => <Pf key={a.id} p={PF_ID[a.platform]} />)
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: "var(--txt-3)" }}>
+                      No platforms connected — use Settings → Connected Accounts
+                    </span>
+                  )}
+                </div>
+                <div className="stat">
+                  <div>
+                    <div className="big">—</div>
+                    <div className="lab">followers (data in M5)</div>
+                  </div>
+                </div>
+                <div className={`health ${needsFix ? "warn" : connected.length ? "ok" : "warn"}`}>
+                  <span className="d" />{" "}
+                  {needsFix
+                    ? "Needs reconnect"
+                    : connected.length
+                      ? "All connected"
+                      : "Not connected"}
                 </div>
               </div>
-              <div className="plat">
-                {client.platforms.map((p) => (
-                  <Pf key={p} p={p} />
-                ))}
-              </div>
-              <div className="stat">
-                <div>
-                  <div className="big">{client.followers}</div>
-                  <div className="lab">total followers</div>
-                </div>
-                <span className="delta up">
-                  <svg>
-                    <use href="#i-up" />
-                  </svg>{" "}
-                  {client.delta}
-                </span>
-              </div>
-              <div className={`health ${client.health}`}>
-                <span className="d" /> {client.healthText}
-              </div>
-            </div>
-          ))}
+            );
+          })}
           <div className="add-cc" onClick={onOpenConnect}>
             <div className="plus">
               <svg>
@@ -153,6 +151,9 @@ export default function AccountsScreen({ onOpenConnect }: AccountsScreenProps) {
             </div>
           </div>
         </div>
+        {clients.length > 0 && (
+          <div className="note">Click a brand to open its analytics and AI growth suggestions.</div>
+        )}
       </div>
     </section>
   );

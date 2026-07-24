@@ -1,246 +1,246 @@
-import { useState } from "react";
-import Pf, { type PlatformId } from "../components/Pf";
+import { useRef, useState, type DragEvent } from "react";
+import Pf from "../components/Pf";
+import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
+import { formatDuration, probeVideo } from "../lib/video";
+import { useAppState } from "../state/AppState";
+
+export interface UploadJob {
+  id: string;
+  name: string;
+  url: string;
+  thumbnail: string;
+  durationSec: number;
+  targets: Platform[];
+}
 
 interface UploadScheduleProps {
-  onOpenComposer: () => void;
+  onPreview(job: UploadJob): void;
+  onOpenConnect(): void;
 }
 
-type QueueState = "filled" | "loading" | "empty";
+let jobCounter = 0;
 
-interface PlatformToggle {
-  id: PlatformId;
-  name: string;
-  handle: string;
-  on: boolean;
-}
+export default function UploadSchedule({ onPreview, onOpenConnect }: UploadScheduleProps) {
+  const { selectedClient } = useAppState();
+  const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const [reading, setReading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-const INITIAL_TOGGLES: PlatformToggle[] = [
-  { id: "ig", name: "Reels", handle: "@halofitness", on: true },
-  { id: "tt", name: "TikTok", handle: "@halo.fit", on: true },
-  { id: "yt", name: "Shorts", handle: "Halo Fitness", on: true },
-  { id: "sc", name: "Spotlight", handle: "@halofit", on: false },
-];
+  const connectedPlatforms = new Set(
+    (selectedClient?.accounts ?? [])
+      .filter((a) => a.status === "connected")
+      .map((a) => a.platform),
+  );
 
-interface QueueItemDef {
-  title: string;
-  gradient: string;
-  platforms: PlatformId[];
-  when: string;
-}
+  const addFiles = async (files: FileList | File[]) => {
+    const videos = Array.from(files).filter((f) => f.type.startsWith("video/"));
+    if (!videos.length) return;
+    setReading(true);
+    try {
+      for (const file of videos) {
+        try {
+          const probe = await probeVideo(file);
+          setJobs((prev) => [
+            {
+              id: `job-${++jobCounter}`,
+              name: file.name,
+              url: probe.url,
+              thumbnail: probe.thumbnail,
+              durationSec: probe.durationSec,
+              targets: [...connectedPlatforms],
+            },
+            ...prev,
+          ]);
+        } catch {
+          // Unreadable codec — skip the file rather than crash the drop.
+        }
+      }
+    } finally {
+      setReading(false);
+    }
+  };
 
-const QUEUE_ITEMS: QueueItemDef[] = [
-  {
-    title: "5 protein myths, busted",
-    gradient: "linear-gradient(160deg,#31266b,#141f3f)",
-    platforms: ["ig", "tt"],
-    when: "Today 5:15 PM",
-  },
-  {
-    title: "Morning mobility flow",
-    gradient: "linear-gradient(160deg,#1a2a55,#122f4a)",
-    platforms: ["yt", "tt"],
-    when: "Today 8:00 PM",
-  },
-  {
-    title: "Client transformation reel",
-    gradient: "linear-gradient(160deg,#3a2360,#231a5a)",
-    platforms: ["ig"],
-    when: "Tomorrow 12:30 PM",
-  },
-];
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    void addFiles(e.dataTransfer.files);
+  };
 
-const SKELETON_ROWS: Array<{ w1: string; w2: string }> = [
-  { w1: "72%", w2: "46%" },
-  { w1: "60%", w2: "52%" },
-  { w1: "66%", w2: "40%" },
-];
-
-const BEST_TIMES: Array<{ p: PlatformId; label: string; time: string }> = [
-  { p: "ig", label: "Instagram Reels", time: "6:40 PM" },
-  { p: "tt", label: "TikTok", time: "7:20 PM" },
-  { p: "yt", label: "YouTube Shorts", time: "3:10 PM" },
-];
-
-export default function UploadSchedule({ onOpenComposer }: UploadScheduleProps) {
-  const [toggles, setToggles] = useState<PlatformToggle[]>(INITIAL_TOGGLES);
-  const [queueState, setQueueState] = useState<QueueState>("filled");
-
-  const togglePlatform = (id: PlatformId) => {
-    setToggles((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, on: !t.on } : t)),
+  const toggleTarget = (jobId: string, platform: Platform) => {
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === jobId
+          ? {
+              ...j,
+              targets: j.targets.includes(platform)
+                ? j.targets.filter((p) => p !== platform)
+                : [...j.targets, platform],
+            }
+          : j,
+      ),
     );
   };
+
+  const removeJob = (jobId: string) => {
+    setJobs((prev) => {
+      const job = prev.find((j) => j.id === jobId);
+      if (job) URL.revokeObjectURL(job.url);
+      return prev.filter((j) => j.id !== jobId);
+    });
+  };
+
+  const allPlatforms: Platform[] = ["instagram", "tiktok", "youtube", "snapchat"];
 
   return (
     <section className="screen active" data-screen="upload">
       <div className="topbar">
         <div className="h">
           <h2>Upload &amp; Schedule</h2>
-          <p>Drop a video, Toreroflow captions, formats, and queues it for every platform.</p>
-        </div>
-        <div className="search">
-          <svg>
-            <use href="#i-search" />
-          </svg>{" "}
-          Search content
-        </div>
-        <div className="iconbtn">
-          <svg>
-            <use href="#i-bell" />
-          </svg>
-          <span className="dot" />
+          <p>
+            {selectedClient
+              ? `Drop a video for ${selectedClient.name} — captioning, formatting, and queueing land in M2/M3.`
+              : "Pick or add a brand in the sidebar, then drop a video."}
+          </p>
         </div>
       </div>
       <div className="stage">
         <div className="split">
           <div>
-            <div className="drop">
+            <div
+              className="drop"
+              style={dragOver ? { borderColor: "rgba(139,123,255,.65)" } : undefined}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onClick={() => fileInput.current?.click()}
+            >
+              <input
+                ref={fileInput}
+                type="file"
+                accept="video/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
               <div className="ring">
                 <svg>
                   <use href="#i-up" />
                 </svg>
               </div>
-              <b>Drop videos here</b>
+              <b>{reading ? "Reading video…" : "Drop videos here"}</b>
               <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
               <div className="pills">
-                <span className="mini">Auto captions</span>
-                <span className="mini">Auto reframe 9:16</span>
-                <span className="mini">Best time detect</span>
-                <span className="mini">Per client presets</span>
+                <span className="mini">Auto captions · M2</span>
+                <span className="mini">Auto reframe 9:16 · M2</span>
+                <span className="mini">Best time detect · M5</span>
               </div>
             </div>
 
-            <div className="job glass-sm" onClick={onOpenComposer}>
-              <div className="thumb">
-                <span className="dur">0:38</span>
-                <div className="play">
-                  <svg>
-                    <use href="#i-play" />
-                  </svg>
-                </div>
-                <div className="cap">
-                  <i className="on">POSTURE</i> <i>fix in</i> <i>60s</i>
-                </div>
-              </div>
-              <div className="body">
-                <div className="name">
-                  posture-reset-final.mp4 <span className="tag ai">AI processed</span>
-                </div>
-                <div className="transcript">
-                  <span className="w">Three moves to</span>{" "}
-                  <span className="w hot">fix your posture</span>{" "}
-                  <span className="w">in under a minute.</span>{" "}
-                  <span className="w hot">Save this</span>{" "}
-                  <span className="w">for later.</span>
-                </div>
-
-                <div className="toggles">
-                  {toggles.map((t) => (
-                    <div
-                      key={t.id}
-                      className={`pt${t.on ? " on" : ""}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        togglePlatform(t.id);
-                      }}
-                    >
-                      <Pf p={t.id} />
-                      <div className="info">
-                        <b>{t.name}</b>
-                        <span>{t.handle}</span>
-                      </div>
-                      <div className="switch" />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="schedrow">
-                  <div className="timechip">
+            {jobs.map((job) => (
+              <div className="job glass-sm" key={job.id}>
+                <div
+                  className="thumb"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => onPreview(job)}
+                  title="Click to preview"
+                >
+                  <img className="jobthumb-img" src={job.thumbnail} alt={job.name} />
+                  <span className="dur">{formatDuration(job.durationSec)}</span>
+                  <div className="play">
                     <svg>
-                      <use href="#i-clock" />
-                    </svg>{" "}
-                    Best time <b>Tomorrow, 6:40 PM</b>
+                      <use href="#i-play" />
+                    </svg>
                   </div>
-                  <span className="tag ok">Captions ready</span>
-                  <button
-                    className="btn"
-                    style={{ marginLeft: "auto" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenComposer();
-                    }}
-                  >
-                    <svg>
-                      <use href="#i-bolt" />
-                    </svg>{" "}
-                    Schedule all
-                  </button>
+                </div>
+                <div className="body">
+                  <div className="name">
+                    {job.name}
+                    <span
+                      className="tag ai"
+                      title="Transcription and AI captions arrive with the M2 media pipeline"
+                    >
+                      Captions · M2
+                    </span>
+                  </div>
+
+                  <div className="toggles">
+                    {allPlatforms.map((platform) => {
+                      const connected = connectedPlatforms.has(platform);
+                      const on = job.targets.includes(platform);
+                      const account = selectedClient?.accounts.find(
+                        (a) => a.platform === platform,
+                      );
+                      return (
+                        <div
+                          key={platform}
+                          className={`pt${on ? " on" : ""}`}
+                          style={connected ? undefined : { opacity: 0.45 }}
+                          title={
+                            connected
+                              ? undefined
+                              : "Not connected — connect this platform in Settings"
+                          }
+                          onClick={() =>
+                            connected ? toggleTarget(job.id, platform) : onOpenConnect()
+                          }
+                        >
+                          <Pf p={PF_ID[platform]} />
+                          <div className="info">
+                            <b>{SURFACE_LABEL[platform]}</b>
+                            <span>{account ? `@${account.handle}` : "not connected"}</span>
+                          </div>
+                          <div className="switch" />
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="schedrow">
+                    <button className="btn ghost" onClick={() => removeJob(job.id)}>
+                      Remove
+                    </button>
+                    <button
+                      className="btn"
+                      style={{ marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }}
+                      title="Scheduling & publishing activate in M3"
+                      disabled
+                    >
+                      <svg>
+                        <use href="#i-bolt" />
+                      </svg>{" "}
+                      Schedule all · M3
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
 
           <div>
             <div className="card glass">
               <div className="rowhead">
                 <h3>Up next in queue</h3>
-                <div className="qstate">
-                  {(["filled", "loading", "empty"] as const).map((q) => (
-                    <span
-                      key={q}
-                      className={queueState === q ? "on" : undefined}
-                      data-q={q}
-                      onClick={() => setQueueState(q)}
-                    >
-                      {q.charAt(0).toUpperCase() + q.slice(1)}
-                    </span>
-                  ))}
-                </div>
               </div>
-              {queueState === "filled" && (
-                <div id="qFilled">
-                  {QUEUE_ITEMS.map((item) => (
-                    <div key={item.title} className="queue-item" onClick={onOpenComposer}>
-                      <div className="qthumb" style={{ background: item.gradient }} />
-                      <div className="qmeta">
-                        <b>{item.title}</b>
-                        <span>
-                          {item.platforms.map((p) => (
-                            <Pf key={p} p={p} size="sm" />
-                          ))}{" "}
-                          {item.when}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+              <div className="empty">
+                <div className="eic">
+                  <svg>
+                    <use href="#i-image" />
+                  </svg>
                 </div>
-              )}
-              {queueState === "loading" && (
-                <div id="qLoading">
-                  {SKELETON_ROWS.map((row, i) => (
-                    <div key={i} className="skel-item">
-                      <div className="skel" style={{ width: 44, height: 56 }} />
-                      <div style={{ flex: 1 }}>
-                        <div className="skel" style={{ height: 12, width: row.w1 }} />
-                        <div className="skel" style={{ height: 9, width: row.w2, marginTop: 9 }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {queueState === "empty" && (
-                <div id="qEmpty">
-                  <div className="empty">
-                    <div className="eic">
-                      <svg>
-                        <use href="#i-image" />
-                      </svg>
-                    </div>
-                    <b>Nothing queued yet</b>
-                    <p>Drop a video to start building this client queue.</p>
-                  </div>
-                </div>
-              )}
+                <b>Nothing queued yet</b>
+                <p>
+                  {selectedClient
+                    ? `Drop a video to start building ${selectedClient.name}'s queue.`
+                    : "Add a brand, then drop a video to build its queue."}
+                </p>
+              </div>
             </div>
 
             <div className="card glass" style={{ marginTop: 16 }}>
@@ -254,16 +254,9 @@ export default function UploadSchedule({ onOpenComposer }: UploadScheduleProps) 
                 Smart timing
               </h3>
               <div className="sub" style={{ marginBottom: 8 }}>
-                Best windows for Halo Fitness this week
+                Best posting windows are computed from each account's own history — they appear
+                once analytics ingestion starts (M5).
               </div>
-              {BEST_TIMES.map((row) => (
-                <div key={row.p} className="best">
-                  <div className="l">
-                    <Pf p={row.p} size="sm" /> {row.label}
-                  </div>
-                  <b>{row.time}</b>
-                </div>
-              ))}
             </div>
           </div>
         </div>

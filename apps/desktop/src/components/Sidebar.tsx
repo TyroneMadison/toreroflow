@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import type { ScreenId } from "../App";
 import type { Theme } from "../lib/theme";
+import { useAppState } from "../state/AppState";
 import ApiStatus from "./ApiStatus";
 
 interface SidebarProps {
@@ -7,6 +9,7 @@ interface SidebarProps {
   onNavigate: (screen: ScreenId) => void;
   theme: Theme;
   onToggleTheme: () => void;
+  onOpenConnect: () => void;
 }
 
 interface NavItemDef {
@@ -18,7 +21,8 @@ interface NavItemDef {
 
 const CREATE_NAV: NavItemDef[] = [
   { target: "upload", icon: "#i-upload", label: "Upload & Schedule" },
-  { target: "calendar", icon: "#i-cal", label: "Calendar", badge: "14" },
+  { target: "calendar", icon: "#i-cal", label: "Calendar" },
+  { target: "workflows", icon: "#i-bolt", label: "Workflows" },
 ];
 
 const MEASURE_NAV: NavItemDef[] = [
@@ -26,9 +30,8 @@ const MEASURE_NAV: NavItemDef[] = [
   { target: "accounts", icon: "#i-users", label: "Accounts" },
 ];
 
-// Matches the prototype: Automations points at the upload screen.
 const WORKSPACE_NAV: NavItemDef[] = [
-  { target: "upload", icon: "#i-sliders", label: "Automations" },
+  { target: "settings", icon: "#i-sliders", label: "Settings" },
 ];
 
 function NavItem({
@@ -59,7 +62,21 @@ export default function Sidebar({
   onNavigate,
   theme,
   onToggleTheme,
+  onOpenConnect,
 }: SidebarProps) {
+  const { clients, selectedClient, selectClient } = useAppState();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpen]);
+
   const renderNav = (items: NavItemDef[]) =>
     items.map((item) => (
       <NavItem
@@ -104,21 +121,76 @@ export default function Sidebar({
           <span className="lbl">{theme === "light" ? "Light mode" : "Dark mode"}</span>
           <span className="knob" />
         </div>
-        <div className="client-pill glass-sm">
-          <div
-            className="avatar"
-            style={{ background: "linear-gradient(135deg,#8b7bff,#4ea8ff)" }}
-          >
-            HF
-          </div>
-          <div className="meta">
-            <b>Halo Fitness</b>
-            <span>Active client</span>
-          </div>
-          <div className="chev">
-            <svg>
-              <use href="#i-chev" />
-            </svg>
+
+        <div className="brandwrap" ref={wrapRef}>
+          {menuOpen && (
+            <div className="brandmenu glass">
+              {clients.map((client) => (
+                <div
+                  key={client.id}
+                  className={`bm-item${client.id === selectedClient?.id ? " on" : ""}`}
+                  onClick={() => {
+                    selectClient(client.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <div
+                    className="avatar"
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      fontSize: 10,
+                      background: "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+                    }}
+                  >
+                    {client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  {client.name}
+                </div>
+              ))}
+              {clients.length === 0 && (
+                <div className="bm-item" style={{ cursor: "default", color: "var(--txt-3)" }}>
+                  No brands yet
+                </div>
+              )}
+              <div
+                className="bm-item bm-add"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenConnect();
+                }}
+              >
+                + Add brand
+              </div>
+            </div>
+          )}
+
+          <div className="client-pill glass-sm" onClick={() => setMenuOpen((o) => !o)}>
+            {selectedClient ? (
+              <>
+                <div
+                  className="avatar"
+                  style={{ background: "linear-gradient(135deg,#8b7bff,#4ea8ff)" }}
+                >
+                  {selectedClient.avatarSeed ?? selectedClient.name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="meta">
+                  <b>{selectedClient.name}</b>
+                  <span>Active brand</span>
+                </div>
+              </>
+            ) : (
+              <div className="meta">
+                <b style={{ color: "var(--txt-3)" }}>No brand selected</b>
+                <span>{clients.length ? "Pick a brand" : "Add your first brand"}</span>
+              </div>
+            )}
+            <div className="chev" style={menuOpen ? { transform: "rotate(180deg)" } : undefined}>
+              <svg>
+                <use href="#i-chev" />
+              </svg>
+            </div>
           </div>
         </div>
       </div>
