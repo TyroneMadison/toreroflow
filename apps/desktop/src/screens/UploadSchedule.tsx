@@ -1,63 +1,71 @@
-import { useRef, useState, type DragEvent } from "react";
-import Pf from "../components/Pf";
-import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
-import { formatDuration, probeVideo } from "../lib/video";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import {
+  api,
+  fileUrl,
+  uploadMedia,
+  type MediaAssetInfo,
+} from "../lib/api";
+import { formatDuration } from "../lib/video";
 import { useAppState } from "../state/AppState";
 
-export interface UploadJob {
-  id: string;
-  name: string;
-  url: string;
-  thumbnail: string;
-  durationSec: number;
-  targets: Platform[];
-}
-
 interface UploadScheduleProps {
-  onPreview(job: UploadJob): void;
+  onPreview(name: string, url: string): void;
   onOpenConnect(): void;
 }
 
-let jobCounter = 0;
+const STATUS_LABEL: Record<MediaAssetInfo["status"], string> = {
+  uploaded: "Queued for processing…",
+  processing: "Transcribing, captioning, and rendering 9:16…",
+  ready: "Ready",
+  failed: "Processing failed",
+};
 
 export default function UploadSchedule({ onPreview, onOpenConnect }: UploadScheduleProps) {
   const { selectedClient } = useAppState();
-  const [jobs, setJobs] = useState<UploadJob[]>([]);
-  const [reading, setReading] = useState(false);
+  const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
+  const [uploadingNames, setUploadingNames] = useState<string[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const connectedPlatforms = new Set(
-    (selectedClient?.accounts ?? [])
-      .filter((a) => a.status === "connected")
-      .map((a) => a.platform),
-  );
+  const load = useCallback(async () => {
+    if (!selectedClient) {
+      setAssets([]);
+      return;
+    }
+    try {
+      setAssets(await api.get<MediaAssetInfo[]>(`/clients/${selectedClient.id}/media`));
+    } catch {
+      // API offline: keep whatever we have
+    }
+  }, [selectedClient]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Poll while anything is still working its way through the pipeline.
+  useEffect(() => {
+    const busy = assets.some((a) => a.status === "uploaded" || a.status === "processing");
+    if (!busy) return;
+    const t = setInterval(() => void load(), 4000);
+    return () => clearInterval(t);
+  }, [assets, load]);
 
   const addFiles = async (files: FileList | File[]) => {
+    if (!selectedClient) return;
     const videos = Array.from(files).filter((f) => f.type.startsWith("video/"));
-    if (!videos.length) return;
-    setReading(true);
-    try {
-      for (const file of videos) {
-        try {
-          const probe = await probeVideo(file);
-          setJobs((prev) => [
-            {
-              id: `job-${++jobCounter}`,
-              name: file.name,
-              url: probe.url,
-              thumbnail: probe.thumbnail,
-              durationSec: probe.durationSec,
-              targets: [...connectedPlatforms],
-            },
-            ...prev,
-          ]);
-        } catch {
-          // Unreadable codec - skip the file rather than crash the drop.
-        }
+    for (const file of videos) {
+      setUploadingNames((prev) => [...prev, file.name]);
+      try {
+        await uploadMedia(selectedClient.id, file);
+      } catch {
+        // surfaced by the card disappearing; API error paths land in M3 polish
+      } finally {
+        setUploadingNames((prev) => prev.filter((n) => n !== file.name));
+        void load();
       }
-    } finally {
-      setReading(false);
     }
   };
 
@@ -67,30 +75,24 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     void addFiles(e.dataTransfer.files);
   };
 
-  const toggleTarget = (jobId: string, platform: Platform) => {
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === jobId
-          ? {
-              ...j,
-              targets: j.targets.includes(platform)
-                ? j.targets.filter((p) => p !== platform)
-                : [...j.targets, platform],
-            }
-          : j,
-      ),
-    );
+  const saveDraft = async (asset: MediaAssetInfo) => {
+    const caption = drafts[asset.id];
+    if (caption === undefined) return;
+    await api.patch(`/media/${asset.id}/draft`, { caption });
+    setSavedFlash(asset.id);
+    setTimeout(() => setSavedFlash((s) => (s === asset.id ? null : s)), 2000);
+    void load();
   };
 
-  const removeJob = (jobId: string) => {
-    setJobs((prev) => {
-      const job = prev.find((j) => j.id === jobId);
-      if (job) URL.revokeObjectURL(job.url);
-      return prev.filter((j) => j.id !== jobId);
+  const removeAsset = async (asset: MediaAssetInfo) => {
+    await api.del(`/media/${asset.id}`);
+    setDrafts((d) => {
+      const next = { ...d };
+      delete next[asset.id];
+      return next;
     });
+    void load();
   };
-
-  const allPlatforms: Platform[] = ["instagram", "tiktok", "youtube", "snapchat"];
 
   return (
     <section className="screen active" data-screen="upload">
@@ -99,7 +101,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           <h2>Upload &amp; Schedule</h2>
           <p>
             {selectedClient
-              ? `Drop a video for ${selectedClient.name}.`
+              ? `Drop a video for ${selectedClient.name}. It gets transcribed, captioned, and reframed automatically.`
               : "Pick or add a brand in the sidebar, then drop a video."}
           </p>
         </div>
@@ -116,7 +118,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               }}
               onDragLeave={() => setDragOver(false)}
               onDrop={onDrop}
-              onClick={() => fileInput.current?.click()}
+              onClick={() =>
+                selectedClient ? fileInput.current?.click() : onOpenConnect()
+              }
             >
               <input
                 ref={fileInput}
@@ -134,90 +138,131 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   <use href="#i-up" />
                 </svg>
               </div>
-              <b>{reading ? "Reading video…" : "Drop videos here"}</b>
+              <b>Drop videos here</b>
               <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
               <div className="pills">
                 <span className="mini">Auto captions</span>
                 <span className="mini">Auto reframe 9:16</span>
-                <span className="mini">Best time detect</span>
+                <span className="mini">AI post copy</span>
               </div>
             </div>
 
-            {jobs.map((job) => (
-              <div className="job glass-sm" key={job.id}>
-                <div
-                  className="thumb"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => onPreview(job)}
-                  title="Click to preview"
-                >
-                  <img className="jobthumb-img" src={job.thumbnail} alt={job.name} />
-                  <span className="dur">{formatDuration(job.durationSec)}</span>
-                  <div className="play">
-                    <svg>
-                      <use href="#i-play" />
-                    </svg>
-                  </div>
-                </div>
+            {uploadingNames.map((name) => (
+              <div className="job glass-sm" key={`up-${name}`}>
+                <div className="thumb" />
                 <div className="body">
-                  <div className="name">
-                    {job.name}
-                    <span className="tag ai" title="Transcription and AI captions coming soon">
-                      Captions soon
-                    </span>
-                  </div>
-
-                  <div className="toggles">
-                    {allPlatforms.map((platform) => {
-                      const connected = connectedPlatforms.has(platform);
-                      const on = job.targets.includes(platform);
-                      const account = selectedClient?.accounts.find(
-                        (a) => a.platform === platform,
-                      );
-                      return (
-                        <div
-                          key={platform}
-                          className={`pt${on ? " on" : ""}`}
-                          style={connected ? undefined : { opacity: 0.45 }}
-                          title={
-                            connected
-                              ? undefined
-                              : "Not connected - connect this platform in Settings"
-                          }
-                          onClick={() =>
-                            connected ? toggleTarget(job.id, platform) : onOpenConnect()
-                          }
-                        >
-                          <Pf p={PF_ID[platform]} />
-                          <div className="info">
-                            <b>{SURFACE_LABEL[platform]}</b>
-                            <span>{account ? `@${account.handle}` : "not connected"}</span>
-                          </div>
-                          <div className="switch" />
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="schedrow">
-                    <button className="btn ghost" onClick={() => removeJob(job.id)}>
-                      Remove
-                    </button>
-                    <button
-                      className="btn"
-                      style={{ marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }}
-                      title="Scheduling & publishing coming soon"
-                      disabled
-                    >
-                      <svg>
-                        <use href="#i-bolt" />
-                      </svg>{" "}
-                      Schedule all
-                    </button>
-                  </div>
+                  <div className="name">{name}</div>
+                  <div className="transcript">Uploading…</div>
                 </div>
               </div>
             ))}
+
+            {assets.map((asset) => {
+              const thumb = fileUrl(asset.thumbUrl);
+              const render = fileUrl(asset.renderUrl);
+              const caption =
+                drafts[asset.id] ?? asset.draftCopy?.caption ?? "";
+              return (
+                <div className="job glass-sm" key={asset.id}>
+                  <div
+                    className="thumb"
+                    style={render ? { cursor: "pointer" } : undefined}
+                    title={render ? "Play the captioned 9:16 render" : undefined}
+                    onClick={() => {
+                      if (render) onPreview(asset.name, render);
+                    }}
+                  >
+                    {thumb && <img className="jobthumb-img" src={thumb} alt={asset.name} />}
+                    {asset.durationSec != null && (
+                      <span className="dur">{formatDuration(asset.durationSec)}</span>
+                    )}
+                    {render && (
+                      <div className="play">
+                        <svg>
+                          <use href="#i-play" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  <div className="body">
+                    <div className="name">
+                      {asset.name}
+                      {asset.status === "ready" && asset.hasCaptions && (
+                        <span className="tag ok">Captions burned</span>
+                      )}
+                      {asset.status === "ready" && asset.draftCopy && (
+                        <span className="tag ai">AI copy drafted</span>
+                      )}
+                      {asset.status === "failed" && (
+                        <span className="tag" style={{ background: "rgba(255,107,122,.15)", color: "var(--red)", border: "1px solid rgba(255,107,122,.32)" }}>
+                          Failed
+                        </span>
+                      )}
+                    </div>
+
+                    {asset.status !== "ready" ? (
+                      <div className="transcript">{STATUS_LABEL[asset.status]}</div>
+                    ) : (
+                      <>
+                        {asset.draftCopy?.hook && (
+                          <div className="transcript" style={{ marginTop: 10 }}>
+                            Hook: {asset.draftCopy.hook}
+                          </div>
+                        )}
+                        <div className="captionbox" style={{ marginTop: 10 }}>
+                          <textarea
+                            value={caption}
+                            placeholder={
+                              asset.draftCopy
+                                ? "Edit the AI caption…"
+                                : "Write a caption. Add ANTHROPIC_API_KEY to get AI drafts."
+                            }
+                            onChange={(e) =>
+                              setDrafts((d) => ({ ...d, [asset.id]: e.target.value }))
+                            }
+                          />
+                        </div>
+                        {asset.draftCopy?.hashtags && asset.draftCopy.hashtags.length > 0 && (
+                          <div className="hashrow">
+                            {asset.draftCopy.hashtags.map((h) => (
+                              <span className="hash" key={h}>
+                                #{h.replace(/^#/, "")}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    <div className="schedrow">
+                      <button className="btn ghost" onClick={() => void removeAsset(asset)}>
+                        Delete
+                      </button>
+                      {asset.status === "ready" && (
+                        <button
+                          className="btn ghost"
+                          onClick={() => void saveDraft(asset)}
+                          disabled={drafts[asset.id] === undefined}
+                        >
+                          {savedFlash === asset.id ? "Saved ✓" : "Save caption"}
+                        </button>
+                      )}
+                      <button
+                        className="btn"
+                        style={{ marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }}
+                        title="Scheduling & publishing coming soon"
+                        disabled
+                      >
+                        <svg>
+                          <use href="#i-bolt" />
+                        </svg>{" "}
+                        Schedule all
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div>
@@ -232,11 +277,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   </svg>
                 </div>
                 <b>Nothing queued yet</b>
-                <p>
-                  {selectedClient
-                    ? `Drop a video to start building ${selectedClient.name}'s queue.`
-                    : "Add a brand, then drop a video to build its queue."}
-                </p>
+                <p>Scheduled posts will line up here once publishing goes live.</p>
               </div>
             </div>
 

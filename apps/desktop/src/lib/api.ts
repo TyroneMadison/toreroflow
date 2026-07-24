@@ -116,4 +116,45 @@ export interface Suggestion {
   category: string;
 }
 
+export interface DraftCopy {
+  caption?: string;
+  hook?: string;
+  hashtags?: string[];
+}
+
+export interface MediaAssetInfo {
+  id: string;
+  clientId: string;
+  name: string;
+  durationSec: number | null;
+  status: "uploaded" | "processing" | "ready" | "failed";
+  hasCaptions: boolean;
+  draftCopy: DraftCopy | null;
+  createdAt: string;
+  thumbUrl: string | null;
+  renderUrl: string | null;
+  captionStyle: string | null;
+}
+
+/** Absolute URL for a server-stored media file. */
+export function fileUrl(relative: string | null): string | null {
+  return relative ? `${API_URL}${relative}` : null;
+}
+
+export async function uploadMedia(clientId: string, file: File): Promise<MediaAssetInfo> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_URL}/clients/${clientId}/media`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const data: unknown = await res.json();
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data as MediaAssetInfo;
+}
+
 export type { AuthUser, LoginResponse, Platform };

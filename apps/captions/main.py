@@ -1,14 +1,42 @@
-"""Toreroflow captions microservice — faster-whisper transcription lands in M2.
+"""Toreroflow captions microservice: local transcription via faster-whisper.
 
-M0 scaffolds the FastAPI app so the workspace shape matches spec Section 6.
-Run: pip install -r requirements.txt && uvicorn main:app --port 4710
+Run: .venv\\Scripts\\python.exe -m uvicorn main:app --port 4710
+The model (base, int8, CPU) downloads on first use and is cached by HF.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI(title="toreroflow-captions")
+_model = None
+
+
+def get_model():
+    global _model
+    if _model is None:
+        from faster_whisper import WhisperModel
+
+        _model = WhisperModel("base", device="cpu", compute_type="int8")
+    return _model
+
+
+class TranscribeRequest(BaseModel):
+    path: str
 
 
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "toreroflow-captions"}
+
+
+@app.post("/transcribe")
+def transcribe(req: TranscribeRequest) -> dict:
+    try:
+        segments, info = get_model().transcribe(req.path, vad_filter=True)
+        out = [
+            {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
+            for s in segments
+        ]
+    except Exception as exc:  # surface as a clean 500 for the worker
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"language": info.language, "durationSec": info.duration, "segments": out}

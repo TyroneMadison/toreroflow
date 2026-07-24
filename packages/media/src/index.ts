@@ -1,5 +1,7 @@
 import type { Platform } from "@toreroflow/core";
 
+export * from "./ffmpeg";
+
 /**
  * Per-platform encode profiles (spec Section 9). Real ffmpeg reframe/transcode
  * and ASS caption burn-in land in M2; the profile table lives here so the

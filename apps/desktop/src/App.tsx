@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import IconDefs from "./components/IconDefs";
 import Sidebar from "./components/Sidebar";
 import DashboardScreen from "./screens/DashboardScreen";
-import UploadSchedule, { type UploadJob } from "./screens/UploadSchedule";
+import UploadSchedule from "./screens/UploadSchedule";
 import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import AccountsScreen from "./screens/AccountsScreen";
@@ -50,7 +50,7 @@ function Shell() {
     [],
   );
   const openPreview = useCallback(
-    (job: UploadJob) => setModal({ kind: "preview", name: job.name, url: job.url }),
+    (name: string, url: string) => setModal({ kind: "preview", name, url }),
     [],
   );
   const closeModal = useCallback(() => setModal(null), []);

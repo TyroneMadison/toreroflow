@@ -145,6 +145,8 @@ model MediaAsset {
   status       MediaAssetStatus @default(uploaded)
   /// Timestamped transcript from the captions service: [{ start, end, text }]
   transcript   Json?
+  /// AI-drafted post copy: { caption, hook, hashtags[] } (operator-editable)
+  draftCopy    Json?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 

@@ -5,7 +5,8 @@ import dotenv from "dotenv";
 // Load the repo root .env regardless of cwd. This file lives at
 // apps/api/src/env.ts, so the repo root is three levels up.
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, "../../../.env") });
+const repoRoot = path.resolve(here, "../../..");
+dotenv.config({ path: path.join(repoRoot, ".env") });
 
 const DEFAULT_JWT_SECRET = "dev-only-change-me";
 
@@ -26,6 +27,9 @@ export interface Env {
   /** dryrun until a real provider (Ayrshare/Blotato/Zernio/Postiz) is chosen in M1. */
   PUBLISH_PROVIDER: string;
   PUBLISH_PROVIDER_API_KEY: string;
+  REDIS_URL: string;
+  /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
+  STORAGE_DIR: string;
 }
 
 export const env: Env = {
@@ -36,4 +40,6 @@ export const env: Env = {
   SUGGESTIONS_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
+  REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
+  STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
 };

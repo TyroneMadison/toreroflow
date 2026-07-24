@@ -1,12 +1,15 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
 import { env } from "./env";
 import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
 import { clientRoutes } from "./routes/clients";
 import { workflowRoutes } from "./routes/workflows";
+import { mediaRoutes } from "./routes/media";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -33,6 +36,14 @@ export async function buildServer(
   // (http://localhost:1420) and prod (tauri.localhost); tighten in M6.
   await app.register(cors, { origin: true });
   await app.register(jwt, { secret: env.JWT_SECRET });
+  await app.register(multipart, {
+    limits: { fileSize: 4 * 1024 * 1024 * 1024, files: 1 },
+  });
+  // Local media serving for the desktop webview (dev storage; R2/S3 later).
+  await app.register(fastifyStatic, {
+    root: env.STORAGE_DIR,
+    prefix: "/files/",
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -66,6 +77,7 @@ export async function buildServer(
   await app.register(authRoutes);
   await app.register(clientRoutes);
   await app.register(workflowRoutes);
+  await app.register(mediaRoutes);
 
   return app;
 }

@@ -8,9 +8,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.114.0",
     "@toreroflow/core": "workspace:*",
     "@toreroflow/db": "workspace:*",
-    "@toreroflow/publishers": "workspace:*"
+    "@toreroflow/media": "workspace:*",
+    "@toreroflow/publishers": "workspace:*",
+    "bullmq": "^5.81.0",
+    "dotenv": "^16.6.1",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
