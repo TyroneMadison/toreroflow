@@ -12,4 +12,6 @@ export const env = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   COPY_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
+  PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
+  PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
 };

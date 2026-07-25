@@ -1,0 +1,166 @@
+import type { FastifyInstance } from "fastify";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
+import { schedulePostSchema } from "@toreroflow/core";
+import { getPrisma } from "@toreroflow/db";
+import { env } from "../env";
+import { requireAuth } from "../plugins/requireAuth";
+
+export async function postRoutes(app: FastifyInstance): Promise<void> {
+  const prisma = getPrisma();
+  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const publishQueue = new Queue<{ targetId: string }>("publish", { connection });
+
+  app.addHook("onRequest", requireAuth);
+
+  /** Schedule a processed video to one or more connected platforms. */
+  app.post<{ Params: { id: string } }>("/media/:id/schedule", async (request, reply) => {
+    const body = schedulePostSchema.parse(request.body);
+    const asset = await prisma.mediaAsset.findFirst({
+      where: {
+        id: request.params.id,
+        client: { agencyId: request.user.agencyId, deletedAt: null },
+      },
+      include: {
+        client: { include: { socialAccounts: { where: { deletedAt: null } } } },
+      },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+    if (asset.status !== "ready") {
+      return reply.status(409).send({ error: "asset is still processing" });
+    }
+
+    const scheduledAt = new Date(body.scheduledAt);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      return reply.status(400).send({ error: "invalid scheduledAt" });
+    }
+
+    const accounts = body.platforms.map((platform) => {
+      const account = asset.client.socialAccounts.find(
+        (a) => a.platform === platform && a.status === "connected",
+      );
+      return { platform, account };
+    });
+    const missing = accounts.filter((a) => !a.account).map((a) => a.platform);
+    if (missing.length) {
+      return reply
+        .status(400)
+        .send({ error: `not connected: ${missing.join(", ")}` });
+    }
+
+    const draft = (asset.draftCopy as { caption?: string; hashtags?: string[] } | null) ?? {};
+    const caption = body.caption ?? draft.caption ?? "";
+    const hashtags = body.hashtags ?? draft.hashtags ?? [];
+
+    const post = await prisma.post.create({
+      data: {
+        clientId: asset.clientId,
+        mediaAssetId: asset.id,
+        createdById: request.user.sub,
+        status: "scheduled",
+        targets: {
+          create: accounts.map(({ platform, account }) => ({
+            socialAccountId: account!.id,
+            platform,
+            caption,
+            hashtags,
+            scheduledAt,
+            status: "scheduled",
+          })),
+        },
+      },
+      include: { targets: true },
+    });
+
+    const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+    for (const target of post.targets) {
+      // jobId = target id so a reschedule can replace the delayed job.
+      await publishQueue.add(
+        "publish",
+        { targetId: target.id },
+        {
+          jobId: target.id,
+          delay,
+          attempts: 3,
+          backoff: { type: "exponential", delay: 30_000 },
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+    }
+
+    return reply.status(201).send({
+      id: post.id,
+      scheduledAt,
+      targets: post.targets.map((t) => ({
+        id: t.id,
+        platform: t.platform,
+        status: t.status,
+      })),
+    });
+  });
+
+  /** Post targets for calendar and queue views. */
+  app.get<{ Params: { id: string }; Querystring: { from?: string; to?: string } }>(
+    "/clients/:id/posts",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: {
+          id: request.params.id,
+          agencyId: request.user.agencyId,
+          deletedAt: null,
+        },
+      });
+      if (!client) return reply.status(404).send({ error: "client not found" });
+
+      const from = request.query.from ? new Date(request.query.from) : undefined;
+      const to = request.query.to ? new Date(request.query.to) : undefined;
+      const targets = await prisma.postTarget.findMany({
+        where: {
+          post: { clientId: client.id, deletedAt: null },
+          ...(from || to
+            ? { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+            : {}),
+        },
+        orderBy: { scheduledAt: "asc" },
+        include: { post: { include: { mediaAsset: true } } },
+      });
+      return targets.map((t) => ({
+        id: t.id,
+        postId: t.postId,
+        platform: t.platform,
+        status: t.status,
+        scheduledAt: t.scheduledAt,
+        publishedAt: t.publishedAt,
+        error: t.error,
+        caption: t.caption,
+        assetName: t.post.mediaAsset?.originalName ?? "post",
+        thumbUrl: t.post.mediaAsset
+          ? `/files/${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`
+          : null,
+      }));
+    },
+  );
+
+  /** Cancel a scheduled post (all targets still unpublished). */
+  app.delete<{ Params: { id: string } }>("/posts/:id", async (request, reply) => {
+    const post = await prisma.post.findFirst({
+      where: {
+        id: request.params.id,
+        client: { agencyId: request.user.agencyId },
+      },
+      include: { targets: true },
+    });
+    if (!post) return reply.status(404).send({ error: "post not found" });
+    if (post.targets.some((t) => t.status === "posted" || t.status === "publishing")) {
+      return reply.status(409).send({ error: "post already publishing or posted" });
+    }
+    for (const target of post.targets) {
+      const job = await publishQueue.getJob(target.id);
+      if (job) await job.remove();
+    }
+    await prisma.postTarget.deleteMany({ where: { postId: post.id } });
+    await prisma.post.delete({ where: { id: post.id } });
+    return { ok: true };
+  });
+}

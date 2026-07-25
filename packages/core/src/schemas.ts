@@ -34,6 +34,14 @@ export const createWorkflowSchema = z.object({
 });
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 
+export const schedulePostSchema = z.object({
+  platforms: z.array(platformSchema).min(1),
+  scheduledAt: z.string().datetime({ offset: true }),
+  caption: z.string().max(4000).optional(),
+  hashtags: z.array(z.string().max(60)).max(20).optional(),
+});
+export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
+
 export const updateWorkflowSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   sourcePlatform: platformSchema.optional(),

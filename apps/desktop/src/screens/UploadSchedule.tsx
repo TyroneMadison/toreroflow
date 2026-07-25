@@ -4,9 +4,22 @@ import {
   fileUrl,
   uploadMedia,
   type MediaAssetInfo,
+  type PostTargetInfo,
 } from "../lib/api";
 import { formatDuration } from "../lib/video";
 import { useAppState } from "../state/AppState";
+import Pf from "../components/Pf";
+import { PF_ID } from "../lib/platforms";
+import ScheduleModal from "../modals/ScheduleModal";
+
+const fmtWhen = (iso: string | null): string =>
+  iso
+    ? new Date(iso).toLocaleString([], {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
 
 interface UploadScheduleProps {
   onPreview(name: string, url: string): void;
@@ -27,7 +40,31 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [posts, setPosts] = useState<PostTargetInfo[]>([]);
+  const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const connectedCount = (selectedClient?.accounts ?? []).filter(
+    (a) => a.status === "connected",
+  ).length;
+
+  const loadPosts = useCallback(async () => {
+    if (!selectedClient) {
+      setPosts([]);
+      return;
+    }
+    try {
+      setPosts(await api.get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`));
+    } catch {
+      // API offline: keep whatever we have
+    }
+  }, [selectedClient]);
+
+  useEffect(() => {
+    void loadPosts();
+    const t = setInterval(() => void loadPosts(), 15_000);
+    return () => clearInterval(t);
+  }, [loadPosts]);
 
   const load = useCallback(async () => {
     if (!selectedClient) {
@@ -249,14 +286,25 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       )}
                       <button
                         className="btn"
-                        style={{ marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }}
-                        title="Scheduling & publishing coming soon"
-                        disabled
+                        style={
+                          asset.status === "ready" && connectedCount > 0
+                            ? { marginLeft: "auto" }
+                            : { marginLeft: "auto", opacity: 0.55, cursor: "not-allowed" }
+                        }
+                        title={
+                          asset.status !== "ready"
+                            ? "Available once processing finishes"
+                            : connectedCount === 0
+                              ? "Connect platforms in Settings first"
+                              : "Pick platforms and a time"
+                        }
+                        disabled={asset.status !== "ready" || connectedCount === 0}
+                        onClick={() => setScheduling(asset)}
                       >
                         <svg>
                           <use href="#i-bolt" />
                         </svg>{" "}
-                        Schedule all
+                        Schedule
                       </button>
                     </div>
                   </div>
@@ -270,15 +318,43 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               <div className="rowhead">
                 <h3>Up next in queue</h3>
               </div>
-              <div className="empty">
-                <div className="eic">
-                  <svg>
-                    <use href="#i-image" />
-                  </svg>
+              {posts.filter((p) => p.status === "scheduled" || p.status === "publishing")
+                .length === 0 ? (
+                <div className="empty">
+                  <div className="eic">
+                    <svg>
+                      <use href="#i-image" />
+                    </svg>
+                  </div>
+                  <b>Nothing queued yet</b>
+                  <p>Schedule a processed video and it will line up here.</p>
                 </div>
-                <b>Nothing queued yet</b>
-                <p>Scheduled posts will line up here once publishing goes live.</p>
-              </div>
+              ) : (
+                posts
+                  .filter((p) => p.status === "scheduled" || p.status === "publishing")
+                  .slice(0, 6)
+                  .map((p) => (
+                    <div className="queue-item" key={p.id}>
+                      <div
+                        className="qthumb"
+                        style={{
+                          background: "linear-gradient(160deg,#31266b,#141f3f)",
+                          backgroundSize: "cover",
+                          backgroundImage: fileUrl(p.thumbUrl)
+                            ? `url(${fileUrl(p.thumbUrl)})`
+                            : undefined,
+                        }}
+                      />
+                      <div className="qmeta">
+                        <b>{p.assetName}</b>
+                        <span>
+                          <Pf p={PF_ID[p.platform]} size="sm" />{" "}
+                          {p.status === "publishing" ? "publishing…" : fmtWhen(p.scheduledAt)}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+              )}
             </div>
 
             <div className="card glass" style={{ marginTop: 16 }}>
@@ -299,6 +375,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
         </div>
       </div>
+
+      {scheduling && (
+        <ScheduleModal
+          asset={scheduling}
+          onClose={() => setScheduling(null)}
+          onScheduled={() => void loadPosts()}
+        />
+      )}
     </section>
   );
 }

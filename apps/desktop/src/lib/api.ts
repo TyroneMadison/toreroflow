@@ -136,6 +136,19 @@ export interface MediaAssetInfo {
   captionStyle: string | null;
 }
 
+export interface PostTargetInfo {
+  id: string;
+  postId: string;
+  platform: Platform;
+  status: "scheduled" | "publishing" | "posted" | "failed";
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  error: string | null;
+  caption: string | null;
+  assetName: string;
+  thumbUrl: string | null;
+}
+
 /** Absolute URL for a server-stored media file. */
 export function fileUrl(relative: string | null): string | null {
   return relative ? `${API_URL}${relative}` : null;

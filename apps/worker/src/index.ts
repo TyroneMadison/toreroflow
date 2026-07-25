@@ -174,6 +174,141 @@ async function processAsset(assetId: string): Promise<void> {
   }
 }
 
+/* ---- publish pipeline (spec Section 10) ---- */
+
+import { DryRunPublisher, ZernioProvider } from "@toreroflow/publishers";
+import type { Platform } from "@toreroflow/core";
+
+const zernio =
+  env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
+    ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
+    : null;
+
+/** Zernio media URLs are reusable for 7 days; cache per asset per process. */
+const mediaUrlCache = new Map<string, string>();
+
+async function zernioMediaUrl(assetId: string, filePath: string): Promise<string> {
+  const cached = mediaUrlCache.get(assetId);
+  if (cached) return cached;
+  const { uploadUrl, publicUrl } = await zernio!.presignMedia(
+    path.basename(filePath),
+    "video/mp4",
+  );
+  const body = await fs.readFile(filePath);
+  await zernio!.uploadMedia(uploadUrl, body, "video/mp4");
+  mediaUrlCache.set(assetId, publicUrl);
+  return publicUrl;
+}
+
+const PUBLISH_ATTEMPTS = 3;
+
+async function publishTarget(targetId: string, attemptsMade: number): Promise<void> {
+  const target = await prisma.postTarget.findUnique({
+    where: { id: targetId },
+    include: {
+      socialAccount: true,
+      post: { include: { mediaAsset: { include: { renders: true } }, client: true } },
+    },
+  });
+  if (!target) return;
+  // Idempotency: reschedules replace the job; stale fires must not double post.
+  if (target.status !== "scheduled") return;
+  if (target.scheduledAt && target.scheduledAt.getTime() - Date.now() > 60_000) return;
+
+  await prisma.postTarget.update({
+    where: { id: target.id },
+    data: { status: "publishing" },
+  });
+
+  try {
+    const caption = [
+      target.caption ?? "",
+      target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" "),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    let remotePostId: string;
+    let remoteUrl: string | undefined;
+
+    const viaZernio =
+      zernio && target.socialAccount.tokensEncrypted === "provider:zernio";
+    if (viaZernio) {
+      const asset = target.post.mediaAsset;
+      const render = asset?.renders.find((r) => r.status === "ready");
+      const fileKey = render?.storageKey ?? asset?.storageKey;
+      if (!fileKey) throw new Error("no media file for post");
+      const mediaUrl = await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      const result = await zernio.createPost({
+        content: caption,
+        mediaUrl,
+        targets: [
+          {
+            platform: target.platform as Platform,
+            accountId: target.socialAccount.providerAccountId ?? "",
+          },
+        ],
+        publishNow: true,
+      });
+      remotePostId = result.remotePostId;
+    } else {
+      // Dry-run accounts (and dev without a provider key) log instead of post.
+      const publisher = new DryRunPublisher(target.platform as Platform);
+      const result = await publisher.publish({
+        account: {
+          id: target.socialAccount.id,
+          platform: target.platform as Platform,
+          handle: target.socialAccount.handle,
+        },
+        videoUrl: target.post.mediaAsset?.storageKey ?? "",
+        caption,
+        hashtags: target.hashtags,
+      });
+      remotePostId = result.remotePostId;
+      remoteUrl = result.remoteUrl;
+    }
+
+    await prisma.postTarget.update({
+      where: { id: target.id },
+      data: {
+        status: "posted",
+        remotePostId,
+        remoteUrl,
+        publishedAt: new Date(),
+        error: null,
+      },
+    });
+    const siblings = await prisma.postTarget.findMany({
+      where: { postId: target.postId },
+    });
+    if (siblings.every((s) => s.status === "posted")) {
+      await prisma.post.update({
+        where: { id: target.postId },
+        data: { status: "posted" },
+      });
+    }
+    console.log(`[worker] target ${target.id} posted (${target.platform})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const finalAttempt = attemptsMade + 1 >= PUBLISH_ATTEMPTS;
+    await prisma.postTarget.update({
+      where: { id: target.id },
+      data: {
+        status: finalAttempt ? "failed" : "scheduled",
+        error: message.slice(0, 500),
+      },
+    });
+    if (finalAttempt) {
+      await prisma.post.update({
+        where: { id: target.postId },
+        data: { status: "failed" },
+      });
+    }
+    console.error(`[worker] target ${target.id} attempt ${attemptsMade + 1} failed: ${message}`);
+    throw error; // let BullMQ retry with backoff
+  }
+}
+
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
 new Worker<{ assetId: string }>(
@@ -184,4 +319,14 @@ new Worker<{ assetId: string }>(
   { connection, concurrency: 1 },
 );
 
-console.log("[toreroflow-worker] media pipeline worker listening on queue 'media'");
+new Worker<{ targetId: string }>(
+  "publish",
+  async (job) => {
+    await publishTarget(job.data.targetId, job.attemptsMade);
+  },
+  { connection, concurrency: 2 },
+);
+
+console.log(
+  `[toreroflow-worker] listening on queues 'media' and 'publish' (provider: ${zernio ? "zernio" : "dryrun"})`,
+);

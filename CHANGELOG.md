@@ -9,6 +9,15 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - scheduling and publishing
+
+- Schedule button on processed videos: pick connected platforms and a time; one post fans out to a target per platform
+- Delayed publish jobs with automatic retries (3 attempts, exponential backoff) and failure surfacing
+- Publishing through Zernio for real connected accounts (presigned media upload + post creation); dry-run accounts log instead of posting
+- Content Calendar shows the real week: platform color-coded events with status (publishing, posted, failed with error on hover)
+- Up next in queue lists upcoming scheduled posts live
+- Verified: a post scheduled 90 seconds out published 0.3 seconds after its target time
+
 ### Added - media pipeline
 
 - Real uploads to local storage with a BullMQ job queue and worker service

@@ -88,6 +88,63 @@ export class ZernioProvider {
     return Array.isArray(accounts) ? (accounts as ZernioAccount[]) : [];
   }
 
+  /** Presigned upload slot for a media file (valid 1h; storage 7 days). */
+  async presignMedia(
+    filename: string,
+    contentType: string,
+  ): Promise<{ uploadUrl: string; publicUrl: string }> {
+    const data = await this.request<{ uploadUrl?: string; publicUrl?: string }>(
+      "POST",
+      "/media/presign",
+      { filename, contentType },
+    );
+    if (!data.uploadUrl || !data.publicUrl) {
+      throw new ZernioError(500, "zernio presign response missing urls");
+    }
+    return { uploadUrl: data.uploadUrl, publicUrl: data.publicUrl };
+  }
+
+  /** Direct PUT of the file body to the presigned URL (no auth header). */
+  async uploadMedia(uploadUrl: string, body: Uint8Array, contentType: string): Promise<void> {
+    const res = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body,
+    });
+    if (!res.ok) {
+      throw new ZernioError(res.status, `media upload failed (${res.status})`);
+    }
+  }
+
+  /** Publish (or schedule) a post to one or more connected accounts. */
+  async createPost(input: {
+    content: string;
+    mediaUrl?: string;
+    targets: Array<{ platform: Platform; accountId: string }>;
+    publishNow?: boolean;
+    scheduledFor?: string;
+    timezone?: string;
+  }): Promise<{ remotePostId: string }> {
+    const body: Record<string, unknown> = {
+      content: input.content,
+      platforms: input.targets.map((t) => ({
+        platform: t.platform,
+        accountId: t.accountId,
+      })),
+    };
+    if (input.mediaUrl) {
+      body.mediaItems = [{ url: input.mediaUrl, type: "video" }];
+    }
+    if (input.publishNow) body.publishNow = true;
+    if (input.scheduledFor) {
+      body.scheduledFor = input.scheduledFor;
+      body.timezone = input.timezone ?? "UTC";
+    }
+    const data = await this.request<Record<string, unknown>>("POST", "/posts", body);
+    const post = (data.post ?? data) as { _id?: string; id?: string };
+    return { remotePostId: post._id ?? post.id ?? "unknown" };
+  }
+
   /**
    * Accounts belonging to one profile. Uses the server-side filter when it
    * works; falls back to filtering on any profile field in the payload.
