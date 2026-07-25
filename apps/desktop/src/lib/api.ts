@@ -100,13 +100,27 @@ export interface AccountAnalytics {
     engagementRate: number | null;
     avgWatchSec: number | null;
   } | null;
-  history: Array<{ capturedAt: string; views: number | null; followers: number | null }>;
+  history: Array<{
+    capturedAt: string;
+    views: number | null;
+    reach: number | null;
+    followers: number | null;
+  }>;
 }
 
 export interface ClientAnalytics {
   client: { id: string; name: string; plan: string | null };
   accounts: AccountAnalytics[];
-  totals: { views: number; reach: number; followers: number };
+  totals: {
+    views: number;
+    reach: number;
+    followers: number;
+    engagementRate: number | null;
+    avgWatchSec: number | null;
+    likes: number;
+    comments: number;
+    shares: number;
+  };
   hasData: boolean;
 }
 

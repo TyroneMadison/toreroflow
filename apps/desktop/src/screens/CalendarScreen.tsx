@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type DragEvent as RDragEvent } from "react";
 import Pf from "../components/Pf";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { holidayFor } from "../lib/holidays";
@@ -142,14 +142,56 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     );
   };
 
+  const [dropKey, setDropKey] = useState<string | null>(null);
+
+  /** Drop handler: move the dragged target to `day`, keeping its time. */
+  const dropOn = async (e: RDragEvent, day: Date) => {
+    e.preventDefault();
+    setDropKey(null);
+    const id = e.dataTransfer.getData("text/target");
+    const target = targets.find((t) => t.id === id);
+    if (!target?.scheduledAt) return;
+    const oldWhen = new Date(target.scheduledAt);
+    const when = new Date(day);
+    when.setHours(oldWhen.getHours(), oldWhen.getMinutes(), 0, 0);
+    try {
+      await api.patch(`/posts/targets/${id}/reschedule`, {
+        scheduledAt: when.toISOString(),
+      });
+    } catch {
+      // only scheduled targets can move; reload shows the truth either way
+    }
+    void load();
+  };
+
+  const dragProps = (day: Date) => ({
+    onDragOver: (e: RDragEvent) => {
+      e.preventDefault();
+      setDropKey(day.toDateString());
+    },
+    onDragLeave: () => setDropKey((k) => (k === day.toDateString() ? null : k)),
+    onDrop: (e: RDragEvent) => void dropOn(e, day),
+  });
+
+  const dropStyle = (day: Date) =>
+    dropKey === day.toDateString()
+      ? { outline: "1.5px dashed rgba(139,123,255,.7)", outlineOffset: -2, borderRadius: 12 }
+      : undefined;
+
   const renderEvent = (t: PostTargetInfo) => {
     const thumb = fileUrl(t.thumbUrl);
+    const movable = t.status === "scheduled";
     return (
       <div
         className={`ev ${EV_CLASS[t.platform]}`}
         key={t.id}
         title={t.error ?? t.caption ?? t.assetName}
-        style={t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : undefined}
+        draggable={movable}
+        onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
+        style={{
+          ...(t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : {}),
+          ...(movable ? { cursor: "grab" } : {}),
+        }}
       >
         <div className="t1">
           <Pf p={PF_ID[t.platform]} size="sm" />{" "}
@@ -244,7 +286,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             {week.map((day, i) => {
               const events = eventsFor(day);
               return (
-                <div className="col" key={i}>
+                <div className="col" key={i} {...dragProps(day)} style={dropStyle(day)}>
                   <div className={`colhead${day.toDateString() === today ? " today" : ""}`}>
                     <div className="dow">{DOW[i]}</div>
                     <div className="dnum">{day.getDate()}</div>
@@ -301,6 +343,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                   <div
                     className={`mcell${day.toDateString() === today ? " today" : ""}`}
                     key={day.getDate()}
+                    {...dragProps(day)}
+                    style={dropStyle(day)}
                   >
                     <div className="mnum">
                       <span>{day.getDate()}</span>

@@ -30,6 +30,7 @@ export interface Env {
   REDIS_URL: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
+  REPO_ROOT: string;
 }
 
 export const env: Env = {
@@ -42,4 +43,5 @@ export const env: Env = {
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
   REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
+  REPO_ROOT: repoRoot,
 };

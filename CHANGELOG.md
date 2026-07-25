@@ -9,6 +9,14 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - calendar polish and analytics
+
+- Drag-to-reschedule: drag any scheduled post to another day in the week or month view; the delayed publish job moves with it
+- Daily analytics ingestion: a scheduled worker job pulls provider metrics per connected account into snapshots (plus per-post likes/comments/shares) with same-day dedupe
+- Analytics screen renders real charts from snapshots: views-over-time trend, platform mix donut, reach bars, engagement summary
+- Dashboard cards show live views, retention (avg watch), likes, and comments per brand
+- Branded PDF report export: one click builds a logo-headed report with KPI cards and a per-platform table, then opens it
+
 ### Added - scheduling and publishing
 
 - Schedule button on processed videos: pick connected platforms and a time; one post fans out to a target per platform

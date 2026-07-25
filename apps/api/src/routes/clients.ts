@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import nodePath from "node:path";
+import { promises as fsp, createWriteStream } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
+import PDFDocument from "pdfkit";
 import {
   connectAccountSchema,
   createClientSchema,
@@ -298,13 +301,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  app.get<{ Params: { id: string } }>("/clients/:id/analytics", async (request, reply) => {
+  const buildAnalytics = async (clientId: string, agencyId: string) => {
     const client = await prisma.client.findFirst({
-      where: {
-        id: request.params.id,
-        agencyId: request.user.agencyId,
-        deletedAt: null,
-      },
+      where: { id: clientId, agencyId, deletedAt: null },
       include: {
         socialAccounts: {
           where: { deletedAt: null },
@@ -314,7 +313,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     });
-    if (!client) return reply.status(404).send(NOT_FOUND);
+    if (!client) return null;
 
     const accounts = client.socialAccounts.map((a) => {
       const latest = a.metricSnapshots[0] ?? null;
@@ -333,23 +332,52 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
               avgWatchSec: latest.avgWatchSec,
             }
           : null,
-        history: a.metricSnapshots.map((s) => ({
+        history: [...a.metricSnapshots].reverse().map((s) => ({
           capturedAt: s.capturedAt,
           views: s.views,
+          reach: s.reach,
           followers: s.followers,
         })),
       };
     });
 
-    const totals = accounts.reduce(
-      (acc, a) => {
-        acc.views += a.latest?.views ?? 0;
-        acc.reach += a.latest?.reach ?? 0;
-        acc.followers += a.latest?.followers ?? 0;
-        return acc;
-      },
-      { views: 0, reach: 0, followers: 0 },
-    );
+    // Latest post-level metrics per target, summed across the client.
+    const postMetrics = await prisma.postMetric.findMany({
+      where: { postTarget: { post: { clientId: client.id } } },
+      orderBy: { capturedAt: "desc" },
+    });
+    const latestByTarget = new Map<string, (typeof postMetrics)[number]>();
+    for (const m of postMetrics) {
+      if (!latestByTarget.has(m.postTargetId)) latestByTarget.set(m.postTargetId, m);
+    }
+    let likes = 0;
+    let comments = 0;
+    let shares = 0;
+    for (const m of latestByTarget.values()) {
+      likes += m.likes ?? 0;
+      comments += m.comments ?? 0;
+      shares += m.shares ?? 0;
+    }
+
+    const rates = accounts
+      .map((a) => a.latest?.engagementRate)
+      .filter((x): x is number => x != null);
+    const watches = accounts
+      .map((a) => a.latest?.avgWatchSec)
+      .filter((x): x is number => x != null);
+    const avg = (xs: number[]) =>
+      xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null;
+
+    const totals = {
+      views: accounts.reduce((s, a) => s + (a.latest?.views ?? 0), 0),
+      reach: accounts.reduce((s, a) => s + (a.latest?.reach ?? 0), 0),
+      followers: accounts.reduce((s, a) => s + (a.latest?.followers ?? 0), 0),
+      engagementRate: avg(rates),
+      avgWatchSec: avg(watches),
+      likes,
+      comments,
+      shares,
+    };
 
     return {
       client: { id: client.id, name: client.name, plan: client.plan },
@@ -357,6 +385,140 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       totals,
       hasData: accounts.some((a) => a.latest !== null),
     };
+  };
+
+  app.get<{ Params: { id: string } }>("/clients/:id/analytics", async (request, reply) => {
+    const data = await buildAnalytics(request.params.id, request.user.agencyId);
+    if (!data) return reply.status(404).send(NOT_FOUND);
+    return data;
+  });
+
+  /** Branded PDF report written to storage; the app opens it externally. */
+  app.post<{ Params: { id: string } }>("/clients/:id/report", async (request, reply) => {
+    const data = await buildAnalytics(request.params.id, request.user.agencyId);
+    if (!data) return reply.status(404).send(NOT_FOUND);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const relPath = `${data.client.id}/reports/toreroflow-report-${stamp}.pdf`;
+    const absPath = nodePath.join(env.STORAGE_DIR, relPath);
+    await fsp.mkdir(nodePath.dirname(absPath), { recursive: true });
+
+    const fmt = (n: number | null): string =>
+      n == null
+        ? "-"
+        : n >= 1_000_000
+          ? `${(n / 1_000_000).toFixed(2)}M`
+          : n >= 1_000
+            ? `${(n / 1_000).toFixed(1)}K`
+            : `${Math.round(n * 10) / 10}`;
+
+    await new Promise<void>((resolve, reject) => {
+      const doc = new PDFDocument({ size: "LETTER", margin: 48 });
+      const out = createWriteStream(absPath);
+      out.on("finish", () => resolve());
+      out.on("error", reject);
+      doc.pipe(out);
+
+      const violet = "#8b7bff";
+      const ink = "#1b1c33";
+      const soft = "#6b6e8f";
+      const logo = nodePath.join(env.REPO_ROOT, "design", "app-icon-1024.png");
+      try {
+        doc.image(logo, 48, 44, { width: 44 });
+      } catch {
+        // logo missing: header text still renders
+      }
+      doc.fillColor(violet).fontSize(22).font("Helvetica-Bold").text("Toreroflow", 104, 48);
+      doc.fillColor(soft).fontSize(10).font("Helvetica").text("by Torerone", 104, 74);
+      doc
+        .fillColor(ink)
+        .fontSize(17)
+        .font("Helvetica-Bold")
+        .text(`${data.client.name} performance report`, 48, 116);
+      doc
+        .fillColor(soft)
+        .fontSize(10)
+        .font("Helvetica")
+        .text(
+          `Generated ${new Date().toLocaleDateString([], { dateStyle: "long" })} · last 30 days`,
+          48,
+          138,
+        );
+
+      const kpis: Array<[string, string]> = [
+        ["Views", fmt(data.totals.views)],
+        ["Reach", fmt(data.totals.reach)],
+        ["Followers", fmt(data.totals.followers)],
+        [
+          "Engagement",
+          data.totals.engagementRate == null
+            ? "-"
+            : `${data.totals.engagementRate.toFixed(1)}%`,
+        ],
+        [
+          "Avg watch",
+          data.totals.avgWatchSec == null ? "-" : `${data.totals.avgWatchSec.toFixed(1)}s`,
+        ],
+        ["Likes", fmt(data.totals.likes)],
+      ];
+      const boxW = 82;
+      kpis.forEach(([label, value], i) => {
+        const x = 48 + i * (boxW + 8);
+        doc.roundedRect(x, 168, boxW, 56, 8).fillAndStroke("#f3f2fc", "#e2e0f5");
+        doc.fillColor(soft).fontSize(8).font("Helvetica").text(label.toUpperCase(), x, 178, {
+          width: boxW,
+          align: "center",
+        });
+        doc.fillColor(ink).fontSize(15).font("Helvetica-Bold").text(value, x, 192, {
+          width: boxW,
+          align: "center",
+        });
+      });
+
+      let y = 258;
+      doc.fillColor(ink).fontSize(13).font("Helvetica-Bold").text("Connected platforms", 48, y);
+      y += 22;
+      doc.fillColor(soft).fontSize(9).font("Helvetica");
+      doc.text("PLATFORM", 48, y);
+      doc.text("HANDLE", 170, y);
+      doc.text("VIEWS", 330, y, { width: 60, align: "right" });
+      doc.text("REACH", 400, y, { width: 60, align: "right" });
+      doc.text("FOLLOWERS", 470, y, { width: 80, align: "right" });
+      y += 14;
+      doc.moveTo(48, y).lineTo(564, y).strokeColor("#e2e0f5").stroke();
+      y += 8;
+      for (const a of data.accounts) {
+        doc.fillColor(ink).fontSize(10).font("Helvetica-Bold").text(
+          a.platform[0]!.toUpperCase() + a.platform.slice(1),
+          48,
+          y,
+        );
+        doc.fillColor(soft).font("Helvetica").text(`@${a.handle}`, 170, y);
+        doc.fillColor(ink).text(fmt(a.latest?.views ?? null), 330, y, { width: 60, align: "right" });
+        doc.text(fmt(a.latest?.reach ?? null), 400, y, { width: 60, align: "right" });
+        doc.text(fmt(a.latest?.followers ?? null), 470, y, { width: 80, align: "right" });
+        y += 20;
+      }
+      if (!data.hasData) {
+        y += 10;
+        doc
+          .fillColor(soft)
+          .fontSize(10)
+          .text(
+            "Metrics ingestion has just been enabled; numbers appear after the first daily pull.",
+            48,
+            y,
+          );
+      }
+
+      doc
+        .fontSize(8)
+        .fillColor(soft)
+        .text("Toreroflow · automated social publishing & analytics", 48, 730);
+      doc.end();
+    });
+
+    return reply.status(201).send({ url: `/files/${relPath}` });
   });
 
   /**

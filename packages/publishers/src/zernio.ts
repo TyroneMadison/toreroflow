@@ -88,6 +88,19 @@ export class ZernioProvider {
     return Array.isArray(accounts) ? (accounts as ZernioAccount[]) : [];
   }
 
+  /**
+   * Performance data across connected accounts. Zernio's docs leave the item
+   * shape loose, so callers normalize field names defensively and keep raw.
+   */
+  async analytics(limit = 200): Promise<Array<Record<string, unknown>>> {
+    const data = await this.request<Record<string, unknown>>(
+      "GET",
+      `/analytics?limit=${limit}`,
+    );
+    const arr = (data.analytics ?? data.posts ?? data.data ?? data) as unknown;
+    return Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [];
+  }
+
   /** Presigned upload slot for a media file (valid 1h; storage 7 days). */
   async presignMedia(
     filename: string,

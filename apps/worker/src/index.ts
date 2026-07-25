@@ -309,6 +309,123 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   }
 }
 
+/* ---- daily analytics ingestion (spec Section 5 step 4) ---- */
+
+/** First numeric value among several possible provider field names. */
+function metric(item: Record<string, unknown>, ...names: string[]): number | null {
+  for (const n of names) {
+    const v = item[n];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v !== "" && Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+function itemAccountId(item: Record<string, unknown>): string | null {
+  const direct = item.accountId ?? item.account_id;
+  if (typeof direct === "string") return direct;
+  const nested = item.account;
+  if (typeof nested === "string") return nested;
+  if (nested && typeof nested === "object" && "_id" in nested) {
+    const id = (nested as { _id: unknown })._id;
+    if (typeof id === "string") return id;
+  }
+  return null;
+}
+
+async function ingestAnalytics(): Promise<void> {
+  if (!zernio) return;
+  const accounts = await prisma.socialAccount.findMany({
+    where: {
+      deletedAt: null,
+      status: "connected",
+      tokensEncrypted: "provider:zernio",
+    },
+  });
+  if (!accounts.length) {
+    console.log("[worker] analytics: no provider-connected accounts yet");
+    return;
+  }
+
+  let items: Array<Record<string, unknown>> = [];
+  try {
+    items = await zernio.analytics();
+  } catch (error) {
+    console.error("[worker] analytics pull failed:", error);
+    return;
+  }
+
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+
+  for (const account of accounts) {
+    const mine = items.filter((i) => itemAccountId(i) === account.providerAccountId);
+    const sum = (...names: string[]) =>
+      mine.reduce((s, i) => s + (metric(i, ...names) ?? 0), 0);
+
+    const views = sum("views", "viewCount", "plays", "impressions");
+    const reach = sum("reach", "uniqueViews", "accountsReached");
+    const likes = sum("likes", "likeCount", "favorites");
+    const comments = sum("comments", "commentCount");
+    const followers = mine.length
+      ? metric(mine[0]!, "followers", "followerCount", "subscriberCount")
+      : null;
+    const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : null;
+
+    const existing = await prisma.metricSnapshot.findFirst({
+      where: { socialAccountId: account.id, capturedAt: { gte: dayStart } },
+    });
+    if (existing) {
+      await prisma.metricSnapshot.update({
+        where: { id: existing.id },
+        data: {
+          views,
+          reach,
+          followers,
+          engagementRate,
+          raw: mine as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } else {
+      await prisma.metricSnapshot.create({
+        data: {
+          socialAccountId: account.id,
+          capturedAt: new Date(),
+          views,
+          reach,
+          followers,
+          engagementRate,
+          raw: mine as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    // Per-post metrics for anything we published through the provider.
+    const targets = await prisma.postTarget.findMany({
+      where: { socialAccountId: account.id, status: "posted", remotePostId: { not: null } },
+    });
+    for (const target of targets) {
+      const item = mine.find((i) => {
+        const id = i._id ?? i.id ?? i.postId;
+        return typeof id === "string" && id === target.remotePostId;
+      });
+      if (!item) continue;
+      await prisma.postMetric.create({
+        data: {
+          postTargetId: target.id,
+          capturedAt: new Date(),
+          views: metric(item, "views", "viewCount", "plays"),
+          likes: metric(item, "likes", "likeCount"),
+          comments: metric(item, "comments", "commentCount"),
+          shares: metric(item, "shares", "shareCount", "reposts"),
+          saves: metric(item, "saves", "saveCount", "bookmarks"),
+        },
+      });
+    }
+  }
+  console.log(`[worker] analytics ingested for ${accounts.length} accounts`);
+}
+
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
 new Worker<{ assetId: string }>(
@@ -327,6 +444,24 @@ new Worker<{ targetId: string }>(
   { connection, concurrency: 2 },
 );
 
+import { Queue } from "bullmq";
+
+const analyticsQueue = new Queue("analytics", { connection });
+new Worker(
+  "analytics",
+  async () => {
+    await ingestAnalytics();
+  },
+  { connection, concurrency: 1 },
+);
+// Daily schedule plus one catch-up pull on boot (same-day dedupe inside).
+void analyticsQueue.upsertJobScheduler(
+  "daily-analytics",
+  { every: 24 * 60 * 60 * 1000 },
+  { name: "ingest", data: {} },
+);
+void ingestAnalytics();
+
 console.log(
-  `[toreroflow-worker] listening on queues 'media' and 'publish' (provider: ${zernio ? "zernio" : "dryrun"})`,
+  `[toreroflow-worker] queues: media, publish, analytics (provider: ${zernio ? "zernio" : "dryrun"})`,
 );

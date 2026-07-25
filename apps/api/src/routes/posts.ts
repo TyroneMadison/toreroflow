@@ -142,6 +142,48 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /** Drag-to-reschedule: move one target and replace its delayed job. */
+  app.patch<{ Params: { id: string } }>(
+    "/posts/targets/:id/reschedule",
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { scheduledAt?: string };
+      const when = body.scheduledAt ? new Date(body.scheduledAt) : null;
+      if (!when || Number.isNaN(when.getTime())) {
+        return reply.status(400).send({ error: "invalid scheduledAt" });
+      }
+      const target = await prisma.postTarget.findFirst({
+        where: {
+          id: request.params.id,
+          post: { client: { agencyId: request.user.agencyId } },
+        },
+      });
+      if (!target) return reply.status(404).send({ error: "target not found" });
+      if (target.status !== "scheduled") {
+        return reply.status(409).send({ error: "only scheduled posts can move" });
+      }
+
+      const updated = await prisma.postTarget.update({
+        where: { id: target.id },
+        data: { scheduledAt: when },
+      });
+      const existing = await publishQueue.getJob(target.id);
+      if (existing) await existing.remove();
+      await publishQueue.add(
+        "publish",
+        { targetId: target.id },
+        {
+          jobId: target.id,
+          delay: Math.max(0, when.getTime() - Date.now()),
+          attempts: 3,
+          backoff: { type: "exponential", delay: 30_000 },
+          removeOnComplete: true,
+          removeOnFail: true,
+        },
+      );
+      return { id: updated.id, scheduledAt: updated.scheduledAt };
+    },
+  );
+
   /** Cancel a scheduled post (all targets still unpublished). */
   app.delete<{ Params: { id: string } }>("/posts/:id", async (request, reply) => {
     const post = await prisma.post.findFirst({

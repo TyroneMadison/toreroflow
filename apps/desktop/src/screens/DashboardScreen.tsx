@@ -91,9 +91,12 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
               const connected = client.accounts.filter((a) => a.status === "connected");
               const stats: Array<[string, string]> = [
                 ["Views", fmt(m?.totals.views ?? null)],
-                ["Retention", m?.hasData ? "-" : "-"],
-                ["Likes", "-"],
-                ["Comments", "-"],
+                [
+                  "Retention",
+                  m?.totals.avgWatchSec != null ? `${m.totals.avgWatchSec.toFixed(1)}s` : "-",
+                ],
+                ["Likes", m?.hasData ? fmt(m.totals.likes) : "-"],
+                ["Comments", m?.hasData ? fmt(m.totals.comments) : "-"],
               ];
               return (
                 <div
