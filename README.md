@@ -12,7 +12,7 @@ into client-ready reports.
 
 <br/>
 
-![Milestone](https://img.shields.io/badge/milestone-M0%20complete-8b7bff?style=for-the-badge)
+![Milestone](https://img.shields.io/badge/milestone-M3%20complete-8b7bff?style=for-the-badge)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
@@ -21,7 +21,7 @@ into client-ready reports.
 
 <br/>
 
-<img src="docs/screens/upload-dark.png" width="920" alt="Toreroflow - Upload & Schedule screen (dark)" />
+<img src="docs/screens/dashboard-dark.png" width="920" alt="Toreroflow - Dashboard (dark)" />
 
 </div>
 
@@ -31,33 +31,33 @@ into client-ready reports.
 
 | | Feature | Status |
 |---|---|---|
-| 🎛️ | **Multi-account management** - clients, connected profiles, connection health | 🟣 UI live (M0) · wiring in M1 |
-| 🎬 | **Video intake** - drag & drop, local media library | ⚪ M2 |
-| 💬 | **Auto captioning** - transcription + styled burned-in captions (Bold pop, Karaoke, Minimal, Neon) | ⚪ M2 |
-| 📐 | **Auto formatting** - per-platform 9:16 reframe & transcode profiles | ⚪ M2 |
-| ✍️ | **AI captions & hooks** - Claude drafts per-platform copy, human approves | ⚪ M2 |
-| 🗓️ | **Scheduling** - calendar & queue, days ahead, per client & platform | ⚪ M3–M4 |
-| 🚀 | **Auto publishing** - cloud workers post at the scheduled moment, with retries | ⚪ M3 |
-| ⏰ | **Best-time engine** - posting windows computed from each account's own history | ⚪ M5 |
-| 📊 | **Analytics** - KPIs, trends, platform mix, top posts, branded PDF exports | 🟣 UI live (M0) · data in M5 |
+| 🎛️ | **Multi-account management** - clients, provider-backed connections (Zernio OAuth), connection health | ✅ Live |
+| 🎬 | **Video intake** - drag & drop uploads, storage, processing pipeline | ✅ Live |
+| 💬 | **Auto captioning** - local Whisper transcription + Bold pop captions burned in (more styles coming) | ✅ Live |
+| 📐 | **Auto formatting** - 1080x1920 vertical reframe with per-platform profiles | ✅ Live |
+| ✍️ | **AI captions & hooks** - Claude drafts the hook, caption, and hashtags; human edits and approves | ✅ Live |
+| 🗓️ | **Scheduling** - day/week/month calendar with US holiday reminders, queue, per client & platform | ✅ Live |
+| 🚀 | **Auto publishing** - delayed jobs post through the provider at the scheduled moment, with retries | ✅ Live |
+| ⏰ | **Best-time engine** - posting windows computed from each account's own history | ⚪ Up next |
+| 📊 | **Analytics** - KPIs, trends, platform mix, top posts, branded PDF exports | 🟣 UI live · data ingestion up next |
 
 ## 🖥️ The app
 
 <table>
   <tr>
-    <td align="center"><b>Content Calendar</b><br/><img src="docs/screens/calendar-dark.png" alt="Content Calendar screen" /></td>
-    <td align="center"><b>Client Analytics</b><br/><img src="docs/screens/analytics-dark.png" alt="Client Analytics screen" /></td>
+    <td align="center"><b>Upload & Schedule</b><br/><img src="docs/screens/upload-dark.png" alt="Upload and Schedule screen" /></td>
+    <td align="center"><b>Content Calendar with US holidays</b><br/><img src="docs/screens/calendar-dark.png" alt="Month calendar with holiday reminders" /></td>
   </tr>
   <tr>
+    <td align="center"><b>Workflows (repurpose fan-out)</b><br/><img src="docs/screens/workflows-dark.png" alt="Workflows screen" /></td>
     <td align="center"><b>Accounts</b><br/><img src="docs/screens/accounts-dark.png" alt="Accounts screen" /></td>
-    <td align="center"><b>Post Composer</b><br/><img src="docs/screens/composer-dark.png" alt="Post Composer modal" /></td>
   </tr>
 </table>
 
 <details>
   <summary>☀️ <b>Light mode</b> (full theme parity - click to expand)</summary>
   <br/>
-  <img src="docs/screens/upload-light.png" alt="Upload & Schedule screen in light mode" />
+  <img src="docs/screens/dashboard-light.png" alt="Dashboard in light mode" />
 </details>
 
 ## 🏗️ Architecture
@@ -126,10 +126,10 @@ pnpm --filter @toreroflow/desktop tauri dev   # launch the app
 ## 🗺️ Roadmap
 
 - [x] **M0 · Scaffold & shell** - monorepo, DB schema, auth API, full UI port ✅ `v0.1.0`
-- [ ] **M1 · Clients & connections** - client CRUD, publishing provider, OAuth per platform
-- [ ] **M2 · Upload & media pipeline** - storage, transcription, AI captions, 9:16 renders
-- [ ] **M3 · Scheduling & publishing** - delayed jobs, dry-run → sandbox → live, retries
-- [ ] **M4 · Calendar** - drag-to-reschedule across week & month views
+- [x] **M1 · Clients & connections** - client CRUD, Zernio provider, OAuth per platform ✅
+- [x] **M2 · Upload & media pipeline** - storage, transcription, AI captions, 9:16 renders ✅
+- [x] **M3 · Scheduling & publishing** - delayed jobs with retries, dashboard, holiday calendar ✅
+- [ ] **M4 · Calendar polish** - drag-to-reschedule (day/week/month views already live)
 - [ ] **M5 · Analytics** - daily metric ingestion, dashboards, branded PDF exports
 - [ ] **M6 · Package & polish** - signed installers, auto-update, theme & state polish
 
