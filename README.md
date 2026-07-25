@@ -12,7 +12,7 @@ into client-ready reports.
 
 <br/>
 
-![Milestone](https://img.shields.io/badge/milestone-M3%20complete-8b7bff?style=for-the-badge)
+![Milestone](https://img.shields.io/badge/milestone-M5%20complete-8b7bff?style=for-the-badge)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
@@ -39,7 +39,7 @@ into client-ready reports.
 | 🗓️ | **Scheduling** - day/week/month calendar with US holiday reminders, queue, per client & platform | ✅ Live |
 | 🚀 | **Auto publishing** - delayed jobs post through the provider at the scheduled moment, with retries | ✅ Live |
 | ⏰ | **Best-time engine** - posting windows computed from each account's own history | ⚪ Up next |
-| 📊 | **Analytics** - KPIs, trends, platform mix, top posts, branded PDF exports | 🟣 UI live · data ingestion up next |
+| 📊 | **Analytics** - daily metric ingestion, live charts, platform mix, branded PDF exports | ✅ Live |
 
 ## 🖥️ The app
 
@@ -129,8 +129,8 @@ pnpm --filter @toreroflow/desktop tauri dev   # launch the app
 - [x] **M1 · Clients & connections** - client CRUD, Zernio provider, OAuth per platform ✅
 - [x] **M2 · Upload & media pipeline** - storage, transcription, AI captions, 9:16 renders ✅
 - [x] **M3 · Scheduling & publishing** - delayed jobs with retries, dashboard, holiday calendar ✅
-- [ ] **M4 · Calendar polish** - drag-to-reschedule (day/week/month views already live)
-- [ ] **M5 · Analytics** - daily metric ingestion, dashboards, branded PDF exports
+- [x] **M4 · Calendar polish** - drag-to-reschedule across day/week/month views ✅
+- [x] **M5 · Analytics** - daily metric ingestion, live dashboards, branded PDF exports ✅
 - [ ] **M6 · Package & polish** - signed installers, auto-update, theme & state polish
 
 ## 📝 Changelog
