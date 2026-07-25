@@ -87,7 +87,9 @@ function Shell() {
           {activeScreen === "calendar" && (
             <CalendarScreen key="calendar" onNewPost={() => setActiveScreen("upload")} />
           )}
-          {activeScreen === "analytics" && <AnalyticsScreen key="analytics" />}
+          {activeScreen === "analytics" && (
+            <AnalyticsScreen key="analytics" onOpenConnect={openConnect} />
+          )}
           {activeScreen === "accounts" && (
             <AccountsScreen
               key="accounts"

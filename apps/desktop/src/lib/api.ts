@@ -138,6 +138,22 @@ export interface ClientAnalytics {
   hasData: boolean;
 }
 
+export interface ClientPost {
+  id: string;
+  title: string;
+  publishedAt: string;
+  thumbnailUrl: string | null;
+  url: string | null;
+  platforms: Platform[];
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  avgWatchSec: number | null;
+  durationSec: number | null;
+  byPlatform: Array<{ platform: Platform; views: number }>;
+}
+
 export interface Suggestion {
   title: string;
   detail: string;

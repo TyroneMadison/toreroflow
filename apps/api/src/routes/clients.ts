@@ -19,6 +19,16 @@ import { requireAuth } from "../plugins/requireAuth";
 
 const NOT_FOUND = { error: "client not found" } as const;
 
+/** First numeric value among several possible provider field names. */
+function num(item: Record<string, unknown>, ...names: string[]): number | null {
+  for (const n of names) {
+    const v = item[n];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v !== "" && Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+
 /** Initials for the avatar tile, e.g. "Halo Fitness" -> "HF". */
 function avatarSeed(name: string): string {
   return name
@@ -449,6 +459,125 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       const data = await buildAnalytics(request.params.id, request.user.agencyId, days);
       if (!data) return reply.status(404).send(NOT_FOUND);
       return data;
+    },
+  );
+
+  /**
+   * Live per-post analytics for the Analytics screen: every provider post
+   * (including pre-existing platform content) belonging to this client's
+   * profile, with title, thumbnail, publish date, and metrics. Cached
+   * briefly so brand switches don't hammer the provider.
+   */
+  const postsCache = new Map<string, { at: number; posts: unknown[] }>();
+  const POSTS_TTL_MS = 5 * 60 * 1000;
+
+  app.get<{ Params: { id: string } }>(
+    "/clients/:id/analytics/posts",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        include: { socialAccounts: { where: { deletedAt: null } } },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+      if (!zernio) return { posts: [] };
+
+      const cached = postsCache.get(client.id);
+      if (cached && Date.now() - cached.at < POSTS_TTL_MS) return { posts: cached.posts };
+
+      let raw: Array<Record<string, unknown>>;
+      try {
+        raw = await zernio.analytics(500);
+      } catch (error) {
+        request.log.error({ err: error }, "zernio analytics pull failed");
+        return { posts: [] };
+      }
+
+      const accountPlatform = new Map(
+        client.socialAccounts
+          .filter((a) => a.providerAccountId)
+          .map((a) => [a.providerAccountId as string, a.platform as string]),
+      );
+
+      // Durations exist only for videos we produced ourselves.
+      const targets = await prisma.postTarget.findMany({
+        where: { remotePostId: { not: null }, socialAccount: { clientId: client.id } },
+        include: { post: { include: { mediaAsset: true } } },
+      });
+      const durationByRemoteId = new Map<string, number>();
+      for (const t of targets) {
+        const d = t.post.mediaAsset?.durationSec;
+        if (t.remotePostId && d) durationByRemoteId.set(t.remotePostId, d);
+      }
+
+      const posts: unknown[] = [];
+      for (const p of raw) {
+        const entries = Array.isArray(p.platforms)
+          ? (p.platforms as Array<Record<string, unknown>>)
+          : [];
+        const mine = entries.filter(
+          (e) => typeof e.accountId === "string" && accountPlatform.has(e.accountId),
+        );
+        const profileMatch =
+          typeof p.profileId === "string" && p.profileId === client.providerProfileId;
+        if (!profileMatch && mine.length === 0) continue;
+
+        const published = new Date(String(p.publishedAt ?? p.scheduledFor ?? ""));
+        if (Number.isNaN(published.getTime())) continue;
+
+        const use = mine.length ? mine : entries;
+        const m = (p.analytics ?? {}) as Record<string, unknown>;
+        const views = num(m, "views", "impressions", "plays") ?? 0;
+
+        // Per-platform attribution: the entry's own analytics when present,
+        // else the whole post's on a single-platform post, else an even split.
+        const byPlatform = use.map((e) => {
+          const em = (e.analytics ?? {}) as Record<string, unknown>;
+          const entryViews = num(em, "views", "impressions", "plays");
+          const platform =
+            accountPlatform.get(e.accountId as string) ??
+            (typeof e.platform === "string" ? e.platform : "unknown");
+          return {
+            platform,
+            views:
+              entryViews ?? (use.length === 1 ? views : Math.round(views / use.length)),
+          };
+        });
+
+        // igReelsAvgWatchTime arrives in milliseconds; the others in seconds.
+        const watchMs = num(m, "igReelsAvgWatchTime");
+        const avgWatchSec =
+          watchMs && watchMs > 0
+            ? watchMs / 1000
+            : num(m, "avgWatchTime", "averageViewDuration");
+
+        const id = typeof p._id === "string" ? p._id : String(p.id ?? "");
+        posts.push({
+          id,
+          title:
+            typeof p.content === "string" && p.content.trim() ? p.content.trim() : "(untitled)",
+          publishedAt: published.toISOString(),
+          thumbnailUrl: typeof p.thumbnailUrl === "string" ? p.thumbnailUrl : null,
+          url: typeof p.platformPostUrl === "string" ? p.platformPostUrl : null,
+          platforms: [...new Set(byPlatform.map((b) => b.platform))],
+          views,
+          likes: num(m, "likes", "likeCount") ?? 0,
+          comments: num(m, "comments", "commentCount") ?? 0,
+          shares: num(m, "shares", "shareCount") ?? 0,
+          avgWatchSec: avgWatchSec && avgWatchSec > 0 ? avgWatchSec : null,
+          durationSec:
+            num(m, "duration", "videoDuration", "durationSec", "mediaDuration") ??
+            durationByRemoteId.get(id) ??
+            null,
+          byPlatform,
+        });
+      }
+      posts.sort((a, b) =>
+        (a as { publishedAt: string }).publishedAt < (b as { publishedAt: string }).publishedAt
+          ? 1
+          : -1,
+      );
+      postsCache.set(client.id, { at: Date.now(), posts });
+      return { posts };
     },
   );
 

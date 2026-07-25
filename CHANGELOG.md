@@ -9,6 +9,15 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - Analytics command center redesign
+
+- Brand dropdown in the Analytics topbar (with "+ Enroll a client"), so a brand can be picked right on the page instead of only from the sidebar
+- New three-column analytics layout in the app's liquid glass style: KPI tiles (views, watch-time hours, YouTube subscribers, non-YouTube followers), per-video views chart colored by platform, circular color-coded views-share pie, and the brand's profile picture card top right
+- Last 10 uploads table: thumbnail, title, upload date, platform, views, average view duration, and video length per row
+- Recent followers panel (every platform except YouTube) and recent subscribers panel (YouTube), each showing current counts and the 30-day change
+- Most viewed videos list plus view-milestone rankings: top 10 videos at 1M+, 100K to 999K, and 10K to 99K views, all pulled across every platform connected under the brand (new platforms join automatically)
+- New API endpoint `GET /clients/:id/analytics/posts`: live provider post analytics (titles, thumbnails, publish dates, metrics) scoped to the client's profile, briefly cached; video length backfills from our own media when the post was produced in Toreroflow
+
 ### Fixed - screen scrolling and Accounts avatars
 
 - Screens scroll properly: the content area below the top bar is now a real scroll container, so tall pages (like Settings with an expanded profile card) reach the bottom instead of clipping at the window edge
