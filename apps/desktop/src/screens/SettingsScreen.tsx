@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Pf from "../components/Pf";
-import { api } from "../lib/api";
+import { api, type ClientAnalytics, type ClientSummary } from "../lib/api";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
@@ -10,16 +10,195 @@ interface SettingsScreenProps {
   onOpenConnect(): void;
 }
 
+function fmt(n: number | null | undefined): string {
+  if (n == null) return "-";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+
+function ProfileCard({
+  client,
+  onConnect,
+  onDisconnect,
+  onSync,
+  busyKey,
+  pending,
+}: {
+  client: ClientSummary;
+  onConnect(platform: Platform): void;
+  onDisconnect(accountId: string): void;
+  onSync(): void;
+  busyKey: string | null;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cover, setCover] = useState(false);
+  const [analytics, setAnalytics] = useState<ClientAnalytics | null>(null);
+
+  const connected = client.accounts.filter((a) => a.status === "connected");
+  const avatar =
+    connected.find((a) => a.platform === "instagram" && a.avatarUrl)?.avatarUrl ??
+    connected.find((a) => a.avatarUrl)?.avatarUrl ??
+    null;
+  const displayName = connected.find((a) => a.displayName)?.displayName ?? client.name;
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api
+      .get<ClientAnalytics>(`/clients/${client.id}/analytics?days=30`)
+      .then((d) => {
+        if (!cancelled) setAnalytics(d);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, client.accounts.length]);
+
+  const t = analytics?.totals;
+  const cells: Array<[string, string]> = [
+    ["Followers", fmt(t?.followers ?? null)],
+    ["Views · 30d", fmt(t?.views ?? null)],
+    ["Likes · 30d", fmt(t?.likes ?? null)],
+    ["Comments · 30d", fmt(t?.comments ?? null)],
+    ["Engagement", t?.engagementRate != null ? `${t.engagementRate.toFixed(1)}%` : "-"],
+    ["Retention", t?.avgWatchSec != null ? `${t.avgWatchSec.toFixed(1)}s` : "-"],
+  ];
+
+  return (
+    <div className={`pcard glass${cover ? " cover" : ""}${open ? " open" : ""}`}>
+      {cover && avatar && (
+        <div className="pcover-bg" style={{ backgroundImage: `url(${avatar})` }} />
+      )}
+      <div className="pcover-shade" />
+
+      <div className="pmedia">
+        {avatar ? (
+          <img src={avatar} alt={displayName} />
+        ) : (
+          <div className="pinitials">{client.avatarSeed ?? client.name.slice(0, 2)}</div>
+        )}
+      </div>
+
+      <div className="pbody">
+        <div className="pname">
+          {displayName}
+          {connected.length > 0 && (
+            <svg className="pverified" viewBox="0 0 24 24">
+              <use href="#i-check" />
+            </svg>
+          )}
+        </div>
+        <div className="psub">
+          {client.name}
+          {connected.length
+            ? ` · ${connected.length} connected ${connected.length === 1 ? "platform" : "platforms"}`
+            : " · no platforms yet"}
+        </div>
+        <div className="pplat">
+          {connected.map((a) => (
+            <Pf key={a.id} p={PF_ID[a.platform]} size="sm" />
+          ))}
+        </div>
+        <div className="pactions">
+          <button className="btn pexp" onClick={() => setOpen((o) => !o)}>
+            {open ? "Collapse" : "Expand"}
+          </button>
+          <div
+            className="iconbtn pstyle"
+            title="Switch card style"
+            onClick={() => setCover((c) => !c)}
+          >
+            <svg>
+              <use href="#i-image" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div className="pexpand">
+        <div className="pexpand-inner">
+          <div className="pgridstats">
+            {cells.map(([label, value]) => (
+              <div className="dashstat" key={label}>
+                <div className="lab">{label}</div>
+                <div className="val">{analytics ? value : "…"}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flabel" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
+            Platforms
+            <span className="link" style={{ textTransform: "none", letterSpacing: 0 }} onClick={onSync}>
+              {busyKey === `sync:${client.id}` ? "Syncing…" : "Sync accounts"}
+            </span>
+          </div>
+          {pending && (
+            <p style={{ fontSize: 12, color: "var(--amber)", margin: "2px 0 6px" }}>
+              Finish authorizing in your browser, then click Sync accounts.
+            </p>
+          )}
+          {PLATFORMS.map((platform) => {
+            const account = client.accounts.find(
+              (a) => a.platform === platform && a.status === "connected",
+            );
+            const key = account ? account.id : `${client.id}:${platform}`;
+            const busy = busyKey === key;
+            return (
+              <div className="connect-row" key={platform}>
+                <Pf p={PF_ID[platform]} />
+                <div className="cinfo">
+                  <b>{PLATFORM_LABELS[platform]}</b>
+                  <span>{account ? `@${account.handle} · connected` : "not connected"}</span>
+                </div>
+                {account ? (
+                  <button className="dangerbtn" disabled={busy} onClick={() => onDisconnect(account.id)}>
+                    {busy ? "…" : "Disconnect"}
+                  </button>
+                ) : (
+                  <button className="cbtn" disabled={busy} onClick={() => onConnect(platform)}>
+                    {busy ? "…" : "Connect"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const { clients, refreshClients, user, logout } = useAppState();
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState<string | null>(null);
+  const autoSynced = useRef(false);
 
   useEffect(() => {
     void getAutostart().then(setAutostartState);
   }, []);
+
+  // Pull provider-side connections in automatically when Settings opens.
+  useEffect(() => {
+    if (autoSynced.current || !clients.length) return;
+    autoSynced.current = true;
+    void (async () => {
+      for (const client of clients) {
+        try {
+          await api.post(`/clients/${client.id}/accounts/sync`, {});
+        } catch {
+          // provider may be unset; manual sync still available
+        }
+      }
+      await refreshClients();
+    })();
+  }, [clients, refreshClients]);
 
   const toggleAutostart = async () => {
     if (autostart === null || autostartBusy) return;
@@ -40,12 +219,21 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         {},
       );
       if (res.authUrl) {
-        // Real provider: finish OAuth in the browser, then sync back.
         await openExternal(res.authUrl);
         setPendingSync(clientId);
       } else {
         await refreshClients();
       }
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const disconnect = async (accountId: string) => {
+    setBusyKey(accountId);
+    try {
+      await api.del(`/accounts/${accountId}`);
+      await refreshClients();
     } finally {
       setBusyKey(null);
     }
@@ -57,16 +245,6 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
       setPendingSync((p) => (p === clientId ? null : p));
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
-  const disconnect = async (accountId: string) => {
-    setBusyKey(accountId);
-    try {
-      await api.del(`/accounts/${accountId}`);
-      await refreshClients();
     } finally {
       setBusyKey(null);
     }
@@ -117,8 +295,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             <div>
               <h3>Connected Accounts</h3>
               <div className="sub">
-                One profile per enrolled client - connect or disconnect each platform.
-                Connections run in dry-run mode until a publishing provider is configured.
+                One profile per enrolled client. Expand a card for the 30-day overview,
+                connect or disconnect platforms, and switch card styles.
               </div>
             </div>
             <span className="link" onClick={onOpenConnect}>
@@ -126,7 +304,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             </span>
           </div>
 
-          {clients.length === 0 && (
+          {clients.length === 0 ? (
             <div className="empty">
               <div className="eic">
                 <svg>
@@ -136,63 +314,21 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
               <b>No clients enrolled</b>
               <p>Enroll a client to start connecting their platforms.</p>
             </div>
-          )}
-
-          {clients.map((client) => (
-            <div key={client.id} style={{ marginTop: 14 }}>
-              <div
-                className="flabel"
-                style={{ display: "flex", gap: 12, alignItems: "center" }}
-              >
-                {client.name}
-                <span
-                  className="link"
-                  style={{ textTransform: "none", letterSpacing: 0 }}
-                  onClick={() => void sync(client.id)}
-                >
-                  {busyKey === `sync:${client.id}` ? "Syncing…" : "Sync accounts"}
-                </span>
-              </div>
-              {pendingSync === client.id && (
-                <p style={{ fontSize: 12, color: "var(--amber)", margin: "2px 0 6px" }}>
-                  Finish authorizing in your browser, then click Sync accounts.
-                </p>
-              )}
-              {PLATFORMS.map((platform) => {
-                const account = client.accounts.find(
-                  (a) => a.platform === platform && a.status === "connected",
-                );
-                const key = account ? account.id : `${client.id}:${platform}`;
-                const busy = busyKey === key;
-                return (
-                  <div className="connect-row" key={platform}>
-                    <Pf p={PF_ID[platform]} />
-                    <div className="cinfo">
-                      <b>{PLATFORM_LABELS[platform]}</b>
-                      <span>{account ? `@${account.handle} · connected` : "not connected"}</span>
-                    </div>
-                    {account ? (
-                      <button
-                        className="dangerbtn"
-                        disabled={busy}
-                        onClick={() => void disconnect(account.id)}
-                      >
-                        {busy ? "…" : "Disconnect"}
-                      </button>
-                    ) : (
-                      <button
-                        className="cbtn"
-                        disabled={busy}
-                        onClick={() => void connect(client.id, platform)}
-                      >
-                        {busy ? "…" : "Connect"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+          ) : (
+            <div className="pgrid">
+              {clients.map((client) => (
+                <ProfileCard
+                  key={client.id}
+                  client={client}
+                  busyKey={busyKey}
+                  pending={pendingSync === client.id}
+                  onConnect={(p) => void connect(client.id, p)}
+                  onDisconnect={(id) => void disconnect(id)}
+                  onSync={() => void sync(client.id)}
+                />
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         <div className="card glass setsec">

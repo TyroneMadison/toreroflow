@@ -17,6 +17,7 @@ enum Platform {
   tiktok
   youtube
   snapchat
+  facebook
 }
 
 enum SocialAccountStatus {
@@ -121,6 +122,9 @@ model SocialAccount {
   status            SocialAccountStatus @default(connected)
   /// Encrypted blob (libsodium sealed box / KMS). Never store plaintext tokens.
   tokensEncrypted   String?
+  /// Profile picture and display name captured from the platform via the provider.
+  avatarUrl         String?
+  displayName       String?
   scopes            String[]            @default([])
   connectedAt       DateTime            @default(now())
   createdAt         DateTime            @default(now())

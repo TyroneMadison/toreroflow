@@ -17,9 +17,28 @@ export interface ZernioAccount {
   username?: string;
   name?: string;
   displayName?: string;
-  profileId?: string;
-  profile?: string;
+  /** Zernio returns either a bare id or a populated {_id, name} object. */
+  profileId?: string | { _id: string; name?: string };
+  profile?: string | { _id: string };
   status?: string;
+  followersCount?: number;
+  externalPostCount?: number;
+  isActive?: boolean;
+  metadata?: {
+    profileData?: {
+      username?: string;
+      displayName?: string;
+      profilePicture?: string;
+    };
+  };
+}
+
+/** Normalized profile id regardless of Zernio's populated/bare shape. */
+export function zernioProfileId(account: ZernioAccount): string | null {
+  const p = account.profileId ?? account.profile;
+  if (typeof p === "string") return p;
+  if (p && typeof p === "object" && typeof p._id === "string") return p._id;
+  return null;
 }
 
 /**
@@ -92,13 +111,21 @@ export class ZernioProvider {
    * Performance data across connected accounts. Zernio's docs leave the item
    * shape loose, so callers normalize field names defensively and keep raw.
    */
-  async analytics(limit = 200): Promise<Array<Record<string, unknown>>> {
-    const data = await this.request<Record<string, unknown>>(
-      "GET",
-      `/analytics?limit=${limit}`,
-    );
-    const arr = (data.analytics ?? data.posts ?? data.data ?? data) as unknown;
-    return Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [];
+  async analytics(max = 500): Promise<Array<Record<string, unknown>>> {
+    // Zernio caps limit at 100 and paginates via ?page=N.
+    const pageSize = 100;
+    const out: Array<Record<string, unknown>> = [];
+    for (let page = 1; out.length < max && page <= 10; page++) {
+      const data = await this.request<Record<string, unknown>>(
+        "GET",
+        `/analytics?limit=${pageSize}&page=${page}`,
+      );
+      const arr = (data.analytics ?? data.posts ?? data.data ?? data) as unknown;
+      const items = Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [];
+      out.push(...items);
+      if (items.length < pageSize) break;
+    }
+    return out;
   }
 
   /** Presigned upload slot for a media file (valid 1h; storage 7 days). */
@@ -164,12 +191,10 @@ export class ZernioProvider {
    */
   async accountsForProfile(profileId: string): Promise<ZernioAccount[]> {
     const accounts = await this.listAccounts(profileId);
-    const tagged = accounts.filter(
-      (a) => a.profileId === profileId || a.profile === profileId,
-    );
+    const tagged = accounts.filter((a) => zernioProfileId(a) === profileId);
     // If Zernio ignored the query param and items carry no profile field,
     // we cannot distinguish; return everything rather than nothing.
-    if (tagged.length === 0 && accounts.some((a) => !a.profileId && !a.profile)) {
+    if (tagged.length === 0 && accounts.some((a) => zernioProfileId(a) === null)) {
       return accounts;
     }
     return tagged;

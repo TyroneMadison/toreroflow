@@ -111,13 +111,14 @@ export default function WorkflowsScreen() {
                   {PLATFORMS.map((p) => (
                     <div
                       key={p}
-                      className={`ptab${source === p ? " on" : ""}`}
+                      className={`ptab${source === p ? " on src" : ""}`}
                       onClick={() => {
                         setSource(p);
                         setDestinations((prev) => prev.filter((d) => d !== p));
                       }}
                     >
                       <Pf p={PF_ID[p]} size="sm" /> {SURFACE_LABEL[p]}
+                      {source === p && <span className="srctag">SOURCE</span>}
                     </div>
                   ))}
                 </div>

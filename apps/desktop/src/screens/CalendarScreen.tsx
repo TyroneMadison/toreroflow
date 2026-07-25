@@ -23,6 +23,7 @@ const EV_CLASS: Record<Platform, "v" | "b"> = {
   snapchat: "v",
   tiktok: "b",
   youtube: "b",
+  facebook: "b",
 };
 
 const EV_DOT: Record<Platform, string> = {
@@ -30,6 +31,7 @@ const EV_DOT: Record<Platform, string> = {
   tiktok: "#25f4ee",
   youtube: "#ff4237",
   snapchat: "#ffe600",
+  facebook: "#1877f2",
 };
 
 const STATUS_SUFFIX: Record<PostTargetInfo["status"], string> = {

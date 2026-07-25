@@ -10,6 +10,7 @@ const PLATFORM_COLOR: Record<Platform, string> = {
   tiktok: "#25f4ee",
   youtube: "#ff4237",
   snapchat: "#ffe600",
+  facebook: "#1877f2",
 };
 
 function fmt(n: number | null | undefined): string {

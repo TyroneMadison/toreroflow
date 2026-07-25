@@ -321,18 +321,23 @@ function metric(item: Record<string, unknown>, ...names: string[]): number | nul
   return null;
 }
 
-function itemAccountId(item: Record<string, unknown>): string | null {
-  const direct = item.accountId ?? item.account_id;
-  if (typeof direct === "string") return direct;
-  const nested = item.account;
-  if (typeof nested === "string") return nested;
-  if (nested && typeof nested === "object" && "_id" in nested) {
-    const id = (nested as { _id: unknown })._id;
-    if (typeof id === "string") return id;
-  }
-  return null;
+interface DayBucket {
+  views: number;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  posts: number;
+  watchSum: number;
+  watchCount: number;
 }
 
+/**
+ * Zernio's /analytics returns posts (including pre-existing platform content)
+ * with per-platform entries carrying accountId, metrics, and publish dates.
+ * We attribute each post's metrics to its publish day, giving instant
+ * backfilled history the moment an account connects.
+ */
 async function ingestAnalytics(): Promise<void> {
   if (!zernio) return;
   const accounts = await prisma.socialAccount.findMany({
@@ -347,57 +352,146 @@ async function ingestAnalytics(): Promise<void> {
     return;
   }
 
-  let items: Array<Record<string, unknown>> = [];
+  let posts: Array<Record<string, unknown>> = [];
+  let remoteAccounts: Awaited<ReturnType<typeof zernio.listAccounts>> = [];
   try {
-    items = await zernio.analytics();
+    [posts, remoteAccounts] = await Promise.all([
+      zernio.analytics(500),
+      zernio.listAccounts(),
+    ]);
   } catch (error) {
     console.error("[worker] analytics pull failed:", error);
     return;
   }
 
-  const dayStart = new Date();
-  dayStart.setHours(0, 0, 0, 0);
+  const horizon = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
+  const byAccount = new Map<string, Map<string, DayBucket>>();
+  const postEntries: Array<{ accountId: string; postId: string; m: Record<string, unknown> }> = [];
+
+  for (const post of posts) {
+    const publishedAt = new Date(String(post.publishedAt ?? post.scheduledFor ?? ""));
+    if (Number.isNaN(publishedAt.getTime()) || publishedAt < horizon) continue;
+    const platforms = Array.isArray(post.platforms) ? post.platforms : [];
+    for (const entry of platforms as Array<Record<string, unknown>>) {
+      const accountId = typeof entry.accountId === "string" ? entry.accountId : null;
+      const m = (entry.analytics ?? post.analytics) as Record<string, unknown> | undefined;
+      if (!accountId || !m) continue;
+
+      const dayKey = publishedAt.toISOString().slice(0, 10);
+      let days = byAccount.get(accountId);
+      if (!days) {
+        days = new Map();
+        byAccount.set(accountId, days);
+      }
+      let bucket = days.get(dayKey);
+      if (!bucket) {
+        bucket = { views: 0, reach: 0, likes: 0, comments: 0, shares: 0, posts: 0, watchSum: 0, watchCount: 0 };
+        days.set(dayKey, bucket);
+      }
+      bucket.views += metric(m, "views", "impressions", "plays") ?? 0;
+      bucket.reach += metric(m, "reach", "uniqueViews") ?? 0;
+      bucket.likes += metric(m, "likes", "likeCount") ?? 0;
+      bucket.comments += metric(m, "comments", "commentCount") ?? 0;
+      bucket.shares += metric(m, "shares", "shareCount") ?? 0;
+      bucket.posts += 1;
+      // igReelsAvgWatchTime is reported in milliseconds; the others in seconds.
+      const watchMs = metric(m, "igReelsAvgWatchTime");
+      const watchSec =
+        watchMs && watchMs > 0
+          ? watchMs / 1000
+          : metric(m, "avgWatchTime", "averageViewDuration");
+      if (watchSec && watchSec > 0) {
+        bucket.watchSum += watchSec;
+        bucket.watchCount += 1;
+      }
+
+      const postId = post._id ?? post.id;
+      if (typeof postId === "string") {
+        postEntries.push({ accountId, postId, m });
+      }
+    }
+  }
+
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   for (const account of accounts) {
-    const mine = items.filter((i) => itemAccountId(i) === account.providerAccountId);
-    const sum = (...names: string[]) =>
-      mine.reduce((s, i) => s + (metric(i, ...names) ?? 0), 0);
+    if (!account.providerAccountId) continue;
+    const days = byAccount.get(account.providerAccountId) ?? new Map<string, DayBucket>();
 
-    const views = sum("views", "viewCount", "plays", "impressions");
-    const reach = sum("reach", "uniqueViews", "accountsReached");
-    const likes = sum("likes", "likeCount", "favorites");
-    const comments = sum("comments", "commentCount");
-    const followers = mine.length
-      ? metric(mine[0]!, "followers", "followerCount", "subscriberCount")
-      : null;
-    const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : null;
-
-    const existing = await prisma.metricSnapshot.findFirst({
-      where: { socialAccountId: account.id, capturedAt: { gte: dayStart } },
-    });
-    if (existing) {
-      await prisma.metricSnapshot.update({
-        where: { id: existing.id },
+    // Refresh followers, avatar, and display name from the accounts list.
+    const remote = remoteAccounts.find((r) => r._id === account.providerAccountId);
+    if (remote) {
+      const profileData = remote.metadata?.profileData;
+      await prisma.socialAccount.update({
+        where: { id: account.id },
         data: {
-          views,
-          reach,
-          followers,
-          engagementRate,
-          raw: mine as unknown as Prisma.InputJsonValue,
+          avatarUrl: profileData?.profilePicture ?? account.avatarUrl,
+          displayName:
+            remote.displayName ?? profileData?.displayName ?? account.displayName,
         },
       });
-    } else {
-      await prisma.metricSnapshot.create({
-        data: {
+    }
+
+    for (const [dayKey, bucket] of days) {
+      const capturedAt = new Date(`${dayKey}T12:00:00.000Z`);
+      const dayStart = new Date(`${dayKey}T00:00:00.000Z`);
+      const dayEnd = new Date(`${dayKey}T23:59:59.999Z`);
+      const engagementRate =
+        bucket.views > 0 ? ((bucket.likes + bucket.comments) / bucket.views) * 100 : null;
+      const avgWatchSec = bucket.watchCount ? bucket.watchSum / bucket.watchCount : null;
+      const followers =
+        dayKey === todayKey && typeof remote?.followersCount === "number"
+          ? remote.followersCount
+          : undefined;
+      const data = {
+        views: bucket.views,
+        reach: bucket.reach,
+        engagementRate,
+        avgWatchSec,
+        ...(followers !== undefined ? { followers } : {}),
+        raw: {
+          likes: bucket.likes,
+          comments: bucket.comments,
+          shares: bucket.shares,
+          posts: bucket.posts,
+        } as unknown as Prisma.InputJsonValue,
+      };
+      const existing = await prisma.metricSnapshot.findFirst({
+        where: {
           socialAccountId: account.id,
-          capturedAt: new Date(),
-          views,
-          reach,
-          followers,
-          engagementRate,
-          raw: mine as unknown as Prisma.InputJsonValue,
+          capturedAt: { gte: dayStart, lte: dayEnd },
         },
       });
+      if (existing) {
+        await prisma.metricSnapshot.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.metricSnapshot.create({
+          data: { socialAccountId: account.id, capturedAt, ...data },
+        });
+      }
+    }
+
+    // Today's followers even when no content was published today.
+    if (!days.has(todayKey) && typeof remote?.followersCount === "number") {
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const existing = await prisma.metricSnapshot.findFirst({
+        where: { socialAccountId: account.id, capturedAt: { gte: dayStart } },
+      });
+      if (existing) {
+        await prisma.metricSnapshot.update({
+          where: { id: existing.id },
+          data: { followers: remote.followersCount },
+        });
+      } else {
+        await prisma.metricSnapshot.create({
+          data: {
+            socialAccountId: account.id,
+            capturedAt: new Date(),
+            followers: remote.followersCount,
+          },
+        });
+      }
     }
 
     // Per-post metrics for anything we published through the provider.
@@ -405,25 +499,26 @@ async function ingestAnalytics(): Promise<void> {
       where: { socialAccountId: account.id, status: "posted", remotePostId: { not: null } },
     });
     for (const target of targets) {
-      const item = mine.find((i) => {
-        const id = i._id ?? i.id ?? i.postId;
-        return typeof id === "string" && id === target.remotePostId;
-      });
-      if (!item) continue;
+      const entry = postEntries.find(
+        (p) => p.accountId === account.providerAccountId && p.postId === target.remotePostId,
+      );
+      if (!entry) continue;
       await prisma.postMetric.create({
         data: {
           postTargetId: target.id,
           capturedAt: new Date(),
-          views: metric(item, "views", "viewCount", "plays"),
-          likes: metric(item, "likes", "likeCount"),
-          comments: metric(item, "comments", "commentCount"),
-          shares: metric(item, "shares", "shareCount", "reposts"),
-          saves: metric(item, "saves", "saveCount", "bookmarks"),
+          views: metric(entry.m, "views", "impressions", "plays"),
+          likes: metric(entry.m, "likes", "likeCount"),
+          comments: metric(entry.m, "comments", "commentCount"),
+          shares: metric(entry.m, "shares", "shareCount"),
+          saves: metric(entry.m, "saves", "saveCount"),
         },
       });
     }
   }
-  console.log(`[worker] analytics ingested for ${accounts.length} accounts`);
+  console.log(
+    `[worker] analytics ingested: ${accounts.length} accounts, ${posts.length} posts scanned`,
+  );
 }
 
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });

@@ -9,6 +9,17 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - live account data, profile cards, Facebook
+
+- Facebook added as a full platform across connect, workflows, scheduling, and calendar
+- Fixed provider account sync (Zernio returns profile ids as objects); connected platforms now show correctly everywhere, with auto-sync when Settings opens
+- Accounts import their real profile picture, display name, and follower count; avatars show on Dashboard and Settings cards
+- Instant history backfill: connecting an account immediately ingests the provider's existing post history (paginated) into daily metrics, so 30/60/90/180-day analytics appear right away
+- Dashboard range selector (30/60/90/180 days) with real windowed views, retention, likes, and comments
+- Profile cards in Settings > Connected Accounts: avatar, verified badge, animated Expand with a 30-day overview (followers, views, likes, comments, engagement, retention), per-card style toggle between tile and full-bleed cover layouts, and inline connect/disconnect
+- Workflow source platform now highlighted green with a SOURCE tag
+- Instagram watch time normalized from milliseconds to seconds
+
 ### Added - calendar polish and analytics
 
 - Drag-to-reschedule: drag any scheduled post to another day in the week or month view; the delayed publish job moves with it

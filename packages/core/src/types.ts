@@ -1,4 +1,10 @@
-export const PLATFORMS = ["instagram", "tiktok", "youtube", "snapchat"] as const;
+export const PLATFORMS = [
+  "instagram",
+  "tiktok",
+  "youtube",
+  "snapchat",
+  "facebook",
+] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
@@ -6,6 +12,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   tiktok: "TikTok",
   youtube: "YouTube",
   snapchat: "Snapchat",
+  facebook: "Facebook",
 };
 
 export type SocialAccountStatus = "connected" | "needs_reconnect" | "error";

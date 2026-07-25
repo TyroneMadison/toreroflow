@@ -65,6 +65,8 @@ export interface AccountInfo {
   handle: string;
   status: "connected" | "needs_reconnect" | "error";
   connectedAt: string;
+  avatarUrl: string | null;
+  displayName: string | null;
 }
 
 export interface ClientSummary {
@@ -92,6 +94,17 @@ export interface AccountAnalytics {
   platform: Platform;
   handle: string;
   status: string;
+  avatarUrl: string | null;
+  displayName: string | null;
+  followers: number | null;
+  window: {
+    views: number;
+    reach: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    avgWatchSec: number | null;
+  };
   latest: {
     capturedAt: string;
     views: number | null;
@@ -110,6 +123,7 @@ export interface AccountAnalytics {
 
 export interface ClientAnalytics {
   client: { id: string; name: string; plan: string | null };
+  days: number;
   accounts: AccountAnalytics[];
   totals: {
     views: number;

@@ -25,9 +25,12 @@ const AVATAR_GRADIENTS = [
 ];
 
 /** Quick glance across every brand; the Analytics tab is the deep dive. */
+const RANGES = [30, 60, 90, 180] as const;
+
 export default function DashboardScreen({ onOpenInsights, onOpenConnect }: DashboardScreenProps) {
   const { clients } = useAppState();
   const [metrics, setMetrics] = useState<Record<string, ClientAnalytics>>({});
+  const [days, setDays] = useState<number>(30);
 
   useEffect(() => {
     if (!clients.length) return;
@@ -36,7 +39,10 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
       const entries = await Promise.all(
         clients.map(async (c) => {
           try {
-            return [c.id, await api.get<ClientAnalytics>(`/clients/${c.id}/analytics`)] as const;
+            return [
+              c.id,
+              await api.get<ClientAnalytics>(`/clients/${c.id}/analytics?days=${days}`),
+            ] as const;
           } catch {
             return null;
           }
@@ -51,7 +57,7 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
     return () => {
       cancelled = true;
     };
-  }, [clients]);
+  }, [clients, days]);
 
   return (
     <section className="screen active" data-screen="dashboard">
@@ -63,6 +69,13 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
               ? `Quick overview across ${clients.length} ${clients.length === 1 ? "brand" : "brands"}. Click a card for the full picture.`
               : "Enroll your first brand and its results will show up here."}
           </p>
+        </div>
+        <div className="seg">
+          {RANGES.map((r) => (
+            <span key={r} className={days === r ? "on" : ""} onClick={() => setDays(r)}>
+              {r}d
+            </span>
+          ))}
         </div>
         <button className="btn" onClick={onOpenConnect}>
           <svg>
@@ -89,6 +102,10 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
             {clients.map((client, i) => {
               const m = metrics[client.id];
               const connected = client.accounts.filter((a) => a.status === "connected");
+              const avatar =
+                connected.find((a) => a.platform === "instagram" && a.avatarUrl)?.avatarUrl ??
+                connected.find((a) => a.avatarUrl)?.avatarUrl ??
+                null;
               const stats: Array<[string, string]> = [
                 ["Views", fmt(m?.totals.views ?? null)],
                 [
@@ -112,10 +129,19 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
                         height: 44,
                         borderRadius: 13,
                         fontSize: 15,
+                        overflow: "hidden",
                         background: AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length],
                       }}
                     >
-                      {client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}
+                      {avatar ? (
+                        <img
+                          src={avatar}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()
+                      )}
                     </div>
                     <div className="meta">
                       <b>{client.name}</b>

@@ -419,3 +419,45 @@
 .mev .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
 .mhol{font-size:9.5px;color:var(--txt-3);opacity:.85;display:flex;gap:4px;align-items:center;margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .mhol img{width:12px;height:12px;flex:0 0 auto}
+
+/* ---- facebook tile ---- */
+.pf.fb{color:#1877f2}
+.pf.fb::before{background:radial-gradient(circle at 50% 45%,rgba(24,119,242,.45),transparent 62%)}
+[data-theme="light"] .pf.fb{color:#1877f2}
+
+/* ---- workflow source highlight ---- */
+.ptab.src{box-shadow:inset 0 0 0 1.5px rgba(87,214,160,.75);color:var(--txt)}
+.srctag{font-size:8.5px;font-weight:800;letter-spacing:.6px;color:var(--green);background:rgba(87,214,160,.16);padding:2px 6px;border-radius:8px;margin-left:2px}
+
+/* ---- profile cards (Connected Accounts) ---- */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-top:14px}
+.pcard{position:relative;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:0;transition:transform .35s cubic-bezier(.2,.7,.2,1),box-shadow .35s}
+.pcard:hover{transform:translateY(-3px)}
+.pmedia{border-radius:18px;overflow:hidden;aspect-ratio:1/0.9;position:relative;z-index:2;transition:aspect-ratio .5s cubic-bezier(.2,.7,.2,1),opacity .4s}
+.pmedia img{width:100%;height:100%;object-fit:cover;display:block}
+.pinitials{width:100%;height:100%;display:grid;place-items:center;font-size:34px;font-weight:700;color:#0b0b18;background:linear-gradient(135deg,#8b7bff,#4ea8ff)}
+.pbody{position:relative;z-index:2;padding:14px 6px 4px}
+.pname{font-size:16.5px;font-weight:680;display:flex;align-items:center;gap:7px}
+.pverified{width:16px;height:16px;stroke:#0b0b18;stroke-width:3;fill:none;background:var(--green);border-radius:50%;padding:3px}
+.psub{font-size:12px;color:var(--txt-3);margin-top:4px}
+.pplat{display:flex;gap:6px;margin-top:10px;min-height:22px}
+.pactions{display:flex;gap:8px;margin-top:12px;align-items:center}
+.pexp{padding:8px 18px;font-size:12.5px}
+.pstyle{width:34px;height:34px;border-radius:11px}
+.pexpand{position:relative;z-index:2;display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .5s cubic-bezier(.2,.7,.2,1),opacity .4s ease .05s}
+.pcard.open .pexpand{grid-template-rows:1fr;opacity:1}
+.pexpand-inner{overflow:hidden;padding:0 6px}
+.pgridstats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+
+/* cover variant: the avatar becomes the card backdrop */
+.pcard.cover .pmedia{aspect-ratio:1/0.28;opacity:0}
+.pcover-bg{position:absolute;inset:0;background-size:cover;background-position:center top;z-index:0;opacity:0;transition:opacity .5s}
+.pcard.cover .pcover-bg{opacity:1}
+.pcover-shade{position:absolute;inset:0;z-index:1;opacity:0;transition:opacity .5s;background:linear-gradient(180deg,rgba(8,6,17,.06) 0%,rgba(8,6,17,.55) 46%,rgba(8,6,17,.92) 78%,#080611 100%)}
+.pcard.cover .pcover-shade{opacity:1}
+.pcard.cover .pname,.pcard.cover .psub{text-shadow:0 1px 8px rgba(0,0,0,.55)}
+.pcard.cover .psub{color:rgba(255,255,255,.66)}
+.pcard.cover .pname{color:#fff}
+[data-theme="light"] .pcard.cover .pcover-shade{background:linear-gradient(180deg,rgba(20,20,40,.05) 0%,rgba(20,20,40,.5) 46%,rgba(238,239,248,.94) 82%,#eef0f8 100%)}
+[data-theme="light"] .pcard.cover .pname{color:var(--txt)}
+[data-theme="light"] .pcard.cover .psub{color:var(--txt-2)}

@@ -102,6 +102,12 @@ export default function IconDefs() {
           fill="currentColor"
         />
       </symbol>
+      <symbol id="p-fb" viewBox="0 0 24 24">
+        <path
+          d="M13.6 21v-6.9h2.3l.44-2.9H13.6V9.3c0-.84.4-1.66 1.7-1.66h1.3V5.16S15.4 4.95 14.3 4.95c-2.36 0-3.9 1.43-3.9 4.02v2.23H8.2v2.9h2.2V21z"
+          fill="currentColor"
+        />
+      </symbol>
     </svg>
   );
 }

@@ -10,6 +10,8 @@ import {
   PLATFORMS,
   type Platform,
 } from "@toreroflow/core";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
 import { getPrisma } from "@toreroflow/db";
 import { DryRunPublisher, ZernioError, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
@@ -60,6 +62,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
+  const analyticsQueue = new Queue("analytics", {
+    connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+  });
 
   /** Zernio profile backing this client, created on first use. */
   const ensureProviderProfile = async (client: {
@@ -103,6 +108,8 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         handle: a.handle,
         status: a.status,
         connectedAt: a.connectedAt,
+        avatarUrl: a.avatarUrl,
+        displayName: a.displayName,
       })),
     }));
   });
@@ -245,33 +252,69 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         );
         for (const a of valid) {
           const platform = a.platform as Platform;
-          const handle = a.username ?? a.displayName ?? a.name ?? a.platform;
+          const profileData = a.metadata?.profileData;
+          const handle =
+            profileData?.username ?? a.username ?? a.displayName ?? a.name ?? a.platform;
+          const avatarUrl = profileData?.profilePicture ?? null;
+          const displayName = a.displayName ?? profileData?.displayName ?? null;
           const existing = await prisma.socialAccount.findFirst({
             where: { clientId: client.id, platform, deletedAt: null },
           });
-          if (existing) {
-            await prisma.socialAccount.update({
-              where: { id: existing.id },
-              data: {
-                handle,
-                status: "connected",
-                providerAccountId: a._id,
-                connectedAt: new Date(),
-              },
+          const account = existing
+            ? await prisma.socialAccount.update({
+                where: { id: existing.id },
+                data: {
+                  handle,
+                  status: "connected",
+                  providerAccountId: a._id,
+                  avatarUrl,
+                  displayName,
+                  connectedAt: new Date(),
+                },
+              })
+            : await prisma.socialAccount.create({
+                data: {
+                  clientId: client.id,
+                  platform,
+                  handle,
+                  status: "connected",
+                  providerAccountId: a._id,
+                  avatarUrl,
+                  displayName,
+                  // Tokens stay with the provider; this marks custody, not a secret.
+                  tokensEncrypted: "provider:zernio",
+                },
+              });
+          // Followers are known right now; seed today's snapshot immediately.
+          if (typeof a.followersCount === "number") {
+            const dayStart = new Date();
+            dayStart.setHours(0, 0, 0, 0);
+            const snap = await prisma.metricSnapshot.findFirst({
+              where: { socialAccountId: account.id, capturedAt: { gte: dayStart } },
             });
-          } else {
-            await prisma.socialAccount.create({
-              data: {
-                clientId: client.id,
-                platform,
-                handle,
-                status: "connected",
-                providerAccountId: a._id,
-                // Tokens stay with the provider; this marks custody, not a secret.
-                tokensEncrypted: "provider:zernio",
-              },
-            });
+            if (snap) {
+              await prisma.metricSnapshot.update({
+                where: { id: snap.id },
+                data: { followers: a.followersCount },
+              });
+            } else {
+              await prisma.metricSnapshot.create({
+                data: {
+                  socialAccountId: account.id,
+                  capturedAt: new Date(),
+                  followers: a.followersCount,
+                },
+              });
+            }
           }
+        }
+        // Backfill history from the provider's already-synced posts right away.
+        if (valid.length) {
+          await analyticsQueue.add(
+            "ingest",
+            {},
+            { removeOnComplete: true, removeOnFail: true },
+          );
         }
         return { imported: valid.length };
       } catch (error) {
@@ -301,27 +344,53 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  const buildAnalytics = async (clientId: string, agencyId: string) => {
+  /**
+   * Snapshots are daily activity buckets (views/likes/comments attributed to
+   * the day content was published), so a window's totals are simple sums.
+   */
+  const buildAnalytics = async (clientId: string, agencyId: string, days = 30) => {
     const client = await prisma.client.findFirst({
       where: { id: clientId, agencyId, deletedAt: null },
       include: {
         socialAccounts: {
           where: { deletedAt: null },
           include: {
-            metricSnapshots: { orderBy: { capturedAt: "desc" }, take: 30 },
+            metricSnapshots: { orderBy: { capturedAt: "desc" }, take: 220 },
           },
         },
       },
     });
     if (!client) return null;
 
+    const windowStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rawOf = (s: { raw: unknown }) =>
+      (s.raw as { likes?: number; comments?: number; shares?: number } | null) ?? {};
+
     const accounts = client.socialAccounts.map((a) => {
+      const inWindow = a.metricSnapshots.filter((s) => s.capturedAt >= windowStart);
       const latest = a.metricSnapshots[0] ?? null;
+      const sum = (pick: (s: (typeof inWindow)[number]) => number | null | undefined) =>
+        inWindow.reduce((acc, s) => acc + (pick(s) ?? 0), 0);
+      const watches = inWindow
+        .map((s) => s.avgWatchSec)
+        .filter((x): x is number => x != null && x > 0);
       return {
         id: a.id,
         platform: a.platform,
         handle: a.handle,
         status: a.status,
+        avatarUrl: a.avatarUrl,
+        displayName: a.displayName,
+        window: {
+          views: sum((s) => s.views),
+          reach: sum((s) => s.reach),
+          likes: sum((s) => rawOf(s).likes),
+          comments: sum((s) => rawOf(s).comments),
+          shares: sum((s) => rawOf(s).shares),
+          avgWatchSec: watches.length
+            ? watches.reduce((s, x) => s + x, 0) / watches.length
+            : null,
+        },
         latest: latest
           ? {
               capturedAt: latest.capturedAt,
@@ -332,7 +401,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
               avgWatchSec: latest.avgWatchSec,
             }
           : null,
-        history: [...a.metricSnapshots].reverse().map((s) => ({
+        followers:
+          a.metricSnapshots.find((s) => s.followers != null)?.followers ?? null,
+        history: [...inWindow].reverse().map((s) => ({
           capturedAt: s.capturedAt,
           views: s.views,
           reach: s.reach,
@@ -341,39 +412,22 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       };
     });
 
-    // Latest post-level metrics per target, summed across the client.
-    const postMetrics = await prisma.postMetric.findMany({
-      where: { postTarget: { post: { clientId: client.id } } },
-      orderBy: { capturedAt: "desc" },
-    });
-    const latestByTarget = new Map<string, (typeof postMetrics)[number]>();
-    for (const m of postMetrics) {
-      if (!latestByTarget.has(m.postTargetId)) latestByTarget.set(m.postTargetId, m);
-    }
-    let likes = 0;
-    let comments = 0;
-    let shares = 0;
-    for (const m of latestByTarget.values()) {
-      likes += m.likes ?? 0;
-      comments += m.comments ?? 0;
-      shares += m.shares ?? 0;
-    }
-
-    const rates = accounts
-      .map((a) => a.latest?.engagementRate)
-      .filter((x): x is number => x != null);
+    const views = accounts.reduce((s, a) => s + a.window.views, 0);
+    const likes = accounts.reduce((s, a) => s + a.window.likes, 0);
+    const comments = accounts.reduce((s, a) => s + a.window.comments, 0);
+    const shares = accounts.reduce((s, a) => s + a.window.shares, 0);
     const watches = accounts
-      .map((a) => a.latest?.avgWatchSec)
+      .map((a) => a.window.avgWatchSec)
       .filter((x): x is number => x != null);
-    const avg = (xs: number[]) =>
-      xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null;
 
     const totals = {
-      views: accounts.reduce((s, a) => s + (a.latest?.views ?? 0), 0),
-      reach: accounts.reduce((s, a) => s + (a.latest?.reach ?? 0), 0),
-      followers: accounts.reduce((s, a) => s + (a.latest?.followers ?? 0), 0),
-      engagementRate: avg(rates),
-      avgWatchSec: avg(watches),
+      views,
+      reach: accounts.reduce((s, a) => s + a.window.reach, 0),
+      followers: accounts.reduce((s, a) => s + (a.followers ?? 0), 0),
+      engagementRate: views > 0 ? ((likes + comments) / views) * 100 : null,
+      avgWatchSec: watches.length
+        ? watches.reduce((s, x) => s + x, 0) / watches.length
+        : null,
       likes,
       comments,
       shares,
@@ -381,17 +435,22 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
 
     return {
       client: { id: client.id, name: client.name, plan: client.plan },
+      days,
       accounts,
       totals,
-      hasData: accounts.some((a) => a.latest !== null),
+      hasData: accounts.some((a) => a.history.length > 0 || a.latest !== null),
     };
   };
 
-  app.get<{ Params: { id: string } }>("/clients/:id/analytics", async (request, reply) => {
-    const data = await buildAnalytics(request.params.id, request.user.agencyId);
-    if (!data) return reply.status(404).send(NOT_FOUND);
-    return data;
-  });
+  app.get<{ Params: { id: string }; Querystring: { days?: string } }>(
+    "/clients/:id/analytics",
+    async (request, reply) => {
+      const days = Math.min(200, Math.max(1, Number(request.query.days) || 30));
+      const data = await buildAnalytics(request.params.id, request.user.agencyId, days);
+      if (!data) return reply.status(404).send(NOT_FOUND);
+      return data;
+    },
+  );
 
   /** Branded PDF report written to storage; the app opens it externally. */
   app.post<{ Params: { id: string } }>("/clients/:id/report", async (request, reply) => {

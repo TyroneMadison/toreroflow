@@ -7,6 +7,7 @@ export const PF_ID: Record<Platform, PlatformId> = {
   tiktok: "tt",
   youtube: "yt",
   snapchat: "sc",
+  facebook: "fb",
 };
 
 /** Short-form surface name per platform, matching the prototype copy. */
@@ -15,6 +16,7 @@ export const SURFACE_LABEL: Record<Platform, string> = {
   tiktok: "TikTok",
   youtube: "Shorts",
   snapchat: "Spotlight",
+  facebook: "Facebook",
 };
 
 export { PLATFORMS, PLATFORM_LABELS };
