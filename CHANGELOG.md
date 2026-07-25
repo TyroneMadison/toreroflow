@@ -9,7 +9,20 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
-### Added - M1 in progress
+### Added - media pipeline
+
+- Real uploads to local storage with a BullMQ job queue and worker service
+- Local transcription (faster-whisper) with Bold pop captions burned into a 1080x1920 vertical render, plus thumbnails
+- AI post copy per upload (hook, caption, hashtags) with in-app caption editing
+- Upload screen shows live processing status and plays the captioned render
+
+### Added - clients and connections
+
+- Zernio publishing provider: one provider profile per client, hosted OAuth connect opened in the system browser, account sync back into the app
+- Dashboard screen (default landing): per-brand quick stats with click-through to full analytics
+- Opaque brand dropdown menu, green On/Off autostart toggle, milestone labels removed from all copy
+
+### Added - M1 foundation
 
 - Operator auth in the app: first-run register / login gate with JWT sessions
 - Real client (brand) management end-to-end: enroll, list, delete - demo data removed from every screen
