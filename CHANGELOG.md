@@ -9,6 +9,11 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Fixed - screen scrolling and Accounts avatars
+
+- Screens scroll properly: the content area below the top bar is now a real scroll container, so tall pages (like Settings with an expanded profile card) reach the bottom instead of clipping at the window edge
+- Accounts page brand cards show the client's real profile picture (Instagram first, then any connected platform), matching Dashboard and Settings; letter initials remain the fallback until a platform is connected
+
 ### Added - live account data, profile cards, Facebook
 
 - Facebook added as a full platform across connect, workflows, scheduling, and calendar

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Pf from "../components/Pf";
 import { api } from "../lib/api";
+import { clientAvatarUrl } from "../lib/avatar";
 import { PF_ID } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -59,6 +60,7 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
           {clients.map((client, i) => {
             const connected = client.accounts.filter((a) => a.status === "connected");
             const needsFix = client.accounts.some((a) => a.status !== "connected");
+            const avatar = clientAvatarUrl(client);
             return (
               <div
                 className="cc glass"
@@ -73,10 +75,21 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
                       height: 44,
                       borderRadius: 13,
                       fontSize: 15,
-                      background: AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length],
+                      overflow: "hidden",
+                      background: avatar
+                        ? "var(--glass-2)"
+                        : AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length],
                     }}
                   >
-                    {client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}
+                    {avatar ? (
+                      <img
+                        src={avatar}
+                        alt={client.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()
+                    )}
                   </div>
                   <div className="meta">
                     <b>{client.name}</b>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Pf from "../components/Pf";
 import { api, type ClientAnalytics, type ClientSummary } from "../lib/api";
+import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
@@ -37,10 +38,7 @@ function ProfileCard({
   const [analytics, setAnalytics] = useState<ClientAnalytics | null>(null);
 
   const connected = client.accounts.filter((a) => a.status === "connected");
-  const avatar =
-    connected.find((a) => a.platform === "instagram" && a.avatarUrl)?.avatarUrl ??
-    connected.find((a) => a.avatarUrl)?.avatarUrl ??
-    null;
+  const avatar = clientAvatarUrl(client);
   const displayName = connected.find((a) => a.displayName)?.displayName ?? client.name;
 
   useEffect(() => {
