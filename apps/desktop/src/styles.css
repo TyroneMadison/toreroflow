@@ -397,3 +397,25 @@
 .dashstat{padding:10px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--brd-soft)}
 .dashstat .lab{font-size:10.5px;color:var(--txt-3);letter-spacing:.4px;text-transform:uppercase}
 .dashstat .val{font-size:18px;font-weight:650;margin-top:3px}
+
+/* ---- calendar v2: aligned headers, holidays, day + month views ---- */
+.colhead{min-height:88px}
+.colhead .dnum{height:34px;line-height:34px;margin-top:3px}
+.colhead.today .dnum{width:34px;margin:3px auto 0}
+.hol{display:flex;align-items:center;gap:5px;justify-content:center;font-size:10px;color:var(--txt-3);opacity:.85;padding:3px 4px 0;text-align:center}
+.hol img{width:14px;height:14px;flex:0 0 auto}
+.calnav{display:flex;gap:6px}
+.calnav .iconbtn{width:32px;height:32px;border-radius:10px}
+.calnav .iconbtn svg{width:16px;height:16px}
+.mhead{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:16px 16px 0}
+.mhead .dow{text-align:center;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--txt-3)}
+.mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:10px 16px 16px}
+.mcell{min-height:96px;border:1px solid var(--brd-soft);border-radius:12px;padding:6px;background:var(--glass);overflow:hidden}
+.mcell.dim{opacity:.3;background:transparent}
+.mcell .mnum{font-size:12px;font-weight:600;text-align:right;padding:1px 3px}
+.mcell .mnum span{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:50%}
+.mcell.today .mnum span{background:var(--grad);color:#0b0b18}
+.mev{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--txt-2);padding:2px 5px;border-radius:6px;background:var(--glass-2);margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mev .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.mhol{font-size:9.5px;color:var(--txt-3);opacity:.85;display:flex;gap:4px;align-items:center;margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mhol img{width:12px;height:12px;flex:0 0 auto}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Pf from "../components/Pf";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
+import { holidayFor } from "../lib/holidays";
 import { PF_ID, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -8,10 +9,12 @@ interface CalendarScreenProps {
   onNewPost(): void;
 }
 
+type CalView = "day" | "week" | "month";
+
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
 /** Instagram and Snapchat lean violet, TikTok and YouTube lean blue. */
@@ -22,6 +25,13 @@ const EV_CLASS: Record<Platform, "v" | "b"> = {
   youtube: "b",
 };
 
+const EV_DOT: Record<Platform, string> = {
+  instagram: "#d62976",
+  tiktok: "#25f4ee",
+  youtube: "#ff4237",
+  snapchat: "#ffe600",
+};
+
 const STATUS_SUFFIX: Record<PostTargetInfo["status"], string> = {
   scheduled: "",
   publishing: " · publishing",
@@ -29,30 +39,44 @@ const STATUS_SUFFIX: Record<PostTargetInfo["status"], string> = {
   failed: " · failed",
 };
 
-function currentWeek(): Date[] {
-  const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  return DOW.map((_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
-}
+const startOfDay = (d: Date): Date => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
+const mondayOf = (d: Date): Date => {
+  const x = startOfDay(d);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+};
 
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const { selectedClient } = useAppState();
+  const [view, setView] = useState<CalView>("week");
+  const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
-  const week = currentWeek();
   const today = new Date().toDateString();
-  const first = week[0]!;
-  const last = week[6]!;
-  const weekEnd = new Date(last);
-  weekEnd.setHours(23, 59, 59, 999);
+
+  // Visible range per view.
+  let rangeStart: Date;
+  let rangeEnd: Date;
+  if (view === "day") {
+    rangeStart = startOfDay(anchor);
+    rangeEnd = new Date(rangeStart);
+    rangeEnd.setHours(23, 59, 59, 999);
+  } else if (view === "week") {
+    rangeStart = mondayOf(anchor);
+    rangeEnd = new Date(rangeStart);
+    rangeEnd.setDate(rangeStart.getDate() + 6);
+    rangeEnd.setHours(23, 59, 59, 999);
+  } else {
+    rangeStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    rangeEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999);
+  }
 
   const load = useCallback(async () => {
     if (!selectedClient) {
@@ -62,14 +86,14 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     try {
       setTargets(
         await api.get<PostTargetInfo[]>(
-          `/clients/${selectedClient.id}/posts?from=${first.toISOString()}&to=${weekEnd.toISOString()}`,
+          `/clients/${selectedClient.id}/posts?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`,
         ),
       );
     } catch {
       // API offline: keep whatever we have
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClient]);
+  }, [selectedClient, view, anchor.getTime()]);
 
   useEffect(() => {
     void load();
@@ -77,18 +101,84 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     return () => clearInterval(t);
   }, [load]);
 
-  const scheduledCount = targets.filter(
-    (t) => t.status === "scheduled" || t.status === "publishing",
-  ).length;
-  const range =
-    first.getMonth() === last.getMonth()
-      ? `${MONTHS[first.getMonth()]} ${first.getDate()} to ${last.getDate()}, ${last.getFullYear()}`
-      : `${MONTHS[first.getMonth()]} ${first.getDate()} to ${MONTHS[last.getMonth()]} ${last.getDate()}, ${last.getFullYear()}`;
+  const step = (dir: 1 | -1) => {
+    setAnchor((prev) => {
+      const next = new Date(prev);
+      if (view === "day") next.setDate(next.getDate() + dir);
+      else if (view === "week") next.setDate(next.getDate() + dir * 7);
+      else next.setMonth(next.getMonth() + dir);
+      return startOfDay(next);
+    });
+  };
 
   const eventsFor = (day: Date) =>
     targets.filter(
       (t) => t.scheduledAt && new Date(t.scheduledAt).toDateString() === day.toDateString(),
     );
+
+  const scheduledCount = targets.filter(
+    (t) => t.status === "scheduled" || t.status === "publishing",
+  ).length;
+
+  const rangeLabel =
+    view === "day"
+      ? anchor.toLocaleDateString([], {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : view === "week"
+        ? `${MONTHS[rangeStart.getMonth()].slice(0, 3)} ${rangeStart.getDate()} to ${MONTHS[rangeEnd.getMonth()].slice(0, 3)} ${rangeEnd.getDate()}, ${rangeEnd.getFullYear()}`
+        : `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
+
+  const holidayRow = (day: Date, compact = false) => {
+    const h = holidayFor(day);
+    if (!h) return null;
+    return (
+      <div className={compact ? "mhol" : "hol"} title={h.name}>
+        <img src={h.emoji} alt="" /> {h.name}
+      </div>
+    );
+  };
+
+  const renderEvent = (t: PostTargetInfo) => {
+    const thumb = fileUrl(t.thumbUrl);
+    return (
+      <div
+        className={`ev ${EV_CLASS[t.platform]}`}
+        key={t.id}
+        title={t.error ?? t.caption ?? t.assetName}
+        style={t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : undefined}
+      >
+        <div className="t1">
+          <Pf p={PF_ID[t.platform]} size="sm" />{" "}
+          {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
+          {STATUS_SUFFIX[t.status]}
+        </div>
+        <div className="t2">{t.assetName}</div>
+        {thumb && <div className="evthumb" style={{ background: `url(${thumb}) center/cover` }} />}
+      </div>
+    );
+  };
+
+  /* month grid cells: leading blanks + days */
+  const monthCells: Array<Date | null> = [];
+  if (view === "month") {
+    const lead = (new Date(anchor.getFullYear(), anchor.getMonth(), 1).getDay() + 6) % 7;
+    for (let i = 0; i < lead; i++) monthCells.push(null);
+    for (let d = 1; d <= rangeEnd.getDate(); d++) {
+      monthCells.push(new Date(anchor.getFullYear(), anchor.getMonth(), d));
+    }
+  }
+
+  const week = view === "week"
+    ? DOW.map((_, i) => {
+        const d = new Date(rangeStart);
+        d.setDate(rangeStart.getDate() + i);
+        return d;
+      })
+    : [];
 
   return (
     <section className="screen active" data-screen="calendar">
@@ -97,8 +187,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <h2>Content Calendar</h2>
           <p>
             {scheduledCount
-              ? `${scheduledCount} ${scheduledCount === 1 ? "post" : "posts"} scheduled this week.`
-              : "Nothing scheduled yet this week."}
+              ? `${scheduledCount} ${scheduledCount === 1 ? "post" : "posts"} scheduled in view.`
+              : "Nothing scheduled in this view yet."}
           </p>
         </div>
         <button className="btn ghost" onClick={onNewPost}>
@@ -111,74 +201,132 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       <div className="stage">
         <div className="calbar">
           <div className="seg">
-            <span>Day</span>
-            <span className="on">Week</span>
-            <span>Month</span>
+            {(["day", "week", "month"] as CalView[]).map((v) => (
+              <span
+                key={v}
+                className={view === v ? "on" : ""}
+                onClick={() => setView(v)}
+              >
+                {v[0]!.toUpperCase() + v.slice(1)}
+              </span>
+            ))}
           </div>
-          <div className="filterchip">
+          <div className="calnav">
+            <div className="iconbtn" onClick={() => step(-1)} title="Previous">
+              <svg style={{ transform: "rotate(90deg)" }}>
+                <use href="#i-chev" />
+              </svg>
+            </div>
+            <div className="iconbtn" onClick={() => step(1)} title="Next">
+              <svg style={{ transform: "rotate(-90deg)" }}>
+                <use href="#i-chev" />
+              </svg>
+            </div>
+          </div>
+          <div
+            className="filterchip"
+            onClick={() => setAnchor(startOfDay(new Date()))}
+            title="Jump to today"
+          >
+            Today
+          </div>
+          <div className="filterchip" style={{ opacity: 0.8 }}>
             <span className="d" style={{ background: "var(--v)" }} />{" "}
             {selectedClient?.name ?? "All brands"}
           </div>
-          <div className="filterchip" style={{ opacity: 0.65 }}>
-            <svg
-              style={{ width: 14, height: 14, stroke: "currentColor", fill: "none", strokeWidth: 2 }}
-              viewBox="0 0 24 24"
-            >
-              <use href="#i-globe" />
-            </svg>{" "}
-            All platforms
+          <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt-2)" }}>
+            {rangeLabel}
           </div>
-          <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt-2)" }}>{range}</div>
         </div>
-        <div className="cal glass">
-          {week.map((day, i) => {
-            const events = eventsFor(day);
-            return (
-              <div className="col" key={i}>
-                <div className={`colhead${day.toDateString() === today ? " today" : ""}`}>
-                  <div className="dow">{DOW[i]}</div>
-                  <div className="dnum">{day.getDate()}</div>
+
+        {view === "week" && (
+          <div className="cal glass">
+            {week.map((day, i) => {
+              const events = eventsFor(day);
+              return (
+                <div className="col" key={i}>
+                  <div className={`colhead${day.toDateString() === today ? " today" : ""}`}>
+                    <div className="dow">{DOW[i]}</div>
+                    <div className="dnum">{day.getDate()}</div>
+                    {holidayRow(day)}
+                  </div>
+                  <div className="slotwrap">
+                    {events.map(renderEvent)}
+                    {events.length === 0 && (
+                      <div className="ghost-ev" onClick={onNewPost}>
+                        + Add post
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="slotwrap">
-                  {events.map((t) => {
-                    const thumb = fileUrl(t.thumbUrl);
-                    return (
-                      <div
-                        className={`ev ${EV_CLASS[t.platform]}`}
-                        key={t.id}
-                        title={t.error ?? t.caption ?? t.assetName}
-                        style={t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : undefined}
-                      >
-                        <div className="t1">
-                          <Pf p={PF_ID[t.platform]} size="sm" />{" "}
+              );
+            })}
+          </div>
+        )}
+
+        {view === "day" && (
+          <div className="cal glass" style={{ gridTemplateColumns: "1fr" }}>
+            <div className="col">
+              <div className={`colhead${anchor.toDateString() === today ? " today" : ""}`}>
+                <div className="dow">{DOW[(anchor.getDay() + 6) % 7]}</div>
+                <div className="dnum">{anchor.getDate()}</div>
+                {holidayRow(anchor)}
+              </div>
+              <div className="slotwrap" style={{ maxWidth: 460, margin: "0 auto", width: "100%" }}>
+                {eventsFor(anchor).map(renderEvent)}
+                {eventsFor(anchor).length === 0 && (
+                  <div className="ghost-ev" onClick={onNewPost}>
+                    + Add post
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === "month" && (
+          <div className="cal glass" style={{ display: "block" }}>
+            <div className="mhead">
+              {DOW.map((d) => (
+                <div key={d} className="dow">
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="mgrid">
+              {monthCells.map((day, i) =>
+                day === null ? (
+                  <div className="mcell dim" key={`blank-${i}`} />
+                ) : (
+                  <div
+                    className={`mcell${day.toDateString() === today ? " today" : ""}`}
+                    key={day.getDate()}
+                  >
+                    <div className="mnum">
+                      <span>{day.getDate()}</span>
+                    </div>
+                    {holidayRow(day, true)}
+                    {eventsFor(day)
+                      .slice(0, 3)
+                      .map((t) => (
+                        <div className="mev" key={t.id} title={`${t.assetName}${STATUS_SUFFIX[t.status]}`}>
+                          <span className="d" style={{ background: EV_DOT[t.platform] }} />
                           {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
                           {STATUS_SUFFIX[t.status]}
                         </div>
-                        <div className="t2">{t.assetName}</div>
-                        {thumb && (
-                          <div
-                            className="evthumb"
-                            style={{
-                              background: `url(${thumb}) center/cover`,
-                            }}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                  {events.length === 0 && (
-                    <div className="ghost-ev" onClick={onNewPost}>
-                      + Add post
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                      ))}
+                    {eventsFor(day).length > 3 && (
+                      <div className="mhol">+{eventsFor(day).length - 3} more</div>
+                    )}
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="note">
-          Posts are color-coded by platform. Failed posts show their error on hover;
-          drag-to-reschedule is on the way.
+          Posts are color-coded by platform; holidays appear as reminders across all views.
         </div>
       </div>
     </section>
