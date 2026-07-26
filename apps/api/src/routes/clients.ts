@@ -41,9 +41,12 @@ function avatarSeed(name: string): string {
 }
 
 const quotaSchema = z.object({
+  /** Which format the target/adjustment applies to; ignored when resetting. */
+  format: z.enum(["short_form", "long_form"]).optional(),
   target: z.number().int().min(0).max(10_000).nullable().optional(),
   adjustment: z.number().int().min(-10_000).max(10_000).optional(),
   adjustBy: z.number().int().min(-1_000).max(1_000).optional(),
+  /** Starts a new pay period for both formats at once. */
   reset: z.boolean().optional(),
 });
 
@@ -480,23 +483,58 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   const quotaView = async (clientId: string) => {
     const client = await prisma.client.findUnique({
       where: { id: clientId },
-      select: { videoQuota: true, quotaResetAt: true, quotaAdjustment: true },
+      select: {
+        quotaShort: true,
+        quotaLong: true,
+        quotaResetAt: true,
+        adjustShort: true,
+        adjustLong: true,
+      },
     });
     if (!client) return null;
     const since = client.quotaResetAt ?? new Date(0);
-    const counted = await prisma.mediaAsset.count({
-      where: { clientId, isRevision: false, createdAt: { gte: since } },
-    });
-    const revisions = await prisma.mediaAsset.count({
-      where: { clientId, isRevision: true, createdAt: { gte: since } },
-    });
-    return {
-      target: client.videoQuota,
-      periodStart: client.quotaResetAt,
-      adjustment: client.quotaAdjustment,
-      uploads: counted,
+    const inPeriod = { clientId, createdAt: { gte: since } };
+
+    const count = (extra: Record<string, unknown>) =>
+      prisma.mediaAsset.count({ where: { ...inPeriod, ...extra } });
+
+    // Videos still being probed have no format yet. They are counted as
+    // short-form, which is the common case, and correct themselves within
+    // seconds once the duration is known.
+    const [shortUploads, longUploads, shortRevs, longRevs] = await Promise.all([
+      count({ isRevision: false, format: { in: ["short_form"] } }),
+      count({ isRevision: false, format: "long_form" }),
+      count({ isRevision: true, format: { in: ["short_form"] } }),
+      count({ isRevision: true, format: "long_form" }),
+    ]);
+    const [unclassifiedUploads, unclassifiedRevs] = await Promise.all([
+      count({ isRevision: false, format: null }),
+      count({ isRevision: true, format: null }),
+    ]);
+
+    const section = (
+      target: number | null,
+      adjustment: number,
+      uploads: number,
+      revisions: number,
+    ) => ({
+      target,
+      adjustment,
+      uploads,
       revisions,
-      delivered: Math.max(0, counted + client.quotaAdjustment),
+      delivered: Math.max(0, uploads + adjustment),
+    });
+
+    return {
+      periodStart: client.quotaResetAt,
+      unclassified: unclassifiedUploads + unclassifiedRevs,
+      short: section(
+        client.quotaShort,
+        client.adjustShort,
+        shortUploads + unclassifiedUploads,
+        shortRevs + unclassifiedRevs,
+      ),
+      long: section(client.quotaLong, client.adjustLong, longUploads, longRevs),
     };
   };
 
@@ -516,24 +554,27 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     const body = quotaSchema.parse(request.body ?? {});
     const client = await prisma.client.findFirst({
       where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
-      select: { id: true, quotaAdjustment: true },
+      select: { id: true, adjustShort: true, adjustLong: true },
     });
     if (!client) return reply.status(404).send(NOT_FOUND);
 
-    const data: {
-      videoQuota?: number | null;
-      quotaAdjustment?: number;
-      quotaResetAt?: Date;
-    } = {};
-    if (body.target !== undefined) data.videoQuota = body.target;
-    if (body.adjustment !== undefined) data.quotaAdjustment = body.adjustment;
+    const long = body.format === "long_form";
+    const targetKey = long ? "quotaLong" : "quotaShort";
+    const adjustKey = long ? "adjustLong" : "adjustShort";
+    const currentAdjust = long ? client.adjustLong : client.adjustShort;
+
+    const data: Record<string, number | null | Date> = {};
+    if (body.target !== undefined) data[targetKey] = body.target;
+    if (body.adjustment !== undefined) data[adjustKey] = body.adjustment;
     if (body.adjustBy !== undefined) {
-      data.quotaAdjustment = (data.quotaAdjustment ?? client.quotaAdjustment) + body.adjustBy;
+      const base = (data[adjustKey] as number | undefined) ?? currentAdjust;
+      data[adjustKey] = base + body.adjustBy;
     }
-    // Starting a new period clears the manual correction with it.
+    // A new period restarts both formats and drops their corrections.
     if (body.reset) {
       data.quotaResetAt = new Date();
-      data.quotaAdjustment = 0;
+      data.adjustShort = 0;
+      data.adjustLong = 0;
     }
 
     await prisma.client.update({ where: { id: client.id }, data });

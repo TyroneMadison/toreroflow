@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import Anthropic from "@anthropic-ai/sdk";
-import { decodeEscapes } from "@toreroflow/core";
+import { decodeEscapes, formatFromDuration } from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
@@ -104,7 +104,8 @@ async function processAsset(assetId: string): Promise<void> {
   });
 
   try {
-    // 1. Probe
+    // 1. Probe. Duration also decides short vs long form for the client's
+    // quota, but never overrides a format the operator already set.
     const meta = await probe(sourcePath);
     await prisma.mediaAsset.update({
       where: { id: asset.id },
@@ -112,6 +113,9 @@ async function processAsset(assetId: string): Promise<void> {
         durationSec: meta.durationSec,
         width: meta.width,
         height: meta.height,
+        ...(asset.format === null
+          ? { format: formatFromDuration(meta.durationSec) }
+          : {}),
       },
     });
 

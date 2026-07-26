@@ -9,10 +9,12 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
-### Added - per-client video quota
+### Added - per-client video quota, split by format
 
-- Set a target per client (e.g. 30 videos) and every upload ticks the counter automatically, with progress, remaining count, and a "New period" reset when the pay period rolls over
-- Plus and minus buttons adjust the count by hand whenever the automatic number is wrong
+- Separate short-form and long-form targets per client, each with its own progress bar, remaining count, and manual adjustment. Track one format or both; a client with no target for a format simply does not show it
+- Videos are sorted into short or long automatically from their duration (three minutes is the cut-off), and a Short/Long switch on each video overrides that whenever the duration does not reflect intent
+- Every brand keeps its own targets and counts, so a new client starts clean with their own monthly requirement
+- One "New period" resets both formats together when the pay period rolls over
 - Revisions do not spend a slot. A re-export named like an earlier upload ("… v2", "… final", "… revised", "… (1)") is detected on upload and marked a revision automatically; a chain of revisions all point back to the first upload
 - Any video can be flipped between counting and not counting with one click, so a wrong guess is never sticky
 - "Replace the original" marks a video as a revision and cancels whatever is still scheduled for the video it replaces, so the new cut takes the slot instead of both going out

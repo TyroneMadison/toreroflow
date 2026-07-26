@@ -17,6 +17,10 @@ const revisionSchema = z.object({
   replaceScheduled: z.boolean().optional(),
 });
 
+const formatSchema = z.object({
+  format: z.enum(["short_form", "long_form"]),
+});
+
 const draftSchema = z.object({
   /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
   title: z.string().max(300).optional(),
@@ -61,6 +65,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     status: string;
     transcript: unknown;
     draftCopy: unknown;
+    format: string | null;
     isRevision: boolean;
     revisionOfId: string | null;
     createdAt: Date;
@@ -74,6 +79,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       status: a.status,
       hasTranscript: Array.isArray(a.transcript) && a.transcript.length > 0,
       draftCopy: normalizeDraft(a.draftCopy),
+      format: a.format,
       isRevision: a.isRevision,
       revisionOfId: a.revisionOfId,
       createdAt: a.createdAt,
@@ -241,6 +247,26 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
 
     return { ...assetView(updated), cancelledPosts: cancelled };
   });
+
+  /**
+   * Reclassify a video as short or long form. Duration is only a guess at
+   * intent, so the operator gets the final say on which quota it spends.
+   */
+  app.patch<{ Params: { id: string }; Body: { format: string } }>(
+    "/media/:id/format",
+    async (request, reply) => {
+      const body = formatSchema.parse(request.body ?? {});
+      const asset = await prisma.mediaAsset.findFirst({
+        where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      });
+      if (!asset) return reply.status(404).send({ error: "asset not found" });
+      const updated = await prisma.mediaAsset.update({
+        where: { id: asset.id },
+        data: { format: body.format },
+      });
+      return assetView(updated);
+    },
+  );
 
   app.delete<{ Params: { id: string } }>("/media/:id", async (request, reply) => {
     const asset = await prisma.mediaAsset.findFirst({

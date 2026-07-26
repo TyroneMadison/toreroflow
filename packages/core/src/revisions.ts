@@ -1,3 +1,22 @@
+export type VideoFormatValue = "short_form" | "long_form";
+
+/**
+ * Boundary between short-form and long-form, in seconds.
+ *
+ * Three minutes is where the vertical feeds cap out (YouTube Shorts and
+ * Instagram Reels both top out around here), so anything longer is being
+ * made for a different surface.
+ */
+export const SHORT_FORM_MAX_SEC = 180;
+
+/** Classify by duration. Unknown duration stays unclassified. */
+export function formatFromDuration(
+  durationSec: number | null | undefined,
+): VideoFormatValue | null {
+  if (durationSec == null || !Number.isFinite(durationSec) || durationSec <= 0) return null;
+  return durationSec <= SHORT_FORM_MAX_SEC ? "short_form" : "long_form";
+}
+
 /**
  * Trailing tokens that mark a re-export rather than a new video:
  * "Interview v2", "Interview final", "Interview (1)", "Interview revised".

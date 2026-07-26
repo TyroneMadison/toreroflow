@@ -6,6 +6,7 @@ import {
   type ClientPost,
   type MediaAssetInfo,
   type PostTargetInfo,
+  type VideoFormat,
 } from "../lib/api";
 import { formatDuration } from "../lib/video";
 import { useAppState } from "../state/AppState";
@@ -208,6 +209,19 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     }
   };
 
+  /** Reclassify which quota target a video spends. */
+  const setFormat = async (asset: MediaAssetInfo, format: VideoFormat) => {
+    if (asset.format === format) return;
+    setRevBusy(asset.id);
+    try {
+      await api.patch(`/media/${asset.id}/format`, { format });
+    } finally {
+      setRevBusy(null);
+      setQuotaKey((k) => k + 1);
+      void load();
+    }
+  };
+
   /** Pull one platform's post out of the queue, leaving any siblings. */
   const removeFromQueue = async (targetId: string) => {
     setConfirmRemove(null);
@@ -392,8 +406,25 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       </>
                     )}
 
-                    {/* Quota control: revisions do not spend a slot. */}
+                    {/* Quota controls: format decides which target it spends,
+                        and revisions spend nothing. */}
                     <div className="revrow">
+                      <span className="fmtpick">
+                        {(["short_form", "long_form"] as const).map((f) => (
+                          <span
+                            key={f}
+                            className={`fmtopt${asset.format === f ? " on" : ""}`}
+                            title={
+                              f === "short_form"
+                                ? "Counts toward the short-form target"
+                                : "Counts toward the long-form target"
+                            }
+                            onClick={() => void setFormat(asset, f)}
+                          >
+                            {f === "short_form" ? "Short" : "Long"}
+                          </span>
+                        ))}
+                      </span>
                       <span
                         className={`revtoggle${asset.isRevision ? " on" : ""}`}
                         title={

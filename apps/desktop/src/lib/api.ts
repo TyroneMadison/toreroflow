@@ -138,13 +138,22 @@ export interface ClientAnalytics {
   hasData: boolean;
 }
 
-export interface ClientQuota {
+export type VideoFormat = "short_form" | "long_form";
+
+export interface QuotaSection {
   target: number | null;
-  periodStart: string | null;
   adjustment: number;
   uploads: number;
   revisions: number;
   delivered: number;
+}
+
+export interface ClientQuota {
+  periodStart: string | null;
+  /** Uploads still being probed; counted as short-form until measured. */
+  unclassified: number;
+  short: QuotaSection;
+  long: QuotaSection;
 }
 
 export interface ClientPost {
@@ -184,6 +193,8 @@ export interface MediaAssetInfo {
   status: "uploaded" | "processing" | "ready" | "failed";
   hasTranscript: boolean;
   draftCopy: DraftCopy | null;
+  /** Null until processing measures the duration. */
+  format: VideoFormat | null;
   /** A re-edit of an earlier upload; excluded from the client's quota. */
   isRevision: boolean;
   revisionOfId: string | null;

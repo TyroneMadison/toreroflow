@@ -60,6 +60,11 @@ enum ScheduleSource {
   manual
 }
 
+enum VideoFormat {
+  short_form
+  long_form
+}
+
 enum JobStatus {
   queued
   active
@@ -99,12 +104,15 @@ model Client {
   plan              String?
   /// Publishing provider workspace id (Zernio profile _id) backing this client.
   providerProfileId String?
-  /// Videos owed this pay period; null means no quota is being tracked.
-  videoQuota        Int?
+  /// Short-form videos owed this pay period; null means not tracked.
+  quotaShort        Int?
+  /// Long-form videos owed this pay period; null means not tracked.
+  quotaLong         Int?
   /// Start of the current pay period. Uploads after this count toward quota.
   quotaResetAt      DateTime?
-  /// Manual correction applied on top of the counted uploads.
-  quotaAdjustment   Int       @default(0)
+  /// Manual corrections applied on top of the counted uploads, per format.
+  adjustShort       Int       @default(0)
+  adjustLong        Int       @default(0)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
@@ -157,6 +165,9 @@ model MediaAsset {
   transcript   Json?
   /// AI-drafted post copy: { title, description, hashtags[] } (operator-editable)
   draftCopy    Json?
+  /// Short-form or long-form, for quota purposes. Filled from duration
+  /// during processing when still unset; the operator can override it.
+  format       VideoFormat?
   /// A re-edit of an earlier upload: excluded from the client's video quota.
   isRevision   Boolean          @default(false)
   /// The upload this one revises, when known.
