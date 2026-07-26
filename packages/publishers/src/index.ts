@@ -1,6 +1,7 @@
 import type { Platform } from "@toreroflow/core";
 
 export * from "./zernio";
+export * from "./youtube";
 
 /** Spec Section 8 - every provider (unified or direct) implements this. */
 export interface SocialAccountRef {

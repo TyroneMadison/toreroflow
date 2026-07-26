@@ -27,6 +27,12 @@ export interface Env {
   /** dryrun until a real provider (Ayrshare/Blotato/Zernio/Postiz) is chosen in M1. */
   PUBLISH_PROVIDER: string;
   PUBLISH_PROVIDER_API_KEY: string;
+  /**
+   * YouTube Data API v3 key. Only needed to read a channel's lifetime
+   * catalogue, which the publishing provider does not expose; empty means
+   * all-time YouTube rankings stay unavailable rather than failing.
+   */
+  YOUTUBE_API_KEY: string;
   REDIS_URL: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
@@ -41,6 +47,7 @@ export const env: Env = {
   SUGGESTIONS_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
+  YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   REPO_ROOT: repoRoot,

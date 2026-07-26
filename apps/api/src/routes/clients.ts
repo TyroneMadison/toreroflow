@@ -14,7 +14,12 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
 import { getPrisma } from "@toreroflow/db";
-import { DryRunPublisher, ZernioError, ZernioProvider } from "@toreroflow/publishers";
+import {
+  DryRunPublisher,
+  YouTubeProvider,
+  ZernioError,
+  ZernioProvider,
+} from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -83,6 +88,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
+  const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
   const analyticsQueue = new Queue("analytics", {
     connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
   });
@@ -591,6 +597,79 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return await quotaView(client.id);
   });
 
+  /**
+   * Pull a client's whole YouTube catalogue straight from YouTube.
+   *
+   * The publishing provider only keeps a recent window, so all-time
+   * rankings need the platform itself. Rows are upserted, which also
+   * refreshes view counts on later syncs.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/clients/:id/external/youtube/sync",
+    async (request, reply) => {
+      if (!youtube) {
+        return reply.status(503).send({
+          error: "YOUTUBE_API_KEY is not set; add it to .env to read lifetime YouTube history",
+        });
+      }
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        include: {
+          socialAccounts: { where: { deletedAt: null, platform: "youtube" } },
+        },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+      if (!client.socialAccounts.length) {
+        return reply.status(400).send({ error: "no YouTube account connected for this client" });
+      }
+
+      const results: Array<{ handle: string; imported: number; channel?: string; error?: string }> = [];
+      for (const account of client.socialAccounts) {
+        try {
+          const { channelTitle, videos } = await youtube.allVideosForChannel(account.handle);
+          for (const v of videos) {
+            const data = {
+              platform: "youtube" as const,
+              title: v.title,
+              thumbnailUrl: v.thumbnailUrl,
+              url: v.url,
+              publishedAt: new Date(v.publishedAt),
+              views: v.views,
+              likes: v.likes,
+              comments: v.comments,
+              durationSec: v.durationSec,
+              fetchedAt: new Date(),
+            };
+            await prisma.externalVideo.upsert({
+              where: {
+                socialAccountId_platformVideoId: {
+                  socialAccountId: account.id,
+                  platformVideoId: v.platformVideoId,
+                },
+              },
+              create: {
+                socialAccountId: account.id,
+                platformVideoId: v.platformVideoId,
+                ...data,
+              },
+              update: data,
+            });
+          }
+          results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });
+        } catch (error) {
+          request.log.error({ err: error }, "youtube sync failed");
+          results.push({
+            handle: account.handle,
+            imported: 0,
+            error: error instanceof Error ? error.message : "sync failed",
+          });
+        }
+      }
+      postsCache.delete(client.id);
+      return { results };
+    },
+  );
+
   /** Provider post list per client, cached briefly across brand switches. */
   const postsCache = new Map<string, { at: number; posts: unknown[] }>();
   const POSTS_TTL_MS = 5 * 60 * 1000;
@@ -636,17 +715,17 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         include: { socialAccounts: { where: { deletedAt: null } } },
       });
       if (!client) return reply.status(404).send(NOT_FOUND);
-      if (!zernio) return { posts: [] };
 
       const cached = postsCache.get(client.id);
       if (cached && Date.now() - cached.at < POSTS_TTL_MS) return { posts: cached.posts };
 
-      let raw: Array<Record<string, unknown>>;
-      try {
-        raw = await zernio.analytics(500);
-      } catch (error) {
-        request.log.error({ err: error }, "zernio analytics pull failed");
-        return { posts: [] };
+      let raw: Array<Record<string, unknown>> = [];
+      if (zernio) {
+        try {
+          raw = await zernio.analytics(500);
+        } catch (error) {
+          request.log.error({ err: error }, "zernio analytics pull failed");
+        }
       }
 
       const accountPlatform = new Map(
@@ -708,8 +787,16 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
             : num(m, "avgWatchTime", "averageViewDuration");
 
         const id = typeof p._id === "string" ? p._id : String(p.id ?? "");
+        // Identity on the platform itself, used to drop this copy when the
+        // same video also arrives from the platform's own API.
+        const first = use[0];
+        const platformKey =
+          first && typeof first.platformPostId === "string"
+            ? `${accountPlatform.get(first.accountId as string) ?? String(first.platform ?? "")}:${first.platformPostId}`
+            : null;
         posts.push({
           id,
+          platformKey,
           title:
             typeof p.content === "string" && p.content.trim() ? p.content.trim() : "(untitled)",
           publishedAt: published.toISOString(),
@@ -728,6 +815,46 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
           byPlatform,
         });
       }
+      /*
+       * Fold in the platform's own catalogue. These come straight from the
+       * platform API, so their view counts are lifetime and authoritative:
+       * where the same video appears in both sources, this one wins and the
+       * provider's windowed copy is dropped.
+       */
+      const external = await prisma.externalVideo.findMany({
+        where: { socialAccount: { clientId: client.id, deletedAt: null } },
+        orderBy: { publishedAt: "desc" },
+      });
+      if (external.length) {
+        const seen = new Set(
+          external.map((v) => `${v.platform}:${v.platformVideoId}`),
+        );
+        const providerKept = posts.filter((p) => {
+          const key = (p as { platformKey?: string | null }).platformKey;
+          return !key || !seen.has(key);
+        });
+        posts.length = 0;
+        posts.push(
+          ...providerKept,
+          ...external.map((v) => ({
+            id: `ext:${v.id}`,
+            title: v.title,
+            publishedAt: v.publishedAt.toISOString(),
+            thumbnailUrl: v.thumbnailUrl,
+            url: v.url,
+            platforms: [v.platform],
+            views: v.views,
+            likes: v.likes,
+            comments: v.comments,
+            shares: 0,
+            avgWatchSec: null,
+            durationSec: v.durationSec,
+            byPlatform: [{ platform: v.platform, views: v.views }],
+            lifetime: true,
+          })),
+        );
+      }
+
       posts.sort((a, b) =>
         (a as { publishedAt: string }).publishedAt < (b as { publishedAt: string }).publishedAt
           ? 1

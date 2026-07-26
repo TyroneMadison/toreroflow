@@ -9,6 +9,14 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - lifetime YouTube history (groundwork)
+
+- Reads a client's entire YouTube catalogue straight from YouTube rather than the publishing provider, which only keeps a recent window. Lifetime view counts, titles, thumbnails, durations, and publish dates for every video on the channel
+- This is what makes all-time rankings real: the provider exposes 136 posts back to April, while it reports Caleb actually has 651. The 1M+ tier was empty because that history was never available, not because of a display fault
+- Where the same video comes from both sources, the platform's own numbers win and the provider's windowed copy is discarded, so nothing is counted twice
+- Needs a free `YOUTUBE_API_KEY` in `.env`. Without it nothing breaks: the sync returns a clear message and every other figure carries on as before
+- Instagram lifetime history stays unavailable for now; it requires a Meta app with business verification, and Instagram reports no view figure at all for older non-Reel posts
+
 ### Added - analytics breakdown per platform
 
 - Platform tabs on Analytics: an Overall view plus one tab per connected network, color coded. Selecting a platform narrows every figure on the screen (views, watch time, followers, uploads, chart, tables, rankings) to that network alone

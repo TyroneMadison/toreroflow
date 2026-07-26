@@ -148,6 +148,7 @@ model SocialAccount {
   client          Client           @relation(fields: [clientId], references: [id])
   postTargets     PostTarget[]
   metricSnapshots MetricSnapshot[]
+  externalVideos  ExternalVideo[]
 
   @@index([clientId, platform])
 }
@@ -272,6 +273,39 @@ model ScheduleSlot {
   client Client @relation(fields: [clientId], references: [id])
 
   @@index([clientId, platform])
+}
+
+/**
+ * A video that already existed on the platform, pulled straight from the
+ * platform's own API rather than the publishing provider.
+ *
+ * The provider only exposes a rolling window of recent posts, so lifetime
+ * rankings ("most viewed of all time") need the platform as the source of
+ * truth. View counts here are authoritative and refreshed on each sync.
+ */
+model ExternalVideo {
+  id              String   @id @default(cuid())
+  socialAccountId String
+  platform        Platform
+  /// The platform's own video id (e.g. a YouTube videoId).
+  platformVideoId String
+  title           String
+  thumbnailUrl    String?
+  url             String?
+  publishedAt     DateTime
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  durationSec     Float?
+  fetchedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+
+  @@unique([socialAccountId, platformVideoId])
+  @@index([socialAccountId, views])
+  @@index([socialAccountId, publishedAt])
 }
 
 model MetricSnapshot {
