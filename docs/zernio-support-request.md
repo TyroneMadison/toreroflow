@@ -1,7 +1,25 @@
 # Zernio support request, ready to send
 
-Drafted 2026-07-26. Copy the body below. Everything in it was verified
-against the live API, so any number quoted can be backed up if they ask.
+Drafted 2026-07-26. Everything in it was verified against the live API, so
+any number quoted can be backed up if they ask.
+
+## Where to send it
+
+Zernio publishes no support email. `zernio.com/contact` returns 404 and the
+docs list no address. The realistic channels, best first:
+
+1. **GitHub issue on `github.com/zernio-dev/zernio-api`** (issues enabled,
+   and their client library repos carry open issues, so the trackers are
+   watched). Best fit for a technical API question, and public.
+2. **Reply to an email they already sent**, e.g. signup or billing. Private,
+   and it proves account ownership without sharing anything sensitive.
+3. **In-app support widget** in the Zernio dashboard after logging in.
+4. **Telegram `t.me/zernio_dev`**, listed in their docs, but it looks like an
+   announcements channel so inbound may go unread.
+
+For a GitHub issue, drop the "Hi" and the sign-off and open straight at
+"I need lifetime post history…". Do not post account ids publicly; offer them
+and share privately if asked.
 
 ---
 
