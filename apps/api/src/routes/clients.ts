@@ -118,18 +118,23 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         socialAccounts: {
           where: { deletedAt: null },
           orderBy: { platform: "asc" },
+          include: {
+            // Newest snapshot that actually recorded a follower count, so a
+            // same-day snapshot written before the follower pull does not
+            // mask the real number.
+            metricSnapshots: {
+              where: { followers: { not: null } },
+              orderBy: { capturedAt: "desc" },
+              take: 1,
+              select: { followers: true },
+            },
+          },
         },
         _count: { select: { workflows: true } },
       },
     });
-    return clients.map((c) => ({
-      id: c.id,
-      name: c.name,
-      avatarSeed: c.avatarSeed,
-      plan: c.plan,
-      createdAt: c.createdAt,
-      workflowCount: c._count.workflows,
-      accounts: c.socialAccounts.map((a) => ({
+    return clients.map((c) => {
+      const accounts = c.socialAccounts.map((a) => ({
         id: a.id,
         platform: a.platform,
         handle: a.handle,
@@ -137,8 +142,24 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         connectedAt: a.connectedAt,
         avatarUrl: a.avatarUrl,
         displayName: a.displayName,
-      })),
-    }));
+        followers: a.metricSnapshots[0]?.followers ?? null,
+      }));
+      const known = accounts.filter((a) => a.followers != null);
+      return {
+        id: c.id,
+        name: c.name,
+        avatarSeed: c.avatarSeed,
+        plan: c.plan,
+        createdAt: c.createdAt,
+        workflowCount: c._count.workflows,
+        accounts,
+        // Null rather than 0 when nothing is known, so the UI can say so
+        // instead of claiming a real zero.
+        totalFollowers: known.length
+          ? known.reduce((s, a) => s + (a.followers ?? 0), 0)
+          : null,
+      };
+    });
   });
 
   app.post("/clients", async (request, reply) => {

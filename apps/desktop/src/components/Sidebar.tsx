@@ -11,6 +11,8 @@ interface SidebarProps {
   theme: Theme;
   onToggleTheme: () => void;
   onOpenConnect: () => void;
+  /** Hover text for the Reports bell; null hides it. */
+  reportNotice: string | null;
 }
 
 interface NavItemDef {
@@ -32,6 +34,7 @@ const CREATE_NAV: NavItemDef[] = [
 
 const MEASURE_NAV: NavItemDef[] = [
   { target: "analytics", icon: "#i-chart", label: "Analytics" },
+  { target: "reports", icon: "#i-dl", label: "Reports" },
   { target: "accounts", icon: "#i-users", label: "Accounts" },
 ];
 
@@ -43,10 +46,13 @@ function NavItem({
   item,
   active,
   onNavigate,
+  notice,
 }: {
   item: NavItemDef;
   active: boolean;
   onNavigate: (screen: ScreenId) => void;
+  /** Bell tooltip text; the bell only appears when this is set. */
+  notice?: string | null;
 }) {
   return (
     <div
@@ -57,6 +63,15 @@ function NavItem({
         <use href={item.icon} />
       </svg>{" "}
       {item.label}
+      {notice && (
+        // title gives the hover message without needing custom tooltip logic.
+        <span className="navbell" title={notice}>
+          <svg>
+            <use href="#i-bell" />
+          </svg>
+          <span className="navbell-dot" />
+        </span>
+      )}
       {item.badge && <span className="badge">{item.badge}</span>}
     </div>
   );
@@ -68,6 +83,7 @@ export default function Sidebar({
   theme,
   onToggleTheme,
   onOpenConnect,
+  reportNotice,
 }: SidebarProps) {
   const { clients, selectedClient, selectClient } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -89,6 +105,7 @@ export default function Sidebar({
         item={item}
         active={item.target === activeScreen}
         onNavigate={onNavigate}
+        notice={item.target === "reports" ? reportNotice : null}
       />
     ));
 

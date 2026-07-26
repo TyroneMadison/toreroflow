@@ -67,6 +67,7 @@ export interface AccountInfo {
   connectedAt: string;
   avatarUrl: string | null;
   displayName: string | null;
+  followers: number | null;
 }
 
 export interface ClientSummary {
@@ -76,6 +77,8 @@ export interface ClientSummary {
   plan: string | null;
   createdAt: string;
   workflowCount: number;
+  /** Null when no account has reported a follower count yet. */
+  totalFollowers: number | null;
   accounts: AccountInfo[];
 }
 
@@ -154,6 +157,26 @@ export interface ClientQuota {
   unclassified: number;
   short: QuotaSection;
   long: QuotaSection;
+}
+
+export interface ClientReport {
+  id: string;
+  clientId: string;
+  clientName?: string;
+  periodStart: string;
+  periodEnd: string;
+  /** e.g. "June 2026" */
+  label: string;
+  url: string;
+  generatedAt: string;
+  seen: boolean;
+}
+
+export interface UnseenReports {
+  count: number;
+  /** Ready-made notification text, e.g. "Report ready for June". */
+  message: string | null;
+  reports: ClientReport[];
 }
 
 export interface ClientPost {

@@ -189,11 +189,22 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     }
   };
 
+  /**
+   * Builds the same monthly report the Reports screen produces, for the
+   * month that just ended. Deliberately not a second report design: one
+   * client-facing document, one look.
+   */
   const exportReport = async () => {
     if (!selectedClient) return;
     setExporting(true);
     try {
-      const res = await api.post<{ url: string }>(`/clients/${selectedClient.id}/report`);
+      const now = new Date();
+      const m = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const month = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+      const res = await api.post<{ url: string }>(
+        `/clients/${selectedClient.id}/reports?month=${month}`,
+        {},
+      );
       const url = fileUrl(res.url);
       if (url) await openExternal(url);
     } finally {

@@ -10,6 +10,13 @@ interface AccountsScreenProps {
   onOpenInsights(clientId: string): void;
 }
 
+/** Compact follower count: 20.1K, 1.4M. */
+function fmtCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 const AVATAR_GRADIENTS = [
   "linear-gradient(135deg,#8b7bff,#4ea8ff)",
   "linear-gradient(135deg,#a07bff,#6a5bff)",
@@ -135,8 +142,14 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
                 </div>
                 <div className="stat">
                   <div>
-                    <div className="big">-</div>
-                    <div className="lab">total followers</div>
+                    <div className="big">
+                      {client.totalFollowers != null ? fmtCount(client.totalFollowers) : "-"}
+                    </div>
+                    <div className="lab">
+                      {client.totalFollowers != null
+                        ? "total followers"
+                        : "followers not synced yet"}
+                    </div>
                   </div>
                 </div>
                 <div className={`health ${needsFix ? "warn" : connected.length ? "ok" : "warn"}`}>

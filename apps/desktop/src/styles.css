@@ -516,6 +516,24 @@
 .gdt-mer{justify-content:flex-start}
 .gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
 
+/* reports screen */
+.navbell{margin-left:auto;position:relative;display:inline-flex;align-items:center;color:var(--amber)}
+.navbell svg{width:15px;height:15px;stroke:currentColor;stroke-width:2;fill:none}
+.navbell-dot{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)}
+.repmonth{width:auto;min-width:170px;padding:8px 12px;font-size:12.5px}
+.repbuild{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.repclient{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+.repclient b{font-size:13px;flex:1;min-width:0}
+.repclient .btn{padding:7px 16px;font-size:12.5px}
+.replist{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.reprow{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+.reprow.unseen{box-shadow:inset 0 0 0 1px rgba(255,196,107,.4)}
+.repmeta{flex:1;min-width:0}
+.repmeta b{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:640}
+.repmeta span{display:block;font-size:11px;color:var(--txt-3);margin-top:3px}
+.repnew{font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0b0b18;background:var(--amber);padding:1px 6px;border-radius:5px}
+.reprow .btn{padding:7px 14px;font-size:12px}
+
 /* video quota for the pay period */
 .quotacard{padding:18px}
 .qsetrow{display:flex;gap:8px;margin-top:12px;align-items:center}
