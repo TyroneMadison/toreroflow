@@ -68,8 +68,12 @@ export function clientSlug(name: string): string {
 }
 
 /**
- * Full report path for a client, e.g.
- * "caleb-report-copper-falcon-drift-ember".
+ * Uniform report path for every client:
+ * "<client>-end-of-month-report-<four words>".
+ *
+ * The naming is identical across clients so a link is self-describing, while
+ * the word suffix keeps it from being guessable. Without the suffix, knowing
+ * one client's link would reveal the pattern for all of them.
  *
  * `randomInt` is injected so this stays a pure function and can be tested
  * with a predictable sequence.
@@ -88,7 +92,7 @@ export function buildReportSlug(
     used.add(i);
     picked.push(WORDS[i]!);
   }
-  return `${clientSlug(clientName)}-report-${picked.join("-")}`;
+  return `${clientSlug(clientName)}-end-of-month-report-${picked.join("-")}`;
 }
 
 /** Combinations available, for documenting the actual privacy on offer. */

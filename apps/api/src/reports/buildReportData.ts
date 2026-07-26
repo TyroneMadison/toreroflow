@@ -27,6 +27,8 @@ export interface ReportPost {
   avgWatchSec: number | null;
   platforms: string[];
   byPlatform: Array<{ platform: string; views: number }>;
+  /** Public link to the video, so the report can point at the real thing. */
+  url?: string | null;
 }
 
 export interface ReportAccount {
@@ -256,6 +258,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
               tag: "Top Video",
               title: top.title,
               stats: `${fmt(top.views)} views`,
+              ...(top.url ? { url: top.url } : {}),
             },
           }
         : {}),
@@ -304,6 +307,8 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
         title: p.title,
         value: fmt(p.views),
         note: rate > 0 ? `${rate.toFixed(1)}% eng` : "",
+        // Makes the card a link straight to the video on its platform.
+        ...(p.url ? { url: p.url } : {}),
       };
     });
 

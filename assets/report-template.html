@@ -288,6 +288,12 @@ body{
 /* top content cards */
 .tc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .tc{padding:0;border-radius:18px;overflow:hidden;}
+/* Linked cards keep the card look and gain a hint that they are clickable. */
+.tc-link{display:block;text-decoration:none;color:inherit;transition:transform .18s,box-shadow .18s;}
+.tc-link:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(0,0,0,.45);}
+.tp-title-link{color:#fff;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.28);}
+.tp-title-link:hover{border-bottom-color:#fff;}
+@media print{.tc-link:hover{transform:none;box-shadow:none;}}
 .tc .cover{
   height:120px;position:relative;display:flex;align-items:center;justify-content:center;
   background:linear-gradient(150deg,color-mix(in srgb,var(--brand,#F2685B) 35%,#15151a),#0b0b0e);
@@ -599,7 +605,7 @@ body{
         '<div class="pf-foot">' +
           '<div class="toppost">' +
             '<div class="thumb"><span class="badge">Top</span>' + svg(PLAY) + '</div>' +
-            '<div class="meta-t"><div class="tp-lbl">' + (top.tag || '') + '</div><div class="tp-title">' + (top.title || '') + '</div><div class="tp-stats">' + (top.stats || '') + '</div></div>' +
+            '<div class="meta-t"><div class="tp-lbl">' + (top.tag || '') + '</div><div class="tp-title">' + (top.url ? '<a class="tp-title-link" href="' + top.url + '" target="_blank" rel="noopener noreferrer">' + (top.title || '') + '</a>' : (top.title || '')) + '</div><div class="tp-stats">' + (top.stats || '') + '</div></div>' +
           '</div>' +
           '<div class="share-wrap"><div class="l">Share of total views</div><div class="bar"><i style="width:' + (share.pct || 0) + '%"></i></div><div class="pct">' + (share.label || '') + '</div></div>' +
         '</div>' +
@@ -633,7 +639,12 @@ body{
   function topContentHTML(tc) {
     var cards = (tc.items || []).map(function (it) {
       var color = it.color || COLORS[it.brand] || 'var(--coral)';
-      return '<div class="glass tc" style="--brand:' + color + ';"><div class="cover"><span class="tag">' + it.tag + '</span>' + svg(PLAY) + '</div><div class="body"><div class="t">' + it.title + '</div><div class="s"><b>' + it.value + '</b><span>' + (it.note || '') + '</span></div></div></div>';
+      // A card becomes a link to the real video when a url is supplied.
+      var inner = '<div class="cover"><span class="tag">' + it.tag + '</span>' + svg(PLAY) + '</div><div class="body"><div class="t">' + it.title + '</div><div class="s"><b>' + it.value + '</b><span>' + (it.note || '') + '</span></div></div>';
+      if (it.url) {
+        return '<a class="glass tc tc-link" href="' + it.url + '" target="_blank" rel="noopener noreferrer" style="--brand:' + color + ';">' + inner + '</a>';
+      }
+      return '<div class="glass tc" style="--brand:' + color + ';">' + inner + '</div>';
     }).join('');
     return '<div class="section-head" style="margin-top:40px;"><div class="eyebrow">' + (tc.eyebrow || '') + '</div><h2 class="display">' + (tc.title || '') + '</h2></div><div class="tc-grid">' + cards + '</div>';
   }

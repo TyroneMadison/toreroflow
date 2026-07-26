@@ -84,6 +84,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       avgWatchSec: p.avgWatchSec,
       platforms: p.platforms,
       byPlatform: p.byPlatform,
+      url: p.url,
     }));
 
     return { client, accounts, posts };
