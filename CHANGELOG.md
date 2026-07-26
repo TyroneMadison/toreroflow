@@ -9,6 +9,15 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - post details from the calendar
+
+- Click any post in day, week, or month view for a quick overview: thumbnail, platform, status, caption, and publish time
+- Scheduled posts can have their day and time edited right there with the glass picker, and the calendar updates immediately. Published and in-flight posts are read-only
+
+### Changed
+
+- Dashboard range selector drops the 180-day option, leaving 30, 60, and 90 days
+
 ### Fixed - drag and drop
 
 - Dropping a video onto the Upload screen now works in the desktop app. Tauri was intercepting OS file drops itself and suppressing the page's own drop events, so the feature only ever worked in the browser

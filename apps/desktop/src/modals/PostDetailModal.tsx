@@ -1,0 +1,145 @@
+import { useState } from "react";
+import Modal from "./Modal";
+import GlassDateTime from "../components/GlassDateTime";
+import Pf from "../components/Pf";
+import { api, fileUrl, type PostTargetInfo } from "../lib/api";
+import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
+
+interface PostDetailModalProps {
+  target: PostTargetInfo;
+  onClose(): void;
+  onChanged(): void;
+}
+
+const STATUS_TEXT: Record<PostTargetInfo["status"], string> = {
+  scheduled: "Scheduled",
+  publishing: "Publishing now",
+  posted: "Published",
+  failed: "Failed",
+};
+
+/** Local datetime value ("YYYY-MM-DDTHH:mm") for the picker. */
+function localValue(iso: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Quick look at one scheduled post from the calendar, with its day and time
+ * editable in place. Published and in-flight posts are read-only.
+ */
+export default function PostDetailModal({ target, onClose, onChanged }: PostDetailModalProps) {
+  const editable = target.status === "scheduled";
+  const [when, setWhen] = useState(() => localValue(target.scheduledAt));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const original = localValue(target.scheduledAt);
+  const dirty = when !== original;
+  const thumb = fileUrl(target.thumbUrl);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.patch(`/posts/targets/${target.id}/reschedule`, {
+        scheduledAt: new Date(when).toISOString(),
+      });
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not reschedule");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal maxWidth={520} onClose={onClose}>
+      <div className="modal-head">
+        <div>
+          <h3>{target.assetName}</h3>
+          <p>
+            {PLATFORM_LABELS[target.platform]} · {STATUS_TEXT[target.status]}
+          </p>
+        </div>
+        <div className="modal-x" onClick={onClose}>
+          <svg>
+            <use href="#i-x" />
+          </svg>
+        </div>
+      </div>
+
+      <div className="modal-body">
+        <div className="pdrow">
+          <div className="pdthumb">
+            {thumb && <img src={thumb} alt="" />}
+          </div>
+          <div className="pdmeta">
+            <div className="line">
+              <Pf p={PF_ID[target.platform]} size="sm" />
+              <span>{PLATFORM_LABELS[target.platform]}</span>
+            </div>
+            <div className={`pdstatus ${target.status}`}>{STATUS_TEXT[target.status]}</div>
+            {target.publishedAt && (
+              <div className="sub">
+                Published {new Date(target.publishedAt).toLocaleString([], {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </div>
+            )}
+            {target.error && <div className="autherr">{target.error}</div>}
+          </div>
+        </div>
+
+        {target.caption && (
+          <>
+            <label className="flabel" style={{ marginTop: 16 }}>
+              Caption
+            </label>
+            <div className="pdcaption">{target.caption}</div>
+          </>
+        )}
+
+        <label className="flabel" style={{ marginTop: 16 }}>
+          {editable ? "Day and time" : "Scheduled for"}
+        </label>
+        {editable ? (
+          <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+        ) : (
+          <div className="pdcaption">
+            {target.scheduledAt
+              ? new Date(target.scheduledAt).toLocaleString([], {
+                  dateStyle: "full",
+                  timeStyle: "short",
+                })
+              : "not scheduled"}
+          </div>
+        )}
+        {!editable && (
+          <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
+            Only scheduled posts can be moved.
+          </p>
+        )}
+
+        {error && <div className="autherr">{error}</div>}
+      </div>
+
+      <div className="modal-foot">
+        <button className="btn ghost" onClick={onClose}>
+          {editable ? "Cancel" : "Close"}
+        </button>
+        {editable && (
+          <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
+            <svg>
+              <use href="#i-check" />
+            </svg>{" "}
+            {busy ? "Saving…" : "Save time"}
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}

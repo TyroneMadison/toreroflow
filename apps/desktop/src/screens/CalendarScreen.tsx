@@ -4,6 +4,7 @@ import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { holidayFor } from "../lib/holidays";
 import { PF_ID, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
+import PostDetailModal from "../modals/PostDetailModal";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -145,6 +146,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   };
 
   const [dropKey, setDropKey] = useState<string | null>(null);
+  const [detail, setDetail] = useState<PostTargetInfo | null>(null);
 
   /** Drop handler: move the dragged target to `day`, keeping its time. */
   const dropOn = async (e: RDragEvent, day: Date) => {
@@ -189,12 +191,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       <div
         className={`ev ${EV_CLASS[t.platform]}`}
         key={t.id}
-        title={t.error ?? t.caption ?? t.assetName}
+        title={movable ? "Click for details, drag to move" : (t.error ?? t.assetName)}
         draggable={movable}
         onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
+        onClick={() => setDetail(t)}
         style={{
           ...(t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : {}),
-          ...(movable ? { cursor: "grab" } : {}),
+          cursor: movable ? "grab" : "pointer",
         }}
       >
         <div className="t1">
@@ -364,12 +367,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                             key={t.id}
                             title={
                               movable
-                                ? `${t.assetName} - drag to another day`
+                                ? `${t.assetName} - click for details, drag to move`
                                 : `${t.assetName}${STATUS_SUFFIX[t.status]}`
                             }
                             draggable={movable}
-                            style={movable ? { cursor: "grab" } : undefined}
+                            style={{ cursor: movable ? "grab" : "pointer" }}
                             onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
+                            onClick={() => setDetail(t)}
                           >
                             <span className="d" style={{ background: EV_DOT[t.platform] }} />
                             {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
@@ -388,9 +392,18 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         )}
 
         <div className="note">
-          Posts are color-coded by platform; holidays appear as reminders across all views.
+          Posts are color-coded by platform; click one for details, drag a scheduled post to
+          another day. Holidays appear as reminders across all views.
         </div>
       </div>
+
+      {detail && (
+        <PostDetailModal
+          target={detail}
+          onClose={() => setDetail(null)}
+          onChanged={() => void load()}
+        />
+      )}
     </section>
   );
 }

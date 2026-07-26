@@ -494,6 +494,19 @@
 .gdt-mer{justify-content:flex-start}
 .gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
 
+/* calendar post detail */
+.pdrow{display:flex;gap:14px;align-items:flex-start}
+.pdthumb{width:74px;height:94px;border-radius:12px;overflow:hidden;flex:0 0 auto;background:var(--glass-2)}
+.pdthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.pdmeta{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+.pdmeta .line{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600}
+.pdstatus{align-self:flex-start;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.3px;
+  background:var(--glass-2);color:var(--txt-2);border:1px solid var(--brd-soft)}
+.pdstatus.scheduled{color:#8b7bff;background:rgba(139,123,255,.14);border-color:rgba(139,123,255,.35)}
+.pdstatus.posted{color:#34d399;background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.35)}
+.pdstatus.failed{color:var(--red);background:rgba(255,107,122,.14);border-color:rgba(255,107,122,.35)}
+.pdcaption{margin-top:6px;padding:11px 13px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);font-size:12.5px;line-height:1.5;color:var(--txt-2);white-space:pre-wrap}
+
 .titlein{width:100%;font-weight:600}
 .flabel .hint{margin-left:8px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt-3)}
 

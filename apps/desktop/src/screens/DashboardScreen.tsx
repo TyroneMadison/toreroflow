@@ -25,7 +25,7 @@ const AVATAR_GRADIENTS = [
 ];
 
 /** Quick glance across every brand; the Analytics tab is the deep dive. */
-const RANGES = [30, 60, 90, 180] as const;
+const RANGES = [30, 60, 90] as const;
 
 export default function DashboardScreen({ onOpenInsights, onOpenConnect }: DashboardScreenProps) {
   const { clients } = useAppState();
