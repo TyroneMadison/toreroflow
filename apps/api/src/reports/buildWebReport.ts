@@ -134,12 +134,16 @@ export function buildWebReport(
 })();
 </script>`;
 
+  // Keep client numbers out of search results. The link's privacy rests on
+  // being unguessable, which is undone the moment a crawler indexes it.
+  const noIndex = `<meta name="robots" content="noindex, nofollow, noarchive">`;
+
   // Switcher styles go in the head; the script goes last so the template's
   // own renderer is already defined when it runs.
   let html = templateHtml;
   html = html.includes("</head>")
-    ? html.replace("</head>", `${SWITCHER_CSS}</head>`)
-    : `${SWITCHER_CSS}${html}`;
+    ? html.replace("</head>", `${noIndex}${SWITCHER_CSS}</head>`)
+    : `${noIndex}${SWITCHER_CSS}${html}`;
   html = html.includes("</body>")
     ? html.replace("</body>", `${script}</body>`)
     : `${html}${script}`;
