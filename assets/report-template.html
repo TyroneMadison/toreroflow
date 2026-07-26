@@ -319,10 +319,17 @@ body{
 .foot-note{font-size:10.5px;color:var(--muted-2);letter-spacing:1px;text-transform:uppercase;}
 
 /* ---------- print ---------- */
-@page{ size:Letter; margin:0.42in; }
+/* Zero page margin so the dark design reaches the paper edge. Anything
+   inside the @page margin is left unpainted by the browser, which is what
+   showed up as white gutters on every page. Breathing room is provided by
+   padding on .wrap instead: horizontal padding applies on every page in
+   paged media, which is exactly what is wanted here. */
+@page{ size:Letter; margin:0; }
 .page-break{break-before:page;}
 @media print{
-  .wrap{max-width:100%;padding:0;}
+  html,body{background:var(--bg);}
+  body{padding:0;}
+  .wrap{max-width:100%;padding:0.44in 0.5in;}
   .decor::before{display:none;} /* drop rasterized grain in PDF to keep file size small */
   .glass,.kpi,.platform,.panel,.tc,.highlight,.next,.meta,.metric{
     -webkit-print-color-adjust:exact;print-color-adjust:exact;
