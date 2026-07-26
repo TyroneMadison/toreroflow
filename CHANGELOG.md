@@ -9,6 +9,11 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - best times to post
+
+- The Upload screen's timing card now shows the hours that actually perform best for the selected brand, per platform, measured from its own published history rather than a generic recommendation
+- Ranked bars of average views per hour, in your local time zone, with the number of posts behind each row so a lucky single post is not mistaken for a pattern. Rows with a thin sample are faded and flagged
+
 ### Added - reschedule and remove from the queue
 
 - Each row in "Up next in queue" gets two controls: change the day and time, or remove that post from the queue

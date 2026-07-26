@@ -494,6 +494,22 @@
 .gdt-mer{justify-content:flex-start}
 .gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
 
+/* best times to post */
+.bttabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.bttab{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:11px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--txt-3);background:var(--glass);border:1px solid var(--brd-soft);transition:.16s}
+.bttab:hover{color:var(--txt);background:var(--glass-2)}
+.bttab.on{color:var(--txt);background:var(--glass-2);box-shadow:inset 0 0 0 1px rgba(139,123,255,.5)}
+.btrows{display:flex;flex-direction:column;gap:9px}
+.btrow{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center}
+.bthour{font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px}
+.btbest{font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#0b0b18;background:var(--grad);padding:1px 5px;border-radius:5px}
+.btbar{height:9px;border-radius:6px;background:var(--glass-2);overflow:hidden}
+.btbar .fill{height:100%;border-radius:6px;background:var(--grad);box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+.btval{font-size:11.5px;font-weight:700;text-align:right;line-height:1.25}
+.btval span{display:block;font-size:9.5px;font-weight:500;color:var(--txt-3)}
+.btval span.thin{color:var(--amber)}
+.btnote{margin-top:12px;font-size:10.5px;line-height:1.5;color:var(--txt-3)}
+
 .qactions{margin-left:auto;display:flex;gap:6px;flex:0 0 auto;opacity:0;transition:opacity .18s}
 .queue-item:hover .qactions,.qactions:focus-within{opacity:1}
 .qactions .iconbtn{width:30px;height:30px;border-radius:10px}

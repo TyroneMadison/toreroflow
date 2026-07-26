@@ -3,6 +3,7 @@ import {
   api,
   fileUrl,
   uploadMedia,
+  type ClientPost,
   type MediaAssetInfo,
   type PostTargetInfo,
 } from "../lib/api";
@@ -12,6 +13,7 @@ import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import PostDetailModal from "../modals/PostDetailModal";
+import BestTimes from "../components/BestTimes";
 
 const fmtWhen = (iso: string | null): string =>
   iso
@@ -48,6 +50,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
   const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
@@ -87,6 +90,26 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Published history drives the best-times panel; it is cached server-side.
+  useEffect(() => {
+    if (!selectedClient) {
+      setBestTimePosts([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`)
+      .then((d) => {
+        if (!cancelled) setBestTimePosts(d.posts);
+      })
+      .catch(() => {
+        if (!cancelled) setBestTimePosts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient]);
 
   // Poll while anything is still working its way through the pipeline.
   useEffect(() => {
@@ -501,12 +524,12 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 >
                   <use href="#i-bolt" />
                 </svg>{" "}
-                Smart timing
+                Best times to post
               </h3>
-              <div className="sub" style={{ marginBottom: 8 }}>
-                Best posting windows are computed from each account's own history. They appear
-                once analytics ingestion starts.
+              <div className="sub" style={{ marginBottom: 10 }}>
+                Measured from {selectedClient?.name ?? "this brand"}'s own results
               </div>
+              <BestTimes posts={bestTimePosts} />
             </div>
           </div>
         </div>
