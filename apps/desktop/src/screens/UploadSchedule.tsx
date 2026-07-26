@@ -38,6 +38,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [titles, setTitles] = useState<Record<string, string>>({});
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
@@ -113,9 +114,13 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   };
 
   const saveDraft = async (asset: MediaAssetInfo) => {
-    const caption = drafts[asset.id];
-    if (caption === undefined) return;
-    await api.patch(`/media/${asset.id}/draft`, { caption });
+    const description = drafts[asset.id];
+    const title = titles[asset.id];
+    if (description === undefined && title === undefined) return;
+    await api.patch(`/media/${asset.id}/draft`, {
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+    });
     setSavedFlash(asset.id);
     setTimeout(() => setSavedFlash((s) => (s === asset.id ? null : s)), 2000);
     void load();
@@ -125,6 +130,11 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     await api.del(`/media/${asset.id}`);
     setDrafts((d) => {
       const next = { ...d };
+      delete next[asset.id];
+      return next;
+    });
+    setTitles((t) => {
+      const next = { ...t };
       delete next[asset.id];
       return next;
     });
@@ -197,8 +207,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             {assets.map((asset) => {
               const thumb = fileUrl(asset.thumbUrl);
               const render = fileUrl(asset.renderUrl);
-              const caption =
-                drafts[asset.id] ?? asset.draftCopy?.caption ?? "";
+              const description =
+                drafts[asset.id] ?? asset.draftCopy?.description ?? "";
+              const title = titles[asset.id] ?? asset.draftCopy?.title ?? "";
               return (
                 <div className="job glass-sm" key={asset.id}>
                   <div
@@ -241,18 +252,36 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       <div className="transcript">{STATUS_LABEL[asset.status]}</div>
                     ) : (
                       <>
-                        {asset.draftCopy?.hook && (
-                          <div className="transcript" style={{ marginTop: 10 }}>
-                            Hook: {asset.draftCopy.hook}
-                          </div>
-                        )}
-                        <div className="captionbox" style={{ marginTop: 10 }}>
+                        <label className="flabel" style={{ marginTop: 10 }}>
+                          Title
+                          <span className="hint">
+                            YouTube title · Instagram &amp; TikTok caption
+                          </span>
+                        </label>
+                        <input
+                          className="field-in titlein"
+                          value={title}
+                          maxLength={300}
+                          placeholder={
+                            asset.draftCopy
+                              ? "Title this video…"
+                              : "Title this video. Add ANTHROPIC_API_KEY to get AI drafts."
+                          }
+                          onChange={(e) =>
+                            setTitles((t) => ({ ...t, [asset.id]: e.target.value }))
+                          }
+                        />
+
+                        <label className="flabel" style={{ marginTop: 12 }}>
+                          Description
+                        </label>
+                        <div className="captionbox">
                           <textarea
-                            value={caption}
+                            value={description}
                             placeholder={
                               asset.draftCopy
-                                ? "Edit the AI caption…"
-                                : "Write a caption. Add ANTHROPIC_API_KEY to get AI drafts."
+                                ? "Edit the AI description…"
+                                : "Write a description. Add ANTHROPIC_API_KEY to get AI drafts."
                             }
                             onChange={(e) =>
                               setDrafts((d) => ({ ...d, [asset.id]: e.target.value }))
@@ -279,9 +308,11 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         <button
                           className="btn ghost"
                           onClick={() => void saveDraft(asset)}
-                          disabled={drafts[asset.id] === undefined}
+                          disabled={
+                            drafts[asset.id] === undefined && titles[asset.id] === undefined
+                          }
                         >
-                          {savedFlash === asset.id ? "Saved ✓" : "Save caption"}
+                          {savedFlash === asset.id ? "Saved ✓" : "Save copy"}
                         </button>
                       )}
                       <button

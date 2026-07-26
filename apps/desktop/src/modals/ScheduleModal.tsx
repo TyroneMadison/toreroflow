@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal";
+import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
 import { api, type MediaAssetInfo } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
@@ -60,7 +61,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   };
 
   return (
-    <Modal maxWidth={440} onClose={onClose}>
+    <Modal maxWidth={520} onClose={onClose}>
       <div className="modal-head">
         <div>
           <h3>Schedule post</h3>
@@ -102,14 +103,9 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         <label className="flabel" style={{ marginTop: 18 }}>
           Post at
         </label>
-        <input
-          className="field-in"
-          type="datetime-local"
-          value={when}
-          onChange={(e) => setWhen(e.target.value)}
-        />
+        <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
         <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
-          Uses the caption saved on this video. Each platform publishes
+          Posts with the title saved on this video. Each platform publishes
           independently with automatic retries.
         </p>
 

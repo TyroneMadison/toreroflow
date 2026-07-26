@@ -453,6 +453,47 @@
 .branddrop{position:relative;flex:0 0 auto}
 .branddrop .brandmenu{bottom:auto;top:calc(100% + 8px);left:auto;right:0;min-width:230px;box-shadow:0 14px 44px rgba(0,0,0,.6)}
 [data-theme="light"] .branddrop .brandmenu{box-shadow:0 14px 44px rgba(50,55,110,.25)}
+/* glass date+time picker (replaces the unstylable native datetime popup) */
+.gdt{position:relative}
+.gdt-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:var(--font);color:var(--txt)}
+.gdt-cal{width:16px;height:16px;stroke:var(--txt-3);stroke-width:1.9;fill:none;flex:0 0 auto}
+/* Opaque enough to read against busy content behind, blur keeps the glass feel. */
+.gdt-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:80;padding:14px;border-radius:18px;min-width:100%;width:max-content;max-width:min(420px,86vw);
+  background:rgba(17,14,33,.94);backdrop-filter:blur(42px) saturate(170%);-webkit-backdrop-filter:blur(42px) saturate(170%);
+  border:1px solid var(--brd);box-shadow:0 26px 60px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.22)}
+[data-theme="light"] .gdt-pop{background:rgba(248,249,255,.96);box-shadow:0 26px 60px rgba(50,55,110,.3), inset 0 1px 0 rgba(255,255,255,.85)}
+.gdt-pop.up{top:auto;bottom:calc(100% + 8px)}
+/* The picker escapes the modal's own scroll box rather than being clipped by it. */
+.modal:has(.gdt-pop){overflow:visible}
+.gdt-cols{display:flex;gap:14px}
+.gdt-cal-side{flex:1;min-width:0}
+.gdt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.gdt-head b{font-size:13px;font-weight:620}
+.gdt-nav{display:flex;gap:4px}
+.gdt-nav button{width:26px;height:26px;border-radius:9px;border:1px solid var(--brd-soft);background:var(--glass);color:var(--txt-2);cursor:pointer;font-size:15px;line-height:1;display:grid;place-items:center;transition:.15s}
+.gdt-nav button:hover{background:var(--glass-2);color:var(--txt)}
+.gdt-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.gdt-dow{margin-bottom:4px}
+.gdt-dow span{text-align:center;font-size:10px;color:var(--txt-3);letter-spacing:.6px}
+.gdt-blank{height:30px}
+.gdt-day{width:30px;height:30px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--txt-2);font-family:var(--font);font-size:12px;cursor:pointer;transition:.15s}
+.gdt-day:hover:not(:disabled){background:var(--glass-2);color:var(--txt)}
+.gdt-day.today{border-color:rgba(139,123,255,.5)}
+.gdt-day.on{background:var(--grad);color:#0b0b18;font-weight:700;border-color:transparent}
+.gdt-day:disabled{opacity:.25;cursor:not-allowed}
+.gdt-time{display:flex;gap:6px;flex:0 0 auto}
+.gdt-col{display:flex;flex-direction:column;gap:3px;max-height:212px;overflow-y:auto;overflow-x:hidden;padding-right:2px;scrollbar-width:thin}
+.gdt-col::-webkit-scrollbar{width:5px}
+.gdt-col::-webkit-scrollbar-thumb{background:var(--glass-3);border-radius:6px}
+.gdt-col button{padding:6px 8px;min-width:38px;border-radius:9px;border:1px solid transparent;background:transparent;color:var(--txt-2);font-family:var(--font);font-size:12px;cursor:pointer;transition:.15s}
+.gdt-col button:hover{background:var(--glass-2);color:var(--txt)}
+.gdt-col button.on{background:var(--grad);color:#0b0b18;font-weight:700}
+.gdt-mer{justify-content:flex-start}
+.gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
+
+.titlein{width:100%;font-weight:600}
+.flabel .hint{margin-left:8px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt-3)}
+
 .anuploads{padding:16px 18px}
 .ucounts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
 .ucount{padding:12px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);text-align:center}

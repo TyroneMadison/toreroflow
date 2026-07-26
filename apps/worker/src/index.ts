@@ -21,13 +21,35 @@ const anthropic = env.ANTHROPIC_API_KEY
 const DRAFT_SCHEMA = {
   type: "object",
   properties: {
-    caption: { type: "string" },
-    hook: { type: "string" },
+    title: { type: "string" },
+    description: { type: "string" },
     hashtags: { type: "array", items: { type: "string" } },
   },
-  required: ["caption", "hook", "hashtags"],
+  required: ["title", "description", "hashtags"],
   additionalProperties: false,
 } as const;
+
+/**
+ * Models sometimes emit emoji as literal "😈" text rather than the
+ * character, which then renders as the escape sequence. Decode those back.
+ */
+function decodeEscapes(value: string): string {
+  return value.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+function cleanDraft(draft: unknown): unknown {
+  if (!draft || typeof draft !== "object") return draft;
+  const d = draft as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? decodeEscapes(v) : v);
+  return {
+    ...d,
+    title: str(d.title),
+    description: str(d.description),
+    hashtags: Array.isArray(d.hashtags) ? d.hashtags.map((h) => str(h)) : d.hashtags,
+  };
+}
 
 async function transcribe(sourcePath: string): Promise<{
   segments: TranscriptSegment[];
@@ -61,8 +83,12 @@ async function draftCopy(
       },
       system:
         "You write short-form video post copy for a social media agency. " +
-        "Given a video transcript, produce a scroll-stopping hook, a post caption " +
-        "(1-3 sentences, no hashtags inside), and 5-8 relevant hashtags without the # sign.",
+        "Given a video transcript, produce: a title (this is used verbatim as " +
+        "the YouTube title and as the Instagram and TikTok caption, so make it " +
+        "punchy and under 100 characters, no hashtags inside), a description " +
+        "(2-4 sentences describing the video for the post description, no " +
+        "hashtags inside), and 5-8 relevant hashtags without the # sign. " +
+        "Write emoji as real characters, never as escape sequences.",
       messages: [
         {
           role: "user",
@@ -72,7 +98,7 @@ async function draftCopy(
     });
     if (response.stop_reason === "refusal") return null;
     const text = response.content.find((b) => b.type === "text");
-    return text && text.type === "text" ? JSON.parse(text.text) : null;
+    return text && text.type === "text" ? cleanDraft(JSON.parse(text.text)) : null;
   } catch {
     return null; // draft is a nice-to-have; never fail the pipeline for it
   }

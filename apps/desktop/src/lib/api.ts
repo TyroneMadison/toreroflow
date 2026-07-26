@@ -161,8 +161,9 @@ export interface Suggestion {
 }
 
 export interface DraftCopy {
-  caption?: string;
-  hook?: string;
+  /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
+  title?: string;
+  description?: string;
   hashtags?: string[];
 }
 

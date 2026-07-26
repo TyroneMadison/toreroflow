@@ -9,6 +9,17 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Changed - video title replaces the AI hook
+
+- The AI "hook" is gone. Videos now have an editable **Title**, pre-filled by AI from the transcript, which posts verbatim as the YouTube title and as the Instagram and TikTok caption
+- The old caption field is now **Description**, drafted from the transcript
+- Copy drafted before this change still displays: the old hook maps to Title and the old caption to Description on read, no data migration needed
+- Fixed emoji arriving as literal escape text (`😈` instead of the character) in AI-drafted copy, both for new drafts and existing ones
+
+### Added - glass date and time picker
+
+- The schedule dialog uses a custom liquid-glass date and time picker instead of the browser's native popup, which could not be themed. Translucent panel, month navigation, hour/minute/AM-PM columns, past dates disabled, and it opens upward when there is no room below
+
 ### Added - quick wins from the improvement backlog
 
 - Refresh button on Analytics: pulls the newest uploads and view counts from every platform on demand instead of waiting for the daily job

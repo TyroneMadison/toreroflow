@@ -11,8 +11,9 @@ import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
 const draftSchema = z.object({
-  caption: z.string().max(4000).optional(),
-  hook: z.string().max(500).optional(),
+  /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
+  title: z.string().max(300).optional(),
+  description: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
 });
 
@@ -22,6 +23,31 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
 
   app.addHook("onRequest", requireAuth);
+
+  /** Model output sometimes carries literal "\uXXXX" text instead of the character. */
+  const decodeEscapes = (value: string): string =>
+    value.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
+
+  /**
+   * Present draft copy in the current {title, description, hashtags} shape.
+   * Assets drafted before the rename carry {hook, caption}, so map those
+   * across on read rather than migrating rows.
+   */
+  const normalizeDraft = (draft: unknown): unknown => {
+    if (!draft || typeof draft !== "object") return draft;
+    const d = draft as Record<string, unknown>;
+    const str = (v: unknown): string | undefined =>
+      typeof v === "string" ? decodeEscapes(v) : undefined;
+    return {
+      title: str(d.title) ?? str(d.hook) ?? "",
+      description: str(d.description) ?? str(d.caption) ?? "",
+      hashtags: Array.isArray(d.hashtags)
+        ? d.hashtags.map((h) => (typeof h === "string" ? decodeEscapes(h) : h))
+        : [],
+    };
+  };
 
   const assetView = (a: {
     id: string;
@@ -43,7 +69,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       durationSec: a.durationSec,
       status: a.status,
       hasCaptions: Array.isArray(a.transcript) && a.transcript.length > 0,
-      draftCopy: a.draftCopy,
+      draftCopy: normalizeDraft(a.draftCopy),
       createdAt: a.createdAt,
       thumbUrl: ready ? `/files/${a.clientId}/${a.id}/thumb.jpg` : null,
       renderUrl: render ? `/files/${render.storageKey}` : null,

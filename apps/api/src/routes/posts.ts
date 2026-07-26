@@ -48,9 +48,22 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: `not connected: ${missing.join(", ")}` });
     }
 
-    const draft = (asset.draftCopy as { caption?: string; hashtags?: string[] } | null) ?? {};
-    const caption = body.caption ?? draft.caption ?? "";
-    const hashtags = body.hashtags ?? draft.hashtags ?? [];
+    // The title is what actually gets posted: YouTube's title, and the
+    // caption on Instagram and TikTok. `hook` is the pre-rename field name,
+    // still present on assets drafted before the change.
+    const draft =
+      (asset.draftCopy as {
+        title?: string;
+        hook?: string;
+        hashtags?: string[];
+      } | null) ?? {};
+    const decodeEscapes = (v: string): string =>
+      v.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      );
+    const rawCaption = body.caption ?? draft.title ?? draft.hook ?? "";
+    const caption = decodeEscapes(rawCaption);
+    const hashtags = (body.hashtags ?? draft.hashtags ?? []).map(decodeEscapes);
 
     const post = await prisma.post.create({
       data: {
