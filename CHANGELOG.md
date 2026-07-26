@@ -9,6 +9,13 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - analytics breakdown per platform
+
+- Platform tabs on Analytics: an Overall view plus one tab per connected network, color coded. Selecting a platform narrows every figure on the screen (views, watch time, followers, uploads, chart, tables, rankings) to that network alone
+- Range selector for 30, 60, 90 days, or All. "All" covers the full history the provider holds and the header names the actual start date instead of implying a complete account archive
+- Metrics that only exist on one network behave correctly: subscribers reads blank on an Instagram tab and shows the real count on YouTube
+- Views over time is now a proper chart: labelled axes, gridlines, a line per platform plus the combined total, and a hover readout of any day's numbers. It sits in the main column with room to read, and is labelled as views by publish date, which is how the provider attributes them
+
 ### Fixed - quota counters
 
 - The minus button stops at zero instead of quietly counting into the negative, so pressing plus afterwards moves the number straight back up

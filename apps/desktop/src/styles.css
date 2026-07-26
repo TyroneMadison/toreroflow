@@ -443,6 +443,28 @@
 
 /* ---- profile cards (Connected Accounts) ---- */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-top:14px}
+/* analytics: platform tabs + range selector */
+.anbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.antabs{display:flex;gap:7px;flex-wrap:wrap}
+.antab{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:13px;font-size:12.5px;font-weight:600;cursor:pointer;
+  color:var(--txt-3);background:var(--glass);border:1px solid var(--brd-soft);transition:.16s;user-select:none}
+.antab:hover{color:var(--txt);background:var(--glass-2)}
+.antab.on{color:var(--txt);background:var(--glass-2)}
+.anrange{margin-left:auto;flex:0 0 auto}
+
+/* detailed views chart */
+.vchart{margin-top:12px}
+.vchart-svg{width:100%;height:auto;display:block;overflow:visible}
+.vc-grid{stroke:var(--brd-soft);stroke-width:1}
+.vc-ylab,.vc-xlab{fill:var(--txt-3);font-size:9.5px;font-family:var(--font)}
+.vc-cursor{stroke:rgba(139,123,255,.65);stroke-width:1;stroke-dasharray:3 3}
+.vc-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--brd-soft);font-size:11px;color:var(--txt-2)}
+.vc-foot b{font-size:12px}
+.vc-tot{font-weight:700;color:var(--txt)}
+.vc-key{display:inline-flex;align-items:center;gap:6px}
+.vc-key i{width:9px;height:9px;border-radius:3px;display:inline-block;flex:0 0 auto}
+.vc-hint{margin-left:auto;color:var(--txt-3);font-size:10px}
+
 /* analytics redesign: three column stacks like the mockup, glass styling */
 .anwrap{display:grid;grid-template-columns:300px minmax(0,1fr) 300px;gap:18px;align-items:start}
 @media(max-width:1550px){.anwrap{grid-template-columns:240px minmax(0,1fr) 240px}}

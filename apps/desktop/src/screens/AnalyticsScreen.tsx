@@ -7,6 +7,7 @@ import {
   type ClientAnalytics,
   type ClientPost,
 } from "../lib/api";
+import ViewsChart from "../components/ViewsChart";
 import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
@@ -132,6 +133,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** null means every day the provider has, not an arbitrary window. */
+  const [rangeDays, setRangeDays] = useState<number | null>(30);
+  const [tab, setTab] = useState<string>("all");
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -197,8 +201,36 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     }
   };
 
-  const all = posts ?? [];
-  const accounts = data?.accounts ?? [];
+  const everyPost = posts ?? [];
+  const accountsAll = data?.accounts ?? [];
+  const connectedPlatformList = [
+    ...new Set(accountsAll.map((a) => a.platform as string)),
+  ];
+  const activePlatforms = tab === "all" ? connectedPlatformList : [tab];
+
+  /** Oldest publish date the provider gave us, for honest "all time" labels. */
+  const earliest = everyPost.reduce<string | null>(
+    (min, p) => (min === null || p.publishedAt < min ? p.publishedAt : min),
+    null,
+  );
+
+  // Range and platform tab narrow every figure on the screen together.
+  const cutoff = rangeDays == null ? 0 : Date.now() - rangeDays * 86_400_000;
+  const all = everyPost
+    .filter((p) => new Date(p.publishedAt).getTime() >= cutoff)
+    .filter((p) => tab === "all" || p.platforms.includes(tab as Platform))
+    .map((p) =>
+      tab === "all"
+        ? p
+        : {
+            // Scope a post's numbers to the selected platform only.
+            ...p,
+            byPlatform: p.byPlatform.filter((b) => b.platform === tab),
+            views: p.byPlatform.find((b) => b.platform === tab)?.views ?? 0,
+            platforms: [tab as Platform],
+          },
+    );
+  const accounts = accountsAll.filter((a) => tab === "all" || a.platform === tab);
   const ytAccounts = accounts.filter((a) => a.platform === "youtube");
   const otherAccounts = accounts.filter((a) => a.platform !== "youtube");
 
@@ -274,7 +306,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           <h2>Client Analytics</h2>
           <p>
             {selectedClient
-              ? `${selectedClient.name}, all connected platforms.`
+              ? `${selectedClient.name} · ${tab === "all" ? "all platforms" : (PLATFORM_LABELS[tab as Platform] ?? tab)} · ${
+                  rangeDays == null
+                    ? earliest
+                      ? `all history since ${fmtDate(earliest)}`
+                      : "all history"
+                    : `last ${rangeDays} days`
+                }`
               : "Pick a brand to see its analytics."}
           </p>
         </div>
@@ -376,6 +414,50 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           </div>
         ) : (
           <>
+            <div className="anbar">
+              <div className="antabs">
+                <div
+                  className={`antab${tab === "all" ? " on" : ""}`}
+                  onClick={() => setTab("all")}
+                >
+                  Overall
+                </div>
+                {connectedPlatformList.map((p) => (
+                  <div
+                    key={p}
+                    className={`antab${tab === p ? " on" : ""}`}
+                    style={tab === p ? { boxShadow: `inset 0 0 0 1px ${color(p)}` } : undefined}
+                    onClick={() => setTab(p)}
+                  >
+                    <Pf p={PF_ID[p as Platform]} size="sm" />
+                    {PLATFORM_LABELS[p as Platform] ?? p}
+                  </div>
+                ))}
+              </div>
+              <div className="seg anrange">
+                {[30, 60, 90].map((d) => (
+                  <span
+                    key={d}
+                    className={rangeDays === d ? "on" : ""}
+                    onClick={() => setRangeDays(d)}
+                  >
+                    {d}d
+                  </span>
+                ))}
+                <span
+                  className={rangeDays === null ? "on" : ""}
+                  title={
+                    earliest
+                      ? `Everything the provider holds, back to ${fmtDate(earliest)}`
+                      : "Everything the provider holds"
+                  }
+                  onClick={() => setRangeDays(null)}
+                >
+                  All
+                </span>
+              </div>
+            </div>
+
             <div className="anwrap">
               {/* left column */}
               <div className="ancol">
@@ -521,8 +603,24 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 <div className="card glass">
                   <div className="rowhead">
                     <div>
+                      <h3>Views over time</h3>
+                      <div className="sub">
+                        By publish date{tab === "all" ? ", per platform and combined" : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <ViewsChart posts={all} platforms={activePlatforms} />
+                </div>
+
+                <div className="card glass">
+                  <div className="rowhead">
+                    <div>
                       <h3>Last 10 uploads</h3>
-                      <div className="sub">Most recent videos across every platform</div>
+                      <div className="sub">
+                        {tab === "all"
+                          ? "Most recent videos across every platform"
+                          : `Most recent ${PLATFORM_LABELS[tab as Platform] ?? tab} videos`}
+                      </div>
                     </div>
                   </div>
                   {last10.length ? (
@@ -613,46 +711,10 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="chartcard glass" style={{ marginTop: 0, padding: 16 }}>
-                  <div className="rowhead">
-                    <div>
-                      <h3>Views over time</h3>
-                      <div className="sub">Daily, all platforms</div>
-                    </div>
-                  </div>
-                  {history.length >= 2 ? (
-                    <svg
-                      className="chart"
-                      viewBox="0 0 720 230"
-                      preserveAspectRatio="none"
-                      style={{ height: 120 }}
-                    >
-                      <defs>
-                        <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0" stopColor="#4ea8ff" stopOpacity="0.4" />
-                          <stop offset="1" stopColor="#4ea8ff" stopOpacity="0" />
-                        </linearGradient>
-                        <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0" stopColor="#8b7bff" />
-                          <stop offset="1" stopColor="#4ea8ff" />
-                        </linearGradient>
-                      </defs>
-                      <path d={`M${chartPoints.join(" L")} L720,230 L0,230 Z`} fill="url(#area)" />
-                      <polyline
-                        fill="none"
-                        stroke="url(#line)"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={chartPoints.join(" ")}
-                      />
-                    </svg>
-                  ) : (
-                    <div className="empty" style={{ padding: "12px 8px" }}>
-                      <b>Collecting history</b>
-                      <p>The trend draws after a couple of daily snapshots.</p>
-                    </div>
-                  )}
+                <div className="card glass">
+                  <h3>Followers over time</h3>
+                  <div className="sub">Latest snapshot per account</div>
+                  <GainRows accounts={accounts} label="Follower counts" />
                 </div>
               </div>
             </div>

@@ -210,14 +210,19 @@ Scratch Chat" and then "It won't be connected through Canva." Needs
 clarification on what the actual output should be: a Canva design, a CSV
 for an existing automation, or images generated directly in-app.
 
-### C5. "All-time" stats may not be available
+### C5. "All-time" stats, RESOLVED 2026-07-26
 
-Item 2 asks for all-time statistics. Live check: the provider returns 134
-posts spanning 2026-04-27 through today, roughly 90 days. We are nowhere
-near the 500-post pagination cap, so this is the provider's own window, not
-our limit. Before promising all-time numbers, we need to establish whether
-history further back is retrievable at all. If it is not, the honest fix is
-to label the range accurately rather than call it all-time.
+Item 2 asked for all-time statistics. Investigated directly against the
+provider: it holds exactly 136 posts, oldest 2026-04-27, and pagination
+ends naturally on page 2, so nothing is being truncated on our side. Eight
+different date parameters (`startDate`, `from`, `since`, `start`/`end`,
+`dateFrom`/`dateTo`, `days`, `period=all`, `range=all`) all return the same
+window, and `/posts` only returns content we published ourselves.
+
+Conclusion: history older than 2026-04-27 is not retrievable. What we show
+already **is** everything available. Resolved by adding an "All" range that
+covers the full available history and labelling it with the actual start
+date rather than implying a complete account archive.
 
 ### C6. Best upload times cannot be read from the platforms
 
