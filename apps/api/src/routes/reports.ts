@@ -11,6 +11,7 @@ import {
   type ReportAccount,
   type ReportPost,
 } from "../reports/buildReportData";
+import { buildWebReport, type WebReportPeriod } from "../reports/buildWebReport";
 import { findBrowser, renderReportPdf } from "../reports/renderPdf";
 
 const NOT_FOUND = { error: "client not found" } as const;
@@ -129,6 +130,75 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       },
     });
   };
+
+  /**
+   * The shareable web version: one self-contained file carrying the last
+   * three months so the client can move between them.
+   *
+   * Written into storage next to the PDFs. Publishing it to a host is a
+   * separate step, so this stays useful even before that is wired up.
+   */
+  const generateWeb = async (clientId: string, upTo: { start: Date; end: Date }) => {
+    const inputs = await gatherInputs(clientId);
+    if (!inputs) return null;
+
+    const periods: WebReportPeriod[] = [];
+    for (let back = 0; back < 3; back++) {
+      const start = new Date(upTo.start.getFullYear(), upTo.start.getMonth() - back, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+      periods.push({
+        label: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        key: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`,
+        data: buildReportData({
+          clientName: inputs.client.name,
+          accounts: inputs.accounts,
+          posts: inputs.posts,
+          periodStart: start,
+          periodEnd: end,
+        }),
+      });
+    }
+
+    const template = await fsp.readFile(templatePath, "utf8");
+    const html = buildWebReport(template, periods);
+
+    const stamp = `${upTo.start.getFullYear()}-${String(upTo.start.getMonth() + 1).padStart(2, "0")}`;
+    const storageKey = `${clientId}/reports/web-${stamp}.html`;
+    const absPath = nodePath.join(env.STORAGE_DIR, storageKey);
+    await fsp.mkdir(nodePath.dirname(absPath), { recursive: true });
+    await fsp.writeFile(absPath, html, "utf8");
+    return { storageKey, url: `/files/${storageKey}`, periods: periods.map((p) => p.label) };
+  };
+
+  app.post<{ Params: { id: string }; Querystring: { month?: string } }>(
+    "/clients/:id/reports/web",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      let period = lastCompletedMonth();
+      const raw = request.query.month;
+      if (raw) {
+        const m = /^(\d{4})-(\d{2})$/.exec(raw);
+        if (!m) return reply.status(400).send({ error: "month must be YYYY-MM" });
+        period = monthBounds(new Date(Number(m[1]), Number(m[2]) - 1, 1));
+      }
+
+      try {
+        const built = await generateWeb(client.id, period);
+        if (!built) return reply.status(404).send(NOT_FOUND);
+        return reply.status(201).send(built);
+      } catch (error) {
+        request.log.error({ err: error }, "web report build failed");
+        return reply.status(500).send({
+          error: error instanceof Error ? error.message : "web report build failed",
+        });
+      }
+    },
+  );
 
   const view = (r: {
     id: string;
