@@ -9,6 +9,11 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Fixed - drag and drop
+
+- Dropping a video onto the Upload screen now works in the desktop app. Tauri was intercepting OS file drops itself and suppressing the page's own drop events, so the feature only ever worked in the browser
+- Queue items can be dragged onto one another to swap their scheduled times; the delayed publish jobs move with them
+
 ### Removed - videos are no longer re-encoded
 
 - Burned-in captions and the automatic 9:16 reframe are gone. Videos publish exactly as exported, with no re-encode, no crop, and no second file on disk

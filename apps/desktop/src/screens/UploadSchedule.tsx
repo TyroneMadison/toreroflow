@@ -43,6 +43,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
   const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
+  const [dragTargetId, setDragTargetId] = useState<string | null>(null);
+  const [overTargetId, setOverTargetId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
@@ -124,6 +126,33 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     setSavedFlash(asset.id);
     setTimeout(() => setSavedFlash((s) => (s === asset.id ? null : s)), 2000);
     void load();
+  };
+
+  /**
+   * Reordering the queue means trading slots: the two posts swap scheduled
+   * times, which also moves each delayed publish job.
+   */
+  const swapSlots = async (aId: string, bId: string) => {
+    const a = posts.find((p) => p.id === aId);
+    const b = posts.find((p) => p.id === bId);
+    if (!a || !b || !a.scheduledAt || !b.scheduledAt) return;
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === aId
+          ? { ...p, scheduledAt: b.scheduledAt }
+          : p.id === bId
+            ? { ...p, scheduledAt: a.scheduledAt }
+            : p,
+      ),
+    );
+    try {
+      await Promise.all([
+        api.patch(`/posts/targets/${aId}/reschedule`, { scheduledAt: b.scheduledAt }),
+        api.patch(`/posts/targets/${bId}/reschedule`, { scheduledAt: a.scheduledAt }),
+      ]);
+    } finally {
+      void loadPosts();
+    }
   };
 
   const removeAsset = async (asset: MediaAssetInfo) => {
@@ -364,7 +393,36 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   .filter((p) => p.status === "scheduled" || p.status === "publishing")
                   .slice(0, 6)
                   .map((p) => (
-                    <div className="queue-item" key={p.id}>
+                    <div
+                      className={`queue-item${overTargetId === p.id ? " dragover" : ""}${
+                        dragTargetId === p.id ? " dragging" : ""
+                      }`}
+                      key={p.id}
+                      draggable={p.status === "scheduled"}
+                      title={
+                        p.status === "scheduled"
+                          ? "Drag onto another queued post to swap their times"
+                          : undefined
+                      }
+                      onDragStart={() => setDragTargetId(p.id)}
+                      onDragEnd={() => {
+                        setDragTargetId(null);
+                        setOverTargetId(null);
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragTargetId || dragTargetId === p.id) return;
+                        e.preventDefault();
+                        setOverTargetId(p.id);
+                      }}
+                      onDragLeave={() => setOverTargetId((o) => (o === p.id ? null : o))}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const from = dragTargetId;
+                        setOverTargetId(null);
+                        setDragTargetId(null);
+                        if (from && from !== p.id) void swapSlots(from, p.id);
+                      }}
+                    >
                       <div
                         className="qthumb"
                         style={{

@@ -58,6 +58,26 @@ changing the same schema, worker prompt, and Upload screen twice.
 are separate arguments to the same render function. Captions can be removed
 without losing the reformat.
 
+### A3b. Per-client video quota counter (added 2026-07-25)
+
+A simple per-client counter for the pay period: set a target (e.g. 35
+videos), and each video ticks it up automatically so the remaining count is
+visible at a glance. Manual reset button when the period rolls over.
+
+Status: Ready to build, one question first (below). Queued behind the rest
+of Part A at Tyrone's direction.
+
+Open question: does a video count when it is **uploaded**, or when it is
+**scheduled**? The request mentions both. Scheduled is the safer default,
+since it means the video actually went somewhere, and an upload that never
+gets posted should arguably not count against the quota. Confirm before
+building.
+
+Notes: needs a `videoQuota` (target) and a period-start marker on Client;
+the count itself can be derived by counting posts since the period start
+rather than storing a mutable tally, which makes "reset" just moving the
+marker and keeps the number self-correcting if something is deleted.
+
 ### A3. Reports (raw item 9)
 
 Better-decorated PDF export, auto-reporting stats across all accounts.
