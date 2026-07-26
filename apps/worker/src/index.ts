@@ -163,13 +163,65 @@ async function processAsset(assetId: string): Promise<void> {
 
 /* ---- publish pipeline (spec Section 10) ---- */
 
-import { DryRunPublisher, ZernioProvider } from "@toreroflow/publishers";
+import { DryRunPublisher, YouTubeProvider, ZernioProvider } from "@toreroflow/publishers";
 import type { Platform } from "@toreroflow/core";
 
 const zernio =
   env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
     ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
     : null;
+const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
+
+/**
+ * Refresh lifetime YouTube catalogues for every connected channel.
+ *
+ * The provider only reports a recent window, so all-time view counts have
+ * to come from YouTube itself and drift as videos keep accumulating views.
+ * Upserts keep this idempotent; one bad channel never stops the rest.
+ */
+async function refreshYouTubeCatalogues(): Promise<void> {
+  if (!youtube) return;
+  const accounts = await prisma.socialAccount.findMany({
+    where: { deletedAt: null, platform: "youtube", client: { deletedAt: null } },
+    select: { id: true, handle: true },
+  });
+  if (!accounts.length) return;
+
+  let total = 0;
+  for (const account of accounts) {
+    try {
+      const { videos } = await youtube.allVideosForChannel(account.handle);
+      for (const v of videos) {
+        const data = {
+          platform: "youtube" as const,
+          title: v.title,
+          thumbnailUrl: v.thumbnailUrl,
+          url: v.url,
+          publishedAt: new Date(v.publishedAt),
+          views: v.views,
+          likes: v.likes,
+          comments: v.comments,
+          durationSec: v.durationSec,
+          fetchedAt: new Date(),
+        };
+        await prisma.externalVideo.upsert({
+          where: {
+            socialAccountId_platformVideoId: {
+              socialAccountId: account.id,
+              platformVideoId: v.platformVideoId,
+            },
+          },
+          create: { socialAccountId: account.id, platformVideoId: v.platformVideoId, ...data },
+          update: data,
+        });
+      }
+      total += videos.length;
+    } catch (error) {
+      console.error(`[worker] youtube refresh failed for @${account.handle}:`, error);
+    }
+  }
+  console.log(`[worker] youtube lifetime refresh: ${total} videos across ${accounts.length} channels`);
+}
 
 /** Zernio media URLs are reusable for 7 days; cache per asset per process. */
 const mediaUrlCache = new Map<string, string>();
@@ -533,6 +585,8 @@ new Worker(
   "analytics",
   async () => {
     await ingestAnalytics();
+    // Lifetime view counts keep climbing, so refresh them on the same beat.
+    await refreshYouTubeCatalogues();
   },
   { connection, concurrency: 1 },
 );
@@ -542,8 +596,11 @@ void analyticsQueue.upsertJobScheduler(
   { every: 24 * 60 * 60 * 1000 },
   { name: "ingest", data: {} },
 );
-void ingestAnalytics();
+void (async () => {
+  await ingestAnalytics();
+  await refreshYouTubeCatalogues();
+})();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics (provider: ${zernio ? "zernio" : "dryrun"})`,
+  `[toreroflow-worker] queues: media, publish, analytics (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

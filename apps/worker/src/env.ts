@@ -14,4 +14,6 @@ export const env = {
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
+  /** Empty means lifetime YouTube refresh is skipped, not failed. */
+  YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
 };

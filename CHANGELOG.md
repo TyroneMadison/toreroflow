@@ -15,6 +15,7 @@ release with its acceptance checks listed.
 - This is what makes all-time rankings real. The provider exposed 136 posts back to April and claimed the channel held 201; YouTube itself returned **481 videos and 39.5M lifetime views**. The 1M+ tier was empty because that history was never available, not because of a display fault
 - Live result for Caleb: 6 videos above a million views (best 13.47M), 12 between 100K and 999K, and 138 between 10K and 99K, all imported in about seven seconds
 - Where the same video comes from both sources, the platform's own numbers win and the provider's windowed copy is discarded, so nothing is counted twice
+- The Refresh button on Analytics now pulls lifetime YouTube counts along with everything else, and the daily analytics job refreshes them too, so view totals keep climbing without anyone asking. Repeat syncs update in place rather than duplicating
 - Needs a free `YOUTUBE_API_KEY` in `.env`. Without it nothing breaks: the sync returns a clear message and every other figure carries on as before
 - Instagram lifetime history stays unavailable for now; it requires a Meta app with business verification, and Instagram reports no view figure at all for older non-Reel posts
 

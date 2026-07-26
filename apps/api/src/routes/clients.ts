@@ -597,6 +597,72 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return await quotaView(client.id);
   });
 
+  interface YouTubeSyncResult {
+    handle: string;
+    imported: number;
+    channel?: string;
+    error?: string;
+  }
+
+  /**
+   * Pull whole YouTube catalogues for a client's connected channels.
+   *
+   * The publishing provider only keeps a recent window, so all-time
+   * rankings need the platform itself. Rows are upserted, so repeat runs
+   * refresh view counts rather than duplicating. Never throws: a channel
+   * that fails reports its error and the others still import.
+   */
+  const syncYouTubeForClient = async (
+    clientId: string,
+    accounts: Array<{ id: string; handle: string }>,
+  ): Promise<YouTubeSyncResult[]> => {
+    if (!youtube) return [];
+    const results: YouTubeSyncResult[] = [];
+    for (const account of accounts) {
+      try {
+        const { channelTitle, videos } = await youtube.allVideosForChannel(account.handle);
+        for (const v of videos) {
+          const data = {
+            platform: "youtube" as const,
+            title: v.title,
+            thumbnailUrl: v.thumbnailUrl,
+            url: v.url,
+            publishedAt: new Date(v.publishedAt),
+            views: v.views,
+            likes: v.likes,
+            comments: v.comments,
+            durationSec: v.durationSec,
+            fetchedAt: new Date(),
+          };
+          await prisma.externalVideo.upsert({
+            where: {
+              socialAccountId_platformVideoId: {
+                socialAccountId: account.id,
+                platformVideoId: v.platformVideoId,
+              },
+            },
+            create: {
+              socialAccountId: account.id,
+              platformVideoId: v.platformVideoId,
+              ...data,
+            },
+            update: data,
+          });
+        }
+        results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });
+      } catch (error) {
+        app.log.error({ err: error }, "youtube sync failed");
+        results.push({
+          handle: account.handle,
+          imported: 0,
+          error: error instanceof Error ? error.message : "sync failed",
+        });
+      }
+    }
+    postsCache.delete(clientId);
+    return results;
+  };
+
   /**
    * Pull a client's whole YouTube catalogue straight from YouTube.
    *
@@ -623,49 +689,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "no YouTube account connected for this client" });
       }
 
-      const results: Array<{ handle: string; imported: number; channel?: string; error?: string }> = [];
-      for (const account of client.socialAccounts) {
-        try {
-          const { channelTitle, videos } = await youtube.allVideosForChannel(account.handle);
-          for (const v of videos) {
-            const data = {
-              platform: "youtube" as const,
-              title: v.title,
-              thumbnailUrl: v.thumbnailUrl,
-              url: v.url,
-              publishedAt: new Date(v.publishedAt),
-              views: v.views,
-              likes: v.likes,
-              comments: v.comments,
-              durationSec: v.durationSec,
-              fetchedAt: new Date(),
-            };
-            await prisma.externalVideo.upsert({
-              where: {
-                socialAccountId_platformVideoId: {
-                  socialAccountId: account.id,
-                  platformVideoId: v.platformVideoId,
-                },
-              },
-              create: {
-                socialAccountId: account.id,
-                platformVideoId: v.platformVideoId,
-                ...data,
-              },
-              update: data,
-            });
-          }
-          results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });
-        } catch (error) {
-          request.log.error({ err: error }, "youtube sync failed");
-          results.push({
-            handle: account.handle,
-            imported: 0,
-            error: error instanceof Error ? error.message : "sync failed",
-          });
-        }
-      }
-      postsCache.delete(client.id);
+      const results = await syncYouTubeForClient(client.id, client.socialAccounts);
       return { results };
     },
   );
@@ -684,6 +708,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const client = await prisma.client.findFirst({
         where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        include: {
+          socialAccounts: { where: { deletedAt: null, platform: "youtube" } },
+        },
       });
       if (!client) return reply.status(404).send(NOT_FOUND);
 
@@ -697,7 +724,16 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         {},
         { removeOnComplete: true, removeOnFail: true },
       );
-      return { ok: true, refreshedAt: new Date().toISOString() };
+
+      // Lifetime YouTube counts move too, so refresh them in the same
+      // action rather than leaving a stale catalogue behind a fresh window.
+      const youtubeResults = await syncYouTubeForClient(client.id, client.socialAccounts);
+
+      return {
+        ok: true,
+        refreshedAt: new Date().toISOString(),
+        youtube: youtubeResults,
+      };
     },
   );
 
