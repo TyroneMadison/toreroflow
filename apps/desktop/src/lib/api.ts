@@ -199,6 +199,13 @@ export interface PublishResult {
   periods: string[];
 }
 
+export interface RefreshResult {
+  refreshedAt: string;
+  periods: string[];
+  /** False when the worker was unreachable; followers may lag one cycle. */
+  followersRefreshed: boolean;
+}
+
 export interface UnseenReports {
   count: number;
   /** Ready-made notification text, e.g. "Report ready for June". */

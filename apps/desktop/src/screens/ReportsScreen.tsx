@@ -2,14 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import {
   api,
-  fileUrl,
   type ClientPublishState,
-  type ClientReport,
   type PublishResult,
+  type RefreshResult,
   type ReportPublishing,
 } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
-import { openExternal } from "../lib/external";
 import { useAppState } from "../state/AppState";
 
 /** The month that just ended, which is what a monthly report covers. */
@@ -51,11 +49,11 @@ function monthLabel(key: string): string {
 function ReportLink({
   state,
   siteUnknown,
-  onCopied,
+  onCopyFailed,
 }: {
   state: ClientPublishState;
   siteUnknown: boolean;
-  onCopied(): void;
+  onCopyFailed(): void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -77,7 +75,7 @@ function ReportLink({
       await navigator.clipboard.writeText(state.url);
       setCopied(true);
     } catch {
-      onCopied();
+      onCopyFailed();
     }
   };
 
@@ -107,7 +105,7 @@ function ReportLink({
       </div>
       {live && state.publishedMonth && (
         <div className="repwhen">
-          Showing {monthLabel(state.publishedMonth)}
+          Live page shows {monthLabel(state.publishedMonth)}
           {state.publishedAt
             ? `, published ${new Date(state.publishedAt).toLocaleDateString([], {
                 month: "short",
@@ -122,52 +120,57 @@ function ReportLink({
 }
 
 export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
-  const { clients, selectedClient } = useAppState();
+  const { clients } = useAppState();
   const toast = useToast();
-  const [reports, setReports] = useState<ClientReport[]>([]);
-  const [canRender, setCanRender] = useState<boolean | null>(null);
   const [publishing, setPublishing] = useState<ReportPublishing | null>(null);
   const [month, setMonth] = useState(lastMonthValue);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setReports(await api.get<ClientReport[]>("/reports"));
-    } catch (err) {
-      setReports([]);
-      toast.fail("Could not load reports", err);
-    }
-  }, [toast]);
+  /** Clients updated this session, so Publish can say the numbers are fresh. */
+  const [updated, setUpdated] = useState<Record<string, string>>({});
 
   const loadPublishing = useCallback(async () => {
     try {
       setPublishing(await api.get<ReportPublishing>("/reports/publishing"));
-    } catch {
-      // Publishing state is secondary: the screen still builds PDFs without
-      // it, so this stays quiet rather than adding a second alarm.
+    } catch (err) {
       setPublishing(null);
+      toast.fail("Could not load the report links", err);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
-    void load();
     void loadPublishing();
-    api
-      .get<{ canRender: boolean }>("/reports/capability")
-      .then((c) => setCanRender(c.canRender))
-      .catch(() => setCanRender(false));
-  }, [load, loadPublishing]);
+  }, [loadPublishing]);
 
-  // `forMonth` is passed explicitly by Rebuild: setMonth does not apply until
-  // the next render, so reading state here would rebuild the wrong month.
-  const generate = async (clientId: string, name: string, forMonth = month) => {
+  /**
+   * The bell points here, so arriving is the acknowledgement. Without this
+   * the badge would have nothing left to clear it.
+   */
+  useEffect(() => {
+    void api
+      .post("/reports/seen", {})
+      .then(() => onSeen())
+      .catch(() => {
+        // Nothing was waiting, or the API is down; the badge clears on the
+        // next poll either way.
+      });
+  }, [onSeen]);
+
+  /** Pull fresh numbers and rebuild the page, without publishing it. */
+  const update = async (clientId: string, name: string) => {
     setBusy(clientId);
     try {
-      await api.post(`/clients/${clientId}/reports?month=${forMonth}`, {});
-      await load();
-      toast.success(`Report built for ${name}.`);
+      const res = await api.post<RefreshResult>(
+        `/clients/${clientId}/reports/refresh?month=${month}`,
+        {},
+      );
+      setUpdated((u) => ({ ...u, [clientId]: month }));
+      toast.success(
+        res.followersRefreshed
+          ? `${name} updated with the latest numbers.`
+          : `${name} updated. Follower counts may lag a cycle, the worker did not answer.`,
+      );
     } catch (err) {
-      toast.fail(`Could not build the report for ${name}`, err);
+      toast.fail(`Could not update the report for ${name}`, err);
     } finally {
       setBusy(null);
     }
@@ -181,7 +184,7 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
         {},
       );
       await loadPublishing();
-      toast.success(`${name} published at ${res.url}`);
+      toast.success(`${name} is live at ${res.url}`);
     } catch (err) {
       toast.fail(`Could not publish the report for ${name}`, err);
     } finally {
@@ -189,22 +192,6 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
     }
   };
 
-  /** Opening a report is what marks it read, so the bell clears itself. */
-  const open = async (report: ClientReport) => {
-    const url = fileUrl(report.url);
-    if (url) await openExternal(url);
-    if (!report.seen) {
-      try {
-        await api.post(`/reports/${report.id}/seen`, {});
-        await load();
-        onSeen();
-      } catch {
-        // the PDF still opened; the badge just clears on the next poll
-      }
-    }
-  };
-
-  const target = selectedClient ?? clients[0] ?? null;
   const months = monthOptions();
   const publishState = new Map(publishing?.clients.map((c) => [c.id, c]) ?? []);
   const canPublish = publishing?.configured === true;
@@ -215,28 +202,19 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
         <div className="h">
           <h2>Reports</h2>
           <p>
-            Monthly client reports. One is built automatically once a month ends, and you
-            can rebuild any month here.
+            Update a brand's report to pull its latest numbers, then publish it to send the
+            client their link. Published pages refresh on their own when a month ends.
           </p>
         </div>
       </div>
       <div className="stage">
-        {canRender === false && (
-          <div className="card glass" style={{ marginBottom: 16 }}>
-            <div className="autherr" style={{ marginTop: 0 }}>
-              No Chrome or Edge was found on this machine, so PDFs cannot be rendered.
-              Install either one, or set CHROME_PATH in .env.
-            </div>
-          </div>
-        )}
-
         <div className="card glass">
           <div className="rowhead">
             <div>
-              <h3>Build a report</h3>
+              <h3>Client reports</h3>
               <div className="sub">
-                Pick the month, then build it for whichever brand you need. Publishing
-                puts the same numbers on a permanent link you can send the client.
+                Update pulls fresh views, engagement and followers. Publishing is what the
+                client actually sees.
               </div>
             </div>
             <select
@@ -267,6 +245,7 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
               {clients.map((c) => {
                 const avatar = clientAvatarUrl(c);
                 const state = publishState.get(c.id);
+                const working = busy === c.id;
                 return (
                   <div className="repclient" key={c.id}>
                     <div className="avatar" style={{ width: 32, height: 32, borderRadius: 10, overflow: "hidden", background: avatar ? "var(--glass-2)" : "linear-gradient(135deg,#8b7bff,#4ea8ff)" }}>
@@ -279,10 +258,14 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
                     <b>{c.name}</b>
                     <button
                       className="btn ghost"
-                      disabled={busy !== null || canRender === false}
-                      onClick={() => void generate(c.id, c.name)}
+                      disabled={busy !== null}
+                      title="Pull the latest numbers and rebuild this report"
+                      onClick={() => void update(c.id, c.name)}
                     >
-                      {busy === c.id ? "Working…" : "Build PDF"}
+                      <svg>
+                        <use href="#i-refresh" />
+                      </svg>{" "}
+                      {working ? "Working…" : "Update report"}
                     </button>
                     <button
                       className="btn pub"
@@ -305,12 +288,18 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
                       <ReportLink
                         state={state}
                         siteUnknown={!canPublish}
-                        onCopied={() =>
+                        onCopyFailed={() =>
                           toast.error(
                             "Could not reach the clipboard. Select the link and copy it manually.",
                           )
                         }
                       />
+                    )}
+                    {updated[c.id] === month && (
+                      <div className="repwhen">
+                        Updated for {monthLabel(month)}. Publish to put it in front of the
+                        client.
+                      </div>
                     )}
                   </div>
                 );
@@ -324,71 +313,11 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
             </div>
           )}
 
-          {target && (
-            <div className="btnote" style={{ marginTop: 12 }}>
-              Watch time is estimated from views, and follower change is left out until
-              there is a full month of history to compare against. A published page
-              carries the last three months and stays at the same link for good.
-            </div>
-          )}
-        </div>
-
-        <div className="card glass" style={{ marginTop: 16 }}>
-          <div className="rowhead">
-            <div>
-              <h3>Generated reports</h3>
-              <div className="sub">Newest first. Opening one marks it read.</div>
-            </div>
+          <div className="btnote" style={{ marginTop: 12 }}>
+            Watch time is estimated from views, and follower change is left out until there
+            is a full month of history to compare against. A published page carries the last
+            three months and stays at the same link for good.
           </div>
-          {reports.length === 0 ? (
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-dl" />
-                </svg>
-              </div>
-              <b>Nothing built yet</b>
-              <p>Build one above, or wait for the month to end and it appears here.</p>
-            </div>
-          ) : (
-            <div className="replist">
-              {reports.map((r) => (
-                <div className={`reprow${r.seen ? "" : " unseen"}`} key={r.id}>
-                  <div className="repmeta">
-                    <b>
-                      {r.label}
-                      {!r.seen && <span className="repnew">new</span>}
-                    </b>
-                    <span>
-                      {r.clientName ?? ""} · built{" "}
-                      {new Date(r.generatedAt).toLocaleDateString([], {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                  <button className="btn ghost" onClick={() => void open(r)}>
-                    <svg>
-                      <use href="#i-dl" />
-                    </svg>{" "}
-                    Open PDF
-                  </button>
-                  <button
-                    className="btn ghost"
-                    disabled={busy !== null}
-                    title="Rebuild from the latest numbers"
-                    onClick={() => {
-                      const m = `${new Date(r.periodStart).getFullYear()}-${String(new Date(r.periodStart).getMonth() + 1).padStart(2, "0")}`;
-                      setMonth(m);
-                      void generate(r.clientId, r.clientName ?? "this brand", m);
-                    }}
-                  >
-                    Rebuild
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </section>

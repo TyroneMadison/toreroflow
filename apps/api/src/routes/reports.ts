@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { promises as fsp } from "node:fs";
 import nodePath from "node:path";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
 import { getPrisma } from "@toreroflow/db";
-import { ZernioProvider } from "@toreroflow/publishers";
+import { YouTubeProvider, ZernioProvider } from "@toreroflow/publishers";
 import { buildMergedPosts } from "../analytics/mergedPosts";
+import { syncYouTubeCatalogue } from "../analytics/youtubeSync";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import {
@@ -49,6 +52,13 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
+  const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
+  const analyticsQueue = new Queue("analytics", {
+    connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+  });
+  app.addHook("onClose", async () => {
+    await analyticsQueue.close();
+  });
 
   const templatePath = nodePath.join(env.REPO_ROOT, "assets", "report-template.html");
 
@@ -205,6 +215,109 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       periods: periods.map((p) => p.label),
     };
   };
+
+  /* ---- Bringing a report's numbers up to date ---- */
+
+  /**
+   * Runs the worker's analytics ingest and waits for it, within reason.
+   *
+   * Post metrics are read live from the provider when the page is built, but
+   * follower counts come from snapshots the worker writes, so rebuilding
+   * without waiting would carry last cycle's follower numbers into a report
+   * the operator just asked to update.
+   *
+   * The wait is bounded and never fatal: if the worker is not running, the
+   * page is still rebuilt with everything else current instead of the request
+   * hanging. The job is kept until observed, because a job removed on
+   * completion reports no state to wait on.
+   */
+  const runAnalyticsIngest = async (
+    timeoutMs = 30_000,
+  ): Promise<"completed" | "failed" | "timed out"> => {
+    const job = await analyticsQueue.add(
+      "ingest",
+      {},
+      { removeOnComplete: false, removeOnFail: false },
+    );
+    const started = Date.now();
+    try {
+      while (Date.now() - started < timeoutMs) {
+        const state = await job.getState();
+        if (state === "completed") return "completed";
+        if (state === "failed") return "failed";
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return "timed out";
+    } finally {
+      // Kept only long enough to observe; leaving it would grow the queue.
+      await job.remove().catch(() => undefined);
+    }
+  };
+
+  /**
+   * Pulls fresh numbers for one client and rebuilds their report page.
+   *
+   * This is what the operator's "Update report" means: the lifetime YouTube
+   * catalogue is re-pulled because the report reads those rows through
+   * buildMergedPosts, follower snapshots are refreshed, and only then is the
+   * page rebuilt. Publishing stays a separate, deliberate step, so an update
+   * never changes what a client can already see.
+   */
+  const refreshFor = async (clientId: string, period: { start: Date; end: Date }) => {
+    const channels = await prisma.socialAccount.findMany({
+      where: { clientId, deletedAt: null, platform: "youtube" },
+      select: { id: true, handle: true },
+    });
+    const youtubeResults = await syncYouTubeCatalogue(
+      { prisma, youtube, logError: (err, msg) => app.log.error({ err }, msg) },
+      channels,
+    );
+
+    const ingest = await runAnalyticsIngest();
+    if (ingest !== "completed") {
+      app.log.warn(`[reports] analytics ingest ${ingest} during report refresh`);
+    }
+
+    const built = await generateWeb(clientId, period);
+    if (!built) return null;
+    return {
+      refreshedAt: new Date().toISOString(),
+      periods: built.periods,
+      youtube: youtubeResults,
+      /** False when the worker was unreachable; followers may lag one cycle. */
+      followersRefreshed: ingest === "completed",
+    };
+  };
+
+  app.post<{ Params: { id: string }; Querystring: { month?: string } }>(
+    "/clients/:id/reports/refresh",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      let period = lastCompletedMonth();
+      const raw = request.query.month;
+      if (raw) {
+        const m = /^(\d{4})-(\d{2})$/.exec(raw);
+        if (!m) return reply.status(400).send({ error: "month must be YYYY-MM" });
+        period = monthBounds(new Date(Number(m[1]), Number(m[2]) - 1, 1));
+      }
+
+      try {
+        const result = await refreshFor(client.id, period);
+        if (!result) return reply.status(404).send(NOT_FOUND);
+        return reply.status(200).send(result);
+      } catch (error) {
+        request.log.error({ err: error }, "report refresh failed");
+        return reply.status(500).send({
+          error: error instanceof Error ? error.message : "report refresh failed",
+        });
+      }
+    },
+  );
 
   /* ---- Publishing to the public web ---- */
 
@@ -423,6 +536,24 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         : null,
       reports: reports.map((r) => ({ ...view(r), clientName: r.client.name })),
     };
+  });
+
+  /**
+   * Acknowledge every waiting report at once.
+   *
+   * The bell points at the Reports screen, so arriving there is the
+   * acknowledgement. Without this the badge would have nothing left to clear
+   * it, since the per-report list it used to be cleared from is gone.
+   */
+  app.post("/reports/seen", async (request) => {
+    const { count } = await prisma.clientReport.updateMany({
+      where: {
+        seenAt: null,
+        client: { agencyId: request.user.agencyId, deletedAt: null },
+      },
+      data: { seenAt: new Date() },
+    });
+    return { seen: count };
   });
 
   app.post<{ Params: { id: string } }>("/reports/:id/seen", async (request, reply) => {

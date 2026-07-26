@@ -20,6 +20,10 @@ import {
   ZernioError,
   ZernioProvider,
 } from "@toreroflow/publishers";
+import {
+  syncYouTubeCatalogue,
+  type YouTubeSyncResult,
+} from "../analytics/youtubeSync";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { ensureReportSlug } from "../reports/slug";
@@ -622,68 +626,22 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return await quotaView(client.id);
   });
 
-  interface YouTubeSyncResult {
-    handle: string;
-    imported: number;
-    channel?: string;
-    error?: string;
-  }
-
   /**
-   * Pull whole YouTube catalogues for a client's connected channels.
+   * Pull whole YouTube catalogues for a client's connected channels, then
+   * drop the cached posts so the next read sees them.
    *
-   * The publishing provider only keeps a recent window, so all-time
-   * rankings need the platform itself. Rows are upserted, so repeat runs
-   * refresh view counts rather than duplicating. Never throws: a channel
-   * that fails reports its error and the others still import.
+   * The sync itself lives in ../analytics/youtubeSync because the report
+   * refresh needs exactly the same pull: a report reads these rows through
+   * buildMergedPosts, so its numbers are only as current as this.
    */
   const syncYouTubeForClient = async (
     clientId: string,
     accounts: Array<{ id: string; handle: string }>,
   ): Promise<YouTubeSyncResult[]> => {
-    if (!youtube) return [];
-    const results: YouTubeSyncResult[] = [];
-    for (const account of accounts) {
-      try {
-        const { channelTitle, videos } = await youtube.allVideosForChannel(account.handle);
-        for (const v of videos) {
-          const data = {
-            platform: "youtube" as const,
-            title: v.title,
-            thumbnailUrl: v.thumbnailUrl,
-            url: v.url,
-            publishedAt: new Date(v.publishedAt),
-            views: v.views,
-            likes: v.likes,
-            comments: v.comments,
-            durationSec: v.durationSec,
-            fetchedAt: new Date(),
-          };
-          await prisma.externalVideo.upsert({
-            where: {
-              socialAccountId_platformVideoId: {
-                socialAccountId: account.id,
-                platformVideoId: v.platformVideoId,
-              },
-            },
-            create: {
-              socialAccountId: account.id,
-              platformVideoId: v.platformVideoId,
-              ...data,
-            },
-            update: data,
-          });
-        }
-        results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });
-      } catch (error) {
-        app.log.error({ err: error }, "youtube sync failed");
-        results.push({
-          handle: account.handle,
-          imported: 0,
-          error: error instanceof Error ? error.message : "sync failed",
-        });
-      }
-    }
+    const results = await syncYouTubeCatalogue(
+      { prisma, youtube, logError: (err, msg) => app.log.error({ err }, msg) },
+      accounts,
+    );
     postsCache.delete(clientId);
     return results;
   };

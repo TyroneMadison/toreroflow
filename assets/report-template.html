@@ -248,6 +248,13 @@ body{
     linear-gradient(150deg,color-mix(in srgb,var(--brand,#F2685B) 30%, #16161a),#0c0c0f);
   display:flex;align-items:center;justify-content:center;
 }
+.thumb.has-thumb{background-size:cover;background-position:center;}
+/* Scrim, so the badge and play icon stay legible over a bright frame. */
+.thumb.has-thumb::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.10) 45%,rgba(0,0,0,.45));}
+/* The badge stays absolutely positioned; it only needs to clear the scrim. */
+.thumb.has-thumb .badge{z-index:2;}
+.thumb.has-thumb svg{position:relative;z-index:2;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6));}
 .thumb svg{width:22px;height:22px;fill:rgba(255,255,255,0.85);}
 .thumb .badge{position:absolute;left:6px;top:6px;font-size:8px;font-weight:700;letter-spacing:1px;color:#fff;background:rgba(0,0,0,0.5);padding:2px 5px;border-radius:5px;text-transform:uppercase;}
 .toppost .meta-t .tp-lbl{font-size:9.5px;letter-spacing:2px;text-transform:uppercase;color:var(--brand,var(--coral));font-weight:700;}
@@ -612,7 +619,9 @@ body{
         '<div class="metrics">' + metrics + '</div>' +
         '<div class="pf-foot">' +
           '<div class="toppost">' +
-            '<div class="thumb"><span class="badge">Top</span>' + svg(PLAY) + '</div>' +
+            (top.thumb
+              ? '<div class="thumb has-thumb" style="background-image:url(\'' + top.thumb + '\')"><span class="badge">Top</span>' + svg(PLAY) + '</div>'
+              : '<div class="thumb"><span class="badge">Top</span>' + svg(PLAY) + '</div>') +
             '<div class="meta-t"><div class="tp-lbl">' + (top.tag || '') + '</div><div class="tp-title">' + (top.url ? '<a class="tp-title-link" href="' + top.url + '" target="_blank" rel="noopener noreferrer">' + (top.title || '') + '</a>' : (top.title || '')) + '</div><div class="tp-stats">' + (top.stats || '') + '</div></div>' +
           '</div>' +
           '<div class="share-wrap"><div class="l">Share of total views</div><div class="bar"><i style="width:' + (share.pct || 0) + '%"></i></div><div class="pct">' + (share.label || '') + '</div></div>' +
