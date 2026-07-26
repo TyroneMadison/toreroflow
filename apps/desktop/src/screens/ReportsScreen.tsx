@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../components/Toasts";
 import {
   api,
@@ -56,6 +56,7 @@ function ReportLink({
   onCopyFailed(): void;
 }) {
   const [copied, setCopied] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!copied) return;
@@ -69,12 +70,20 @@ function ReportLink({
   if (!shown) return null;
   const live = state.url !== null;
 
+  /**
+   * The clipboard API is not guaranteed: a webview can refuse it outright,
+   * and it needs a secure context. So the link lives in a real input that can
+   * be selected, and a failed copy selects the text and says so rather than
+   * telling the operator to do something the markup made impossible.
+   */
   const copy = async () => {
     if (!state.url) return;
     try {
       await navigator.clipboard.writeText(state.url);
       setCopied(true);
     } catch {
+      field.current?.focus();
+      field.current?.select();
       onCopyFailed();
     }
   };
@@ -82,9 +91,15 @@ function ReportLink({
   return (
     <>
       <div className="replink">
-        <span className={`rlurl${live ? "" : " pending"}`} title={shown}>
-          {shown}
-        </span>
+        <input
+          ref={field}
+          className={`rlurl${live ? "" : " pending"}`}
+          value={shown}
+          readOnly
+          title={shown}
+          aria-label="Report link"
+          onFocus={(e) => e.currentTarget.select()}
+        />
         <button
           className={`rlcopy${copied ? " done" : ""}`}
           disabled={!live}
@@ -290,7 +305,7 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
                         siteUnknown={!canPublish}
                         onCopyFailed={() =>
                           toast.error(
-                            "Could not reach the clipboard. Select the link and copy it manually.",
+                            "Could not reach the clipboard. The link is selected, press Ctrl+C to copy it.",
                           )
                         }
                       />
