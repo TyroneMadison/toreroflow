@@ -13,6 +13,10 @@ interface SidebarProps {
   onOpenConnect: () => void;
   /** Hover text for the Reports bell; null hides it. */
   reportNotice: string | null;
+  /** Open background failures. Shown wherever the operator is, because a
+   *  scheduled job that broke is not something they went looking for. */
+  alertCount: number;
+  alertIsError: boolean;
 }
 
 interface NavItemDef {
@@ -84,6 +88,8 @@ export default function Sidebar({
   onToggleTheme,
   onOpenConnect,
   reportNotice,
+  alertCount,
+  alertIsError,
 }: SidebarProps) {
   const { clients, selectedClient, selectClient } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -138,6 +144,16 @@ export default function Sidebar({
       {renderNav(WORKSPACE_NAV)}
 
       <div className="side-foot">
+        {alertCount > 0 && (
+          <div
+            className={`sidealert${alertIsError ? " bad" : ""}`}
+            onClick={() => onNavigate("reports")}
+            title="Open the Reports screen to see what failed"
+          >
+            <span className="sadot" />
+            {alertCount === 1 ? "1 problem" : `${alertCount} problems`}
+          </div>
+        )}
         <ApiStatus />
         <div className="themetoggle" onClick={onToggleTheme}>
           <svg>

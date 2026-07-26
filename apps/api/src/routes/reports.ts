@@ -5,6 +5,14 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { getPrisma } from "@toreroflow/db";
 import { YouTubeProvider, ZernioProvider } from "@toreroflow/publishers";
+import {
+  ALERT_KINDS,
+  clearAlert,
+  clientAlertKey,
+  describeFailure,
+  listAlerts,
+  raiseAlert,
+} from "../alerts/alerts";
 import { buildMergedPosts } from "../analytics/mergedPosts";
 import { syncYouTubeCatalogue } from "../analytics/youtubeSync";
 import { env } from "../env";
@@ -20,7 +28,7 @@ import {
   type WebReportPeriod,
 } from "../reports/buildWebReport";
 import { embedThumbnails } from "../reports/embedThumbnails";
-import { NetlifyPublisher } from "../reports/netlify";
+import { NetlifyError, NetlifyPublisher } from "../reports/netlify";
 import { findBrowser, renderReportPdf } from "../reports/renderPdf";
 import { ensureReportSlug } from "../reports/slug";
 
@@ -29,6 +37,18 @@ const NOT_FOUND = { error: "client not found" } as const;
 /** "2026-06" for the month a period starts in. */
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "June 2026", for text an operator reads. */
+function monthName(d: Date | null): string {
+  if (!d) return "an earlier month";
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+/** First of the month a "2026-06" key names, or null if there isn't one. */
+function monthStart(key: string | null): Date | null {
+  const m = key ? /^(\d{4})-(\d{2})$/.exec(key) : null;
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, 1) : null;
 }
 
 /** First and last moment of the calendar month containing `d`. */
@@ -495,6 +515,49 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     seen: r.seenAt !== null,
   });
 
+  /* ---- Background failures the operator needs to know about ---- */
+
+  /**
+   * What is currently broken. Polled by the app, which is the only way a
+   * failure that happened while it was closed ever reaches the operator.
+   */
+  app.get("/alerts", async (request) => {
+    const alerts = await listAlerts(prisma, request.user.agencyId);
+    return {
+      count: alerts.filter((a) => a.dismissedAt === null).length,
+      alerts: alerts.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        severity: a.severity,
+        clientId: a.clientId,
+        clientName: a.client?.name ?? null,
+        message: a.message,
+        detail: a.detail,
+        count: a.count,
+        firstSeenAt: a.firstSeenAt,
+        lastSeenAt: a.lastSeenAt,
+        dismissed: a.dismissedAt !== null,
+      })),
+    };
+  });
+
+  /**
+   * Acknowledge one. It stays in the table so a recurrence can un-dismiss it
+   * rather than arriving as a brand new problem with no history.
+   */
+  app.post<{ Params: { id: string } }>("/alerts/:id/dismiss", async (request, reply) => {
+    const alert = await prisma.systemAlert.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId },
+      select: { id: true },
+    });
+    if (!alert) return reply.status(404).send({ error: "alert not found" });
+    await prisma.systemAlert.update({
+      where: { id: alert.id },
+      data: { dismissedAt: new Date() },
+    });
+    return { ok: true };
+  });
+
   /** Is PDF rendering possible on this machine at all? */
   app.get("/reports/capability", async () => {
     const browser = await findBrowser();
@@ -619,6 +682,44 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /**
+   * Confirms the publishing credential still works, hourly.
+   *
+   * Netlify tokens expire. Without this the first sign would be a month-end
+   * republish silently failing, by which point every client is holding a link
+   * to a stale page and nobody knows. A cheap authenticated read turns a
+   * ninety-day cliff into an alert the hour it happens.
+   *
+   * Returns whether publishing is usable, so the sweep can skip work that
+   * would only fail.
+   */
+  const checkPublishingCredential = async (agencyId: string | null): Promise<boolean> => {
+    if (!publisher || !agencyId) return false;
+    const key = ALERT_KINDS.publishAuth;
+    try {
+      await publisher.siteUrl(env.NETLIFY_SITE_ID);
+      await clearAlert(prisma, agencyId, key);
+      return true;
+    } catch (error) {
+      const status = error instanceof NetlifyError ? error.status : 0;
+      // 401/403 is the token; anything else is Netlify being unreachable,
+      // which is worth saying differently because the operator cannot fix it.
+      const isAuth = status === 401 || status === 403;
+      app.log.error({ err: error }, "netlify credential check failed");
+      await raiseAlert(prisma, {
+        agencyId,
+        key,
+        kind: ALERT_KINDS.publishAuth,
+        severity: isAuth ? "error" : "warning",
+        message: isAuth
+          ? "Netlify rejected the publishing token, so no client report page can be updated. Create a new token and put it in NETLIFY_AUTH_TOKEN, then restart the API."
+          : "Netlify could not be reached, so report pages may not be updating. This usually clears on its own.",
+        detail: describeFailure(error),
+      });
+      return false;
+    }
+  };
+
+  /**
    * Month-end generation.
    *
    * Rather than firing at midnight on the 1st, this checks hourly that every
@@ -639,11 +740,17 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       select: {
         id: true,
         name: true,
+        agencyId: true,
         reportSlug: true,
+        reportUrl: true,
         reportPublishedAt: true,
         reportPublishedMonth: true,
       },
     });
+
+    // Checked once per sweep rather than per client, so an expired token
+    // reports itself as one problem instead of one per brand.
+    const publishingHealthy = await checkPublishingCredential(clients[0]?.agencyId ?? null);
 
     for (const client of clients) {
       if (canRenderPdf) {
@@ -652,11 +759,22 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           select: { id: true },
         });
         if (!existing) {
+          const key = clientAlertKey(ALERT_KINDS.reportBuild, client.id);
           try {
             await generate(client.id, period);
             app.log.info(`[reports] month-end report generated for ${client.name} (${stamp})`);
+            await clearAlert(prisma, client.agencyId, key);
           } catch (error) {
             app.log.error({ err: error }, `month-end report failed for ${client.name}`);
+            await raiseAlert(prisma, {
+              agencyId: client.agencyId,
+              key,
+              kind: ALERT_KINDS.reportBuild,
+              clientId: client.id,
+              severity: "warning",
+              message: `${client.name}'s ${monthName(period.start)} PDF could not be built. Try Update report on the Reports screen.`,
+              detail: describeFailure(error),
+            });
           }
         }
       }
@@ -669,13 +787,28 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       // never something a background timer does on its own.
       if (!publisher || !client.reportPublishedAt) continue;
       if (client.reportPublishedMonth === stamp) continue;
+
+      const key = clientAlertKey(ALERT_KINDS.reportPublish, client.id);
+      // A rejected credential fails every client identically. Reporting that
+      // once as a credential problem beats one confusing alert per brand.
+      if (!publishingHealthy) continue;
+
       try {
         const published = await publishFor(client, period);
         if (published) {
           app.log.info(`[reports] republished ${client.name} at ${published.url} (${stamp})`);
+          await clearAlert(prisma, client.agencyId, key);
         }
       } catch (error) {
         app.log.error({ err: error }, `month-end republish failed for ${client.name}`);
+        await raiseAlert(prisma, {
+          agencyId: client.agencyId,
+          key,
+          kind: ALERT_KINDS.reportPublish,
+          clientId: client.id,
+          message: `${client.name}'s report page is still showing ${monthName(monthStart(client.reportPublishedMonth))} and could not be updated. The link you have sent them is out of date.`,
+          detail: describeFailure(error),
+        });
       }
     }
   };

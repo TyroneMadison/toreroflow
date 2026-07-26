@@ -81,6 +81,52 @@ model Agency {
 
   users   User[]
   clients Client[]
+  alerts  SystemAlert[]
+}
+
+/**
+ * Something that failed in the background, kept until it stops failing.
+ *
+ * Scheduled work has no operator watching it: a month-end republish that
+ * fails at 3am only reaches a log file, so a client's page can sit stale for
+ * weeks while the app looks healthy. These rows are what the app reads to say
+ * otherwise.
+ *
+ * Deliberately a live list of what is broken now, not an audit log. A check
+ * that succeeds deletes its row, so a problem that fixed itself leaves
+ * nothing behind to explain away. The API log keeps the history.
+ */
+model SystemAlert {
+  id       String  @id @default(cuid())
+  agencyId String
+  /// Stable identity for one recurring problem, e.g.
+  /// "report_publish_failed:<clientId>". A repeat updates this row rather
+  /// than stacking, so one broken thing reads as one problem.
+  key      String
+  kind     String
+  /// "error" blocks something working; "warning" still needs attention.
+  severity String  @default("error")
+  clientId String?
+  /// Written for the operator, and says what to do about it.
+  message  String
+  /// The underlying failure, for when the message is not enough.
+  detail   String?
+  count    Int     @default(1)
+
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  /// Acknowledged by the operator. Cleared again if it recurs, because a
+  /// second failure after acknowledging is new information.
+  dismissedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agency Agency  @relation(fields: [agencyId], references: [id])
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@unique([agencyId, key])
+  @@index([agencyId, dismissedAt])
 }
 
 model User {
@@ -135,6 +181,7 @@ model Client {
   scheduleSlots  ScheduleSlot[]
   workflows      Workflow[]
   reports        ClientReport[]
+  alerts         SystemAlert[]
 
   @@index([agencyId])
 }

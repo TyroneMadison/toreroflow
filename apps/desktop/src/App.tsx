@@ -15,7 +15,7 @@ import ClientInsightsModal from "./modals/ClientInsightsModal";
 import PreviewModal from "./modals/PreviewModal";
 import { ToastProvider } from "./components/Toasts";
 import { AppStateProvider, useAppState } from "./state/AppState";
-import { api } from "./lib/api";
+import { api, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
 export type ScreenId =
@@ -40,6 +40,7 @@ function Shell() {
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [modal, setModal] = useState<ModalState>(null);
   const [reportNotice, setReportNotice] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -66,6 +67,32 @@ function Shell() {
     return () => clearInterval(t);
   }, [user, refreshReportNotice]);
 
+  /**
+   * Background failures.
+   *
+   * Polled every couple of minutes rather than hourly like the report bell,
+   * because this answers "is something broken right now" and the app is
+   * usually opened straight after something went wrong. Failures that
+   * happened while the app was closed are waiting here on the next poll,
+   * which is the whole point of storing them.
+   */
+  const refreshAlerts = useCallback(() => {
+    void api
+      .get<AlertsResponse>("/alerts")
+      .then((r) => setAlerts(r.alerts))
+      .catch(() => {
+        // The API being unreachable already shows in the sidebar; adding a
+        // second alarm for it would be noise.
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    refreshAlerts();
+    const t = setInterval(refreshAlerts, 2 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [user, refreshAlerts]);
+
   const toggleTheme = useCallback(() => {
     setTheme((t) => (t === "light" ? "dark" : "light"));
   }, []);
@@ -89,6 +116,10 @@ function Shell() {
     return <AuthScreen />;
   }
 
+  // Dismissing hides a problem from the sidebar count without deleting it, so
+  // it can come back loudly if it happens again.
+  const visibleAlerts = alerts.filter((a) => !a.dismissed);
+
   return (
     <>
       <div className="app">
@@ -99,6 +130,8 @@ function Shell() {
           onToggleTheme={toggleTheme}
           onOpenConnect={openConnect}
           reportNotice={reportNotice}
+          alertCount={visibleAlerts.length}
+          alertIsError={visibleAlerts.some((a) => a.severity === "error")}
         />
         <main className="main glass">
           {activeScreen === "dashboard" && (
@@ -118,7 +151,12 @@ function Shell() {
             <AnalyticsScreen key="analytics" onOpenConnect={openConnect} />
           )}
           {activeScreen === "reports" && (
-            <ReportsScreen key="reports" onSeen={refreshReportNotice} />
+            <ReportsScreen
+              key="reports"
+              onSeen={refreshReportNotice}
+              alerts={alerts}
+              onAlertsChanged={refreshAlerts}
+            />
           )}
           {activeScreen === "accounts" && (
             <AccountsScreen

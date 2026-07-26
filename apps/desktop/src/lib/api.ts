@@ -199,6 +199,28 @@ export interface PublishResult {
   periods: string[];
 }
 
+/** Something that failed in the background, still failing. */
+export interface SystemAlert {
+  id: string;
+  kind: string;
+  severity: "error" | "warning";
+  clientId: string | null;
+  clientName: string | null;
+  /** Written for the operator, and says what to do about it. */
+  message: string;
+  detail: string | null;
+  /** How many times this same problem has been recorded. */
+  count: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  dismissed: boolean;
+}
+
+export interface AlertsResponse {
+  count: number;
+  alerts: SystemAlert[];
+}
+
 export interface RefreshResult {
   refreshedAt: string;
   periods: string[];

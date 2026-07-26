@@ -6,6 +6,7 @@ import {
   type PublishResult,
   type RefreshResult,
   type ReportPublishing,
+  type SystemAlert,
 } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { useAppState } from "../state/AppState";
@@ -134,7 +135,61 @@ function ReportLink({
   );
 }
 
-export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
+/**
+ * What broke while nobody was watching.
+ *
+ * Sits above the controls rather than below them: the operator's next action
+ * is usually to publish, and publishing on top of a failure they have not
+ * seen is exactly the mistake this exists to prevent.
+ */
+function AlertBanner({
+  alerts,
+  onDismiss,
+}: {
+  alerts: SystemAlert[];
+  onDismiss(id: string): void;
+}) {
+  const open = alerts.filter((a) => !a.dismissed);
+  if (!open.length) return null;
+  return (
+    <div className="alertwrap">
+      {open.map((a) => (
+        <div className={`alertrow ${a.severity}`} key={a.id}>
+          <span className="adot" />
+          <div className="atext">
+            <b>{a.message}</b>
+            {a.count > 1 && (
+              <span className="ameta">
+                Happened {a.count} times, most recently{" "}
+                {new Date(a.lastSeenAt).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+                .
+              </span>
+            )}
+            {a.detail && <span className="adetail">{a.detail}</span>}
+          </div>
+          <button className="btn ghost" onClick={() => onDismiss(a.id)}>
+            Dismiss
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function ReportsScreen({
+  onSeen,
+  alerts,
+  onAlertsChanged,
+}: {
+  onSeen(): void;
+  alerts: SystemAlert[];
+  onAlertsChanged(): void;
+}) {
   const { clients } = useAppState();
   const toast = useToast();
   const [publishing, setPublishing] = useState<ReportPublishing | null>(null);
@@ -223,6 +278,16 @@ export default function ReportsScreen({ onSeen }: { onSeen(): void }) {
         </div>
       </div>
       <div className="stage">
+        <AlertBanner
+          alerts={alerts}
+          onDismiss={(id) => {
+            void api
+              .post(`/alerts/${id}/dismiss`, {})
+              .then(onAlertsChanged)
+              .catch((err) => toast.fail("Could not dismiss that", err));
+          }}
+        />
+
         <div className="card glass">
           <div className="rowhead">
             <div>
