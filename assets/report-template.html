@@ -299,6 +299,14 @@ body{
   background:linear-gradient(150deg,color-mix(in srgb,var(--brand,#F2685B) 35%,#15151a),#0b0b0e);
   border-bottom:1px solid var(--line);
 }
+/* Real video frame behind the play icon. The gradient stays as the fallback,
+   so a thumbnail that could not be fetched still looks deliberate. */
+.tc .cover.has-thumb{background-size:cover;background-position:center;}
+/* Scrim keeps the play icon and platform tag readable over a bright frame. */
+.tc .cover.has-thumb::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.52));}
+.tc .cover.has-thumb svg,.tc .cover.has-thumb .tag{position:relative;z-index:2;}
+.tc .cover.has-thumb svg{filter:drop-shadow(0 2px 8px rgba(0,0,0,.6));}
 .tc .cover svg{width:30px;height:30px;fill:rgba(255,255,255,0.9);}
 .tc .cover .tag{position:absolute;left:10px;top:10px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
   color:#fff;background:var(--brand,#F2685B);padding:3px 8px;border-radius:6px;box-shadow:0 4px 14px -4px var(--brand);}
@@ -640,7 +648,10 @@ body{
     var cards = (tc.items || []).map(function (it) {
       var color = it.color || COLORS[it.brand] || 'var(--coral)';
       // A card becomes a link to the real video when a url is supplied.
-      var inner = '<div class="cover"><span class="tag">' + it.tag + '</span>' + svg(PLAY) + '</div><div class="body"><div class="t">' + it.title + '</div><div class="s"><b>' + it.value + '</b><span>' + (it.note || '') + '</span></div></div>';
+      var cover = it.thumb
+        ? '<div class="cover has-thumb" style="background-image:url(\'' + it.thumb + '\')"><span class="tag">' + it.tag + '</span>' + svg(PLAY) + '</div>'
+        : '<div class="cover"><span class="tag">' + it.tag + '</span>' + svg(PLAY) + '</div>';
+      var inner = cover + '<div class="body"><div class="t">' + it.title + '</div><div class="s"><b>' + it.value + '</b><span>' + (it.note || '') + '</span></div></div>';
       if (it.url) {
         return '<a class="glass tc tc-link" href="' + it.url + '" target="_blank" rel="noopener noreferrer" style="--brand:' + color + ';">' + inner + '</a>';
       }

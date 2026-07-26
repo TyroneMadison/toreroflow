@@ -29,6 +29,8 @@ export interface ReportPost {
   byPlatform: Array<{ platform: string; views: number }>;
   /** Public link to the video, so the report can point at the real thing. */
   url?: string | null;
+  /** Thumbnail URL; inlined as a data URI before publishing. */
+  thumbnailUrl?: string | null;
 }
 
 export interface ReportAccount {
@@ -259,6 +261,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
               title: top.title,
               stats: `${fmt(top.views)} views`,
               ...(top.url ? { url: top.url } : {}),
+              ...(top.thumbnailUrl ? { thumb: top.thumbnailUrl } : {}),
             },
           }
         : {}),
@@ -309,6 +312,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
         note: rate > 0 ? `${rate.toFixed(1)}% eng` : "",
         // Makes the card a link straight to the video on its platform.
         ...(p.url ? { url: p.url } : {}),
+        ...(p.thumbnailUrl ? { thumb: p.thumbnailUrl } : {}),
       };
     });
 

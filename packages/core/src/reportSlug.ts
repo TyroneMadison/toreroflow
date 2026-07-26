@@ -68,17 +68,22 @@ export function clientSlug(name: string): string {
 }
 
 /**
- * Uniform report path for every client:
- * "<client>-end-of-month-report-<four words>".
+ * Report path for a client: "<client>-end-of-month-report".
  *
- * The naming is identical across clients so a link is self-describing, while
- * the word suffix keeps it from being guessable. Without the suffix, knowing
- * one client's link would reveal the pattern for all of them.
+ * Short and predictable by explicit choice: the operator preferred a clean,
+ * memorable link over an unguessable one, having been told these pages can
+ * be found by guessing a client name. Pages carry noindex so they stay out
+ * of search results, but the URL itself is not a secret.
  *
- * `randomInt` is injected so this stays a pure function and can be tested
- * with a predictable sequence.
+ * `withSuffix` remains available for anyone who later wants the unguessable
+ * form; `randomInt` is injected so it stays pure and testable.
  */
-export function buildReportSlug(
+export function buildReportSlug(clientName: string): string {
+  return `${clientSlug(clientName)}-end-of-month-report`;
+}
+
+/** Unguessable variant, kept for if the privacy tradeoff is revisited. */
+export function buildReportSlugWithSuffix(
   clientName: string,
   randomInt: (maxExclusive: number) => number,
   wordCount = 4,
@@ -92,7 +97,7 @@ export function buildReportSlug(
     used.add(i);
     picked.push(WORDS[i]!);
   }
-  return `${clientSlug(clientName)}-end-of-month-report-${picked.join("-")}`;
+  return `${buildReportSlug(clientName)}-${picked.join("-")}`;
 }
 
 /** Combinations available, for documenting the actual privacy on offer. */

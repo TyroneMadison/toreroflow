@@ -12,6 +12,7 @@ import {
   type ReportPost,
 } from "../reports/buildReportData";
 import { buildWebReport, type WebReportPeriod } from "../reports/buildWebReport";
+import { embedThumbnails } from "../reports/embedThumbnails";
 import { findBrowser, renderReportPdf } from "../reports/renderPdf";
 
 const NOT_FOUND = { error: "client not found" } as const;
@@ -85,6 +86,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       platforms: p.platforms,
       byPlatform: p.byPlatform,
       url: p.url,
+      thumbnailUrl: p.thumbnailUrl,
     }));
 
     return { client, accounts, posts };
@@ -159,6 +161,13 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         }),
       });
     }
+
+    // Inline the thumbnails before publishing. Instagram's CDN links expire
+    // within days, so a permanent report page has to carry its own images.
+    await embedThumbnails(
+      periods.map((p) => p.data as Record<string, unknown>),
+      (m) => app.log.info(m),
+    );
 
     const template = await fsp.readFile(templatePath, "utf8");
     const html = buildWebReport(template, periods);
