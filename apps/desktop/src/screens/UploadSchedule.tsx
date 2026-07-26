@@ -28,7 +28,7 @@ interface UploadScheduleProps {
 
 const STATUS_LABEL: Record<MediaAssetInfo["status"], string> = {
   uploaded: "Queued for processing…",
-  processing: "Transcribing, captioning, and rendering 9:16…",
+  processing: "Transcribing and drafting copy…",
   ready: "Ready",
   failed: "Processing failed",
 };
@@ -148,7 +148,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           <h2>Upload &amp; Schedule</h2>
           <p>
             {selectedClient
-              ? `Drop a video for ${selectedClient.name}. It gets transcribed, captioned, and reframed automatically.`
+              ? `Drop a video for ${selectedClient.name}. It gets transcribed and a title and description drafted, with the video left untouched.`
               : "Pick or add a brand in the sidebar, then drop a video."}
           </p>
         </div>
@@ -188,9 +188,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               <b>Drop videos here</b>
               <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
               <div className="pills">
-                <span className="mini">Auto captions</span>
-                <span className="mini">Auto reframe 9:16</span>
-                <span className="mini">AI post copy</span>
+                <span className="mini">AI title &amp; description</span>
+                <span className="mini">Video never re-encoded</span>
               </div>
             </div>
 
@@ -206,7 +205,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
 
             {assets.map((asset) => {
               const thumb = fileUrl(asset.thumbUrl);
-              const render = fileUrl(asset.renderUrl);
+              const video = asset.status === "ready" ? fileUrl(asset.videoUrl) : null;
               const description =
                 drafts[asset.id] ?? asset.draftCopy?.description ?? "";
               const title = titles[asset.id] ?? asset.draftCopy?.title ?? "";
@@ -214,17 +213,17 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 <div className="job glass-sm" key={asset.id}>
                   <div
                     className="thumb"
-                    style={render ? { cursor: "pointer" } : undefined}
-                    title={render ? "Play the captioned 9:16 render" : undefined}
+                    style={video ? { cursor: "pointer" } : undefined}
+                    title={video ? "Play the video" : undefined}
                     onClick={() => {
-                      if (render) onPreview(asset.name, render);
+                      if (video) onPreview(asset.name, video);
                     }}
                   >
                     {thumb && <img className="jobthumb-img" src={thumb} alt={asset.name} />}
                     {asset.durationSec != null && (
                       <span className="dur">{formatDuration(asset.durationSec)}</span>
                     )}
-                    {render && (
+                    {video && (
                       <div className="play">
                         <svg>
                           <use href="#i-play" />
@@ -235,8 +234,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   <div className="body">
                     <div className="name">
                       {asset.name}
-                      {asset.status === "ready" && asset.hasCaptions && (
-                        <span className="tag ok">Captions burned</span>
+                      {asset.status === "ready" && asset.hasTranscript && (
+                        <span className="tag ok">Transcribed</span>
                       )}
                       {asset.status === "ready" && asset.draftCopy && (
                         <span className="tag ai">AI copy drafted</span>

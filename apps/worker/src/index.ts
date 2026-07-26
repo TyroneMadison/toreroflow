@@ -4,13 +4,7 @@ import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import Anthropic from "@anthropic-ai/sdk";
 import { getPrisma, Prisma } from "@toreroflow/db";
-import {
-  buildAss,
-  extractThumbnail,
-  probe,
-  renderVertical,
-  type TranscriptSegment,
-} from "@toreroflow/media";
+import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
 
 const prisma = getPrisma();
@@ -150,38 +144,10 @@ async function processAsset(assetId: string): Promise<void> {
       });
     }
 
-    // 4. Vertical render with burned captions (Bold pop)
-    let assPath: string | undefined;
-    if (segments.some((s) => s.text.trim())) {
-      assPath = path.join(assetDir, "subs.ass");
-      await fs.writeFile(assPath, buildAss(segments), "utf8");
-    }
-    const renderKey = `${asset.clientId}/${asset.id}/vertical.mp4`;
-    await renderVertical(sourcePath, path.join(env.STORAGE_DIR, renderKey), assPath);
-    const existingRender = await prisma.render.findFirst({
-      where: { mediaAssetId: asset.id },
-    });
-    // One representative 9:16 render for now; per-platform encode profiles
-    // fan out when the publishing engine lands.
-    if (existingRender) {
-      await prisma.render.update({
-        where: { id: existingRender.id },
-        data: { status: "ready", storageKey: renderKey, captionStyle: "bold_pop" },
-      });
-    } else {
-      await prisma.render.create({
-        data: {
-          mediaAssetId: asset.id,
-          platform: "instagram",
-          aspect: "9:16",
-          storageKey: renderKey,
-          captionStyle: segments.length ? "bold_pop" : null,
-          status: "ready",
-        },
-      });
-    }
-
-    // 5. Thumbnail from the source video itself
+    // 4. Thumbnail from the source video itself.
+    // The video is never re-encoded: it publishes exactly as exported, so
+    // there is no reframe and no burned-in captions. The transcript above
+    // exists to feed the title and description, nothing more.
     const thumbAt = Math.min(1, (meta.durationSec || 1) * 0.25);
     await extractThumbnail(sourcePath, path.join(assetDir, "thumb.jpg"), thumbAt);
 
@@ -189,7 +155,7 @@ async function processAsset(assetId: string): Promise<void> {
       where: { id: asset.id },
       data: { status: "ready" },
     });
-    console.log(`[worker] asset ${asset.id} ready (${segments.length} caption segments)`);
+    console.log(`[worker] asset ${asset.id} ready (${segments.length} transcript segments)`);
   } catch (error) {
     console.error(`[worker] asset ${asset.id} failed:`, error);
     await prisma.mediaAsset.update({
@@ -233,7 +199,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
     where: { id: targetId },
     include: {
       socialAccount: true,
-      post: { include: { mediaAsset: { include: { renders: true } }, client: true } },
+      post: { include: { mediaAsset: true, client: true } },
     },
   });
   if (!target) return;
@@ -261,8 +227,8 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       zernio && target.socialAccount.tokensEncrypted === "provider:zernio";
     if (viaZernio) {
       const asset = target.post.mediaAsset;
-      const render = asset?.renders.find((r) => r.status === "ready");
-      const fileKey = render?.storageKey ?? asset?.storageKey;
+      // Always the original upload; the app no longer produces re-encodes.
+      const fileKey = asset?.storageKey;
       if (!fileKey) throw new Error("no media file for post");
       const mediaUrl = await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
       const result = await zernio.createPost({

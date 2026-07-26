@@ -9,6 +9,14 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Removed - videos are no longer re-encoded
+
+- Burned-in captions and the automatic 9:16 reframe are gone. Videos publish exactly as exported, with no re-encode, no crop, and no second file on disk
+- Processing is much faster as a result (the re-encode was nearly all of it) and quality is untouched, since nothing is transcoded
+- Transcription stays: it is what feeds the AI title and description
+- Preview and publishing both use the original upload
+- ffmpeg is retained for probing and thumbnails
+
 ### Changed - video title replaces the AI hook
 
 - The AI "hook" is gone. Videos now have an editable **Title**, pre-filled by AI from the transcript, which posts verbatim as the YouTube title and as the Instagram and TikTok caption

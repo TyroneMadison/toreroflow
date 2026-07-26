@@ -173,12 +173,12 @@ export interface MediaAssetInfo {
   name: string;
   durationSec: number | null;
   status: "uploaded" | "processing" | "ready" | "failed";
-  hasCaptions: boolean;
+  hasTranscript: boolean;
   draftCopy: DraftCopy | null;
   createdAt: string;
   thumbUrl: string | null;
-  renderUrl: string | null;
-  captionStyle: string | null;
+  /** The original upload; videos are published exactly as exported. */
+  videoUrl: string | null;
 }
 
 export interface PostTargetInfo {

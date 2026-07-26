@@ -50,75 +50,8 @@ export interface TranscriptSegment {
   text: string;
 }
 
-function assTime(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  const cs = Math.round((sec - Math.floor(sec)) * 100);
-  return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${cs
-    .toString()
-    .padStart(2, "0")}`;
-}
-
-/**
- * Bold pop caption style (spec Section 9): heavy white text, thick black
- * outline, bottom-centered on the 9:16 canvas. More styles arrive later.
- */
-export function buildAss(segments: TranscriptSegment[]): string {
-  const header = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 0
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: BoldPop,Arial,78,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,60,60,300,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-  const lines = segments
-    .filter((s) => s.text.trim())
-    .map(
-      (s) =>
-        `Dialogue: 0,${assTime(s.start)},${assTime(s.end)},BoldPop,,0,0,0,,${s.text
-          .trim()
-          .replace(/\n/g, "\\N")}`,
-    )
-    .join("\n");
-  return header + lines + "\n";
-}
-
-/** Escape a path for use inside an ffmpeg filter argument on Windows. */
-function filterPath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/:/g, "\\:");
-}
-
-/**
- * Reframe to a 1080x1920 vertical canvas (cover + center crop) and burn the
- * ASS captions when provided.
- */
-export async function renderVertical(
-  input: string,
-  output: string,
-  assPath?: string,
-): Promise<void> {
-  const filters = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920"];
-  if (assPath) filters.push(`ass='${filterPath(assPath)}'`);
-  await run(ffmpegBin(), [
-    "-y",
-    "-i", input,
-    "-vf", filters.join(","),
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "23",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-movflags", "+faststart",
-    output,
-  ]);
-}
+// Videos are published exactly as exported, so there is no reframe and no
+// caption burn-in. ffmpeg is kept only for probing and thumbnails.
 
 export async function extractThumbnail(
   input: string,

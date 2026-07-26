@@ -53,27 +53,27 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     id: string;
     clientId: string;
     originalName: string;
+    storageKey: string;
     durationSec: number | null;
     status: string;
     transcript: unknown;
     draftCopy: unknown;
     createdAt: Date;
-    renders: Array<{ storageKey: string; status: string; captionStyle: string | null }>;
   }) => {
     const ready = a.status === "ready";
-    const render = a.renders.find((r) => r.status === "ready");
     return {
       id: a.id,
       clientId: a.clientId,
       name: a.originalName,
       durationSec: a.durationSec,
       status: a.status,
-      hasCaptions: Array.isArray(a.transcript) && a.transcript.length > 0,
+      hasTranscript: Array.isArray(a.transcript) && a.transcript.length > 0,
       draftCopy: normalizeDraft(a.draftCopy),
       createdAt: a.createdAt,
       thumbUrl: ready ? `/files/${a.clientId}/${a.id}/thumb.jpg` : null,
-      renderUrl: render ? `/files/${render.storageKey}` : null,
-      captionStyle: render?.captionStyle ?? null,
+      // The original upload: nothing is re-encoded, so preview and publish
+      // both use the file exactly as it was exported.
+      videoUrl: `/files/${a.storageKey}`,
     };
   };
 
@@ -116,7 +116,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     await mediaQueue.add("process", { assetId: asset.id });
     return reply
       .status(201)
-      .send(assetView({ ...updated, renders: [] }));
+      .send(assetView(updated));
   });
 
   app.get<{ Params: { id: string } }>("/clients/:id/media", async (request, reply) => {
@@ -131,7 +131,6 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     const assets = await prisma.mediaAsset.findMany({
       where: { clientId: client.id },
       orderBy: { createdAt: "desc" },
-      include: { renders: true },
     });
     return assets.map(assetView);
   });
@@ -142,7 +141,6 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         id: request.params.id,
         client: { agencyId: request.user.agencyId },
       },
-      include: { renders: true },
     });
     if (!asset) return reply.status(404).send({ error: "asset not found" });
     return assetView(asset);
