@@ -91,7 +91,28 @@ export class NetlifyPublisher {
     return site.ssl_url ?? site.url ?? `https://${site.name ?? siteId}.netlify.app`;
   }
 
-  /** Every file in the site's current live deploy, with its content hash. */
+  /** Whether the site already serves a deploy, so it has files worth keeping. */
+  async hasPublishedDeploy(siteId: string): Promise<boolean> {
+    const site = await this.request<{ published_deploy?: { id?: string } }>(
+      "GET",
+      `/sites/${siteId}`,
+    );
+    return Boolean(site.published_deploy?.id);
+  }
+
+  /**
+   * Every file in the site's current live deploy, with its content hash.
+   *
+   * Paged deliberately. A deploy is an atomic whole-site replacement, so any
+   * file missing from this list is deleted from the live site. Reading only
+   * the first page would quietly destroy everything past it, which is
+   * survivable on an eleven-file test site and not survivable on a real one.
+   *
+   * The loop tolerates the endpoint ignoring the paging parameters and
+   * returning the whole list every time: results are keyed by path and the
+   * walk stops as soon as a page contributes nothing new, rather than
+   * requesting the same rows forever.
+   */
   async currentFiles(siteId: string): Promise<NetlifyFile[]> {
     const site = await this.request<{ published_deploy?: { id?: string } }>(
       "GET",
@@ -99,11 +120,24 @@ export class NetlifyPublisher {
     );
     const deployId = site.published_deploy?.id;
     if (!deployId) return [];
-    const files = await this.request<Array<{ id: string; path: string; sha: string }>>(
-      "GET",
-      `/deploys/${deployId}/files`,
-    );
-    return files.map((f) => ({ path: f.path, sha: f.sha }));
+
+    const PER_PAGE = 100;
+    const MAX_PAGES = 200;
+    const byPath = new Map<string, string>();
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const batch = await this.request<Array<{ id: string; path: string; sha: string }>>(
+        "GET",
+        `/deploys/${deployId}/files?page=${page}&per_page=${PER_PAGE}`,
+      );
+      if (!batch.length) break;
+      const before = byPath.size;
+      for (const f of batch) byPath.set(f.path, f.sha);
+      if (byPath.size === before) break;
+      if (batch.length < PER_PAGE) break;
+    }
+
+    return [...byPath].map(([path, sha]) => ({ path, sha }));
   }
 
   /**
@@ -116,6 +150,18 @@ export class NetlifyPublisher {
     additions: Record<string, string>,
   ): Promise<PublishResult> {
     const existing = await this.currentFiles(siteId);
+
+    // A published site that reports no files means the listing failed, not
+    // that the site is empty. Deploying that manifest would replace a live
+    // site with nothing but this one report page, so refuse instead. A site
+    // that has genuinely never been deployed has no published deploy and
+    // returns here with `hasPublishedDeploy` false, which is allowed.
+    if (existing.length === 0 && (await this.hasPublishedDeploy(siteId))) {
+      throw new NetlifyError(
+        502,
+        "netlify listed no files for a site that has a published deploy; refusing to publish because that would delete the existing site",
+      );
+    }
 
     const newShas = new Map<string, { sha: string; body: string }>();
     for (const [path, content] of Object.entries(additions)) {
