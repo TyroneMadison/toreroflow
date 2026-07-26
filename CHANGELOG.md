@@ -13,6 +13,9 @@ release with its acceptance checks listed.
 
 - Dropping a video onto the Upload screen now works in the desktop app. Tauri was intercepting OS file drops itself and suppressing the page's own drop events, so the feature only ever worked in the browser
 - Queue items can be dragged onto one another to swap their scheduled times; the delayed publish jobs move with them
+- Month view posts can finally be dragged. The month cells accepted drops but the posts inside them were never drag sources, so rescheduling by drag only ever worked in week view
+- Day view now accepts drops as well, and dropping a post back on its own day no longer makes a pointless round trip
+- Already-published posts stay locked in place across every view
 
 ### Removed - videos are no longer re-encoded
 

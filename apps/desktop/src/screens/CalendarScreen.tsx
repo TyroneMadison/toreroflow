@@ -156,6 +156,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     const oldWhen = new Date(target.scheduledAt);
     const when = new Date(day);
     when.setHours(oldWhen.getHours(), oldWhen.getMinutes(), 0, 0);
+    // Dropping back onto the same day would be a pointless round trip.
+    if (when.getTime() === oldWhen.getTime()) return;
     try {
       await api.patch(`/posts/targets/${id}/reschedule`, {
         scheduledAt: when.toISOString(),
@@ -310,7 +312,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
 
         {view === "day" && (
           <div className="cal glass" style={{ gridTemplateColumns: "1fr" }}>
-            <div className="col">
+            <div className="col" {...dragProps(anchor)} style={dropStyle(anchor)}>
               <div className={`colhead${anchor.toDateString() === today ? " today" : ""}`}>
                 <div className="dow">{DOW[(anchor.getDay() + 6) % 7]}</div>
                 <div className="dnum">{anchor.getDate()}</div>
@@ -354,13 +356,27 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                     {holidayRow(day, true)}
                     {eventsFor(day)
                       .slice(0, 3)
-                      .map((t) => (
-                        <div className="mev" key={t.id} title={`${t.assetName}${STATUS_SUFFIX[t.status]}`}>
-                          <span className="d" style={{ background: EV_DOT[t.platform] }} />
-                          {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
-                          {STATUS_SUFFIX[t.status]}
-                        </div>
-                      ))}
+                      .map((t) => {
+                        const movable = t.status === "scheduled";
+                        return (
+                          <div
+                            className="mev"
+                            key={t.id}
+                            title={
+                              movable
+                                ? `${t.assetName} - drag to another day`
+                                : `${t.assetName}${STATUS_SUFFIX[t.status]}`
+                            }
+                            draggable={movable}
+                            style={movable ? { cursor: "grab" } : undefined}
+                            onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
+                          >
+                            <span className="d" style={{ background: EV_DOT[t.platform] }} />
+                            {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
+                            {STATUS_SUFFIX[t.status]}
+                          </div>
+                        );
+                      })}
                     {eventsFor(day).length > 3 && (
                       <div className="mhol">+{eventsFor(day).length - 3} more</div>
                     )}
