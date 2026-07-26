@@ -34,6 +34,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const [when, setWhen] = useState(() => localValue(target.scheduledAt));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const original = localValue(target.scheduledAt);
   const dirty = when !== original;
@@ -50,6 +51,22 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not reschedule");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Removes just this platform's post; other platforms keep their slots. */
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.del(`/posts/targets/${target.id}`);
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not remove");
+      setConfirmDelete(false);
     } finally {
       setBusy(false);
     }
@@ -128,6 +145,29 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
       </div>
 
       <div className="modal-foot">
+        {editable && (
+          <button
+            className={`btn ${confirmDelete ? "danger" : "ghost"}`}
+            style={{ marginRight: "auto" }}
+            disabled={busy}
+            onClick={() => {
+              if (confirmDelete) void remove();
+              else {
+                setConfirmDelete(true);
+                setTimeout(() => setConfirmDelete(false), 4000);
+              }
+            }}
+          >
+            <svg>
+              <use href="#i-x" />
+            </svg>{" "}
+            {busy && confirmDelete
+              ? "Removing…"
+              : confirmDelete
+                ? "Remove for sure?"
+                : "Remove from schedule"}
+          </button>
+        )}
         <button className="btn ghost" onClick={onClose}>
           {editable ? "Cancel" : "Close"}
         </button>
@@ -136,7 +176,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
             <svg>
               <use href="#i-check" />
             </svg>{" "}
-            {busy ? "Saving…" : "Save time"}
+            {busy && !confirmDelete ? "Saving…" : "Save time"}
           </button>
         )}
       </div>

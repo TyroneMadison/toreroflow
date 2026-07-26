@@ -11,6 +11,7 @@ import { useAppState } from "../state/AppState";
 import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
+import PostDetailModal from "../modals/PostDetailModal";
 
 const fmtWhen = (iso: string | null): string =>
   iso
@@ -45,6 +46,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
   const [dragTargetId, setDragTargetId] = useState<string | null>(null);
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
+  const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
@@ -150,6 +153,16 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         api.patch(`/posts/targets/${aId}/reschedule`, { scheduledAt: b.scheduledAt }),
         api.patch(`/posts/targets/${bId}/reschedule`, { scheduledAt: a.scheduledAt }),
       ]);
+    } finally {
+      void loadPosts();
+    }
+  };
+
+  /** Pull one platform's post out of the queue, leaving any siblings. */
+  const removeFromQueue = async (targetId: string) => {
+    setConfirmRemove(null);
+    try {
+      await api.del(`/posts/targets/${targetId}`);
     } finally {
       void loadPosts();
     }
@@ -440,6 +453,41 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           {p.status === "publishing" ? "publishing…" : fmtWhen(p.scheduledAt)}
                         </span>
                       </div>
+                      {p.status === "scheduled" && (
+                        <div className="qactions">
+                          <div
+                            className="iconbtn"
+                            title="Change day and time"
+                            onClick={() => setQueueDetail(p)}
+                          >
+                            <svg>
+                              <use href="#i-cal" />
+                            </svg>
+                          </div>
+                          <div
+                            className={`iconbtn${confirmRemove === p.id ? " danger" : ""}`}
+                            title={
+                              confirmRemove === p.id
+                                ? "Click again to remove"
+                                : "Remove from queue"
+                            }
+                            onClick={() => {
+                              if (confirmRemove === p.id) void removeFromQueue(p.id);
+                              else {
+                                setConfirmRemove(p.id);
+                                setTimeout(
+                                  () => setConfirmRemove((c) => (c === p.id ? null : c)),
+                                  4000,
+                                );
+                              }
+                            }}
+                          >
+                            <svg style={{ stroke: "var(--red)" }}>
+                              <use href="#i-x" />
+                            </svg>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
               )}
@@ -469,6 +517,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           asset={scheduling}
           onClose={() => setScheduling(null)}
           onScheduled={() => void loadPosts()}
+        />
+      )}
+
+      {queueDetail && (
+        <PostDetailModal
+          target={queueDetail}
+          onClose={() => setQueueDetail(null)}
+          onChanged={() => void loadPosts()}
         />
       )}
     </section>

@@ -494,6 +494,12 @@
 .gdt-mer{justify-content:flex-start}
 .gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
 
+.qactions{margin-left:auto;display:flex;gap:6px;flex:0 0 auto;opacity:0;transition:opacity .18s}
+.queue-item:hover .qactions,.qactions:focus-within{opacity:1}
+.qactions .iconbtn{width:30px;height:30px;border-radius:10px}
+.qactions .iconbtn svg{width:15px;height:15px}
+.qactions .iconbtn.danger{background:rgba(255,107,122,.16);border-color:rgba(255,107,122,.4)}
+
 /* calendar post detail */
 .pdrow{display:flex;gap:14px;align-items:flex-start}
 .pdthumb{width:74px;height:94px;border-radius:12px;overflow:hidden;flex:0 0 auto;background:var(--glass-2)}

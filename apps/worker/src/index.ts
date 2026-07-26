@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import Anthropic from "@anthropic-ai/sdk";
+import { decodeEscapes } from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
@@ -22,16 +23,6 @@ const DRAFT_SCHEMA = {
   required: ["title", "description", "hashtags"],
   additionalProperties: false,
 } as const;
-
-/**
- * Models sometimes emit emoji as literal "😈" text rather than the
- * character, which then renders as the escape sequence. Decode those back.
- */
-function decodeEscapes(value: string): string {
-  return value.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
-    String.fromCharCode(parseInt(hex, 16)),
-  );
-}
 
 function cleanDraft(draft: unknown): unknown {
   if (!draft || typeof draft !== "object") return draft;

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import { schedulePostSchema } from "@toreroflow/core";
+import { decodeEscapes, schedulePostSchema } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -146,7 +146,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         scheduledAt: t.scheduledAt,
         publishedAt: t.publishedAt,
         error: t.error,
-        caption: t.caption,
+        // Captions saved before emoji decoding landed still hold literal
+        // "\uXXXX" text; clean them on the way out.
+        caption: t.caption ? decodeEscapes(t.caption) : t.caption,
         assetName: t.post.mediaAsset?.originalName ?? "post",
         thumbUrl: t.post.mediaAsset
           ? `/files/${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`
@@ -196,6 +198,34 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return { id: updated.id, scheduledAt: updated.scheduledAt };
     },
   );
+
+  /**
+   * Remove one scheduled target (a single platform) and its delayed job.
+   * Several targets share a post, so the post itself only goes when its
+   * last target does.
+   */
+  app.delete<{ Params: { id: string } }>("/posts/targets/:id", async (request, reply) => {
+    const target = await prisma.postTarget.findFirst({
+      where: {
+        id: request.params.id,
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+    });
+    if (!target) return reply.status(404).send({ error: "target not found" });
+    if (target.status === "posted" || target.status === "publishing") {
+      return reply.status(409).send({ error: "already publishing or posted" });
+    }
+
+    const job = await publishQueue.getJob(target.id);
+    if (job) await job.remove();
+    await prisma.postTarget.delete({ where: { id: target.id } });
+
+    const left = await prisma.postTarget.count({ where: { postId: target.postId } });
+    if (left === 0) {
+      await prisma.post.delete({ where: { id: target.postId } });
+    }
+    return { ok: true, postRemoved: left === 0 };
+  });
 
   /** Cancel a scheduled post (all targets still unpublished). */
   app.delete<{ Params: { id: string } }>("/posts/:id", async (request, reply) => {

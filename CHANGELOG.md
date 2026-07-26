@@ -9,6 +9,16 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - reschedule and remove from the queue
+
+- Each row in "Up next in queue" gets two controls: change the day and time, or remove that post from the queue
+- Scheduled posts opened from the calendar can also be removed, with a confirm step
+- Removal is per platform: pulling a video from Instagram leaves its YouTube slot alone, and the post disappears only once its last platform is gone. Already-published posts cannot be removed
+
+### Fixed - broken emoji in saved captions
+
+- Captions written before emoji decoding landed rendered escape text like `🚗`. They now display correctly, and half-emoji left behind by truncated model output are dropped instead of showing as broken glyphs
+
 ### Added - post details from the calendar
 
 - Click any post in day, week, or month view for a quick overview: thumbnail, platform, status, caption, and publish time

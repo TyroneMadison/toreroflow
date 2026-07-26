@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
+import { decodeEscapes } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -23,12 +24,6 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
 
   app.addHook("onRequest", requireAuth);
-
-  /** Model output sometimes carries literal "\uXXXX" text instead of the character. */
-  const decodeEscapes = (value: string): string =>
-    value.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    );
 
   /**
    * Present draft copy in the current {title, description, hashtags} shape.
