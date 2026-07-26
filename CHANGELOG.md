@@ -9,6 +9,11 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Fixed - quota counters
+
+- The minus button stops at zero instead of quietly counting into the negative, so pressing plus afterwards moves the number straight back up
+- Each counter has a delete button, so a client who only needs short-form (or only long-form) does not have to keep the other one around. Removing a counter clears its manual adjustment, so adding it back later starts clean
+
 ### Added - per-client video quota, split by format
 
 - Separate short-form and long-form targets per client, each with its own progress bar, remaining count, and manual adjustment. Track one format or both; a client with no target for a format simply does not show it

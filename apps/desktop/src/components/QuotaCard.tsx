@@ -26,6 +26,7 @@ export default function QuotaCard({
   const [editing, setEditing] = useState<VideoFormat | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<VideoFormat | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -75,12 +76,38 @@ export default function QuotaCard({
           <b>{FORMAT_LABEL[f]}</b>
           <span
             className="link"
+            title="Change the target"
             onClick={() => {
               setDraft(String(target));
               setEditing(f);
             }}
           >
             {s.delivered} / {target}
+          </span>
+          <span
+            className={`qdel${confirmDelete === f ? " armed" : ""}`}
+            title={
+              confirmDelete === f
+                ? "Click again to remove this counter"
+                : `Remove the ${FORMAT_LABEL[f].toLowerCase()} counter`
+            }
+            onClick={() => {
+              if (confirmDelete === f) {
+                setConfirmDelete(null);
+                setTarget(f, null);
+              } else {
+                setConfirmDelete(f);
+                setTimeout(() => setConfirmDelete((c) => (c === f ? null : c)), 4000);
+              }
+            }}
+          >
+            {confirmDelete === f ? (
+              "remove?"
+            ) : (
+              <svg>
+                <use href="#i-x" />
+              </svg>
+            )}
           </span>
         </div>
 
@@ -101,8 +128,8 @@ export default function QuotaCard({
             <button className="btn" disabled={busy || draft === ""} onClick={() => setTarget(f, Number(draft))}>
               Set
             </button>
-            <button className="btn ghost" onClick={() => setTarget(f, null)} title="Stop tracking this format">
-              Clear
+            <button className="btn ghost" onClick={() => setEditing(null)}>
+              Cancel
             </button>
           </div>
         ) : (
@@ -112,7 +139,13 @@ export default function QuotaCard({
             </div>
             <div className="qsecfoot">
               <div className="qadjust">
-                <div className="iconbtn" title="Count one fewer" onClick={() => void patch({ format: f, adjustBy: -1 })}>
+                <div
+                  className={`iconbtn${s.delivered === 0 ? " off" : ""}`}
+                  title={s.delivered === 0 ? "Already at zero" : "Count one fewer"}
+                  onClick={() => {
+                    if (s.delivered > 0) void patch({ format: f, adjustBy: -1 });
+                  }}
+                >
                   <span>-</span>
                 </div>
                 <div className="iconbtn" title="Count one more" onClick={() => void patch({ format: f, adjustBy: 1 })}>

@@ -564,11 +564,21 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     const currentAdjust = long ? client.adjustLong : client.adjustShort;
 
     const data: Record<string, number | null | Date> = {};
-    if (body.target !== undefined) data[targetKey] = body.target;
+    // Clearing a target stops tracking that format, so its correction goes
+    // with it rather than lingering for the next time it is switched on.
+    if (body.target !== undefined) {
+      data[targetKey] = body.target;
+      if (body.target === null) data[adjustKey] = 0;
+    }
     if (body.adjustment !== undefined) data[adjustKey] = body.adjustment;
     if (body.adjustBy !== undefined) {
       const base = (data[adjustKey] as number | undefined) ?? currentAdjust;
-      data[adjustKey] = base + body.adjustBy;
+      const before = await quotaView(client.id);
+      const uploads = before ? (long ? before.long.uploads : before.short.uploads) : 0;
+      // Never let the correction push the count below zero: without this the
+      // adjustment keeps sinking while the displayed total sits at 0, and
+      // clicking plus appears to do nothing until the debt is repaid.
+      data[adjustKey] = Math.max(-uploads, base + body.adjustBy);
     }
     // A new period restarts both formats and drops their corrections.
     if (body.reset) {
