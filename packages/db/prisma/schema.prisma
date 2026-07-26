@@ -123,6 +123,7 @@ model Client {
   posts          Post[]
   scheduleSlots  ScheduleSlot[]
   workflows      Workflow[]
+  reports        ClientReport[]
 
   @@index([agencyId])
 }
@@ -273,6 +274,35 @@ model ScheduleSlot {
   client Client @relation(fields: [clientId], references: [id])
 
   @@index([clientId, platform])
+}
+
+/**
+ * A generated client report for one calendar month.
+ *
+ * The payload the PDF was built from is stored alongside it, so a report can
+ * be re-rendered later without recomputing analytics that may since have
+ * moved. `seenAt` drives the month-end notification.
+ */
+model ClientReport {
+  id          String    @id @default(cuid())
+  clientId    String
+  /// First moment of the reporting month.
+  periodStart DateTime
+  periodEnd   DateTime
+  /// Storage path of the rendered PDF.
+  storageKey  String
+  /// Exact JSON the template rendered, kept for reproducibility.
+  data        Json
+  generatedAt DateTime  @default(now())
+  /// Null until the operator has opened it; the bell reads this.
+  seenAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, periodStart])
+  @@index([clientId, periodStart])
 }
 
 /**
