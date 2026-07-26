@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type DragEvent as RDragEvent } from "react";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { holidayFor } from "../lib/holidays";
 import { PF_ID, type Platform } from "../lib/platforms";
@@ -59,6 +60,7 @@ const fmtTime = (iso: string): string =>
 
 export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const { selectedClient } = useAppState();
+  const toast = useToast();
   const [view, setView] = useState<CalView>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
@@ -164,8 +166,10 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       await api.patch(`/posts/targets/${id}/reschedule`, {
         scheduledAt: when.toISOString(),
       });
-    } catch {
-      // only scheduled targets can move; reload shows the truth either way
+    } catch (err) {
+      // The reload snaps the card back to its old day, which on its own is
+      // indistinguishable from the drop never registering.
+      toast.fail("Could not reschedule the post", err);
     }
     void load();
   };

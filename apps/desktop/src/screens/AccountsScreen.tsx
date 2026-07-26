@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { PF_ID } from "../lib/platforms";
@@ -27,6 +28,7 @@ const AVATAR_GRADIENTS = [
 
 export default function AccountsScreen({ onOpenConnect, onOpenInsights }: AccountsScreenProps) {
   const { clients, refreshClients, selectedClientId, selectClient } = useAppState();
+  const toast = useToast();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -38,6 +40,11 @@ export default function AccountsScreen({ onOpenConnect, onOpenInsights }: Accoun
       await api.del(`/clients/${clientId}`);
       if (selectedClientId === clientId) selectClient(null);
       await refreshClients();
+    } catch (err) {
+      // The confirm state resets either way, so a failed delete otherwise looks
+      // identical to one that worked.
+      const name = clients.find((c) => c.id === clientId)?.name ?? "the brand";
+      toast.fail(`Could not delete ${name}`, err);
     } finally {
       setDeletingId(null);
       setConfirmingId(null);

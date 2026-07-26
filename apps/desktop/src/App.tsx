@@ -13,6 +13,7 @@ import AuthScreen from "./screens/AuthScreen";
 import ConnectClientModal from "./modals/ConnectClientModal";
 import ClientInsightsModal from "./modals/ClientInsightsModal";
 import PreviewModal from "./modals/PreviewModal";
+import { ToastProvider } from "./components/Toasts";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { api } from "./lib/api";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
@@ -146,14 +147,18 @@ function Shell() {
 
 export default function App() {
   return (
-    <AppStateProvider>
-      <div className="field">
-        <div className="blob b1" />
-        <div className="blob b2" />
-      </div>
-      <div className="grain" />
-      <IconDefs />
-      <Shell />
-    </AppStateProvider>
+    // Toasts wrap the state provider so a failure raised while the app is
+    // still loading its own data still has somewhere to surface.
+    <ToastProvider>
+      <AppStateProvider>
+        <div className="field">
+          <div className="blob b1" />
+          <div className="blob b2" />
+        </div>
+        <div className="grain" />
+        <IconDefs />
+        <Shell />
+      </AppStateProvider>
+    </ToastProvider>
   );
 }

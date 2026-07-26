@@ -172,6 +172,33 @@ export interface ClientReport {
   seen: boolean;
 }
 
+/** Where one client stands with its public report page. */
+export interface ClientPublishState {
+  id: string;
+  name: string;
+  /** The permanent path, known before the first publish creates the page. */
+  slug: string | null;
+  /** Absolute URL; null until the page has actually been published once. */
+  url: string | null;
+  publishedAt: string | null;
+  /** Month the live page currently leads with, e.g. "2026-06". */
+  publishedMonth: string | null;
+}
+
+export interface ReportPublishing {
+  configured: boolean;
+  /** Why publishing is off, ready to show the operator. */
+  reason: string | null;
+  clients: ClientPublishState[];
+}
+
+export interface PublishResult {
+  url: string;
+  slug: string;
+  month: string;
+  periods: string[];
+}
+
 export interface UnseenReports {
   count: number;
   /** Ready-made notification text, e.g. "Report ready for June". */

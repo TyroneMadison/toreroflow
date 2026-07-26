@@ -22,6 +22,7 @@ import {
 } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { ensureReportSlug } from "../reports/slug";
 
 const NOT_FOUND = { error: "client not found" } as const;
 
@@ -172,7 +173,10 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         avatarSeed: avatarSeed(body.name),
       },
     });
-    return reply.status(201).send(client);
+    // Claim the report path now rather than at first publish, so the Reports
+    // screen can show the operator the link before they decide to create it.
+    const reportSlug = await ensureReportSlug(prisma, client);
+    return reply.status(201).send({ ...client, reportSlug });
   });
 
   app.delete<{ Params: { id: string } }>("/clients/:id", async (request, reply) => {

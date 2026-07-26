@@ -72,6 +72,10 @@ export default function IconDefs() {
       <symbol id="i-check" viewBox="0 0 24 24">
         <path d="M20 6L9 17l-5-5" />
       </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="12" height="12" rx="2.5" />
+        <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+      </symbol>
       <symbol id="i-image" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="18" rx="3" />
         <circle cx="8.5" cy="8.5" r="1.5" />

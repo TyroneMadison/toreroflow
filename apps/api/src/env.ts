@@ -37,6 +37,14 @@ export interface Env {
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
   REPO_ROOT: string;
+  /**
+   * Netlify personal access token used to publish client report pages.
+   * Empty means the publish endpoints answer 503 with guidance rather than
+   * failing mid-deploy, and the Reports screen explains why the button is off.
+   */
+  NETLIFY_AUTH_TOKEN: string;
+  /** Site the report pages are published into. Empty disables publishing. */
+  NETLIFY_SITE_ID: string;
 }
 
 export const env: Env = {
@@ -51,4 +59,6 @@ export const env: Env = {
   REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   REPO_ROOT: repoRoot,
+  NETLIFY_AUTH_TOKEN: process.env.NETLIFY_AUTH_TOKEN ?? "",
+  NETLIFY_SITE_ID: process.env.NETLIFY_SITE_ID ?? "",
 };

@@ -11,11 +11,22 @@ import {
   type ReportAccount,
   type ReportPost,
 } from "../reports/buildReportData";
-import { buildWebReport, type WebReportPeriod } from "../reports/buildWebReport";
+import {
+  buildWebReport,
+  withDocumentTitle,
+  type WebReportPeriod,
+} from "../reports/buildWebReport";
 import { embedThumbnails } from "../reports/embedThumbnails";
+import { NetlifyPublisher } from "../reports/netlify";
 import { findBrowser, renderReportPdf } from "../reports/renderPdf";
+import { ensureReportSlug } from "../reports/slug";
 
 const NOT_FOUND = { error: "client not found" } as const;
+
+/** "2026-06" for the month a period starts in. */
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 /** First and last moment of the calendar month containing `d`. */
 function monthBounds(d: Date): { start: Date; end: Date } {
@@ -105,7 +116,12 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       periodEnd: period.end,
     });
 
-    const template = await fsp.readFile(templatePath, "utf8");
+    // Chrome takes the document title as the PDF's metadata title, which is
+    // what a client's PDF reader shows in its window bar.
+    const template = withDocumentTitle(
+      await fsp.readFile(templatePath, "utf8"),
+      `${inputs.client.name} · Performance Report · ${period.start.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
+    );
     const pdf = await renderReportPdf(template, data);
 
     const stamp = `${period.start.getFullYear()}-${String(period.start.getMonth() + 1).padStart(2, "0")}`;
@@ -169,16 +185,150 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       (m) => app.log.info(m),
     );
 
-    const template = await fsp.readFile(templatePath, "utf8");
+    // The page carries three months at once, so no single month belongs in
+    // the title the client bookmarks.
+    const template = withDocumentTitle(
+      await fsp.readFile(templatePath, "utf8"),
+      `${inputs.client.name} · Performance Report`,
+    );
     const html = buildWebReport(template, periods);
 
-    const stamp = `${upTo.start.getFullYear()}-${String(upTo.start.getMonth() + 1).padStart(2, "0")}`;
+    const stamp = monthKey(upTo.start);
     const storageKey = `${clientId}/reports/web-${stamp}.html`;
     const absPath = nodePath.join(env.STORAGE_DIR, storageKey);
     await fsp.mkdir(nodePath.dirname(absPath), { recursive: true });
     await fsp.writeFile(absPath, html, "utf8");
-    return { storageKey, url: `/files/${storageKey}`, periods: periods.map((p) => p.label) };
+    return {
+      html,
+      storageKey,
+      url: `/files/${storageKey}`,
+      periods: periods.map((p) => p.label),
+    };
   };
+
+  /* ---- Publishing to the public web ---- */
+
+  const publisher =
+    env.NETLIFY_AUTH_TOKEN && env.NETLIFY_SITE_ID
+      ? new NetlifyPublisher(env.NETLIFY_AUTH_TOKEN)
+      : null;
+
+  /**
+   * Builds the client's report page and pushes it to its permanent path.
+   *
+   * The path never changes once assigned, so a link sent in January still
+   * shows July's numbers. Netlify serves `/<slug>/index.html` at `/<slug>`,
+   * which is why the page is written as a directory index rather than a bare
+   * `.html` file.
+   */
+  const publishFor = async (
+    client: { id: string; name: string; reportSlug: string | null },
+    period: { start: Date; end: Date },
+  ) => {
+    if (!publisher) throw new Error("publishing is not configured");
+    const slug = await ensureReportSlug(prisma, client);
+    const built = await generateWeb(client.id, period);
+    if (!built) return null;
+
+    const result = await publisher.publish(env.NETLIFY_SITE_ID, {
+      [`/${slug}/index.html`]: built.html,
+    });
+
+    // The deploy URL is per-deploy; the permanent link is the site's own
+    // address plus the slug, which is what actually gets sent to a client.
+    const siteUrl = (await publisher.siteUrl(env.NETLIFY_SITE_ID)).replace(/\/+$/, "");
+    const url = `${siteUrl}/${slug}`;
+
+    await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        reportUrl: url,
+        reportPublishedAt: new Date(),
+        reportPublishedMonth: monthKey(period.start),
+      },
+    });
+
+    return {
+      url,
+      slug,
+      month: monthKey(period.start),
+      periods: built.periods,
+      deploy: { id: result.deployId, state: result.state, uploaded: result.uploaded, preserved: result.preserved },
+    };
+  };
+
+  /**
+   * Whether publishing is switched on, and where every client currently
+   * stands. One call so the Reports screen can render its links without a
+   * request per client.
+   */
+  app.get("/reports/publishing", async (request) => {
+    const clients = await prisma.client.findMany({
+      where: { agencyId: request.user.agencyId, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        reportSlug: true,
+        reportUrl: true,
+        reportPublishedAt: true,
+        reportPublishedMonth: true,
+      },
+    });
+    return {
+      configured: publisher !== null,
+      reason: publisher
+        ? null
+        : "Set NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID in the repo root .env, then restart the API.",
+      clients: clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        // Shown before the first publish so the operator knows the link they
+        // are about to create.
+        slug: c.reportSlug,
+        url: c.reportUrl,
+        publishedAt: c.reportPublishedAt,
+        publishedMonth: c.reportPublishedMonth,
+      })),
+    };
+  });
+
+  app.post<{ Params: { id: string }; Querystring: { month?: string } }>(
+    "/clients/:id/reports/publish",
+    async (request, reply) => {
+      if (!publisher) {
+        return reply.status(503).send({
+          error:
+            "publishing is not configured; set NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID in .env and restart the API",
+        });
+      }
+
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        select: { id: true, name: true, reportSlug: true },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      let period = lastCompletedMonth();
+      const raw = request.query.month;
+      if (raw) {
+        const m = /^(\d{4})-(\d{2})$/.exec(raw);
+        if (!m) return reply.status(400).send({ error: "month must be YYYY-MM" });
+        period = monthBounds(new Date(Number(m[1]), Number(m[2]) - 1, 1));
+      }
+
+      try {
+        const published = await publishFor(client, period);
+        if (!published) return reply.status(404).send(NOT_FOUND);
+        return reply.status(201).send(published);
+      } catch (error) {
+        request.log.error({ err: error }, "report publish failed");
+        return reply.status(502).send({
+          error: error instanceof Error ? error.message : "report publish failed",
+        });
+      }
+    },
+  );
 
   app.post<{ Params: { id: string }; Querystring: { month?: string } }>(
     "/clients/:id/reports/web",
@@ -200,7 +350,10 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       try {
         const built = await generateWeb(client.id, period);
         if (!built) return reply.status(404).send(NOT_FOUND);
-        return reply.status(201).send(built);
+        // The page itself is megabytes of inlined thumbnails; the caller wants
+        // where it landed, not its contents.
+        const { html: _html, ...meta } = built;
+        return reply.status(201).send(meta);
       } catch (error) {
         request.log.error({ err: error }, "web report build failed");
         return reply.status(500).send({
@@ -344,25 +497,54 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
    * still appears the next time the API runs, instead of being skipped.
    */
   const ensureMonthEndReports = async (): Promise<void> => {
-    if (!(await findBrowser())) return;
     const period = lastCompletedMonth();
+    const stamp = monthKey(period.start);
+    // Only the PDF needs a browser. Publishing is plain HTML over HTTP, so a
+    // machine without Chrome still keeps client pages up to date.
+    const canRenderPdf = (await findBrowser()) !== null;
+
     const clients = await prisma.client.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        reportSlug: true,
+        reportPublishedAt: true,
+        reportPublishedMonth: true,
+      },
     });
+
     for (const client of clients) {
-      const existing = await prisma.clientReport.findUnique({
-        where: { clientId_periodStart: { clientId: client.id, periodStart: period.start } },
-        select: { id: true },
-      });
-      if (existing) continue;
+      if (canRenderPdf) {
+        const existing = await prisma.clientReport.findUnique({
+          where: { clientId_periodStart: { clientId: client.id, periodStart: period.start } },
+          select: { id: true },
+        });
+        if (!existing) {
+          try {
+            await generate(client.id, period);
+            app.log.info(`[reports] month-end report generated for ${client.name} (${stamp})`);
+          } catch (error) {
+            app.log.error({ err: error }, `month-end report failed for ${client.name}`);
+          }
+        }
+      }
+
+      // Refresh the published page so a link sent months ago now leads with
+      // the month that just ended.
+      //
+      // Only for clients already published at least once: putting a client's
+      // numbers on the public web is a decision the operator makes explicitly,
+      // never something a background timer does on its own.
+      if (!publisher || !client.reportPublishedAt) continue;
+      if (client.reportPublishedMonth === stamp) continue;
       try {
-        await generate(client.id, period);
-        app.log.info(
-          `[reports] month-end report generated for ${client.name} (${period.start.toISOString().slice(0, 7)})`,
-        );
+        const published = await publishFor(client, period);
+        if (published) {
+          app.log.info(`[reports] republished ${client.name} at ${published.url} (${stamp})`);
+        }
       } catch (error) {
-        app.log.error({ err: error }, `month-end report failed for ${client.name}`);
+        app.log.error({ err: error }, `month-end republish failed for ${client.name}`);
       }
     }
   };

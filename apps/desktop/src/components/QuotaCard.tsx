@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useToast } from "./Toasts";
 import { api, type ClientQuota, type QuotaSection, type VideoFormat } from "../lib/api";
 
 const FORMAT_LABEL: Record<VideoFormat, string> = {
@@ -22,6 +23,7 @@ export default function QuotaCard({
   clientName: string;
   reloadKey: number;
 }) {
+  const toast = useToast();
   const [quota, setQuota] = useState<ClientQuota | null>(null);
   const [editing, setEditing] = useState<VideoFormat | null>(null);
   const [draft, setDraft] = useState("");
@@ -36,10 +38,15 @@ export default function QuotaCard({
       .catch(() => setQuota(null));
   }, [clientId, reloadKey]);
 
-  const patch = async (body: Record<string, unknown>) => {
+  /** Resolves false when the edit did not land, so callers can hold their state. */
+  const patch = async (body: Record<string, unknown>, what: string): Promise<boolean> => {
     setBusy(true);
     try {
       setQuota(await api.patch<ClientQuota>(`/clients/${clientId}/quota`, body));
+      return true;
+    } catch (err) {
+      toast.fail(what, err);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -58,7 +65,14 @@ export default function QuotaCard({
     f === "short_form" ? quota.short : quota.long;
 
   const setTarget = (f: VideoFormat, value: number | null) =>
-    void patch({ format: f, target: value }).then(() => {
+    void patch(
+      { format: f, target: value },
+      value == null
+        ? `Could not remove the ${FORMAT_LABEL[f].toLowerCase()} counter`
+        : `Could not set the ${FORMAT_LABEL[f].toLowerCase()} target`,
+    ).then((ok) => {
+      // Leave the editor open on failure so the typed number is not lost.
+      if (!ok) return;
       setEditing(null);
       setDraft("");
     });
@@ -143,12 +157,25 @@ export default function QuotaCard({
                   className={`iconbtn${s.delivered === 0 ? " off" : ""}`}
                   title={s.delivered === 0 ? "Already at zero" : "Count one fewer"}
                   onClick={() => {
-                    if (s.delivered > 0) void patch({ format: f, adjustBy: -1 });
+                    if (s.delivered > 0)
+                      void patch(
+                        { format: f, adjustBy: -1 },
+                        `Could not adjust the ${FORMAT_LABEL[f].toLowerCase()} count`,
+                      );
                   }}
                 >
                   <span>-</span>
                 </div>
-                <div className="iconbtn" title="Count one more" onClick={() => void patch({ format: f, adjustBy: 1 })}>
+                <div
+                  className="iconbtn"
+                  title="Count one more"
+                  onClick={() =>
+                    void patch(
+                      { format: f, adjustBy: 1 },
+                      `Could not adjust the ${FORMAT_LABEL[f].toLowerCase()} count`,
+                    )
+                  }
+                >
                   <span>+</span>
                 </div>
                 {s.adjustment !== 0 && (
@@ -190,7 +217,10 @@ export default function QuotaCard({
           <span
             className={`link${confirmReset ? " danger" : ""}`}
             onClick={() => {
-              if (confirmReset) void patch({ reset: true }).then(() => setConfirmReset(false));
+              if (confirmReset)
+                void patch({ reset: true }, "Could not start a new period").then(() =>
+                  setConfirmReset(false),
+                );
               else {
                 setConfirmReset(true);
                 setTimeout(() => setConfirmReset(false), 4000);

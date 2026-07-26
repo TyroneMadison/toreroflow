@@ -76,6 +76,21 @@ export class NetlifyPublisher {
     return await this.request("GET", "/sites?per_page=50");
   }
 
+  /**
+   * The site's public address, preferring the custom domain.
+   *
+   * `ssl_url` already reflects the primary custom domain once one is
+   * attached, so a report link becomes `https://torerone.com/<slug>` rather
+   * than the netlify.app subdomain without any extra configuration here.
+   */
+  async siteUrl(siteId: string): Promise<string> {
+    const site = await this.request<{ ssl_url?: string; url?: string; name?: string }>(
+      "GET",
+      `/sites/${siteId}`,
+    );
+    return site.ssl_url ?? site.url ?? `https://${site.name ?? siteId}.netlify.app`;
+  }
+
   /** Every file in the site's current live deploy, with its content hash. */
   async currentFiles(siteId: string): Promise<NetlifyFile[]> {
     const site = await this.request<{ published_deploy?: { id?: string } }>(
@@ -133,10 +148,7 @@ export class NetlifyPublisher {
       uploaded += 1;
     }
 
-    const final = await this.request<{ id: string; state: string; ssl_url?: string; url?: string }>(
-      "GET",
-      `/deploys/${deploy.id}`,
-    );
+    const final = await this.waitForReady(deploy.id);
 
     return {
       deployId: deploy.id,
@@ -145,5 +157,46 @@ export class NetlifyPublisher {
       preserved: existing.length,
       url: final.ssl_url ?? final.url ?? "",
     };
+  }
+
+  /**
+   * Waits for a deploy to actually go live.
+   *
+   * A deploy is not servable the moment its files finish uploading; it moves
+   * through processing states first. Returning early would hand the operator
+   * a link that 404s for the first few seconds, which is exactly when they
+   * paste it to a client. An error state is raised rather than reported as a
+   * successful publish.
+   */
+  async waitForReady(
+    deployId: string,
+    timeoutMs = 60_000,
+  ): Promise<{ id: string; state: string; ssl_url?: string; url?: string }> {
+    const started = Date.now();
+    let delay = 500;
+    for (;;) {
+      const deploy = await this.request<{
+        id: string;
+        state: string;
+        ssl_url?: string;
+        url?: string;
+        error_message?: string;
+      }>("GET", `/deploys/${deployId}`);
+
+      if (deploy.state === "ready") return deploy;
+      if (deploy.state === "error") {
+        throw new NetlifyError(502, deploy.error_message ?? "netlify deploy failed");
+      }
+      if (Date.now() - started > timeoutMs) {
+        // Not a failure: the deploy is still working and will very likely
+        // finish. Say so plainly rather than claiming either outcome.
+        throw new NetlifyError(
+          504,
+          `deploy is taking longer than expected (still "${deploy.state}"); check Netlify before sending the link`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 1.5, 4000);
+    }
   }
 }

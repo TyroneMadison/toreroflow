@@ -46,6 +46,26 @@ const SWITCHER_CSS = `
   @media print{ .tf-switch{ display:none !important; } }
 </style>`;
 
+/** Escapes text destined for an HTML text node. */
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Retitles the document.
+ *
+ * The vendored template ships titled "Torerone Performance Report Template",
+ * which is what a client would see in their browser tab and in any bookmark
+ * they keep. Naming the brand instead makes a saved link identifiable months
+ * later, and keeps the word "Template" off something being sent out.
+ */
+export function withDocumentTitle(html: string, title: string): string {
+  const safe = escapeHtml(title);
+  // Function replacement, so a "$&" in a brand name is not read as a
+  // backreference by String.replace.
+  return html.replace(/<title>[\s\S]*?<\/title>/i, () => `<title>${safe}</title>`);
+}
+
 /**
  * Escapes the JSON so a "</script>" inside any string cannot terminate the
  * script block early, which would break the page.
@@ -134,8 +154,9 @@ export function buildWebReport(
 })();
 </script>`;
 
-  // Keep client numbers out of search results. The link's privacy rests on
-  // being unguessable, which is undone the moment a crawler indexes it.
+  // Keep client numbers out of search results. The path is deliberately short
+  // and guessable, so this meta tag is the only thing standing between one
+  // client's numbers and a search for a brand name.
   const noIndex = `<meta name="robots" content="noindex, nofollow, noarchive">`;
 
   // Switcher styles go in the head; the script goes last so the template's

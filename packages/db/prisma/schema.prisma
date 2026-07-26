@@ -113,6 +113,17 @@ model Client {
   /// Manual corrections applied on top of the counted uploads, per format.
   adjustShort       Int       @default(0)
   adjustLong        Int       @default(0)
+  /// Permanent path of this client's shareable web report, e.g.
+  /// "caleb-end-of-month-report". Assigned once and never regenerated on
+  /// rename, because the link may already be sitting in a client's inbox.
+  reportSlug        String?   @unique
+  /// Absolute URL of the last published report page; null until first publish.
+  reportUrl         String?
+  /// When that page was last pushed. Also the flag month-end republishing
+  /// reads: a client that has never been published is never published for them.
+  reportPublishedAt DateTime?
+  /// Reporting month the published page currently leads with ("2026-06").
+  reportPublishedMonth String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?

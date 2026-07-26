@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import {
   api,
   fileUrl,
@@ -126,6 +127,7 @@ function RankCard({ title, range, posts }: { title: string; range: string; posts
 
 export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () => void }) {
   const { clients, selectedClient, selectClient } = useAppState();
+  const toast = useToast();
   const [data, setData] = useState<ClientAnalytics | null>(null);
   const [posts, setPosts] = useState<ClientPost[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -184,6 +186,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     try {
       await api.post(`/clients/${selectedClient.id}/analytics/refresh`, {});
       setReloadKey((k) => k + 1);
+    } catch (err) {
+      // Silence here would leave stale numbers looking freshly pulled.
+      toast.fail("Could not refresh the analytics", err);
     } finally {
       setRefreshing(false);
     }
@@ -207,6 +212,8 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
       );
       const url = fileUrl(res.url);
       if (url) await openExternal(url);
+    } catch (err) {
+      toast.fail("Could not export the report", err);
     } finally {
       setExporting(false);
     }

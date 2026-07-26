@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api, type WorkflowInfo } from "../lib/api";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
 export default function WorkflowsScreen() {
   const { selectedClient } = useAppState();
+  const toast = useToast();
   const [workflows, setWorkflows] = useState<WorkflowInfo[]>([]);
   const [name, setName] = useState("");
   const [source, setSource] = useState<Platform>("instagram");
@@ -54,13 +56,23 @@ export default function WorkflowsScreen() {
   };
 
   const toggleEnabled = async (w: WorkflowInfo) => {
-    await api.patch(`/workflows/${w.id}`, { enabled: !w.enabled });
-    await load();
+    try {
+      await api.patch(`/workflows/${w.id}`, { enabled: !w.enabled });
+      await load();
+    } catch (err) {
+      // The switch only moves once the reload lands, so a silent failure looks
+      // like the click never registered.
+      toast.fail(`Could not ${w.enabled ? "pause" : "enable"} ${w.name}`, err);
+    }
   };
 
   const remove = async (w: WorkflowInfo) => {
-    await api.del(`/workflows/${w.id}`);
-    await load();
+    try {
+      await api.del(`/workflows/${w.id}`);
+      await load();
+    } catch (err) {
+      toast.fail(`Could not delete ${w.name}`, err);
+    }
   };
 
   return (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api, type ClientAnalytics, type ClientSummary } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
@@ -172,6 +173,7 @@ function ProfileCard({
 
 export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const { clients, refreshClients, user, logout } = useAppState();
+  const toast = useToast();
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -204,6 +206,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     try {
       await setAutostart(!autostart);
       setAutostartState(await getAutostart());
+    } catch (err) {
+      toast.fail("Could not change the startup setting", err);
     } finally {
       setAutostartBusy(false);
     }
@@ -222,6 +226,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       } else {
         await refreshClients();
       }
+    } catch (err) {
+      toast.fail(`Could not connect ${PLATFORM_LABELS[platform]}`, err);
     } finally {
       setBusyKey(null);
     }
@@ -232,6 +238,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     try {
       await api.del(`/accounts/${accountId}`);
       await refreshClients();
+    } catch (err) {
+      toast.fail("Could not disconnect the account", err);
     } finally {
       setBusyKey(null);
     }
@@ -243,6 +251,10 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
       setPendingSync((p) => (p === clientId ? null : p));
+      // A sync that finds nothing new leaves the card looking untouched.
+      toast.success("Accounts synced.");
+    } catch (err) {
+      toast.fail("Could not sync the accounts", err);
     } finally {
       setBusyKey(null);
     }

@@ -16,6 +16,7 @@ import ScheduleModal from "../modals/ScheduleModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import BestTimes from "../components/BestTimes";
 import QuotaCard from "../components/QuotaCard";
+import { useToast } from "../components/Toasts";
 
 const fmtWhen = (iso: string | null): string =>
   iso
@@ -40,6 +41,7 @@ const STATUS_LABEL: Record<MediaAssetInfo["status"], string> = {
 
 export default function UploadSchedule({ onPreview, onOpenConnect }: UploadScheduleProps) {
   const { selectedClient } = useAppState();
+  const toast = useToast();
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -130,8 +132,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       setUploadingNames((prev) => [...prev, file.name]);
       try {
         await uploadMedia(selectedClient.id, file);
-      } catch {
-        // surfaced by the card disappearing; API error paths land in M3 polish
+      } catch (err) {
+        // The card vanishes either way, so name the file that did not make it.
+        toast.fail(`Could not upload ${file.name}`, err);
       } finally {
         setUploadingNames((prev) => prev.filter((n) => n !== file.name));
         void load();
@@ -149,10 +152,16 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     const description = drafts[asset.id];
     const title = titles[asset.id];
     if (description === undefined && title === undefined) return;
-    await api.patch(`/media/${asset.id}/draft`, {
-      ...(title !== undefined ? { title } : {}),
-      ...(description !== undefined ? { description } : {}),
-    });
+    try {
+      await api.patch(`/media/${asset.id}/draft`, {
+        ...(title !== undefined ? { title } : {}),
+        ...(description !== undefined ? { description } : {}),
+      });
+    } catch (err) {
+      // Never flash "Saved" over copy the server rejected.
+      toast.fail(`Could not save the copy for ${asset.name}`, err);
+      return;
+    }
     setSavedFlash(asset.id);
     setTimeout(() => setSavedFlash((s) => (s === asset.id ? null : s)), 2000);
     void load();
@@ -180,6 +189,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         api.patch(`/posts/targets/${aId}/reschedule`, { scheduledAt: b.scheduledAt }),
         api.patch(`/posts/targets/${bId}/reschedule`, { scheduledAt: a.scheduledAt }),
       ]);
+    } catch (err) {
+      // The reload below silently undoes the optimistic swap, so say why.
+      toast.fail("Could not swap the two scheduled times", err);
     } finally {
       void loadPosts();
     }
@@ -201,6 +213,13 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         setSavedFlash(`cancelled:${asset.id}:${res.cancelledPosts}`);
         setTimeout(() => setSavedFlash(null), 4000);
       }
+    } catch (err) {
+      toast.fail(
+        replaceScheduled
+          ? `Could not replace the original for ${asset.name}`
+          : `Could not change how ${asset.name} counts toward the quota`,
+        err,
+      );
     } finally {
       setRevBusy(null);
       setQuotaKey((k) => k + 1);
@@ -215,6 +234,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     setRevBusy(asset.id);
     try {
       await api.patch(`/media/${asset.id}/format`, { format });
+    } catch (err) {
+      toast.fail(`Could not change the format for ${asset.name}`, err);
     } finally {
       setRevBusy(null);
       setQuotaKey((k) => k + 1);
@@ -227,13 +248,20 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     setConfirmRemove(null);
     try {
       await api.del(`/posts/targets/${targetId}`);
+    } catch (err) {
+      toast.fail("Could not remove the post from the queue", err);
     } finally {
       void loadPosts();
     }
   };
 
   const removeAsset = async (asset: MediaAssetInfo) => {
-    await api.del(`/media/${asset.id}`);
+    try {
+      await api.del(`/media/${asset.id}`);
+    } catch (err) {
+      toast.fail(`Could not delete ${asset.name}`, err);
+      return;
+    }
     setDrafts((d) => {
       const next = { ...d };
       delete next[asset.id];

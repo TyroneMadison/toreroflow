@@ -2,6 +2,7 @@ import { useState } from "react";
 import Modal from "./Modal";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api, type MediaAssetInfo } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
@@ -20,6 +21,7 @@ function localInputValue(d: Date): string {
 
 export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleModalProps) {
   const { selectedClient } = useAppState();
+  const toast = useToast();
   const connected = (selectedClient?.accounts ?? []).filter(
     (a) => a.status === "connected",
   );
@@ -54,6 +56,12 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "scheduling failed");
+      // The inline note carries a bare "Failed to fetch" on a dead API, which
+      // reads as nothing at all next to an irreversible publish.
+      toast.fail(
+        mode === "now" ? "Could not publish the post" : "Could not schedule the post",
+        err,
+      );
       setConfirmNow(false);
     } finally {
       setBusy(null);

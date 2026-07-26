@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import Pf from "../components/Pf";
+import { useToast } from "../components/Toasts";
 import { api, ApiError, type ClientAnalytics, type Suggestion } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 
@@ -17,10 +18,10 @@ function fmt(n: number | null | undefined): string {
 }
 
 export default function ClientInsightsModal({ clientId, onClose }: ClientInsightsModalProps) {
+  const toast = useToast();
   const [data, setData] = useState<ClientAnalytics | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
-  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,19 +38,19 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
 
   const generate = async () => {
     setSuggesting(true);
-    setSuggestError(null);
     try {
       const result = await api.post<{ suggestions: Suggestion[] }>(
         `/clients/${clientId}/suggestions`,
       );
       setSuggestions(result.suggestions);
     } catch (err) {
+      // A missing key comes back as a 503, and the fix is the whole message.
       if (err instanceof ApiError && err.status === 503) {
-        setSuggestError(
+        toast.error(
           "AI suggestions need an Anthropic API key. Add ANTHROPIC_API_KEY to the repo .env and restart the API.",
         );
       } else {
-        setSuggestError(err instanceof Error ? err.message : "suggestion request failed");
+        toast.fail("Could not generate suggestions", err);
       }
     } finally {
       setSuggesting(false);
@@ -114,7 +115,6 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
           </button>
         </div>
 
-        {suggestError && <div className="autherr">{suggestError}</div>}
         {suggestions?.map((s, i) => (
           <div className="sugg" key={i}>
             <span className="cat">{s.category}</span>
