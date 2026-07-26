@@ -494,6 +494,37 @@
 .gdt-mer{justify-content:flex-start}
 .gdt-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
 
+/* video quota for the pay period */
+.quotacard{padding:18px}
+.qsetrow{display:flex;gap:8px;margin-top:12px;align-items:center}
+.qsetrow .field-in{flex:1;min-width:0}
+.qcount{display:flex;align-items:baseline;gap:8px;margin-top:12px}
+.qcount b{font-size:34px;font-weight:700;letter-spacing:.3px;line-height:1}
+.qcount b.over{color:var(--amber)}
+.qcount span{font-size:13px;color:var(--txt-3)}
+.qcount em{margin-left:auto;font-style:normal;font-size:11.5px;font-weight:600;color:var(--txt-2);background:var(--glass-2);padding:3px 9px;border-radius:20px}
+.qcount em.over{color:var(--amber)}
+.qbar{height:10px;border-radius:6px;background:var(--glass-2);overflow:hidden;margin-top:12px}
+.qbar .fill{height:100%;border-radius:6px;background:var(--grad);box-shadow:inset 0 1px 0 rgba(255,255,255,.35);transition:width .35s cubic-bezier(.2,.7,.2,1)}
+.qbar .fill.over{background:linear-gradient(135deg,#ffc46b,#ff9d3d)}
+.qfoot{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+.qadjust{display:flex;align-items:center;gap:6px}
+.qadjust .iconbtn{width:28px;height:28px;border-radius:9px;font-size:15px;font-weight:700;color:var(--txt-2)}
+.qadj{font-size:10.5px;color:var(--txt-3);margin-left:4px}
+.link.danger{color:var(--red)}
+.qrev{margin-top:10px;font-size:10.5px;color:var(--txt-3)}
+
+/* revision toggle on a video card */
+.revrow{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.revtoggle{display:inline-flex;align-items:center;gap:9px;padding:5px 11px 5px 6px;border-radius:20px;font-size:11.5px;font-weight:600;cursor:pointer;
+  color:var(--txt-3);background:var(--glass);border:1px solid var(--brd-soft);transition:.18s;user-select:none}
+.revtoggle:hover{color:var(--txt);background:var(--glass-2)}
+.revtoggle .knob{width:12px;height:12px;border-radius:50%;background:var(--txt-3);transition:.18s;flex:0 0 auto}
+.revtoggle.on{color:#ffc46b;background:rgba(255,196,107,.12);border-color:rgba(255,196,107,.38)}
+.revtoggle.on .knob{background:#ffc46b;box-shadow:0 0 8px rgba(255,196,107,.7)}
+.tag.rev{background:rgba(255,196,107,.16);color:#ffc46b;border:1px solid rgba(255,196,107,.36)}
+.revflash{font-size:10.5px;color:var(--amber)}
+
 /* best times to post */
 .bttabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .bttab{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:11px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--txt-3);background:var(--glass);border:1px solid var(--brd-soft);transition:.16s}

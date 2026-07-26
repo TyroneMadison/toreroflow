@@ -14,6 +14,7 @@ import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import BestTimes from "../components/BestTimes";
+import QuotaCard from "../components/QuotaCard";
 
 const fmtWhen = (iso: string | null): string =>
   iso
@@ -51,6 +52,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
+  const [quotaKey, setQuotaKey] = useState(0);
+  const [revBusy, setRevBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
@@ -181,6 +184,30 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     }
   };
 
+  /**
+   * Flip whether a video counts toward the quota. Turning revision ON with
+   * `replaceScheduled` also cancels whatever is still queued for the video
+   * being replaced, so the new cut takes the slot instead of both posting.
+   */
+  const toggleRevision = async (asset: MediaAssetInfo, replaceScheduled: boolean) => {
+    setRevBusy(asset.id);
+    try {
+      const res = await api.patch<MediaAssetInfo & { cancelledPosts: number }>(
+        `/media/${asset.id}/revision`,
+        { isRevision: !asset.isRevision, replaceScheduled },
+      );
+      if (res.cancelledPosts > 0) {
+        setSavedFlash(`cancelled:${asset.id}:${res.cancelledPosts}`);
+        setTimeout(() => setSavedFlash(null), 4000);
+      }
+    } finally {
+      setRevBusy(null);
+      setQuotaKey((k) => k + 1);
+      void load();
+      void loadPosts();
+    }
+  };
+
   /** Pull one platform's post out of the queue, leaving any siblings. */
   const removeFromQueue = async (targetId: string) => {
     setConfirmRemove(null);
@@ -299,6 +326,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   <div className="body">
                     <div className="name">
                       {asset.name}
+                      {asset.isRevision && <span className="tag rev">Revision</span>}
                       {asset.status === "ready" && asset.hasTranscript && (
                         <span className="tag ok">Transcribed</span>
                       )}
@@ -364,6 +392,41 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       </>
                     )}
 
+                    {/* Quota control: revisions do not spend a slot. */}
+                    <div className="revrow">
+                      <span
+                        className={`revtoggle${asset.isRevision ? " on" : ""}`}
+                        title={
+                          asset.isRevision
+                            ? "Counts as a revision, not a new video"
+                            : "Counts toward this period's videos"
+                        }
+                        onClick={() => void toggleRevision(asset, false)}
+                      >
+                        <span className="knob" />
+                        {revBusy === asset.id
+                          ? "…"
+                          : asset.isRevision
+                            ? "Revision"
+                            : "Counts toward quota"}
+                      </span>
+                      {!asset.isRevision && asset.revisionOfId && (
+                        <span
+                          className="link"
+                          title="Mark as a revision and cancel what is still scheduled for the original"
+                          onClick={() => void toggleRevision(asset, true)}
+                        >
+                          Replace the original
+                        </span>
+                      )}
+                      {savedFlash?.startsWith(`cancelled:${asset.id}:`) && (
+                        <span className="revflash">
+                          cancelled {savedFlash.split(":")[2]} scheduled post
+                          {savedFlash.split(":")[2] === "1" ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+
                     <div className="schedrow">
                       <button className="btn ghost" onClick={() => void removeAsset(asset)}>
                         Delete
@@ -409,6 +472,16 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
 
           <div>
+            {selectedClient && (
+              <div style={{ marginBottom: 16 }}>
+                <QuotaCard
+                  clientId={selectedClient.id}
+                  clientName={selectedClient.name}
+                  reloadKey={quotaKey}
+                />
+              </div>
+            )}
+
             <div className="card glass">
               <div className="rowhead">
                 <h3>Up next in queue</h3>

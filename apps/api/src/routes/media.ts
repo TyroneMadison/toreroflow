@@ -6,10 +6,16 @@ import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
-import { decodeEscapes } from "@toreroflow/core";
+import { decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+
+const revisionSchema = z.object({
+  isRevision: z.boolean().optional(),
+  revisionOfId: z.string().nullable().optional(),
+  replaceScheduled: z.boolean().optional(),
+});
 
 const draftSchema = z.object({
   /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
@@ -22,6 +28,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
   const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
+  // Needed to drop the delayed jobs of posts a revision supersedes.
+  const publishQueue = new Queue<{ targetId: string }>("publish", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -53,6 +61,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     status: string;
     transcript: unknown;
     draftCopy: unknown;
+    isRevision: boolean;
+    revisionOfId: string | null;
     createdAt: Date;
   }) => {
     const ready = a.status === "ready";
@@ -64,6 +74,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       status: a.status,
       hasTranscript: Array.isArray(a.transcript) && a.transcript.length > 0,
       draftCopy: normalizeDraft(a.draftCopy),
+      isRevision: a.isRevision,
+      revisionOfId: a.revisionOfId,
       createdAt: a.createdAt,
       thumbUrl: ready ? `/files/${a.clientId}/${a.id}/thumb.jpg` : null,
       // The original upload: nothing is re-encoded, so preview and publish
@@ -86,12 +98,28 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     if (!file) return reply.status(400).send({ error: "no file uploaded" });
 
     const ext = path.extname(file.filename || ".mp4") || ".mp4";
+    const originalName = file.filename ?? `upload${ext}`;
+
+    // A re-export of an earlier upload ("… v2", "… final") is a revision, so
+    // it should not spend another slot in the client's quota. Match against
+    // the newest candidate; the operator can override either way.
+    const siblings = await prisma.mediaAsset.findMany({
+      where: { clientId: client.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, originalName: true, revisionOfId: true },
+    });
+    const match = siblings.find((s) => looksLikeRevisionOf(originalName, s.originalName));
+    // Point at the root upload, so a v3 matching v2 still refers to v1.
+    const rootId = match ? (match.revisionOfId ?? match.id) : null;
+
     const asset = await prisma.mediaAsset.create({
       data: {
         clientId: client.id,
-        originalName: file.filename ?? `upload${ext}`,
+        originalName,
         storageKey: "pending",
         status: "uploaded",
+        isRevision: rootId !== null,
+        revisionOfId: rootId,
       },
     });
     const storageKey = `${client.id}/${asset.id}/source${ext}`;
@@ -156,6 +184,62 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       data: { draftCopy: { ...current, ...body } },
     });
     return { id: updated.id, draftCopy: updated.draftCopy };
+  });
+
+  /**
+   * Flip a video between counting toward the quota and being a revision.
+   *
+   * With `replaceScheduled`, the posts still queued for the video this one
+   * revises are cancelled, so the new cut takes over the slot instead of
+   * both going out. Only unpublished posts are touched.
+   */
+  app.patch<{
+    Params: { id: string };
+    Body: { isRevision?: boolean; revisionOfId?: string | null; replaceScheduled?: boolean };
+  }>("/media/:id/revision", async (request, reply) => {
+    const body = revisionSchema.parse(request.body ?? {});
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+
+    const isRevision = body.isRevision ?? !asset.isRevision;
+    const revisionOfId =
+      body.revisionOfId !== undefined ? body.revisionOfId : (asset.revisionOfId ?? null);
+
+    const updated = await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { isRevision, revisionOfId: isRevision ? revisionOfId : null },
+    });
+
+    let cancelled = 0;
+    if (isRevision && body.replaceScheduled && revisionOfId) {
+      const stale = await prisma.postTarget.findMany({
+        where: {
+          post: { mediaAssetId: revisionOfId },
+          status: { in: ["scheduled", "failed"] },
+        },
+      });
+      for (const target of stale) {
+        const job = await publishQueue.getJob(target.id);
+        if (job) await job.remove();
+      }
+      const ids = stale.map((t) => t.id);
+      if (ids.length) {
+        await prisma.postTarget.deleteMany({ where: { id: { in: ids } } });
+        cancelled = ids.length;
+        // Drop posts left with no targets at all.
+        const orphans = await prisma.post.findMany({
+          where: { mediaAssetId: revisionOfId, targets: { none: {} } },
+          select: { id: true },
+        });
+        if (orphans.length) {
+          await prisma.post.deleteMany({ where: { id: { in: orphans.map((o) => o.id) } } });
+        }
+      }
+    }
+
+    return { ...assetView(updated), cancelledPosts: cancelled };
   });
 
   app.delete<{ Params: { id: string } }>("/media/:id", async (request, reply) => {

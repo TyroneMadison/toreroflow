@@ -12,6 +12,7 @@ import {
 } from "@toreroflow/core";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
+import { z } from "zod";
 import { getPrisma } from "@toreroflow/db";
 import { DryRunPublisher, ZernioError, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
@@ -38,6 +39,13 @@ function avatarSeed(name: string): string {
     .map((w) => w[0]!.toUpperCase())
     .join("");
 }
+
+const quotaSchema = z.object({
+  target: z.number().int().min(0).max(10_000).nullable().optional(),
+  adjustment: z.number().int().min(-10_000).max(10_000).optional(),
+  adjustBy: z.number().int().min(-1_000).max(1_000).optional(),
+  reset: z.boolean().optional(),
+});
 
 const SUGGESTIONS_SCHEMA = {
   type: "object",
@@ -461,6 +469,76 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       return data;
     },
   );
+
+  /**
+   * Video quota for the current pay period.
+   *
+   * The delivered count is derived, not stored: non-revision uploads since
+   * the period start, plus a manual adjustment. That way deleting a video
+   * corrects the number automatically, and "reset" is just moving the date.
+   */
+  const quotaView = async (clientId: string) => {
+    const client = await prisma.client.findUnique({
+      where: { id: clientId },
+      select: { videoQuota: true, quotaResetAt: true, quotaAdjustment: true },
+    });
+    if (!client) return null;
+    const since = client.quotaResetAt ?? new Date(0);
+    const counted = await prisma.mediaAsset.count({
+      where: { clientId, isRevision: false, createdAt: { gte: since } },
+    });
+    const revisions = await prisma.mediaAsset.count({
+      where: { clientId, isRevision: true, createdAt: { gte: since } },
+    });
+    return {
+      target: client.videoQuota,
+      periodStart: client.quotaResetAt,
+      adjustment: client.quotaAdjustment,
+      uploads: counted,
+      revisions,
+      delivered: Math.max(0, counted + client.quotaAdjustment),
+    };
+  };
+
+  app.get<{ Params: { id: string } }>("/clients/:id/quota", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!client) return reply.status(404).send(NOT_FOUND);
+    return await quotaView(client.id);
+  });
+
+  app.patch<{
+    Params: { id: string };
+    Body: { target?: number | null; adjustment?: number; adjustBy?: number; reset?: boolean };
+  }>("/clients/:id/quota", async (request, reply) => {
+    const body = quotaSchema.parse(request.body ?? {});
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true, quotaAdjustment: true },
+    });
+    if (!client) return reply.status(404).send(NOT_FOUND);
+
+    const data: {
+      videoQuota?: number | null;
+      quotaAdjustment?: number;
+      quotaResetAt?: Date;
+    } = {};
+    if (body.target !== undefined) data.videoQuota = body.target;
+    if (body.adjustment !== undefined) data.quotaAdjustment = body.adjustment;
+    if (body.adjustBy !== undefined) {
+      data.quotaAdjustment = (data.quotaAdjustment ?? client.quotaAdjustment) + body.adjustBy;
+    }
+    // Starting a new period clears the manual correction with it.
+    if (body.reset) {
+      data.quotaResetAt = new Date();
+      data.quotaAdjustment = 0;
+    }
+
+    await prisma.client.update({ where: { id: client.id }, data });
+    return await quotaView(client.id);
+  });
 
   /** Provider post list per client, cached briefly across brand switches. */
   const postsCache = new Map<string, { at: number; posts: unknown[] }>();

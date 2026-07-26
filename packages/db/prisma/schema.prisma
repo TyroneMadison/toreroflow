@@ -99,6 +99,12 @@ model Client {
   plan              String?
   /// Publishing provider workspace id (Zernio profile _id) backing this client.
   providerProfileId String?
+  /// Videos owed this pay period; null means no quota is being tracked.
+  videoQuota        Int?
+  /// Start of the current pay period. Uploads after this count toward quota.
+  quotaResetAt      DateTime?
+  /// Manual correction applied on top of the counted uploads.
+  quotaAdjustment   Int       @default(0)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
@@ -149,14 +155,20 @@ model MediaAsset {
   status       MediaAssetStatus @default(uploaded)
   /// Timestamped transcript from the captions service: [{ start, end, text }]
   transcript   Json?
-  /// AI-drafted post copy: { caption, hook, hashtags[] } (operator-editable)
+  /// AI-drafted post copy: { title, description, hashtags[] } (operator-editable)
   draftCopy    Json?
+  /// A re-edit of an earlier upload: excluded from the client's video quota.
+  isRevision   Boolean          @default(false)
+  /// The upload this one revises, when known.
+  revisionOfId String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  client  Client   @relation(fields: [clientId], references: [id])
-  renders Render[]
-  posts   Post[]
+  client     Client       @relation(fields: [clientId], references: [id])
+  renders    Render[]
+  posts      Post[]
+  revisionOf MediaAsset?  @relation("AssetRevisions", fields: [revisionOfId], references: [id])
+  revisions  MediaAsset[] @relation("AssetRevisions")
 
   @@index([clientId, status])
 }

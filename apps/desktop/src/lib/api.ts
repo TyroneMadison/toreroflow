@@ -138,6 +138,15 @@ export interface ClientAnalytics {
   hasData: boolean;
 }
 
+export interface ClientQuota {
+  target: number | null;
+  periodStart: string | null;
+  adjustment: number;
+  uploads: number;
+  revisions: number;
+  delivered: number;
+}
+
 export interface ClientPost {
   id: string;
   title: string;
@@ -175,6 +184,9 @@ export interface MediaAssetInfo {
   status: "uploaded" | "processing" | "ready" | "failed";
   hasTranscript: boolean;
   draftCopy: DraftCopy | null;
+  /** A re-edit of an earlier upload; excluded from the client's quota. */
+  isRevision: boolean;
+  revisionOfId: string | null;
   createdAt: string;
   thumbUrl: string | null;
   /** The original upload; videos are published exactly as exported. */

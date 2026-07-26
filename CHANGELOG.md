@@ -9,6 +9,15 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - per-client video quota
+
+- Set a target per client (e.g. 30 videos) and every upload ticks the counter automatically, with progress, remaining count, and a "New period" reset when the pay period rolls over
+- Plus and minus buttons adjust the count by hand whenever the automatic number is wrong
+- Revisions do not spend a slot. A re-export named like an earlier upload ("… v2", "… final", "… revised", "… (1)") is detected on upload and marked a revision automatically; a chain of revisions all point back to the first upload
+- Any video can be flipped between counting and not counting with one click, so a wrong guess is never sticky
+- "Replace the original" marks a video as a revision and cancels whatever is still scheduled for the video it replaces, so the new cut takes the slot instead of both going out
+- The delivered count is derived rather than stored, so deleting a video corrects the number by itself
+
 ### Added - best times to post
 
 - The Upload screen's timing card now shows the hours that actually perform best for the selected brand, per platform, measured from its own published history rather than a generic recommendation
