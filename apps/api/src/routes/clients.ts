@@ -462,15 +462,43 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /** Provider post list per client, cached briefly across brand switches. */
+  const postsCache = new Map<string, { at: number; posts: unknown[] }>();
+  const POSTS_TTL_MS = 5 * 60 * 1000;
+
+  /**
+   * Force-refresh everything for one client: drop the cached post list and
+   * run a provider ingest now rather than waiting for the daily job, so the
+   * newest uploads and numbers show up on demand.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/clients/:id/analytics/refresh",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      // Clearing the cache is what makes the next posts fetch hit the
+      // provider live, so newest uploads and view counts are current
+      // immediately. The queued ingest refreshes follower snapshots and
+      // per-day history right behind it.
+      postsCache.delete(client.id);
+      await analyticsQueue.add(
+        "ingest",
+        {},
+        { removeOnComplete: true, removeOnFail: true },
+      );
+      return { ok: true, refreshedAt: new Date().toISOString() };
+    },
+  );
+
   /**
    * Live per-post analytics for the Analytics screen: every provider post
    * (including pre-existing platform content) belonging to this client's
    * profile, with title, thumbnail, publish date, and metrics. Cached
    * briefly so brand switches don't hammer the provider.
    */
-  const postsCache = new Map<string, { at: number; posts: unknown[] }>();
-  const POSTS_TTL_MS = 5 * 60 * 1000;
-
   app.get<{ Params: { id: string } }>(
     "/clients/:id/analytics/posts",
     async (request, reply) => {

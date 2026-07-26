@@ -129,6 +129,8 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const [posts, setPosts] = useState<ClientPost[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement | null>(null);
 
@@ -169,7 +171,19 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     return () => {
       cancelled = true;
     };
-  }, [selectedClient]);
+  }, [selectedClient, reloadKey]);
+
+  /** Drop the server's cached post list, then refetch everything live. */
+  const refresh = async () => {
+    if (!selectedClient || refreshing) return;
+    setRefreshing(true);
+    try {
+      await api.post(`/clients/${selectedClient.id}/analytics/refresh`, {});
+      setReloadKey((k) => k + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const exportReport = async () => {
     if (!selectedClient) return;
@@ -203,6 +217,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     { label: "Subscribers", value: ytAccounts.length ? fmt(subscribers) : "-" },
     { label: "Followers", value: otherAccounts.length ? fmt(followers) : "-" },
   ];
+
+  // Upload counts per trailing window, across every connected platform.
+  const uploadsSince = (days: number) => {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return all.filter((p) => new Date(p.publishedAt).getTime() >= cutoff).length;
+  };
+  const uploadCounts = [30, 60, 90].map((d) => ({ days: d, count: uploadsSince(d) }));
 
   // Pie: views share per platform across every post.
   const pieMap = new Map<string, number>();
@@ -319,6 +340,17 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           )}
         </div>
         <button
+          className="btn ghost"
+          disabled={!selectedClient || refreshing || loading}
+          title="Pull the newest uploads and numbers from every platform"
+          onClick={() => void refresh()}
+        >
+          <svg className={refreshing ? "spin" : undefined}>
+            <use href="#i-refresh" />
+          </svg>{" "}
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
           className="btn"
           disabled={!selectedClient || exporting}
           onClick={() => void exportReport()}
@@ -431,6 +463,23 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       <div className="val">{loading ? "…" : k.value}</div>
                     </div>
                   ))}
+                </div>
+
+                <div className="card glass anuploads">
+                  <div className="rowhead">
+                    <div>
+                      <h3>Videos uploaded</h3>
+                      <div className="sub">Across every connected platform</div>
+                    </div>
+                  </div>
+                  <div className="ucounts">
+                    {uploadCounts.map((u) => (
+                      <div className="ucount" key={u.days}>
+                        <div className="n">{loading ? "…" : u.count}</div>
+                        <div className="l">last {u.days} days</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="card glass">

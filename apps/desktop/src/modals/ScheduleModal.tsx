@@ -28,28 +28,34 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [when, setWhen] = useState(() =>
     localInputValue(new Date(Date.now() + 10 * 60_000)),
   );
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"schedule" | "now" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmNow, setConfirmNow] = useState(false);
 
   const toggle = (p: Platform) =>
     setPlatforms((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
     );
 
-  const submit = async () => {
-    setBusy(true);
+  /**
+   * Publishing immediately is the same call with the time set to now; the
+   * API turns a non-future time into a zero delay on the publish job.
+   */
+  const submit = async (mode: "schedule" | "now") => {
+    setBusy(mode);
     setError(null);
     try {
       await api.post(`/media/${asset.id}/schedule`, {
         platforms,
-        scheduledAt: new Date(when).toISOString(),
+        scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
       });
       onScheduled();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "scheduling failed");
+      setConfirmNow(false);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -113,15 +119,29 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         <button className="btn ghost" onClick={onClose}>
           Cancel
         </button>
+        {/* Publishing is irreversible, so Post now asks once before firing. */}
+        <button
+          className={`btn ${confirmNow ? "danger" : "ghost"}`}
+          disabled={busy !== null || platforms.length === 0}
+          onClick={() => {
+            if (confirmNow) void submit("now");
+            else {
+              setConfirmNow(true);
+              setTimeout(() => setConfirmNow(false), 4000);
+            }
+          }}
+        >
+          {busy === "now" ? "Publishing…" : confirmNow ? "Publish now?" : "Post now"}
+        </button>
         <button
           className="btn"
-          disabled={busy || platforms.length === 0}
-          onClick={() => void submit()}
+          disabled={busy !== null || platforms.length === 0}
+          onClick={() => void submit("schedule")}
         >
           <svg>
             <use href="#i-bolt" />
           </svg>{" "}
-          {busy ? "Scheduling…" : "Schedule"}
+          {busy === "schedule" ? "Scheduling…" : "Schedule"}
         </button>
       </div>
     </Modal>

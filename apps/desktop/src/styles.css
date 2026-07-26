@@ -88,6 +88,11 @@
   .btn svg{width:16px;height:16px;stroke:#0b0b18;stroke-width:2.3;fill:none}
   .btn.ghost{background:var(--glass-2);color:var(--txt);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);border:1px solid var(--brd-soft)}
   .btn.ghost svg{stroke:var(--txt)}
+  .btn.danger{background:linear-gradient(135deg,#ff6b7a,#e0455b);color:#fff;box-shadow:0 10px 26px rgba(224,69,91,.4), inset 0 1px 0 rgba(255,255,255,.35);border:none}
+  .btn.danger svg{stroke:#fff}
+  .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;filter:none}
+  .spin{animation:spin 1s linear infinite;transform-origin:50% 50%}
+  @keyframes spin{to{transform:rotate(360deg)}}
 
   .stage{flex:1;overflow:auto;padding:2px 24px 24px}
   .stage::-webkit-scrollbar{width:8px}
@@ -299,8 +304,11 @@
   [data-theme="light"] .skel{background:linear-gradient(100deg,rgba(30,30,70,.05) 30%,rgba(30,30,70,.11) 50%,rgba(30,30,70,.05) 70%);background-size:200% 100%}
 
   /* ---- modal ---- */
-  .overlay{position:fixed;inset:0;z-index:60;background:rgba(4,3,10,.55);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:none;align-items:center;justify-content:center;padding:24px;animation:fade .25s}
-  [data-theme="light"] .overlay{background:rgba(40,42,80,.35)}
+  /* Heavy dim + blur so a modal reads as clearly above the page, never merged into it. */
+  .overlay{position:fixed;inset:0;z-index:60;background:rgba(3,2,8,.78);backdrop-filter:blur(18px) saturate(60%);-webkit-backdrop-filter:blur(18px) saturate(60%);display:none;align-items:center;justify-content:center;padding:24px;animation:fade .25s}
+  [data-theme="light"] .overlay{background:rgba(28,30,60,.62)}
+  .overlay.open>.modal{box-shadow:0 40px 90px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.2)}
+  [data-theme="light"] .overlay.open>.modal{box-shadow:0 40px 90px rgba(40,45,100,.35), inset 0 1px 0 rgba(255,255,255,.6)}
   .overlay.open{display:flex}
   @keyframes fade{from{opacity:0}to{opacity:1}}
   .modal{width:100%;max-height:92vh;overflow:auto;animation:pop .3s cubic-bezier(.2,.7,.2,1)}
@@ -445,6 +453,11 @@
 .branddrop{position:relative;flex:0 0 auto}
 .branddrop .brandmenu{bottom:auto;top:calc(100% + 8px);left:auto;right:0;min-width:230px;box-shadow:0 14px 44px rgba(0,0,0,.6)}
 [data-theme="light"] .branddrop .brandmenu{box-shadow:0 14px 44px rgba(50,55,110,.25)}
+.anuploads{padding:16px 18px}
+.ucounts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
+.ucount{padding:12px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);text-align:center}
+.ucount .n{font-size:24px;font-weight:680;letter-spacing:.3px}
+.ucount .l{font-size:11px;color:var(--txt-3);margin-top:4px}
 .anprofile{padding:14px;text-align:center}
 .anprofile .pic{border-radius:18px;overflow:hidden;aspect-ratio:1/0.9;margin-bottom:12px;background:var(--glass-2)}
 .anprofile .pic img{width:100%;height:100%;object-fit:cover;display:block}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ScreenId } from "../App";
+import { clientAvatarUrl } from "../lib/avatar";
 import type { Theme } from "../lib/theme";
 import { useAppState } from "../state/AppState";
 import ApiStatus from "./ApiStatus";
@@ -178,9 +179,22 @@ export default function Sidebar({
               <>
                 <div
                   className="avatar"
-                  style={{ background: "linear-gradient(135deg,#8b7bff,#4ea8ff)" }}
+                  style={{
+                    overflow: "hidden",
+                    background: clientAvatarUrl(selectedClient)
+                      ? "var(--glass-2)"
+                      : "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+                  }}
                 >
-                  {selectedClient.avatarSeed ?? selectedClient.name.slice(0, 2).toUpperCase()}
+                  {clientAvatarUrl(selectedClient) ? (
+                    <img
+                      src={clientAvatarUrl(selectedClient)!}
+                      alt={selectedClient.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    (selectedClient.avatarSeed ?? selectedClient.name.slice(0, 2).toUpperCase())
+                  )}
                 </div>
                 <div className="meta">
                   <b>{selectedClient.name}</b>

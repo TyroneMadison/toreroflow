@@ -9,6 +9,14 @@ release with its acceptance checks listed.
 
 ## [Unreleased]
 
+### Added - quick wins from the improvement backlog
+
+- Refresh button on Analytics: pulls the newest uploads and view counts from every platform on demand instead of waiting for the daily job
+- Videos-uploaded counters for the last 30, 60, and 90 days, across all connected platforms
+- "Post now" button in the schedule dialog, with a confirm step since publishing is irreversible
+- Modal backdrop is far darker and more blurred, so dialogs no longer blend into the page behind them
+- The "Active brand" pill in the sidebar shows the brand's real profile picture
+
 ### Added - Analytics command center redesign
 
 - Brand dropdown in the Analytics topbar (with "+ Enroll a client"), so a brand can be picked right on the page instead of only from the sidebar
