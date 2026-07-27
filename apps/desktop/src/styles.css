@@ -936,3 +936,14 @@
 .varpick{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt-3);flex:0 0 auto;white-space:nowrap}
 .addform{flex-wrap:wrap}
 .cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
+
+/* The missing-bills warning also renders standalone above the lists. */
+.warnline{font-size:11px;color:var(--amber);line-height:1.4}
+
+/* Loading and error states: the screen never shows a fake $0.00. */
+.skel{min-height:150px;animation:skelpulse 1.2s ease-in-out infinite alternate}
+@keyframes skelpulse{from{opacity:.55}to{opacity:.9}}
+.finload{text-align:center;color:var(--txt-3);font-size:12.5px;padding:18px}
+.finerror{display:flex;flex-direction:column;align-items:center;gap:10px;padding:38px;text-align:center}
+.finerror b{font-size:15px}
+.finerror span{font-size:12.5px;color:var(--txt-3)}
