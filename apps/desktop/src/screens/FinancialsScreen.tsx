@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
+import RevenueSection from "../components/finance/RevenueSection";
 import { formatCents } from "@toreroflow/core";
 import { api } from "../lib/api";
 import type { FinancialsMonth } from "../lib/financials";
@@ -81,6 +82,14 @@ export default function FinancialsScreen() {
             <div className="num">{formatCents(netCents)}</div>
           </div>
         </div>
+
+        {data && (
+          <RevenueSection
+            rows={data.revenue}
+            totalCents={data.totals.inCents}
+            onChanged={() => void load()}
+          />
+        )}
       </div>
     </section>
   );
