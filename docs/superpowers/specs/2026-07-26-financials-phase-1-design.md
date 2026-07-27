@@ -77,7 +77,6 @@ field, because adding one implies a conversion story that does not exist.
 ```
 monthlyPriceCents   Int?
 billingMode         String   @default("calendar")   // calendar | on_fulfilment
-billingDayOfMonth   Int?                            // calendar mode only, 1-28
 ```
 
 `monthlyPriceCents` is the **current default**, not a historical record. There
@@ -85,8 +84,10 @@ is deliberately no price-history table: history falls out of the ledger below,
 because each month's figure is recorded when that month is opened. Raising a
 price in March leaves January's recorded figure untouched.
 
-`billingDayOfMonth` is capped at 28 so a cycle cannot land on a date that does
-not exist in February.
+There is deliberately no billing-day field. One was designed, built and then
+removed during implementation: the status rule never read it, so it changed
+nothing an operator could see. A field somebody fills in that has no effect is
+worse than no field at all.
 
 ### 3.2 RevenueEntry
 
@@ -113,11 +114,12 @@ one of them is a fact the database can own:
   arrived.
 - `pending`: an `on_fulfilment` client whose cycle is not yet delivered. Shown
   as "Not due". Never applies to `calendar` clients.
-- `due`: everything else, payable now. For `calendar`, once the billing day
-  passes; for `on_fulfilment`, once quota for the cycle is met.
+- `due`: everything else, payable now. A `calendar` client is due for the whole
+  month from the moment it opens, whatever the date and whatever was delivered.
+  An `on_fulfilment` client becomes due once quota for the cycle is met.
 
-`pending` and `due` are **derived on read** from billing mode, the billing day
-and current quota delivery. Storing them would go stale the moment a video was
+`pending` and `due` are **derived on read** from billing mode and current quota
+delivery. Storing them would go stale the moment a video was
 delivered, and a stale "Not due" is exactly the error that loses you a
 payment.
 
@@ -219,7 +221,7 @@ lines, the export needs no translation.
 |---|---|---|---|
 | `advertising` | Line 8 | Advertising | 📣 |
 | `car` | Line 9 | Car and truck | 🚗 |
-| `contract_labor` | Line 11 | Contract labour | 👷 |
+| `contract_labor` | Line 11 | Contract labor | 👷 |
 | `depreciation` | Line 13 | Equipment | 📷 |
 | `insurance` | Line 15 | Insurance | 🛡 |
 | `legal_professional` | Line 17 | Legal and professional | ⚖️ |
@@ -359,11 +361,9 @@ work, if any, raises a `SystemAlert` and clears on success.
 None blocking. Both have a stated default, so the build does not stall on
 either.
 
-1. **`billingDayOfMonth`** is typed in, defaulting to null. Inferring it from
-   the first recorded payment was considered and rejected for Phase 1: a single
-   observation is weak evidence, and a wrong inferred billing day produces a
-   wrong "due" state, which is worse than an empty field. Revisit in Phase 2
-   when real Stripe payment dates exist to infer from.
+1. **Resolved during implementation: there is no billing-day field.** It was
+   built, found to be read by nothing, and removed. Revisit in Phase 2 only if
+   real Stripe payment dates make a due-date concept earn its place.
 2. **The tax export reports cash basis**: paid revenue only, excluding unpaid
    `due`. That matches the default `accountingMethod` of `cash`. If the field
    is set to `accrual`, the export includes `due` revenue and says so on the

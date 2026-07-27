@@ -803,3 +803,56 @@
 .signal.warn .sdot{background:var(--amber);box-shadow:0 0 8px rgba(255,207,107,.7)}
 .signal.ok .sdot{background:var(--green)}
 .signal.ok b{color:var(--txt-2);font-weight:500}
+
+/* ---- Financials ---- */
+.fintiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fintile{padding:18px 20px}
+.fintile .lbl{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+.fintile .num{font-size:28px;font-weight:680;letter-spacing:-.5px;margin-top:8px}
+.fintile.in .num{color:var(--green)}
+.fintile.out .num{color:var(--red)}
+.fintile.net .num{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.fintile .warnline{font-size:10.5px;color:var(--amber);margin-top:7px;line-height:1.4}
+.tag.warn{color:var(--amber);background:rgba(255,207,107,.14)}
+
+/* Money coming in: one row per client, a status tag and a colour swatch.
+   .lrow/.av/.lmeta/.amt/.tag.paid/.tag.due were assumed done by an earlier
+   task that got skipped, so they are added here rather than left missing. */
+.lrow{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--brd-soft)}
+.lrow:last-child{border-bottom:none}
+.av{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:0 0 auto;display:grid;place-items:center;
+  background:var(--grad);color:#0b0b18;font-weight:700;font-size:12px}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.lmeta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.lmeta b{font-size:13.5px;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lmeta span{font-size:11px;color:var(--txt-3)}
+.amt{font-size:13.5px;font-weight:650;flex:0 0 auto}
+.amt.i{color:var(--green)}
+.tag.paid{background:rgba(87,214,160,.15);color:#9cf0cb;border:1px solid rgba(87,214,160,.32)}
+.tag.due{background:rgba(78,168,255,.15);color:#bcdcff;border:1px solid rgba(78,168,255,.32)}
+
+/* A client with no monthly price yet: an inline price field and a
+   Monthly / When delivered pick, so setting a price is reachable from the
+   screen instead of requiring a curl to /clients/:id/billing. */
+.priceset .lmeta span{color:var(--amber)}
+.pricein{display:flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--txt-3);font-size:12.5px}
+.pricein .field-in{width:80px;padding:8px 10px;font-size:12.5px}
+.modepick{display:flex;gap:4px;flex:0 0 auto}
+.modepick button{padding:7px 12px;border-radius:10px;font-size:11px;font-weight:600;
+  border:1px solid var(--brd-soft);background:var(--glass);color:var(--txt-3);cursor:pointer;
+  font-family:var(--font)}
+.modepick button.on{background:var(--grad);color:#0b0b18;border-color:transparent}
+
+/* Colour picker: a small round swatch button that opens a glass dropdown of
+   the five finance colours. Scoped under .cwrap so it cannot collide with the
+   unrelated .cbtn pill button used in the connect/insights modals. */
+.cwrap{position:relative;flex:0 0 auto}
+.cwrap .cbtn{width:26px;height:26px;padding:0;border-radius:8px;background:var(--glass-2);border:1px solid var(--brd-soft);display:grid;place-items:center;cursor:pointer}
+.cwrap .cbtn.open{border-color:rgba(139,123,255,.6)}
+.cwrap .cbtn i{width:14px;height:14px;border-radius:50%;display:block;font-style:normal}
+.cwrap .cmenu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;display:flex;gap:6px;padding:8px;border-radius:12px;
+  background:rgba(17,14,33,.96);border:1px solid var(--brd);box-shadow:0 14px 34px rgba(0,0,0,.55)}
+[data-theme="light"] .cwrap .cmenu{background:rgba(248,249,255,.98);box-shadow:0 14px 34px rgba(50,55,110,.25)}
+.cwrap .sw{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:block}
+.cwrap .sw.on{border-color:#fff}
+[data-theme="light"] .cwrap .sw.on{border-color:#1b1c33}

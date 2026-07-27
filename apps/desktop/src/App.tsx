@@ -7,6 +7,7 @@ import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import ReportsScreen from "./screens/ReportsScreen";
 import AccountOverviewScreen from "./screens/AccountOverviewScreen";
+import FinancialsScreen from "./screens/FinancialsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AuthScreen from "./screens/AuthScreen";
@@ -25,6 +26,7 @@ export type ScreenId =
   | "analytics"
   | "reports"
   | "overview"
+  | "financials"
   | "workflows"
   | "settings";
 
@@ -165,6 +167,7 @@ function Shell() {
               onOpenInsights={openInsights}
             />
           )}
+          {activeScreen === "financials" && <FinancialsScreen key="financials" />}
           {activeScreen === "workflows" && <WorkflowsScreen key="workflows" />}
           {activeScreen === "settings" && (
             <SettingsScreen key="settings" onOpenConnect={openConnect} />
