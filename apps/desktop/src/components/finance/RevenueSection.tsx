@@ -43,6 +43,12 @@ export default function RevenueSection({
   const toast = useToast();
   const { clients } = useAppState();
   const [drafts, setDrafts] = useState<Record<string, PriceDraft>>({});
+  // Inline edit of one row's amount for this month only. The standing price
+  // in Settings is untouched; future months seed from that, not from this.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [amountDraft, setAmountDraft] = useState("");
+  // Two-step delete: first click arms, second click within the window fires.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   // Clients the API never returned a row for. /financials seeds a revenue
   // row for every client with a price (see routes/financials.ts), so a
@@ -104,12 +110,46 @@ export default function RevenueSection({
     }
   };
 
+  const startAmountEdit = (row: RevenueRow) => {
+    setEditingId(row.id);
+    setAmountDraft((row.amountCents / 100).toFixed(2));
+  };
+
+  const commitAmount = async (row: RevenueRow) => {
+    const dollars = Number.parseFloat(amountDraft);
+    setEditingId(null);
+    if (!Number.isFinite(dollars) || dollars < 0) return;
+    const cents = Math.round(dollars * 100);
+    if (cents === row.amountCents) return;
+    try {
+      await api.patch(`/financials/revenue/${row.id}`, { amountCents: cents });
+      onChanged();
+    } catch (err) {
+      toast.fail(`Could not change the amount for ${row.clientName}`, err);
+    }
+  };
+
+  const removeRow = async (row: RevenueRow) => {
+    if (confirmingId !== row.id) {
+      setConfirmingId(row.id);
+      window.setTimeout(() => setConfirmingId((c) => (c === row.id ? null : c)), 2500);
+      return;
+    }
+    setConfirmingId(null);
+    try {
+      await api.del(`/financials/revenue/${row.id}`);
+      onChanged();
+    } catch (err) {
+      toast.fail(`Could not remove ${row.clientName}'s row`, err);
+    }
+  };
+
   return (
     <div className="card glass">
       <div className="rowhead">
         <div>
           <h3>Money coming in</h3>
-          <div className="sub">Click the tag to mark a month paid.</div>
+          <div className="sub">Click the tag to mark a month paid, click the amount to change it.</div>
         </div>
         <div className="amt i">{formatCents(totalCents)}</div>
       </div>
@@ -138,7 +178,41 @@ export default function RevenueSection({
                     : "Payable now"}
               </span>
             </div>
-            <div className="amt i">{formatCents(row.amountCents)}</div>
+            {row.quotaTarget !== null && (
+              <div className={`quota${(row.quotaDelivered ?? 0) >= row.quotaTarget ? " ok" : ""}`}>
+                <b>
+                  {row.quotaDelivered}/{row.quotaTarget}
+                </b>
+                delivered
+              </div>
+            )}
+            {editingId === row.id ? (
+              <div className="pricein">
+                <span>$</span>
+                <input
+                  className="field-in"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  autoFocus
+                  value={amountDraft}
+                  onChange={(e) => setAmountDraft(e.target.value)}
+                  onBlur={() => void commitAmount(row)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                />
+              </div>
+            ) : (
+              <div
+                className="amt i editable"
+                title="Click to change this month's amount"
+                onClick={() => startAmountEdit(row)}
+              >
+                {formatCents(row.amountCents)}
+              </div>
+            )}
             <span
               className={`tag ${row.status === "paid" ? "paid" : row.status === "pending" ? "due" : "warn"}`}
               style={{ cursor: "pointer" }}
@@ -151,7 +225,7 @@ export default function RevenueSection({
               value={colorFor(row.color, i)}
               onChange={(c) => void setColor(row, c)}
             />
-            {row.status !== "pending" && (
+            {row.billingMode === "on_fulfilment" && row.quotaMet && (
               <button
                 className="btn"
                 onClick={() => {
@@ -167,6 +241,13 @@ export default function RevenueSection({
                 Invoice
               </button>
             )}
+            <button
+              className={`del${confirmingId === row.id ? " arm" : ""}`}
+              title={confirmingId === row.id ? "Click again to remove" : "Remove this month's row"}
+              onClick={() => void removeRow(row)}
+            >
+              {confirmingId === row.id ? "SURE?" : "✕"}
+            </button>
           </div>
         ))
       )}
