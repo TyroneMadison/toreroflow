@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toasts";
 import RevenueSection from "../components/finance/RevenueSection";
 import { formatCents } from "@toreroflow/core";
-import { api } from "../lib/api";
+import { api, fileUrl } from "../lib/api";
+import { openExternal } from "../lib/external";
 import type { FinancialsMonth } from "../lib/financials";
 
 /** Months to offer, newest first, starting from the current one. */
@@ -91,6 +92,27 @@ export default function FinancialsScreen() {
             onChanged={() => void load()}
           />
         )}
+
+        <div className="card glass" style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <b style={{ fontSize: 14.5 }}>Export for taxes</b>
+            <div className="sub">
+              Every expense grouped by its Schedule C line, gross receipts by client, meals split
+              at the deductible 50%, and your business details on the cover.
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={() => {
+              void api
+                .get<{ url: string }>(`/financials/export?year=${new Date().getFullYear()}`)
+                .then((r) => openExternal(fileUrl(r.url)!))
+                .catch((err) => toast.fail("Could not build the tax export", err));
+            }}
+          >
+            Export {new Date().getFullYear()}
+          </button>
+        </div>
       </div>
     </section>
   );

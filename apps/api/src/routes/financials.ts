@@ -16,6 +16,7 @@ import { deriveStatus, rollForward } from "../financials/month";
 import { env } from "../env";
 import { renderReportPdf } from "../reports/renderPdf";
 import { buildInvoiceHtml } from "../financials/invoicePdf";
+import { buildTaxExportHtml, groupForScheduleC } from "../financials/taxExport";
 
 const NOT_FOUND = { error: "not found" } as const;
 
@@ -374,6 +375,81 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       await prisma.invoice.update({ where: { id: invoice.id }, data: { storageKey } });
 
       return reply.status(201).send({ id: invoice.id, number, url: `/files/${storageKey}` });
+    },
+  );
+
+  /**
+   * The year-end document a CPA works from.
+   *
+   * Cash basis by default: paid revenue only. If the agency's accounting
+   * method is accrual the export includes unpaid revenue and says so on the
+   * cover, because the two must never be ambiguous on a tax document.
+   */
+  app.get<{ Querystring: { year?: string } }>(
+    "/financials/export",
+    async (request, reply) => {
+      const agencyId = request.user.agencyId;
+      const year = Number.parseInt(request.query.year ?? "", 10);
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        return reply.status(400).send({ error: "year must be a four digit year" });
+      }
+
+      const agency = await prisma.agency.findUnique({
+        where: { id: agencyId },
+        select: {
+          name: true,
+          legalName: true,
+          ein: true,
+          businessCode: true,
+          accountingMethod: true,
+        },
+      });
+      if (!agency) return reply.status(404).send(NOT_FOUND);
+
+      const prefix = `${year}-`;
+      const [expenses, revenue] = await Promise.all([
+        prisma.expense.findMany({ where: { agencyId, month: { startsWith: prefix } } }),
+        prisma.revenueEntry.findMany({
+          where: { agencyId, month: { startsWith: prefix } },
+          include: { client: { select: { name: true } } },
+        }),
+      ]);
+
+      const cashBasis = (agency.accountingMethod ?? "cash") === "cash";
+      const countedRevenue = cashBasis ? revenue.filter((r) => r.receivedAt !== null) : revenue;
+
+      const groups = groupForScheduleC(
+        expenses.map((e) => ({
+          name: e.name,
+          categoryLine: e.categoryLine,
+          amountCents: e.amountCents,
+        })),
+      );
+
+      const html = buildTaxExportHtml({
+        year,
+        business: {
+          legalName: agency.legalName ?? agency.name,
+          ein: agency.ein,
+          businessCode: agency.businessCode,
+          accountingMethod: cashBasis ? "Cash" : "Accrual",
+        },
+        grossReceiptsCents: sumCents(countedRevenue.map((r) => r.amountCents)),
+        receiptsByClient: Object.entries(
+          countedRevenue.reduce<Record<string, number>>((acc, r) => {
+            acc[r.client.name] = (acc[r.client.name] ?? 0) + r.amountCents;
+            return acc;
+          }, {}),
+        ).map(([name, cents]) => ({ name, cents })),
+        groups,
+      });
+
+      const pdf = await renderReportPdf(html, {});
+      const storageKey = `exports/schedule-c-${year}.pdf`;
+      const abs = nodePath.join(env.STORAGE_DIR, storageKey);
+      await fsp.mkdir(nodePath.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, pdf);
+      return reply.status(201).send({ url: `/files/${storageKey}`, year });
     },
   );
 }
