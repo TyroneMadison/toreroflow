@@ -23,6 +23,9 @@ const NOT_FOUND = { error: "not found" } as const;
 /** Prisma's code for "a unique constraint rejected this write". */
 const UNIQUE_VIOLATION = "P2002";
 
+/** Bounded so a genuinely stuck allocation fails loudly instead of looping forever. */
+const MAX_INVOICE_NUMBER_ATTEMPTS = 10;
+
 /** First moment of the month a "2026-06" key names. */
 function monthStart(key: string): Date {
   const [y, m] = key.split("-").map(Number);
@@ -290,8 +293,15 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Issue an invoice for one client's month.
    *
-   * The number is allocated inside a transaction, because two invoices
-   * sharing a number is a problem a client's accountant discovers, not you.
+   * The `@@unique([agencyId, number])` constraint is what actually guarantees
+   * no two invoices ever share a number; reading the current maximum first is
+   * only an allocation strategy, not a safety mechanism. PostgreSQL's default
+   * Read Committed isolation lets two concurrent requests both read the same
+   * maximum before either commits, so the loser's create still throws P2002
+   * even though the read happened inside a transaction. Retrying with a
+   * freshly read maximum, the same shape `ensureReportSlug` uses in
+   * reports/slug.ts, is what turns that race into "get the next number"
+   * instead of a 500 for a legitimate second request.
    */
   app.post<{ Body: { clientId: string; month: string } }>(
     "/financials/invoices",
@@ -332,25 +342,41 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         publishedAt: d.createdAt.toISOString(),
       }));
 
-      const invoice = await prisma.$transaction(async (tx) => {
-        const last = await tx.invoice.findFirst({
+      let invoice: Awaited<ReturnType<typeof prisma.invoice.create>> | undefined;
+      for (let attempt = 1; attempt <= MAX_INVOICE_NUMBER_ATTEMPTS; attempt++) {
+        const last = await prisma.invoice.findFirst({
           where: { agencyId },
           orderBy: { number: "desc" },
           select: { number: true },
         });
-        return await tx.invoice.create({
-          data: {
-            agencyId,
-            clientId,
-            number: (last?.number ?? 0) + 1,
-            periodStart: start,
-            periodEnd: end,
-            amountCents: entry.amountCents,
-            status: "draft",
-            lineItems: lines as never,
-          },
-        });
-      });
+        try {
+          invoice = await prisma.invoice.create({
+            data: {
+              agencyId,
+              clientId,
+              number: (last?.number ?? 0) + 1,
+              periodStart: start,
+              periodEnd: end,
+              amountCents: entry.amountCents,
+              status: "draft",
+              lineItems: lines as never,
+            },
+          });
+          break;
+        } catch (error) {
+          const code =
+            error && typeof error === "object" && "code" in error
+              ? (error as { code: unknown }).code
+              : null;
+          if (code !== UNIQUE_VIOLATION) throw error;
+          // Another request took this number first; re-read the maximum and retry.
+        }
+      }
+      if (!invoice) {
+        throw new Error(
+          `could not allocate an invoice number for agency ${agencyId} after ${MAX_INVOICE_NUMBER_ATTEMPTS} attempts`,
+        );
+      }
 
       const number = String(invoice.number).padStart(3, "0");
       const html = buildInvoiceHtml({
