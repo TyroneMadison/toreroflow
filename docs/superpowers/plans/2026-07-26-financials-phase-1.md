@@ -866,13 +866,32 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     const now = new Date();
     const byClient = new Map(clients.map((c) => [c.id, c]));
 
+    // Delivered counts per client for the current quota period, counted the
+    // same way the quota card and Account Overview count them, so three
+    // screens cannot disagree about whether a cycle is finished.
+    const deliveredByClient = new Map<string, { short: number; long: number }>();
+    for (const c of clients) {
+      const since = c.quotaResetAt ?? new Date(0);
+      const base = { clientId: c.id, createdAt: { gte: since }, isRevision: false };
+      const [shortCount, longCount] = await Promise.all([
+        prisma.mediaAsset.count({ where: { ...base, format: { in: ["short_form"] } } }),
+        prisma.mediaAsset.count({ where: { ...base, format: "long_form" } }),
+      ]);
+      deliveredByClient.set(c.id, {
+        short: Math.max(0, shortCount + c.adjustShort),
+        long: Math.max(0, longCount + c.adjustLong),
+      });
+    }
+
     const revenueRows = revenue.map((r) => {
       const c = byClient.get(r.clientId);
-      // Quota met means every tracked format has hit its target. An untracked
-      // client counts as met, since there is nothing to wait for.
-      const shortOk =
-        !c || c.quotaShort == null ? true : (c.adjustShort ?? 0) >= 0 && c.quotaShort <= 0;
-      const quotaMet = shortOk;
+      // Met means every tracked format has reached its target. A client with
+      // no targets at all counts as met, because there is nothing to wait for.
+      const d = deliveredByClient.get(r.clientId) ?? { short: 0, long: 0 };
+      const quotaMet =
+        !c ||
+        ((c.quotaShort == null || d.short >= c.quotaShort) &&
+          (c.quotaLong == null || d.long >= c.quotaLong));
       return {
         id: r.id,
         clientId: r.clientId,
@@ -1647,6 +1666,15 @@ export default function RevenueSection({
     }
   };
 
+  const setColor = async (row: RevenueRow, color: string) => {
+    try {
+      await api.patch(`/financials/revenue/${row.id}`, { color });
+      onChanged();
+    } catch (err) {
+      toast.fail(`Could not recolour ${row.clientName}`, err);
+    }
+  };
+
   return (
     <div className="card glass">
       <div className="rowhead">
@@ -1690,7 +1718,10 @@ export default function RevenueSection({
             >
               {STATUS_LABEL[row.status]}
             </span>
-            <ColorPicker value={colorFor(row.color, i)} onChange={() => undefined} />
+            <ColorPicker
+              value={colorFor(row.color, i)}
+              onChange={(c) => void setColor(row, c)}
+            />
           </div>
         ))
       )}
@@ -2205,7 +2236,103 @@ In `apps/api/src/routes/financials.ts`, add:
   );
 ```
 
-Add `buildTaxExportHtml` to `apps/api/src/financials/taxExport.ts`, following the same style as `buildInvoiceHtml`: a cover block with legal name, EIN, business code, accounting method and the year; a gross receipts table by client; then one section per group listing its items, showing `totalCents` and, where it differs, `deductibleCents` labelled "deductible at 50%"; and a closing note reading "These figures are records kept in Toreroflow and are not tax advice."
+Add this to `apps/api/src/financials/taxExport.ts`:
+
+```typescript
+export interface TaxExportData {
+  year: number;
+  business: {
+    legalName: string;
+    ein: string | null;
+    businessCode: string | null;
+    accountingMethod: string;
+  };
+  grossReceiptsCents: number;
+  receiptsByClient: Array<{ name: string; cents: number }>;
+  groups: ScheduleCGroup[];
+}
+
+function esc(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function money(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+/**
+ * The year-end document.
+ *
+ * Every expense sits under its Schedule C line so a CPA reads the form's own
+ * structure rather than translating ours. Where a line's deductible figure
+ * differs from what was spent, both are shown and labelled, because a single
+ * halved number with no explanation looks like an arithmetic error.
+ */
+export function buildTaxExportHtml(data: TaxExportData): string {
+  const receipts = data.receiptsByClient
+    .map((r) => `<tr><td>${esc(r.name)}</td><td class="r">${money(r.cents)}</td></tr>`)
+    .join("");
+
+  const groups = data.groups
+    .map((g) => {
+      const items = g.items
+        .map((i) => `<tr><td>${esc(i.name)}</td><td class="r">${money(i.amountCents)}</td></tr>`)
+        .join("");
+      const split =
+        g.deductibleCents !== g.totalCents
+          ? `<tr class="tot"><td>Deductible at 50%</td><td class="r">${money(g.deductibleCents)}</td></tr>`
+          : "";
+      return `<h3>Line ${esc(g.scheduleCLine)} &middot; ${esc(g.label)}</h3>
+        <table>${items}
+          <tr class="tot"><td>Spent</td><td class="r">${money(g.totalCents)}</td></tr>
+          ${split}
+        </table>`;
+    })
+    .join("");
+
+  const totalDeductible = data.groups.reduce((n, g) => n + g.deductibleCents, 0);
+
+  return `<!doctype html><meta charset="utf-8"><title>Schedule C ${data.year}</title>
+<style>
+  body{font-family:-apple-system,"Segoe UI",system-ui,sans-serif;color:#111;margin:0;padding:48px 56px}
+  h1{font-size:26px;margin:0 0 6px}
+  h3{font-size:14px;margin:26px 0 0}
+  .muted{color:#777;font-size:13px;line-height:1.7}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  td{padding:7px 0;border-bottom:1px solid #ececec}
+  td.r{text-align:right}
+  tr.tot td{font-weight:700;border-bottom:2px solid #111}
+  .grand{margin-top:30px;padding-top:14px;border-top:2px solid #111;font-size:16px;font-weight:700;
+    display:flex;justify-content:space-between}
+  .foot{margin-top:36px;font-size:11px;color:#888;line-height:1.7}
+</style>
+<h1>Schedule C summary, ${data.year}</h1>
+<div class="muted">
+  ${esc(data.business.legalName)}<br>
+  ${data.business.ein ? `EIN ${esc(data.business.ein)}<br>` : "EIN not recorded<br>"}
+  ${data.business.businessCode ? `Business code ${esc(data.business.businessCode)}<br>` : "Business code not recorded<br>"}
+  Accounting method: ${esc(data.business.accountingMethod)}
+</div>
+
+<h3>Gross receipts</h3>
+<table>${receipts}
+  <tr class="tot"><td>Total</td><td class="r">${money(data.grossReceiptsCents)}</td></tr>
+</table>
+
+${groups}
+
+<div class="grand"><span>Total deductible expenses</span><span>${money(totalDeductible)}</span></div>
+
+<div class="foot">
+  Generated by Toreroflow on ${new Date().toLocaleDateString("en-US")}. These figures are records
+  kept in Toreroflow and are not tax advice. Business meals are reported at the 50% deductible
+  rate for 2026. Expenses with no amount recorded are excluded entirely rather than counted as
+  zero, so confirm every bill has been entered before filing.
+</div>`;
+}
+```
+
+Import `buildTaxExportHtml` alongside `groupForScheduleC` in the route.
 
 - [ ] **Step 7: Add the button**
 
