@@ -87,6 +87,7 @@ export default function FinancialsScreen() {
           <RevenueSection
             rows={data.revenue}
             totalCents={data.totals.inCents}
+            month={data.month}
             onChanged={() => void load()}
           />
         )}

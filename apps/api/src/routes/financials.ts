@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { promises as fsp } from "node:fs";
+import nodePath from "node:path";
 import { getPrisma } from "@toreroflow/db";
 import {
   billingSchema,
@@ -11,6 +13,9 @@ import {
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
 import { deriveStatus, rollForward } from "../financials/month";
+import { env } from "../env";
+import { renderReportPdf } from "../reports/renderPdf";
+import { buildInvoiceHtml } from "../financials/invoicePdf";
 
 const NOT_FOUND = { error: "not found" } as const;
 
@@ -280,4 +285,95 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       },
     });
   });
+
+  /**
+   * Issue an invoice for one client's month.
+   *
+   * The number is allocated inside a transaction, because two invoices
+   * sharing a number is a problem a client's accountant discovers, not you.
+   */
+  app.post<{ Body: { clientId: string; month: string } }>(
+    "/financials/invoices",
+    async (request, reply) => {
+      const agencyId = request.user.agencyId;
+      const { clientId, month } = request.body;
+      if (!monthKeySchema.safeParse(month).success) {
+        return reply.status(400).send({ error: "month must be YYYY-MM" });
+      }
+
+      const entry = await prisma.revenueEntry.findUnique({
+        where: { clientId_month: { clientId, month } },
+      });
+      if (!entry || entry.agencyId !== agencyId) return reply.status(404).send(NOT_FOUND);
+
+      const [client, agency] = await Promise.all([
+        prisma.client.findFirst({
+          where: { id: clientId, agencyId, deletedAt: null },
+          select: { name: true, contactName: true, contactEmail: true },
+        }),
+        prisma.agency.findUnique({
+          where: { id: agencyId },
+          select: { name: true, legalName: true, ein: true },
+        }),
+      ]);
+      if (!client || !agency) return reply.status(404).send(NOT_FOUND);
+
+      const start = monthStart(month);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      const delivered = await prisma.mediaAsset.findMany({
+        where: { clientId, isRevision: false, createdAt: { gte: start, lte: end } },
+        orderBy: { createdAt: "asc" },
+        select: { originalName: true, createdAt: true },
+      });
+      const lines = delivered.map((d) => ({
+        title: d.originalName,
+        publishedAt: d.createdAt.toISOString(),
+      }));
+
+      const invoice = await prisma.$transaction(async (tx) => {
+        const last = await tx.invoice.findFirst({
+          where: { agencyId },
+          orderBy: { number: "desc" },
+          select: { number: true },
+        });
+        return await tx.invoice.create({
+          data: {
+            agencyId,
+            clientId,
+            number: (last?.number ?? 0) + 1,
+            periodStart: start,
+            periodEnd: end,
+            amountCents: entry.amountCents,
+            status: "draft",
+            lineItems: lines as never,
+          },
+        });
+      });
+
+      const number = String(invoice.number).padStart(3, "0");
+      const html = buildInvoiceHtml({
+        number,
+        issuedAt: invoice.issuedAt.toISOString(),
+        periodLabel: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+        business: { legalName: agency.legalName ?? agency.name, ein: agency.ein },
+        client: {
+          name: client.name,
+          contactName: client.contactName,
+          contactEmail: client.contactEmail,
+        },
+        amountCents: invoice.amountCents,
+        lines,
+      });
+
+      const pdf = await renderReportPdf(html, {});
+      const storageKey = `${clientId}/invoices/invoice-${number}.pdf`;
+      const abs = nodePath.join(env.STORAGE_DIR, storageKey);
+      await fsp.mkdir(nodePath.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, pdf);
+      await prisma.invoice.update({ where: { id: invoice.id }, data: { storageKey } });
+
+      return reply.status(201).send({ id: invoice.id, number, url: `/files/${storageKey}` });
+    },
+  );
 }

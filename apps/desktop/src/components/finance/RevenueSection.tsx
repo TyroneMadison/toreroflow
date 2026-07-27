@@ -1,6 +1,7 @@
 import { formatCents } from "@toreroflow/core";
 import { useToast } from "../Toasts";
-import { api } from "../../lib/api";
+import { api, fileUrl } from "../../lib/api";
+import { openExternal } from "../../lib/external";
 import { colorFor, type RevenueRow } from "../../lib/financials";
 import ColorPicker from "./ColorPicker";
 
@@ -20,10 +21,12 @@ const STATUS_LABEL: Record<RevenueRow["status"], string> = {
 export default function RevenueSection({
   rows,
   totalCents,
+  month,
   onChanged,
 }: {
   rows: RevenueRow[];
   totalCents: number;
+  month: string;
   onChanged(): void;
 }) {
   const toast = useToast();
@@ -95,6 +98,22 @@ export default function RevenueSection({
               value={colorFor(row.color, i)}
               onChange={(c) => void setColor(row, c)}
             />
+            {row.status !== "pending" && (
+              <button
+                className="btn"
+                onClick={() => {
+                  void api
+                    .post<{ url: string }>("/financials/invoices", {
+                      clientId: row.clientId,
+                      month,
+                    })
+                    .then((r) => openExternal(fileUrl(r.url)!))
+                    .catch((err) => toast.fail(`Could not invoice ${row.clientName}`, err));
+                }}
+              >
+                Invoice
+              </button>
+            )}
           </div>
         ))
       )}
