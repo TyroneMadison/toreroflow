@@ -58,6 +58,29 @@ export function labelFor(key: string): string {
   return categoryByKey(key)?.label ?? key;
 }
 
+export interface UncategorisedExpense {
+  name: string;
+  categoryLine: string;
+  amountCents: number;
+}
+
+/**
+ * Expenses whose categoryLine matches no Schedule C line.
+ *
+ * groupForScheduleC only ever collects rows that match a known category, so
+ * anything left over here is invisible to it, not a duplicate of it. The
+ * validation in financeSchemas.ts (z.enum against EXPENSE_CATEGORIES) means
+ * no new row can carry a bad key, but rows written before that validation
+ * existed still can, and a tax document must account for every dollar
+ * rather than let an old typo vanish with no trace.
+ */
+export function uncategorisedExpenses(expenses: ExportableExpense[]): UncategorisedExpense[] {
+  const known = new Set(EXPENSE_CATEGORIES.map((c) => c.key));
+  return expenses
+    .filter((e) => !known.has(e.categoryLine) && e.amountCents !== null)
+    .map((e) => ({ name: e.name, categoryLine: e.categoryLine, amountCents: e.amountCents! }));
+}
+
 export interface TaxExportData {
   year: number;
   business: {
@@ -69,6 +92,8 @@ export interface TaxExportData {
   grossReceiptsCents: number;
   receiptsByClient: Array<{ name: string; cents: number }>;
   groups: ScheduleCGroup[];
+  /** Rendered under their own section and explicitly excluded from the total. */
+  uncategorised: UncategorisedExpense[];
 }
 
 function esc(text: string): string {
@@ -109,6 +134,31 @@ export function buildTaxExportHtml(data: TaxExportData): string {
 
   const totalDeductible = data.groups.reduce((n, g) => n + g.deductibleCents, 0);
 
+  // Shown under its own heading rather than folded into a group above: these
+  // rows carry a categoryLine the app no longer recognises, so the honest
+  // thing to put on a tax document is "here they are, and they are NOT
+  // counted", not a silent omission or a guess at where they belong.
+  const uncategorisedSection = data.uncategorised.length
+    ? `<h3>Uncategorised, needs a category before filing</h3>
+      <table>
+        ${data.uncategorised
+          .map(
+            (i) =>
+              `<tr><td>${esc(i.name)} <span class="muted">(${esc(labelFor(i.categoryLine))})</span></td><td class="r">${formatCents(i.amountCents)}</td></tr>`,
+          )
+          .join("")}
+        <tr class="tot"><td>Not included in the deductible total</td><td class="r">${formatCents(
+          sumCents(data.uncategorised.map((i) => i.amountCents)),
+        )}</td></tr>
+      </table>
+      <div class="muted">
+        Toreroflow does not recognise the category on these bills, probably a typo or a
+        category renamed since they were entered. They are shown here so nothing goes
+        missing silently, but they are <b>NOT</b> included in "Total deductible expenses"
+        below. Fix the category on each and re-export before filing.
+      </div>`
+    : "";
+
   return `<!doctype html>
 <html>
 <head>
@@ -143,6 +193,8 @@ export function buildTaxExportHtml(data: TaxExportData): string {
 </table>
 
 ${groups}
+
+${uncategorisedSection}
 
 <div class="grand"><span>Total deductible expenses</span><span>${formatCents(totalDeductible)}</span></div>
 

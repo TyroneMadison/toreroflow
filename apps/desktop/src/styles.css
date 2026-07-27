@@ -831,6 +831,18 @@
 .tag.paid{background:rgba(87,214,160,.15);color:#9cf0cb;border:1px solid rgba(87,214,160,.32)}
 .tag.due{background:rgba(78,168,255,.15);color:#bcdcff;border:1px solid rgba(78,168,255,.32)}
 
+/* A client with no monthly price yet: an inline price field and a
+   Monthly / When delivered pick, so setting a price is reachable from the
+   screen instead of requiring a curl to /clients/:id/billing. */
+.priceset .lmeta span{color:var(--amber)}
+.pricein{display:flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--txt-3);font-size:12.5px}
+.pricein .field-in{width:80px;padding:8px 10px;font-size:12.5px}
+.modepick{display:flex;gap:4px;flex:0 0 auto}
+.modepick button{padding:7px 12px;border-radius:10px;font-size:11px;font-weight:600;
+  border:1px solid var(--brd-soft);background:var(--glass);color:var(--txt-3);cursor:pointer;
+  font-family:var(--font)}
+.modepick button.on{background:var(--grad);color:#0b0b18;border-color:transparent}
+
 /* Colour picker: a small round swatch button that opens a glass dropdown of
    the five finance colours. Scoped under .cwrap so it cannot collide with the
    unrelated .cbtn pill button used in the connect/insights modals. */

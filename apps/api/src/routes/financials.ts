@@ -16,7 +16,11 @@ import { deriveStatus, rollForward } from "../financials/month";
 import { env } from "../env";
 import { renderReportPdf } from "../reports/renderPdf";
 import { buildInvoiceHtml } from "../financials/invoicePdf";
-import { buildTaxExportHtml, groupForScheduleC } from "../financials/taxExport";
+import {
+  buildTaxExportHtml,
+  groupForScheduleC,
+  uncategorisedExpenses,
+} from "../financials/taxExport";
 
 const NOT_FOUND = { error: "not found" } as const;
 
@@ -37,6 +41,12 @@ function previousMonth(key: string): string {
   const d = monthStart(key);
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The server clock's own month, in the same "YYYY-MM" shape as everything else here. */
+function currentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export async function financialsRoutes(app: FastifyInstance): Promise<void> {
@@ -73,62 +83,72 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
-    // Seed the month from each client's current price. Only for clients that
-    // have one: a client with no price is not an error, it is just not billed.
-    for (const c of clients) {
-      if (c.monthlyPriceCents == null) continue;
-      await prisma.revenueEntry.upsert({
-        where: { clientId_month: { clientId: c.id, month } },
-        create: { agencyId, clientId: c.id, month, amountCents: c.monthlyPriceCents },
-        update: {},
-      });
-    }
-
-    // Roll recurring costs forward the first time a month is opened. Counting
-    // existing expenses cannot tell "never opened" from "every cost deleted on
-    // purpose", so open-ness is recorded explicitly instead. The insert is the
-    // claim: a unique-constraint violation means another request (or an
-    // earlier visit) already opened this month, so skip silently rather than
-    // erroring or rolling forward twice.
-    let justOpened = true;
-    try {
-      await prisma.financialMonth.create({ data: { agencyId, month } });
-    } catch (error) {
-      const code =
-        error && typeof error === "object" && "code" in error
-          ? (error as { code: unknown }).code
-          : null;
-      if (code !== UNIQUE_VIOLATION) throw error;
-      justOpened = false;
-    }
-    if (justOpened) {
-      const prev = await prisma.expense.findMany({
-        where: { agencyId, month: previousMonth(month) },
-      });
-      const carried = rollForward(
-        prev.map((e) => ({
-          name: e.name,
-          categoryLine: e.categoryLine,
-          amountCents: e.amountCents,
-          kind: e.kind,
-          variable: e.variable,
-          color: e.color,
-        })),
-        month,
-      );
-      if (carried.length) {
-        await prisma.expense.createMany({
-          data: carried.map((r) => ({
-            agencyId,
-            name: r.name,
-            categoryLine: r.categoryLine,
-            amountCents: r.amountCents,
-            month,
-            kind: r.kind,
-            variable: r.variable,
-            color: r.color,
-          })),
+    // Opening a month is an act of moving into it, not of glancing back at
+    // it. The screen offers twelve months back purely for reading history;
+    // seeding revenue at today's price or rolling expenses forward into a
+    // month that already closed would fabricate records nobody asked for,
+    // and there is no revenue DELETE route to undo it. So a month before the
+    // current one is read-only here: whatever already exists comes back,
+    // and nothing new is created. String comparison sorts correctly because
+    // both sides are "YYYY-MM".
+    if (month >= currentMonthKey()) {
+      // Seed the month from each client's current price. Only for clients that
+      // have one: a client with no price is not an error, it is just not billed.
+      for (const c of clients) {
+        if (c.monthlyPriceCents == null) continue;
+        await prisma.revenueEntry.upsert({
+          where: { clientId_month: { clientId: c.id, month } },
+          create: { agencyId, clientId: c.id, month, amountCents: c.monthlyPriceCents },
+          update: {},
         });
+      }
+
+      // Roll recurring costs forward the first time a month is opened. Counting
+      // existing expenses cannot tell "never opened" from "every cost deleted on
+      // purpose", so open-ness is recorded explicitly instead. The insert is the
+      // claim: a unique-constraint violation means another request (or an
+      // earlier visit) already opened this month, so skip silently rather than
+      // erroring or rolling forward twice.
+      let justOpened = true;
+      try {
+        await prisma.financialMonth.create({ data: { agencyId, month } });
+      } catch (error) {
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? (error as { code: unknown }).code
+            : null;
+        if (code !== UNIQUE_VIOLATION) throw error;
+        justOpened = false;
+      }
+      if (justOpened) {
+        const prev = await prisma.expense.findMany({
+          where: { agencyId, month: previousMonth(month) },
+        });
+        const carried = rollForward(
+          prev.map((e) => ({
+            name: e.name,
+            categoryLine: e.categoryLine,
+            amountCents: e.amountCents,
+            kind: e.kind,
+            variable: e.variable,
+            color: e.color,
+          })),
+          month,
+        );
+        if (carried.length) {
+          await prisma.expense.createMany({
+            data: carried.map((r) => ({
+              agencyId,
+              name: r.name,
+              categoryLine: r.categoryLine,
+              amountCents: r.amountCents,
+              month,
+              kind: r.kind,
+              variable: r.variable,
+              color: r.color,
+            })),
+          });
+        }
       }
     }
 
@@ -444,13 +464,18 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       const cashBasis = (agency.accountingMethod ?? "cash") === "cash";
       const countedRevenue = cashBasis ? revenue.filter((r) => r.receivedAt !== null) : revenue;
 
-      const groups = groupForScheduleC(
-        expenses.map((e) => ({
-          name: e.name,
-          categoryLine: e.categoryLine,
-          amountCents: e.amountCents,
-        })),
-      );
+      const expenseRows = expenses.map((e) => ({
+        name: e.name,
+        categoryLine: e.categoryLine,
+        amountCents: e.amountCents,
+      }));
+      const groups = groupForScheduleC(expenseRows);
+      // Rows whose categoryLine predates the enum validation in
+      // financeSchemas.ts and matches no catalogue entry. groupForScheduleC
+      // already drops these silently (see its own comment); collecting them
+      // here separately, rather than losing them, is what lets the PDF say
+      // plainly that they exist and are not part of the deductible total.
+      const uncategorised = uncategorisedExpenses(expenseRows);
 
       const html = buildTaxExportHtml({
         year,
@@ -468,10 +493,18 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
           }, {}),
         ).map(([name, cents]) => ({ name, cents })),
         groups,
+        uncategorised,
       });
 
       const pdf = await renderReportPdf(html, {});
-      const storageKey = `exports/schedule-c-${year}.pdf`;
+      // Prefixed with the agency id, the same as every other storage key in
+      // this codebase (see the invoice above). /files/ is served by
+      // fastifyStatic at the root of server.ts, outside every auth hook, so
+      // this prefix is the only thing keeping one agency's tax document out
+      // of another's reach: without it, a bare "exports/schedule-c-2026.pdf"
+      // is both guessable and shared by every agency exporting that year,
+      // so the second export would silently overwrite the first.
+      const storageKey = `${agencyId}/exports/schedule-c-${year}.pdf`;
       const abs = nodePath.join(env.STORAGE_DIR, storageKey);
       await fsp.mkdir(nodePath.dirname(abs), { recursive: true });
       await fsp.writeFile(abs, pdf);
