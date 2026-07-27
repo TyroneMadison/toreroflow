@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { formatCents, type ExpenseCategory } from "@toreroflow/core";
+import { deductibleCents, formatCents, type ExpenseCategory } from "@toreroflow/core";
 import { useToast } from "../Toasts";
 import { api } from "../../lib/api";
 import { colorFor, type ExpenseRow } from "../../lib/financials";
@@ -144,7 +144,7 @@ export default function ExpenseSection({
         ? new Date(row.incurredOn).toLocaleDateString([], { month: "short", day: "numeric" })
         : "";
       if (row.categoryLine === "meals") {
-        return `${catLabel}${day ? ` · ${day}` : ""} · 50% deductible, ${formatCents(Math.round(row.amountCents / 2))} claimable`;
+        return `${catLabel}${day ? ` · ${day}` : ""} · 50% deductible, ${formatCents(deductibleCents(row.categoryLine, row.amountCents))} claimable`;
       }
       return `${catLabel}${day ? ` · ${day}` : ""}`;
     }
