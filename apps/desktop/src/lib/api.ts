@@ -79,6 +79,9 @@ export interface ClientSummary {
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  /** Standing monthly price; the Financials month seeds from this. */
+  monthlyPriceCents: number | null;
+  billingMode: "calendar" | "on_fulfilment";
   createdAt: string;
   workflowCount: number;
   /** Null when no account has reported a follower count yet. */

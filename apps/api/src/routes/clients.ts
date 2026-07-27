@@ -159,6 +159,8 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         contactName: c.contactName,
         contactEmail: c.contactEmail,
         contactPhone: c.contactPhone,
+        monthlyPriceCents: c.monthlyPriceCents,
+        billingMode: c.billingMode,
         createdAt: c.createdAt,
         workflowCount: c._count.workflows,
         accounts,
