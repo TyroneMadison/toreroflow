@@ -805,14 +805,6 @@
 .signal.ok b{color:var(--txt-2);font-weight:500}
 
 /* ---- Financials ---- */
-.fintiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.fintile{padding:18px 20px}
-.fintile .lbl{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
-.fintile .num{font-size:28px;font-weight:680;letter-spacing:-.5px;margin-top:8px}
-.fintile.in .num{color:var(--green)}
-.fintile.out .num{color:var(--red)}
-.fintile.net .num{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.fintile .warnline{font-size:10.5px;color:var(--amber);margin-top:7px;line-height:1.4}
 .tag.warn{color:var(--amber);background:rgba(255,207,107,.14)}
 
 /* Money coming in: one row per client, a status tag and a colour swatch.
@@ -941,7 +933,7 @@
 .warnline{font-size:11px;color:var(--amber);line-height:1.4}
 
 /* Loading and error states: the screen never shows a fake $0.00. */
-.skel{min-height:150px;animation:skelpulse 1.2s ease-in-out infinite alternate}
+.finskel{min-height:150px;animation:skelpulse 1.2s ease-in-out infinite alternate}
 @keyframes skelpulse{from{opacity:.55}to{opacity:.9}}
 .finload{text-align:center;color:var(--txt-3);font-size:12.5px;padding:18px}
 .finerror{display:flex;flex-direction:column;align-items:center;gap:10px;padding:38px;text-align:center}
