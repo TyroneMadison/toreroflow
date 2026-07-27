@@ -229,12 +229,26 @@ lines, the export needs no translation.
 | `supplies` | Line 22 | Supplies | 📦 |
 | `travel` | Line 24a | Travel | ✈️ |
 | `meals` | Line 24b | Meals | 🍽 |
-| `utilities` | Line 25 | Utilities and internet | 💡 |
-| `other` | Line 27a | Software and subscriptions | 💻 |
+| `utilities` | Line 25 | Utilities | 💡 |
+| `software` | Line 27a | Subscriptions and software | 💻 |
+| `other` | Line 27a | Other | 📌 |
 
-Software subscriptions have no dedicated line and go to **Line 27a, Other
-expenses**, which requires a description in Part V. The expense `name` supplies
-it.
+**Utilities is utilities**: power, water, and the internet connection itself.
+It does not absorb software, which is the single largest cost category in this
+business and deserves to be readable on its own.
+
+**Subscriptions and software is its own category**, covering Adobe, Anthropic,
+ElevenLabs, Higgsfield, Netlify, Zernio and the rest. It has no dedicated
+Schedule C line, so it maps to **Line 27a, Other expenses**, which is itemised
+by description in Part V rather than being a single opaque total. `other`
+remains as a genuine catch-all for anything fitting nowhere else.
+
+Two keys mapping to the same line is correct rather than a modelling mistake:
+Part V is a *list* of named other expenses, so the export emits
+"Subscriptions and software" and "Other" as separate described entries that
+sum to the Line 27a total. Collapsing them would lose the description a CPA
+needs, and it would also make the biggest cost in the business invisible on
+screen.
 
 ### The meals rule
 
