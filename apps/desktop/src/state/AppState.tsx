@@ -94,12 +94,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshClients]);
 
-  // Drop the stored selection if the client no longer exists.
+  // Keep a brand selected whenever brands exist. A missing or stale
+  // selection falls back to the first brand instead of leaving every
+  // client-scoped screen empty. The empty list is left alone on purpose:
+  // at boot the list is empty while it loads, and clearing then would wipe
+  // a valid stored selection.
   useEffect(() => {
-    if (selectedClientId && clients.length && !clients.some((c) => c.id === selectedClientId)) {
-      setSelectedClientId(null);
-      localStorage.removeItem(SELECTED_KEY);
-    }
+    if (!clients.length) return;
+    if (selectedClientId && clients.some((c) => c.id === selectedClientId)) return;
+    const id = clients[0].id;
+    setSelectedClientId(id);
+    localStorage.setItem(SELECTED_KEY, id);
   }, [clients, selectedClientId]);
 
   const finishAuth = useCallback(
