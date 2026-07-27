@@ -803,3 +803,13 @@
 .signal.warn .sdot{background:var(--amber);box-shadow:0 0 8px rgba(255,207,107,.7)}
 .signal.ok .sdot{background:var(--green)}
 .signal.ok b{color:var(--txt-2);font-weight:500}
+
+/* ---- Financials ---- */
+.fintiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fintile{padding:18px 20px}
+.fintile .lbl{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+.fintile .num{font-size:28px;font-weight:680;letter-spacing:-.5px;margin-top:8px}
+.fintile.in .num{color:var(--green)}
+.fintile.out .num{color:var(--red)}
+.fintile.net .num{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.fintile .warnline{font-size:10.5px;color:var(--amber);margin-top:7px;line-height:1.4}

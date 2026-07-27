@@ -28,6 +28,7 @@ interface NavItemDef {
 
 const OVERVIEW_NAV: NavItemDef[] = [
   { target: "dashboard", icon: "#i-globe", label: "Dashboard" },
+  { target: "financials", icon: "#i-usd", label: "Financials" },
   { target: "overview", icon: "#i-users", label: "Account Overview" },
 ];
 

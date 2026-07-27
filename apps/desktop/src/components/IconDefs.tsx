@@ -88,6 +88,9 @@ export default function IconDefs() {
         <path d="M21 12a9 9 0 1 1-2.64-6.36" />
         <path d="M21 3v6h-6" />
       </symbol>
+      <symbol id="i-usd" viewBox="0 0 24 24">
+        <path d="M12 2v20M17 6.5c0-2-2.2-3.5-5-3.5S7 4.5 7 6.5s2 3 5 3.5 5 1.5 5 3.5-2.2 3.5-5 3.5-5-1.5-5-3.5" />
+      </symbol>
       {/* platform logos */}
       <symbol id="p-ig" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="18" rx="5.2" fill="none" stroke="currentColor" strokeWidth="2.1" />
