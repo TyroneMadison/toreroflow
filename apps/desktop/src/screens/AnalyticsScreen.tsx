@@ -12,6 +12,7 @@ import ViewsChart from "../components/ViewsChart";
 import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
+import { buildTier, scopeToPlatform, type ViewTier } from "../lib/viewTiers";
 import { useAppState } from "../state/AppState";
 
 const PLATFORM_COLOR: Record<Platform, string> = {
@@ -101,11 +102,35 @@ function GainRows({ accounts, label }: { accounts: AccountAnalytics[]; label: st
   );
 }
 
-function RankCard({ title, range, posts }: { title: string; range: string; posts: ClientPost[] }) {
+/**
+ * A lifetime view-tier board.
+ *
+ * Ranks every video the client has, whatever range is selected, because a
+ * 1M+ club is a record rather than a window. `rangeLabel` describes the
+ * selection so the momentum line can say what "recently" means.
+ */
+function RankCard({
+  title,
+  range,
+  tier,
+  rangeLabel,
+}: {
+  title: string;
+  range: string;
+  tier: ViewTier;
+  rangeLabel: string;
+}) {
+  const { posts, total, addedInRange } = tier;
   return (
     <div className="card glass">
       <h3>{title}</h3>
       <div className="sub">{range}</div>
+      {total > 0 && (
+        <div className="rankmeta">
+          {total} all time
+          {addedInRange > 0 && <span className="up"> · {addedInRange} in {rangeLabel}</span>}
+        </div>
+      )}
       {posts.length ? (
         posts.map((p, i) => (
           <div className="rrow" key={p.id} title={p.title}>
@@ -117,7 +142,7 @@ function RankCard({ title, range, posts }: { title: string; range: string; posts
         ))
       ) : (
         <div className="empty" style={{ padding: "12px 8px" }}>
-          <b>No videos in this range yet</b>
+          <b>Nothing here yet</b>
           <p>Rows appear as videos cross the threshold.</p>
         </div>
       )}
@@ -234,20 +259,17 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
   // Range and platform tab narrow every figure on the screen together.
   const cutoff = rangeDays == null ? 0 : Date.now() - rangeDays * 86_400_000;
-  const all = everyPost
-    .filter((p) => new Date(p.publishedAt).getTime() >= cutoff)
-    .filter((p) => tab === "all" || p.platforms.includes(tab as Platform))
-    .map((p) =>
-      tab === "all"
-        ? p
-        : {
-            // Scope a post's numbers to the selected platform only.
-            ...p,
-            byPlatform: p.byPlatform.filter((b) => b.platform === tab),
-            views: p.byPlatform.find((b) => b.platform === tab)?.views ?? 0,
-            platforms: [tab as Platform],
-          },
-    );
+  const all = scopeToPlatform(
+    everyPost.filter((p) => new Date(p.publishedAt).getTime() >= cutoff),
+    tab,
+  );
+
+  // The tier boards below rank the whole catalogue instead, following the
+  // platform tab but never the range. They were built from `all`, so on the
+  // default thirty day window a client with six million-view videos saw an
+  // empty 1M+ club: the newest of those videos is nine months old.
+  const lifetime = scopeToPlatform(everyPost, tab);
+  const rangeLabel = rangeDays == null ? "all time" : `${rangeDays}d`;
   const accounts = accountsAll.filter((a) => tab === "all" || a.platform === tab);
   const ytAccounts = accounts.filter((a) => a.platform === "youtube");
   const otherAccounts = accounts.filter((a) => a.platform !== "youtube");
@@ -299,10 +321,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
   const last10 = all.slice(0, 10);
   const mostViewed = [...all].sort((a, b) => b.views - a.views).slice(0, 8);
-  const byViews = [...all].sort((a, b) => b.views - a.views);
-  const bucket1m = byViews.filter((p) => p.views >= 1_000_000).slice(0, 10);
-  const bucket100k = byViews.filter((p) => p.views >= 100_000 && p.views < 1_000_000).slice(0, 10);
-  const bucket10k = byViews.filter((p) => p.views >= 10_000 && p.views < 100_000).slice(0, 10);
+  const tier1m = buildTier(lifetime, 1_000_000, null, cutoff);
+  const tier100k = buildTier(lifetime, 100_000, 1_000_000, cutoff);
+  const tier10k = buildTier(lifetime, 10_000, 100_000, cutoff);
 
   const history = data ? mergedViewHistory(data) : [];
   const maxViews = Math.max(1, ...history.map((h) => h.views));
@@ -738,9 +759,24 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
             </div>
 
             <div className="anranks">
-              <RankCard title="1M+ club" range="Top 10 videos with 1,000,000+ views" posts={bucket1m} />
-              <RankCard title="100K to 999K" range="Top 10 videos in the hundred-thousands" posts={bucket100k} />
-              <RankCard title="10K to 99K" range="Top 10 videos in the ten-thousands" posts={bucket10k} />
+              <RankCard
+                title="1M+ club"
+                range="Top 10 videos with 1,000,000+ views"
+                tier={tier1m}
+                rangeLabel={rangeLabel}
+              />
+              <RankCard
+                title="100K to 999K"
+                range="Top 10 videos in the hundred-thousands"
+                tier={tier100k}
+                rangeLabel={rangeLabel}
+              />
+              <RankCard
+                title="10K to 99K"
+                range="Top 10 videos in the ten-thousands"
+                tier={tier10k}
+                rangeLabel={rangeLabel}
+              />
             </div>
 
             <div className="note">

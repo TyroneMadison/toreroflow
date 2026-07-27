@@ -166,30 +166,47 @@ export default function Sidebar({
         <div className="brandwrap" ref={wrapRef}>
           {menuOpen && (
             <div className="brandmenu glass">
-              {clients.map((client) => (
-                <div
-                  key={client.id}
-                  className={`bm-item${client.id === selectedClient?.id ? " on" : ""}`}
-                  onClick={() => {
-                    selectClient(client.id);
-                    setMenuOpen(false);
-                  }}
-                >
+              {clients.map((client) => {
+                // Same real profile picture the Active brand pill below shows.
+                // The list used to fall back to a letter tile unconditionally,
+                // so one brand appeared two different ways in the same corner.
+                const avatar = clientAvatarUrl(client);
+                return (
                   <div
-                    className="avatar"
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 8,
-                      fontSize: 10,
-                      background: "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+                    key={client.id}
+                    className={`bm-item${client.id === selectedClient?.id ? " on" : ""}`}
+                    onClick={() => {
+                      selectClient(client.id);
+                      setMenuOpen(false);
                     }}
                   >
-                    {client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}
+                    <div
+                      className="avatar"
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 8,
+                        fontSize: 10,
+                        overflow: "hidden",
+                        background: avatar
+                          ? "var(--glass-2)"
+                          : "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+                      }}
+                    >
+                      {avatar ? (
+                        <img
+                          src={avatar}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      ) : (
+                        (client.avatarSeed ?? client.name.slice(0, 2).toUpperCase())
+                      )}
+                    </div>
+                    {client.name}
                   </div>
-                  {client.name}
-                </div>
-              ))}
+                );
+              })}
               {clients.length === 0 && (
                 <div className="bm-item" style={{ cursor: "default", color: "var(--txt-3)" }}>
                   No brands yet

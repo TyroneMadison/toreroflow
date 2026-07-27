@@ -746,3 +746,7 @@
 .alertrow .ameta{font-size:11px;color:var(--txt-2)}
 .alertrow .adetail{font-size:10.5px;color:var(--txt-3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 .alertrow .btn{flex:0 0 auto;padding:6px 13px;font-size:11.5px}
+
+/* View-tier boards: lifetime count plus how many landed in the selected range. */
+.rankmeta{font-size:10.5px;color:var(--txt-3);margin:6px 0 2px;font-weight:500}
+.rankmeta .up{color:var(--green)}
