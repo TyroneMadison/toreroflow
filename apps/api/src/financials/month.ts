@@ -13,8 +13,6 @@ export interface StatusInput {
   billingMode: string;
   /** Whether the client's quota for this cycle is met. */
   quotaMet: boolean;
-  /** Whether the calendar billing day has passed. */
-  billingDayPassed: boolean;
 }
 
 /**
@@ -27,7 +25,10 @@ export interface StatusInput {
 export function deriveStatus(input: StatusInput): "paid" | "pending" | "due" {
   if (input.receivedAt !== null) return "paid";
   // Only a fulfilment-gated client can be pending. A calendar client owes the
-  // money whatever was delivered, so it is due and simply not yet paid.
+  // money for the month whatever was delivered and whatever the date, so it is
+  // due and simply not yet paid. There is deliberately no billing-day gate: a
+  // day of the month that never changed what you saw was a field to fill in
+  // for nothing.
   if (input.billingMode === "on_fulfilment" && !input.quotaMet) return "pending";
   return "due";
 }

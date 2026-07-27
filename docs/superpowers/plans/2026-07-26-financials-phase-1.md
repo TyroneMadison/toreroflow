@@ -342,7 +342,7 @@ git add packages/core && git commit -m "feat: Schedule C expense category catalo
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: Prisma models `RevenueEntry`, `Expense`, `Invoice`; `Client.monthlyPriceCents`, `Client.billingMode`, `Client.billingDayOfMonth`; `Agency.legalName`, `Agency.ein`, `Agency.businessCode`, `Agency.accountingMethod`.
+- Produces: Prisma models `RevenueEntry`, `Expense`, `Invoice`; `Client.monthlyPriceCents`, `Client.billingMode`; `Agency.legalName`, `Agency.ein`, `Agency.businessCode`, `Agency.accountingMethod`.
 
 - [ ] **Step 1: Add the models**
 
@@ -355,9 +355,6 @@ In `packages/db/prisma/schema.prisma`, add to `model Client` beside the other op
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
   billingMode          String    @default("calendar")
-  /// Calendar mode only. Capped at 28 so a cycle cannot land on a date that
-  /// does not exist in February.
-  billingDayOfMonth    Int?
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
 ```
@@ -530,31 +527,31 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 /* Paid is the only stored fact and always wins. */
 eq(
-  deriveStatus({ receivedAt: new Date(), billingMode: "on_fulfilment", quotaMet: false, billingDayPassed: false }),
+  deriveStatus({ receivedAt: new Date(), billingMode: "on_fulfilment", quotaMet: false }),
   "paid",
   "a received payment is paid even if the cycle looks unfinished",
 );
 
 /* Fulfilment gated: quota decides. */
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: false, billingDayPassed: true }),
+  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: false }),
   "pending",
   "an undelivered cycle is not due however late in the month it is",
 );
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: true, billingDayPassed: false }),
+  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: true }),
   "due",
   "delivering the cycle makes it due",
 );
 
 /* Calendar: the date decides, delivery is irrelevant. */
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false, billingDayPassed: true }),
+  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false }),
   "due",
   "a calendar client is due on the day regardless of delivery",
 );
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false, billingDayPassed: false }),
+  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false }),
   "due",
   "a calendar client is never pending, only not yet paid",
 );
@@ -605,8 +602,6 @@ export interface StatusInput {
   billingMode: string;
   /** Whether the client's quota for this cycle is met. */
   quotaMet: boolean;
-  /** Whether the calendar billing day has passed. */
-  billingDayPassed: boolean;
 }
 
 /**
@@ -711,8 +706,6 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 export const billingSchema = z.object({
   monthlyPriceCents: z.number().int().min(0).max(100_000_000).nullish(),
   billingMode: z.enum(["calendar", "on_fulfilment"]).optional(),
-  // 28 so a cycle cannot land on a date February does not have.
-  billingDayOfMonth: z.number().int().min(1).max(28).nullish(),
 });
 
 export const expenseSchema = z.object({
@@ -800,7 +793,6 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         avatarSeed: true,
         monthlyPriceCents: true,
         billingMode: true,
-        billingDayOfMonth: true,
         quotaShort: true,
         quotaLong: true,
         quotaResetAt: true,
@@ -906,8 +898,6 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
           receivedAt: r.receivedAt,
           billingMode: c?.billingMode ?? "calendar",
           quotaMet,
-          billingDayPassed:
-            c?.billingDayOfMonth == null ? true : now.getDate() >= c.billingDayOfMonth,
         }),
       };
     });
@@ -944,9 +934,8 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       data: {
         ...(body.monthlyPriceCents !== undefined ? { monthlyPriceCents: body.monthlyPriceCents } : {}),
         ...(body.billingMode !== undefined ? { billingMode: body.billingMode } : {}),
-        ...(body.billingDayOfMonth !== undefined ? { billingDayOfMonth: body.billingDayOfMonth } : {}),
       },
-      select: { monthlyPriceCents: true, billingMode: true, billingDayOfMonth: true },
+      select: { monthlyPriceCents: true, billingMode: true },
     });
   });
 
@@ -1061,7 +1050,7 @@ Expected: JSON with `month`, `categories` (15 entries), `revenue`, `recurring`, 
 Then set a price and confirm seeding:
 
 ```bash
-cd "E:/Claude Stuff/Toreroflow" && curl -s -X PATCH "http://localhost:4700/clients/<CLIENT_ID>/billing" -H "Authorization: Bearer $(cat /tmp/tok.txt)" -H "Content-Type: application/json" -d '{"monthlyPriceCents":150000,"billingMode":"calendar","billingDayOfMonth":12}'
+cd "E:/Claude Stuff/Toreroflow" && curl -s -X PATCH "http://localhost:4700/clients/<CLIENT_ID>/billing" -H "Authorization: Bearer $(cat /tmp/tok.txt)" -H "Content-Type: application/json" -d '{"monthlyPriceCents":150000,"billingMode":"calendar"}'
 ```
 
 Expected: the price echoes back, and a second `GET /financials?month=2026-07` now has one revenue row with `amountCents: 150000` and `status: "due"`.

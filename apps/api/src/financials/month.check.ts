@@ -8,33 +8,38 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 /* Paid is the only stored fact and always wins. */
 eq(
-  deriveStatus({ receivedAt: new Date(), billingMode: "on_fulfilment", quotaMet: false, billingDayPassed: false }),
+  deriveStatus({ receivedAt: new Date(), billingMode: "on_fulfilment", quotaMet: false }),
   "paid",
   "a received payment is paid even if the cycle looks unfinished",
 );
 
 /* Fulfilment gated: quota decides. */
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: false, billingDayPassed: true }),
+  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: false }),
   "pending",
   "an undelivered cycle is not due however late in the month it is",
 );
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: true, billingDayPassed: false }),
+  deriveStatus({ receivedAt: null, billingMode: "on_fulfilment", quotaMet: true }),
   "due",
   "delivering the cycle makes it due",
 );
 
 /* Calendar: the date decides, delivery is irrelevant. */
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false, billingDayPassed: true }),
+  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false }),
   "due",
   "a calendar client is due on the day regardless of delivery",
 );
 eq(
-  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false, billingDayPassed: false }),
+  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: false }),
   "due",
   "a calendar client is never pending, only not yet paid",
+);
+eq(
+  deriveStatus({ receivedAt: null, billingMode: "calendar", quotaMet: true }),
+  "due",
+  "delivery does not change a calendar client either way",
 );
 
 /* Roll-forward. */

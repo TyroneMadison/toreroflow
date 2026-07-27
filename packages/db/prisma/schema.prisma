@@ -190,9 +190,6 @@ model Client {
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
   billingMode          String         @default("calendar")
-  /// Calendar mode only. Capped at 28 so a cycle cannot land on a date that
-  /// does not exist in February.
-  billingDayOfMonth    Int?
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
   createdAt            DateTime       @default(now())
