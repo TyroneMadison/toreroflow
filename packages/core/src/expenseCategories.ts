@@ -33,7 +33,8 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "utilities", scheduleCLine: "25", label: "Utilities", emoji: "💡" },
   // No dedicated line exists for software. Line 27a is itemised by
   // description in Part V, so this stays a named entry rather than an
-  // opaque total, and stays readable on screen as the largest cost here.
+  // opaque total. Software is typically the largest expense here and needs its
+  // own row to avoid being buried inside a generic Other bucket.
   { key: "software", scheduleCLine: "27a", label: "Subscriptions and software", emoji: "💻" },
   { key: "other", scheduleCLine: "27a", label: "Other", emoji: "📌" },
 ];
