@@ -15,6 +15,32 @@ echo   Toreroflow
 echo   ==========
 echo.
 
+REM --- 0. Make node and pnpm findable -------------------------------------
+REM A script launched from Explorer inherits a narrower PATH than a terminal
+REM does. npm installs its global binaries, pnpm among them, into a folder
+REM that is often missing from it, so this failed with "pnpm is not
+REM recognized" while the same command worked fine when typed by hand.
+REM
+REM Both the migration below and the two windows opened at the end need
+REM pnpm, so this is fixed once here and inherited by everything after it.
+if exist "%ProgramFiles%\nodejs" set "PATH=%ProgramFiles%\nodejs;%PATH%"
+if exist "%APPDATA%\npm" set "PATH=%APPDATA%\npm;%PATH%"
+
+where pnpm >nul 2>&1
+if errorlevel 1 (
+  echo.
+  echo   pnpm was not found, so the app cannot be started.
+  echo.
+  echo   Install it by opening a terminal and running:
+  echo       npm install -g pnpm
+  echo.
+  echo   If it is already installed, it is somewhere this script does not
+  echo   look. Run "where pnpm" in a terminal and tell me the path.
+  echo.
+  pause
+  exit /b 1
+)
+
 REM --- 1. Docker, which holds the database and the job queue ---------------
 echo   [1/3] Starting the database and queue...
 docker info >nul 2>&1
