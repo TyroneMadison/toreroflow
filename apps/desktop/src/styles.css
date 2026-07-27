@@ -921,3 +921,18 @@
   border:1px solid var(--brd-soft);background:var(--glass);flex:0 0 auto;cursor:pointer;font-size:11px;font-weight:650;
   font-family:var(--font)}
 .del.arm{color:#fff;background:rgba(255,107,122,.25);border-color:rgba(255,107,122,.5)}
+/* Expense rows: category emoji chip, missing-bill highlight, add affordance. */
+.cat{width:34px;height:34px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;font-size:15px;
+  background:var(--glass-2);border:1px solid var(--brd-soft)}
+.amt.o{color:var(--red)}
+.amt.o.unknown{color:var(--txt-3)}
+.lrow.miss{background:rgba(255,107,122,.05);border-radius:12px;padding-left:8px;padding-right:8px}
+.tag.miss{color:var(--red);background:rgba(255,107,122,.14);border:1px solid rgba(255,107,122,.3)}
+.addrow{display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;margin-top:9px;border-radius:14px;
+  border:1px dashed rgba(255,255,255,.17);color:var(--txt-3);font-size:12.5px;font-weight:500;cursor:pointer}
+.addrow:hover{color:var(--txt-2);border-color:rgba(255,255,255,.3)}
+[data-theme="light"] .addrow{border-color:rgba(20,22,50,.2)}
+.catpick{width:auto;max-width:150px;padding:7px 9px;font-size:11.5px;flex:0 0 auto}
+.varpick{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt-3);flex:0 0 auto;white-space:nowrap}
+.addform{flex-wrap:wrap}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
