@@ -13,6 +13,7 @@ import {
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
 import { deriveStatus, rollForward } from "../financials/month";
+import { buildSeries, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
 import { renderReportPdf } from "../reports/renderPdf";
 import { buildInvoiceHtml } from "../financials/invoicePdf";
@@ -185,6 +186,14 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         !c ||
         ((c.quotaShort == null || d.short >= c.quotaShort) &&
           (c.quotaLong == null || d.long >= c.quotaLong));
+      // Delivered and target summed over tracked formats only, so an
+      // untracked format neither inflates nor blocks the fraction shown
+      // beside the row. Both null when nothing is tracked.
+      const hasTargets = c != null && (c.quotaShort != null || c.quotaLong != null);
+      const quotaTarget = hasTargets ? (c.quotaShort ?? 0) + (c.quotaLong ?? 0) : null;
+      const quotaDelivered = hasTargets
+        ? (c.quotaShort != null ? d.short : 0) + (c.quotaLong != null ? d.long : 0)
+        : null;
       return {
         id: r.id,
         clientId: r.clientId,
@@ -195,6 +204,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         color: r.color,
         note: r.note,
         receivedAt: r.receivedAt,
+        billingMode: (c?.billingMode ?? "calendar") as "calendar" | "on_fulfilment",
+        quotaMet,
+        quotaDelivered,
+        quotaTarget,
         status: deriveStatus({
           receivedAt: r.receivedAt,
           billingMode: c?.billingMode ?? "calendar",
@@ -206,12 +219,44 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     const recurring = expenses.filter((e) => e.kind === "recurring");
     const oneOff = expenses.filter((e) => e.kind === "one_off");
 
+    // Twelve months of history for the bars, sparkline, and delta. The
+    // window always contains January-to-now of the requested month's year,
+    // so the YTD numbers reuse the same two queries.
+    const windowKeys = monthKeysEnding(month, 12);
+    const [windowRevenue, windowExpenses] = await Promise.all([
+      prisma.revenueEntry.findMany({
+        where: { agencyId, month: { in: windowKeys } },
+        select: { month: true, amountCents: true },
+      }),
+      prisma.expense.findMany({
+        where: { agencyId, month: { in: windowKeys } },
+        select: { month: true, amountCents: true },
+      }),
+    ]);
+    const series = buildSeries(month, windowRevenue, windowExpenses);
+    const ytd = ytdTotals(month, windowRevenue, windowExpenses);
+
+    // Years the export selector can offer: from the earliest opened month's
+    // year up to the server's current year, newest first.
+    const firstOpened = await prisma.financialMonth.findFirst({
+      where: { agencyId },
+      orderBy: { month: "asc" },
+      select: { month: true },
+    });
+    const nowYear = new Date().getFullYear();
+    const firstYear = firstOpened ? Number(firstOpened.month.slice(0, 4)) : nowYear;
+    const years: number[] = [];
+    for (let y = nowYear; y >= Math.min(firstYear, nowYear); y--) years.push(y);
+
     return {
       month,
       categories: EXPENSE_CATEGORIES,
       revenue: revenueRows,
       recurring,
       oneOff,
+      series,
+      ytd,
+      years,
       totals: {
         inCents: sumCents(revenueRows.map((r) => r.amountCents)),
         recurringOutCents: sumCents(recurring.map((e) => e.amountCents)),
@@ -308,6 +353,16 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
           : {}),
       },
     });
+  });
+
+  app.delete<{ Params: { id: string } }>("/financials/revenue/:id", async (request, reply) => {
+    const found = await prisma.revenueEntry.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId },
+      select: { id: true },
+    });
+    if (!found) return reply.status(404).send(NOT_FOUND);
+    await prisma.revenueEntry.delete({ where: { id: found.id } });
+    return { ok: true };
   });
 
   /**
