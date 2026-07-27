@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import PDFDocument from "pdfkit";
 import {
   connectAccountSchema,
+  contactSchema,
   createClientSchema,
   platformSchema,
   PLATFORMS,
@@ -155,6 +156,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         name: c.name,
         avatarSeed: c.avatarSeed,
         plan: c.plan,
+        contactName: c.contactName,
+        contactEmail: c.contactEmail,
+        contactPhone: c.contactPhone,
         createdAt: c.createdAt,
         workflowCount: c._count.workflows,
         accounts,
@@ -181,6 +185,39 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     // screen can show the operator the link before they decide to create it.
     const reportSlug = await ensureReportSlug(prisma, client);
     return reply.status(201).send({ ...client, reportSlug });
+  });
+
+  /**
+   * Who to contact at this client.
+   *
+   * Every field is optional and independently clearable: an empty string
+   * means "I do not have this" and is stored as null, so a blanked phone
+   * number does not linger as an empty string that reads as a value.
+   */
+  app.patch<{
+    Params: { id: string };
+    Body: { contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null };
+  }>("/clients/:id/contact", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!client) return reply.status(404).send(NOT_FOUND);
+
+    const body = contactSchema.parse(request.body);
+    const clean = (v: string | null | undefined) =>
+      v === undefined ? undefined : v === null || v.trim() === "" ? null : v.trim();
+
+    const updated = await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        ...(body.contactName !== undefined ? { contactName: clean(body.contactName) } : {}),
+        ...(body.contactEmail !== undefined ? { contactEmail: clean(body.contactEmail) } : {}),
+        ...(body.contactPhone !== undefined ? { contactPhone: clean(body.contactPhone) } : {}),
+      },
+      select: { contactName: true, contactEmail: true, contactPhone: true },
+    });
+    return updated;
   });
 
   app.delete<{ Params: { id: string } }>("/clients/:id", async (request, reply) => {

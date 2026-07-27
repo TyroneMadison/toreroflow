@@ -140,7 +140,7 @@ export default function Sidebar({
       <div className="navlabel">Measure</div>
       {renderNav(MEASURE_NAV)}
 
-      <div className="navlabel">Workspace</div>
+      <div className="navlabel">Settings</div>
       {renderNav(WORKSPACE_NAV)}
 
       <div className="side-foot">

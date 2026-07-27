@@ -22,6 +22,18 @@ export const createClientSchema = z.object({
 });
 export type CreateClientInput = z.infer<typeof createClientSchema>;
 
+/**
+ * Contact details for a client. Every field is optional and nullable so any
+ * one of them can be cleared without supplying the others, and the email is
+ * only validated when it is actually present.
+ */
+export const contactSchema = z.object({
+  contactName: z.string().max(120).nullish(),
+  contactEmail: z.union([z.string().email().max(200), z.literal("")]).nullish(),
+  contactPhone: z.string().max(40).nullish(),
+});
+export type ContactInput = z.infer<typeof contactSchema>;
+
 export const connectAccountSchema = z.object({
   handle: z.string().min(1).max(120).optional(),
 });

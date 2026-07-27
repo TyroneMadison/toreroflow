@@ -19,11 +19,76 @@ function fmt(n: number | null | undefined): string {
   return String(Math.round(n));
 }
 
+/**
+ * Contact details for one client, saved on blur.
+ *
+ * Saving on blur rather than behind a Save button because these are three
+ * fields you edit once a year: a button would be one more thing to forget to
+ * press, and the value would silently not persist. A field only writes when
+ * its value actually changed, so tabbing through does not fire three requests.
+ */
+function ContactFields({ client, onSaved }: { client: ClientSummary; onSaved(): void }) {
+  const toast = useToast();
+  const [draft, setDraft] = useState({
+    contactName: client.contactName ?? "",
+    contactEmail: client.contactEmail ?? "",
+    contactPhone: client.contactPhone ?? "",
+  });
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const FIELDS = [
+    { key: "contactName" as const, label: "Contact name", type: "text", placeholder: "Who you deal with" },
+    { key: "contactEmail" as const, label: "Best email", type: "email", placeholder: "name@company.com" },
+    { key: "contactPhone" as const, label: "Phone", type: "tel", placeholder: "+1 555 0100" },
+  ];
+
+  const save = async (key: (typeof FIELDS)[number]["key"]) => {
+    const value = draft[key].trim();
+    if (value === (client[key] ?? "")) return;
+    setSaving(key);
+    try {
+      await api.patch(`/clients/${client.id}/contact`, { [key]: value });
+      onSaved();
+    } catch (err) {
+      toast.fail(`Could not save the ${key === "contactPhone" ? "phone number" : key === "contactEmail" ? "email" : "contact name"}`, err);
+      // Put the stored value back so the field never shows an unsaved edit.
+      setDraft((d) => ({ ...d, [key]: client[key] ?? "" }));
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div className="pcontact">
+      {FIELDS.map((f) => (
+        <label className="cfield" key={f.key}>
+          <span className="lab">
+            {f.label}
+            {saving === f.key && <i> saving…</i>}
+          </span>
+          <input
+            className="field-in"
+            type={f.type}
+            value={draft[f.key]}
+            placeholder={f.placeholder}
+            onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+            onBlur={() => void save(f.key)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function ProfileCard({
   client,
   onConnect,
   onDisconnect,
   onSync,
+  onContactSaved,
   busyKey,
   pending,
 }: {
@@ -31,41 +96,16 @@ function ProfileCard({
   onConnect(platform: Platform): void;
   onDisconnect(accountId: string): void;
   onSync(): void;
+  onContactSaved(): void;
   busyKey: string | null;
   pending: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [cover, setCover] = useState(false);
-  const [analytics, setAnalytics] = useState<ClientAnalytics | null>(null);
 
   const connected = client.accounts.filter((a) => a.status === "connected");
   const avatar = clientAvatarUrl(client);
   const displayName = connected.find((a) => a.displayName)?.displayName ?? client.name;
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    api
-      .get<ClientAnalytics>(`/clients/${client.id}/analytics?days=30`)
-      .then((d) => {
-        if (!cancelled) setAnalytics(d);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, client.accounts.length]);
-
-  const t = analytics?.totals;
-  const cells: Array<[string, string]> = [
-    ["Followers", fmt(t?.followers ?? null)],
-    ["Views · 30d", fmt(t?.views ?? null)],
-    ["Likes · 30d", fmt(t?.likes ?? null)],
-    ["Comments · 30d", fmt(t?.comments ?? null)],
-    ["Engagement", t?.engagementRate != null ? `${t.engagementRate.toFixed(1)}%` : "-"],
-    ["Retention", t?.avgWatchSec != null ? `${t.avgWatchSec.toFixed(1)}s` : "-"],
-  ];
 
   return (
     <div className={`pcard glass${cover ? " cover" : ""}${open ? " open" : ""}`}>
@@ -120,14 +160,7 @@ function ProfileCard({
 
       <div className="pexpand">
         <div className="pexpand-inner">
-          <div className="pgridstats">
-            {cells.map(([label, value]) => (
-              <div className="dashstat" key={label}>
-                <div className="lab">{label}</div>
-                <div className="val">{analytics ? value : "…"}</div>
-              </div>
-            ))}
-          </div>
+          <ContactFields client={client} onSaved={onContactSaved} />
 
           <div className="flabel" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
             Platforms
@@ -151,7 +184,12 @@ function ProfileCard({
                 <Pf p={PF_ID[platform]} />
                 <div className="cinfo">
                   <b>{PLATFORM_LABELS[platform]}</b>
-                  <span>{account ? `@${account.handle} · connected` : "not connected"}</span>
+                  {/* Handle truncates rather than growing: @realcalebconcepcion
+                      used to push straight through the Disconnect button. */}
+                  <span title={account ? `@${account.handle}` : undefined}>
+                    <i className={`livedot ${account ? "on" : "off"}`} />
+                    {account ? `@${account.handle}` : "not connected"}
+                  </span>
                 </div>
                 {account ? (
                   <button className="dangerbtn" disabled={busy} onClick={() => onDisconnect(account.id)}>
@@ -305,8 +343,9 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             <div>
               <h3>Connected Accounts</h3>
               <div className="sub">
-                One profile per enrolled client. Expand a card for the 30-day overview,
-                connect or disconnect platforms, and switch card styles.
+                One profile per enrolled client. Expand a card to keep their contact
+                details, connect or disconnect platforms, and switch card styles.
+                Their numbers live under Analytics.
               </div>
             </div>
             <span className="link" onClick={onOpenConnect}>
@@ -335,6 +374,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                   onConnect={(p) => void connect(client.id, p)}
                   onDisconnect={(id) => void disconnect(id)}
                   onSync={() => void sync(client.id)}
+                  onContactSaved={() => void refreshClients()}
                 />
               ))}
             </div>

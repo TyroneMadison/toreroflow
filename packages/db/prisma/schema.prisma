@@ -159,6 +159,12 @@ model Client {
   /// Manual corrections applied on top of the counted uploads, per format.
   adjustShort       Int       @default(0)
   adjustLong        Int       @default(0)
+  /// Who to actually contact at this client, kept here rather than in a head.
+  /// Separate from `name`, which is the brand: the brand is "CACV Motors" and
+  /// the person answering the phone is someone else.
+  contactName       String?
+  contactEmail      String?
+  contactPhone      String?
   /// Permanent path of this client's shareable web report, e.g.
   /// "caleb-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.

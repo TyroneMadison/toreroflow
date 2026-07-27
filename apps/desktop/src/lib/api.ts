@@ -75,6 +75,10 @@ export interface ClientSummary {
   name: string;
   avatarSeed: string | null;
   plan: string | null;
+  /** Who to actually contact. The brand is `name`; this is the person. */
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
   createdAt: string;
   workflowCount: number;
   /** Null when no account has reported a follower count yet. */

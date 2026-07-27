@@ -332,7 +332,30 @@
   .connect-row{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);margin-top:10px}
   .connect-row .cinfo{flex:1;min-width:0}
   .connect-row .cinfo b{font-size:13.5px;font-weight:600;display:block}
-  .connect-row .cinfo span{font-size:11.5px;color:var(--txt-3)}
+  /* Truncate: a long handle used to run straight under the Disconnect button. */
+  .connect-row .cinfo span{font-size:11.5px;color:var(--txt-3);display:flex;align-items:center;gap:6px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .connect-row .cinfo span .livedot{flex:0 0 auto}
+  .connect-row .dangerbtn,.connect-row .cbtn{flex:0 0 auto}
+
+  /* Live status: pulsing green when connected, red when not. */
+  .livedot{width:7px;height:7px;border-radius:50%;display:inline-block;position:relative}
+  .livedot.on{background:var(--green);animation:livepulse 2.1s ease-in-out infinite}
+  .livedot.off{background:var(--red);animation:livepulse 2.1s ease-in-out infinite;animation-delay:.4s}
+  @keyframes livepulse{
+    0%,100%{box-shadow:0 0 0 0 currentColor;opacity:.55}
+    50%{opacity:1}
+  }
+  .livedot.on{color:rgba(87,214,160,.55)}
+  .livedot.off{color:rgba(255,107,122,.5)}
+  @media (prefers-reduced-motion:reduce){.livedot{animation:none !important;opacity:1}}
+
+  /* Contact details, in place of the stats block that used to live here. */
+  .pcontact{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .cfield{display:flex;flex-direction:column;gap:5px}
+  .cfield .lab{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+  .cfield .lab i{font-style:normal;color:var(--green);letter-spacing:0;text-transform:none;font-weight:500}
+  .cfield .field-in{width:100%;font-size:12.5px;padding:9px 11px}
   .cbtn{padding:8px 15px;border-radius:11px;border:none;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;background:var(--grad);color:#0b0b18}
   .cbtn.done{background:rgba(87,214,160,.16);color:#57d6a0;display:flex;align-items:center;gap:6px}
   .cbtn.done svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.6;fill:none}
