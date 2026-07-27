@@ -73,35 +73,33 @@ enum JobStatus {
 }
 
 model Agency {
-  id         String   @id @default(cuid())
-  name       String
-  ownerEmail String
+  id               String   @id @default(cuid())
+  name             String
+  ownerEmail       String
   /// Stamped onto the year-end export. A CPA needs these, not just totals.
   legalName        String?
   ein              String?
   /// NAICS principal business activity code.
   businessCode     String?
   /// cash or accrual. Decides whether unpaid revenue appears in the export.
-  accountingMethod String?   @default("cash")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  accountingMethod String?  @default("cash")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  users   User[]
-  clients Client[]
-  alerts  SystemAlert[]
-  revenueEntries   RevenueEntry[]
-  expenses         Expense[]
-  invoices         Invoice[]
+  users          User[]
+  clients        Client[]
+  alerts         SystemAlert[]
+  revenueEntries RevenueEntry[]
+  expenses       Expense[]
+  invoices       Invoice[]
 }
 
 /**
  * Something that failed in the background, kept until it stops failing.
- *
  * Scheduled work has no operator watching it: a month-end republish that
  * fails at 3am only reaches a log file, so a client's page can sit stale for
  * weeks while the app looks healthy. These rows are what the app reads to say
  * otherwise.
- *
  * Deliberately a live list of what is broken now, not an audit log. A check
  * that succeeds deletes its row, so a problem that fixed itself leaves
  * nothing behind to explain away. The API log keeps the history.
@@ -153,37 +151,37 @@ model User {
 }
 
 model Client {
-  id                String    @id @default(cuid())
-  agencyId          String
-  name              String
-  avatarSeed        String?
-  plan              String?
+  id                   String         @id @default(cuid())
+  agencyId             String
+  name                 String
+  avatarSeed           String?
+  plan                 String?
   /// Publishing provider workspace id (Zernio profile _id) backing this client.
-  providerProfileId String?
+  providerProfileId    String?
   /// Short-form videos owed this pay period; null means not tracked.
-  quotaShort        Int?
+  quotaShort           Int?
   /// Long-form videos owed this pay period; null means not tracked.
-  quotaLong         Int?
+  quotaLong            Int?
   /// Start of the current pay period. Uploads after this count toward quota.
-  quotaResetAt      DateTime?
+  quotaResetAt         DateTime?
   /// Manual corrections applied on top of the counted uploads, per format.
-  adjustShort       Int       @default(0)
-  adjustLong        Int       @default(0)
+  adjustShort          Int            @default(0)
+  adjustLong           Int            @default(0)
   /// Who to actually contact at this client, kept here rather than in a head.
   /// Separate from `name`, which is the brand: the brand is "CACV Motors" and
   /// the person answering the phone is someone else.
-  contactName       String?
-  contactEmail      String?
-  contactPhone      String?
+  contactName          String?
+  contactEmail         String?
+  contactPhone         String?
   /// Permanent path of this client's shareable web report, e.g.
   /// "caleb-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.
-  reportSlug        String?   @unique
+  reportSlug           String?        @unique
   /// Absolute URL of the last published report page; null until first publish.
-  reportUrl         String?
+  reportUrl            String?
   /// When that page was last pushed. Also the flag month-end republishing
   /// reads: a client that has never been published is never published for them.
-  reportPublishedAt DateTime?
+  reportPublishedAt    DateTime?
   /// Reporting month the published page currently leads with ("2026-06").
   reportPublishedMonth String?
   /// Current retainer. A default for seeding a month, not a historical record:
@@ -191,15 +189,15 @@ model Client {
   monthlyPriceCents    Int?
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
-  billingMode          String    @default("calendar")
+  billingMode          String         @default("calendar")
   /// Calendar mode only. Capped at 28 so a cycle cannot land on a date that
   /// does not exist in February.
   billingDayOfMonth    Int?
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  deletedAt            DateTime?
 
   agency         Agency          @relation(fields: [agencyId], references: [id])
   socialAccounts SocialAccount[]
@@ -363,7 +361,6 @@ model ScheduleSlot {
 
 /**
  * A generated client report for one calendar month.
- *
  * The payload the PDF was built from is stored alongside it, so a report can
  * be re-rendered later without recomputing analytics that may since have
  * moved. `seenAt` drives the month-end notification.
@@ -393,7 +390,6 @@ model ClientReport {
 /**
  * A video that already existed on the platform, pulled straight from the
  * platform's own API rather than the publishing provider.
- *
  * The provider only exposes a rolling window of recent posts, so lifetime
  * rankings ("most viewed of all time") need the platform as the source of
  * truth. View counts here are authoritative and refreshed on each sync.
