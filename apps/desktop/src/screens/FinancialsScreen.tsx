@@ -98,11 +98,11 @@ export default function FinancialsScreen() {
         {phase === "loading" && (
           <div className="finskeleton">
             <div className="band">
-              <div className="netcard glass skel" />
-              <div className="donutcard glass skel" />
-              <div className="actcard glass skel" />
+              <div className="netcard glass finskel" />
+              <div className="donutcard glass finskel" />
+              <div className="actcard glass finskel" />
             </div>
-            <div className="card glass chartcard skel" style={{ height: 260 }} />
+            <div className="card glass chartcard finskel" style={{ height: 260 }} />
             <div className="finload">Loading the month…</div>
           </div>
         )}
