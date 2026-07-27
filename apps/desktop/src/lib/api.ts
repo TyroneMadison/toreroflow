@@ -203,6 +203,42 @@ export interface PublishResult {
   periods: string[];
 }
 
+/** One brand's standing on the Account Overview screen. */
+export interface OverviewClient {
+  id: string;
+  name: string;
+  avatarSeed: string | null;
+  avatarUrl: string | null;
+  platforms: Array<{ platform: Platform; handle: string; status: string }>;
+  /** Null when the client is not on a quota, which is not a fault. */
+  delivery: {
+    short: { delivered: number; target: number | null };
+    long: { delivered: number; target: number | null };
+    behindBy: number;
+  } | null;
+  /** Null when nothing has ever been published. */
+  lastPostAt: string | null;
+  daysQuiet: number | null;
+  report: {
+    month: string;
+    label: string;
+    built: boolean;
+    opened: boolean;
+    publishedMonth: string | null;
+    url: string | null;
+    /** Published, but leading with a month that is no longer current. */
+    stale: boolean;
+  };
+  needsReconnect: boolean;
+  /** Higher means more overdue attention. Drives the sort order. */
+  attention: number;
+}
+
+export interface AccountOverview {
+  month: { key: string; label: string };
+  clients: OverviewClient[];
+}
+
 /** Something that failed in the background, still failing. */
 export interface SystemAlert {
   id: string;

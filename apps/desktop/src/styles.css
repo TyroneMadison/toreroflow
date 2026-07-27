@@ -773,3 +773,33 @@
 /* View-tier boards: lifetime count plus how many landed in the selected range. */
 .rankmeta{font-size:10.5px;color:var(--txt-3);margin:6px 0 2px;font-weight:500}
 .rankmeta .up{color:var(--green)}
+
+/* ---- Account Overview: who needs you today ---- */
+.ovlist{display:flex;flex-direction:column;gap:14px}
+.ovrow{padding:18px 20px;position:relative;overflow:hidden}
+/* A coloured edge carries the worst signal, so the list scans without reading. */
+.ovrow::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.ovrow.bad::before{background:var(--red)}
+.ovrow.warn::before{background:var(--amber)}
+.ovrow.ok::before{background:var(--green)}
+.ovhead{display:flex;align-items:center;gap:13px}
+.ovav{width:42px;height:42px;border-radius:13px;overflow:hidden;flex:0 0 auto;display:grid;place-items:center;
+  background:var(--grad);color:#0b0b18;font-weight:700;font-size:13px}
+.ovav img{width:100%;height:100%;object-fit:cover;display:block}
+.ovname{flex:1;min-width:0}
+.ovname b{font-size:15px;font-weight:620;display:block}
+.ovplats{display:flex;gap:6px;margin-top:6px}
+.ovactions{display:flex;gap:8px;flex:0 0 auto}
+.ovactions .btn{padding:8px 14px;font-size:12px}
+.ovsignals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.signal{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:12px;font-size:12px;
+  background:var(--glass);border:1px solid var(--brd-soft)}
+.signal .sdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.signal b{font-weight:600}
+.signal span{color:var(--txt-3);font-size:11px}
+.signal.bad{background:rgba(255,107,122,.09);border-color:rgba(255,107,122,.26)}
+.signal.bad .sdot{background:var(--red);box-shadow:0 0 8px rgba(255,107,122,.7)}
+.signal.warn{background:rgba(255,207,107,.09);border-color:rgba(255,207,107,.26)}
+.signal.warn .sdot{background:var(--amber);box-shadow:0 0 8px rgba(255,207,107,.7)}
+.signal.ok .sdot{background:var(--green)}
+.signal.ok b{color:var(--txt-2);font-weight:500}

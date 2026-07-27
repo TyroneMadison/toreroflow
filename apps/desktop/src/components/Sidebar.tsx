@@ -28,6 +28,7 @@ interface NavItemDef {
 
 const OVERVIEW_NAV: NavItemDef[] = [
   { target: "dashboard", icon: "#i-globe", label: "Dashboard" },
+  { target: "overview", icon: "#i-users", label: "Account Overview" },
 ];
 
 const CREATE_NAV: NavItemDef[] = [
@@ -36,10 +37,11 @@ const CREATE_NAV: NavItemDef[] = [
   { target: "workflows", icon: "#i-bolt", label: "Workflows" },
 ];
 
+// Accounts is gone: client management moved into Settings, and the daily
+// "who needs me" view it half-was became Account Overview.
 const MEASURE_NAV: NavItemDef[] = [
   { target: "analytics", icon: "#i-chart", label: "Analytics" },
   { target: "reports", icon: "#i-dl", label: "Reports" },
-  { target: "accounts", icon: "#i-users", label: "Accounts" },
 ];
 
 const WORKSPACE_NAV: NavItemDef[] = [

@@ -89,6 +89,7 @@ function ProfileCard({
   onDisconnect,
   onSync,
   onContactSaved,
+  onDelete,
   busyKey,
   pending,
 }: {
@@ -97,11 +98,13 @@ function ProfileCard({
   onDisconnect(accountId: string): void;
   onSync(): void;
   onContactSaved(): void;
+  onDelete(): void;
   busyKey: string | null;
   pending: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [cover, setCover] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const connected = client.accounts.filter((a) => a.status === "connected");
   const avatar = clientAvatarUrl(client);
@@ -154,6 +157,28 @@ function ProfileCard({
             <svg>
               <use href="#i-image" />
             </svg>
+          </div>
+          {/* Two-step, because removing a brand takes its posts and reports
+              with it and there is no undo. */}
+          <div
+            className="iconbtn pstyle"
+            style={confirming ? { color: "var(--red)", borderColor: "rgba(255,107,122,.4)" } : undefined}
+            title={confirming ? "Click again to remove this brand" : "Remove brand"}
+            onClick={() => {
+              if (confirming) onDelete();
+              else {
+                setConfirming(true);
+                setTimeout(() => setConfirming(false), 3000);
+              }
+            }}
+          >
+            {confirming ? (
+              <span style={{ fontSize: 9, fontWeight: 700 }}>SURE?</span>
+            ) : (
+              <svg>
+                <use href="#i-x" />
+              </svg>
+            )}
           </div>
         </div>
       </div>
@@ -283,6 +308,24 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     }
   };
 
+  /**
+   * Remove a brand. Moved here from the Accounts screen when that merged into
+   * Settings, since this is now the one place a client is managed.
+   */
+  const removeClient = async (clientId: string) => {
+    const name = clients.find((c) => c.id === clientId)?.name ?? "the brand";
+    setBusyKey(`del:${clientId}`);
+    try {
+      await api.del(`/clients/${clientId}`);
+      await refreshClients();
+      toast.success(`${name} removed.`);
+    } catch (err) {
+      toast.fail(`Could not remove ${name}`, err);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const sync = async (clientId: string) => {
     setBusyKey(`sync:${clientId}`);
     try {
@@ -375,6 +418,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                   onDisconnect={(id) => void disconnect(id)}
                   onSync={() => void sync(client.id)}
                   onContactSaved={() => void refreshClients()}
+                  onDelete={() => void removeClient(client.id)}
                 />
               ))}
             </div>

@@ -6,7 +6,7 @@ import UploadSchedule from "./screens/UploadSchedule";
 import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import ReportsScreen from "./screens/ReportsScreen";
-import AccountsScreen from "./screens/AccountsScreen";
+import AccountOverviewScreen from "./screens/AccountOverviewScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AuthScreen from "./screens/AuthScreen";
@@ -24,7 +24,7 @@ export type ScreenId =
   | "calendar"
   | "analytics"
   | "reports"
-  | "accounts"
+  | "overview"
   | "workflows"
   | "settings";
 
@@ -158,9 +158,9 @@ function Shell() {
               onAlertsChanged={refreshAlerts}
             />
           )}
-          {activeScreen === "accounts" && (
-            <AccountsScreen
-              key="accounts"
+          {activeScreen === "overview" && (
+            <AccountOverviewScreen
+              key="overview"
               onOpenConnect={openConnect}
               onOpenInsights={openInsights}
             />
