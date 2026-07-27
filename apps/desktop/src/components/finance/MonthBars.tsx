@@ -31,12 +31,12 @@ function axisLabel(cents: number): string {
  */
 export default function MonthBars({ series }: { series: SeriesPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = niceCeil(Math.max(...series.map((p) => p.inCents), 1));
+  const max = niceCeil(Math.max(...series.map((p) => p.inCents)));
   const active = hover ?? series.length - 1;
   const labels = [max, (max * 3) / 4, max / 2, max / 4, 0];
 
   return (
-    <div className="card glass chartcard">
+    <div className="card glass finchart">
       <div className="rowhead">
         <div>
           <h3>Last twelve months</h3>
@@ -63,7 +63,7 @@ export default function MonthBars({ series }: { series: SeriesPoint[] }) {
               >
                 {i === active && (
                   <div className="tip">
-                    {formatCents(p.inCents)} in . {formatCents(p.outCents)} out
+                    {formatCents(p.inCents)} in · {formatCents(p.outCents)} out
                   </div>
                 )}
                 <div className="tk">
