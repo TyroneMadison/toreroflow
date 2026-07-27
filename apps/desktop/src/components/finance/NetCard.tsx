@@ -39,7 +39,7 @@ export default function NetCard({ series }: { series: SeriesPoint[] }) {
         )}{" "}
         <span className="chipnote">vs {prevLabel}</span>
       </div>
-      <div className="spark">
+      <div className="netspark">
         <svg viewBox="0 0 220 54" width="100%" height="54" preserveAspectRatio="none">
           <defs>
             <linearGradient id="sparkfill" x1="0" y1="0" x2="0" y2="1">
