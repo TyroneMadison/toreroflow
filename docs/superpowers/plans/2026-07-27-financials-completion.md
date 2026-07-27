@@ -1085,7 +1085,7 @@ git commit -m "feat: editable amounts, quota fractions, delete, and invoice gati
 `apps/desktop/src/components/finance/ExpenseSection.tsx`:
 
 ```tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatCents, type ExpenseCategory } from "@toreroflow/core";
 import { useToast } from "../Toasts";
 import { api } from "../../lib/api";
@@ -1139,6 +1139,10 @@ export default function ExpenseSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [amountDraft, setAmountDraft] = useState("");
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Escape unmounts the focused input, and that unmount fires a native blur
+  // which would commit the value the user just cancelled. The ref lets the
+  // blur handler tell an Escape-driven unmount from a real blur.
+  const cancelEdit = useRef(false);
 
   const dollarsToCents = (raw: string): number | null | undefined => {
     if (raw.trim() === "") return null;
@@ -1278,10 +1282,19 @@ export default function ExpenseSection({
                 autoFocus
                 value={amountDraft}
                 onChange={(e) => setAmountDraft(e.target.value)}
-                onBlur={() => void commitAmount(row)}
+                onBlur={() => {
+                  if (cancelEdit.current) {
+                    cancelEdit.current = false;
+                    return;
+                  }
+                  void commitAmount(row);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") setEditingId(null);
+                  if (e.key === "Escape") {
+                    cancelEdit.current = true;
+                    setEditingId(null);
+                  }
                 }}
               />
             </div>
