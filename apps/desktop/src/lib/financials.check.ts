@@ -1,5 +1,25 @@
-import assert from "node:assert/strict";
 import { donutSegments, sparkPath } from "./financials";
+
+/** Local so the file stays part of the app's typecheck without pulling in node types. */
+const assert = {
+  equal(actual: unknown, expected: unknown, message?: string) {
+    if (actual !== expected) {
+      const msg = message ? `${message}\n  ` : "";
+      throw new Error(`${msg}expected: ${String(expected)}, actual: ${String(actual)}`);
+    }
+  },
+  deepEqual(actual: unknown, expected: unknown, message?: string) {
+    const a = JSON.stringify(actual);
+    const b = JSON.stringify(expected);
+    if (a !== b) {
+      const msg = message ? `${message}\n  ` : "";
+      throw new Error(`${msg}expected: ${b}, actual: ${a}`);
+    }
+  },
+  ok(cond: unknown, message?: string) {
+    if (!cond) throw new Error(message || "assertion failed");
+  },
+};
 
 // Segments sum to 100 percent and walk clockwise from 12 o'clock. The SVG
 // circle has circumference 100, first offset 25, each next offset minus the
