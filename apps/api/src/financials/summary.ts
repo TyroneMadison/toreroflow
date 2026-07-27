@@ -71,3 +71,22 @@ export function ytdTotals(
   }
   return { inCents, netCents: inCents - outCents };
 }
+
+/**
+ * The years the export selector offers: the current year down to the
+ * earliest month that holds any financial row at all. A backfilled expense
+ * in an older year must surface here, or that deduction can never be
+ * exported. Future years stay capped at nowYear on purpose: the UI cannot
+ * open future months, and the cap keeps the list short.
+ */
+export function exportYears(nowYear: number, earliestMonths: Array<string | null>): number[] {
+  let earliestYear = nowYear;
+  for (const m of earliestMonths) {
+    if (m === null) continue;
+    const y = Number(m.slice(0, 4));
+    if (y < earliestYear) earliestYear = y;
+  }
+  const years: number[] = [];
+  for (let y = nowYear; y >= earliestYear; y--) years.push(y);
+  return years;
+}

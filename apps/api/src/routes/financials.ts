@@ -13,7 +13,7 @@ import {
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
 import { deriveStatus, rollForward } from "../financials/month";
-import { buildSeries, monthKeysEnding, ytdTotals } from "../financials/summary";
+import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
 import { renderReportPdf } from "../reports/renderPdf";
 import { buildInvoiceHtml } from "../financials/invoicePdf";
@@ -88,10 +88,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     // it. The screen offers twelve months back purely for reading history;
     // seeding revenue at today's price or rolling expenses forward into a
     // month that already closed would fabricate records nobody asked for,
-    // and there is no revenue DELETE route to undo it. So a month before the
-    // current one is read-only here: whatever already exists comes back,
-    // and nothing new is created. String comparison sorts correctly because
-    // both sides are "YYYY-MM".
+    // and the seeder would even recreate a row the operator deleted. So a
+    // month before the current one is read-only here: whatever already
+    // exists comes back, and nothing new is created. String comparison
+    // sorts correctly because both sides are "YYYY-MM".
     if (month >= currentMonthKey()) {
       // Seed the month from each client's current price. Only for clients that
       // have one: a client with no price is not an error, it is just not billed.
@@ -238,15 +238,28 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
 
     // Years the export selector can offer: from the earliest opened month's
     // year up to the server's current year, newest first.
-    const firstOpened = await prisma.financialMonth.findFirst({
-      where: { agencyId },
-      orderBy: { month: "asc" },
-      select: { month: true },
-    });
-    const nowYear = new Date().getFullYear();
-    const firstYear = firstOpened ? Number(firstOpened.month.slice(0, 4)) : nowYear;
-    const years: number[] = [];
-    for (let y = nowYear; y >= Math.min(firstYear, nowYear); y--) years.push(y);
+    const [firstOpened, firstRevenue, firstExpense] = await Promise.all([
+      prisma.financialMonth.findFirst({
+        where: { agencyId },
+        orderBy: { month: "asc" },
+        select: { month: true },
+      }),
+      prisma.revenueEntry.findFirst({
+        where: { agencyId },
+        orderBy: { month: "asc" },
+        select: { month: true },
+      }),
+      prisma.expense.findFirst({
+        where: { agencyId },
+        orderBy: { month: "asc" },
+        select: { month: true },
+      }),
+    ]);
+    const years = exportYears(new Date().getFullYear(), [
+      firstOpened?.month ?? null,
+      firstRevenue?.month ?? null,
+      firstExpense?.month ?? null,
+    ]);
 
     return {
       month,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildSeries, monthKeysEnding, ytdTotals } from "./summary";
+import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "./summary";
 
 // Twelve keys ending at the requested month, crossing the year boundary.
 const keys = monthKeysEnding("2026-02", 12);
@@ -42,5 +42,10 @@ const ytd = ytdTotals(
 );
 assert.equal(ytd.inCents, 350000);
 assert.equal(ytd.netCents, 350000 - 5999);
+
+// Years: earliest of any source wins, nulls ignored, never empty, newest first.
+assert.deepEqual(exportYears(2027, [null, "2026-12", "2027-01"]), [2027, 2026]);
+assert.deepEqual(exportYears(2026, [null, null, null]), [2026]);
+assert.deepEqual(exportYears(2026, ["2028-01", null, null]), [2026]);
 
 console.log("summary: all checks passed");

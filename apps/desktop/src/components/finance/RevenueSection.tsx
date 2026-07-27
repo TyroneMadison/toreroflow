@@ -42,6 +42,21 @@ export default function RevenueSection({
 }) {
   const toast = useToast();
   const { clients } = useAppState();
+
+  // Deleting a row only sticks where the month seeder will not recreate it:
+  // past months, or clients with no standing price. Everywhere else the row
+  // would silently come back on the next refresh, so the button hides and
+  // setting the amount to $0 is the way to skip a month.
+  const currentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const deleteSticks = (row: RevenueRow): boolean => {
+    if (month < currentMonthKey()) return true;
+    const client = clients.find((c) => c.id === row.clientId);
+    return client?.monthlyPriceCents == null;
+  };
+
   const [drafts, setDrafts] = useState<Record<string, PriceDraft>>({});
   // Inline edit of one row's amount for this month only. The standing price
   // in Settings is untouched; future months seed from that, not from this.
@@ -254,13 +269,15 @@ export default function RevenueSection({
                 Invoice
               </button>
             )}
-            <button
-              className={`del${confirmingId === row.id ? " arm" : ""}`}
-              title={confirmingId === row.id ? "Click again to remove" : "Remove this month's row"}
-              onClick={() => void removeRow(row)}
-            >
-              {confirmingId === row.id ? "SURE?" : "✕"}
-            </button>
+            {deleteSticks(row) && (
+              <button
+                className={`del${confirmingId === row.id ? " arm" : ""}`}
+                title={confirmingId === row.id ? "Click again to remove" : "Remove this month's row"}
+                onClick={() => void removeRow(row)}
+              >
+                {confirmingId === row.id ? "SURE?" : "✕"}
+              </button>
+            )}
           </div>
         ))
       )}
