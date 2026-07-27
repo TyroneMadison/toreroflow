@@ -291,7 +291,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           </div>
           <div className="filterchip" style={{ opacity: 0.8 }}>
             <span className="d" style={{ background: "var(--v)" }} />{" "}
-            {selectedClient?.name ?? "All brands"}
+            {selectedClient?.name ?? "No brand selected"}
           </div>
           <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt-2)" }}>
             {rangeLabel}
