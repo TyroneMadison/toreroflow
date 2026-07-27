@@ -86,12 +86,13 @@ model Agency {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users          User[]
-  clients        Client[]
-  alerts         SystemAlert[]
-  revenueEntries RevenueEntry[]
-  expenses       Expense[]
-  invoices       Invoice[]
+  users           User[]
+  clients         Client[]
+  alerts          SystemAlert[]
+  revenueEntries  RevenueEntry[]
+  expenses        Expense[]
+  invoices        Invoice[]
+  financialMonths FinancialMonth[]
 }
 
 /**
@@ -511,6 +512,25 @@ model Expense {
   agency Agency @relation(fields: [agencyId], references: [id])
 
   @@index([agencyId, month])
+}
+
+/// Marks a financial month as opened, so roll-forward runs exactly once.
+///
+/// Counting existing expenses cannot tell "never opened" from "emptied on
+/// purpose", so a user who deleted every cost had them silently restored by
+/// the next page load. The unique constraint also makes opening a month
+/// atomic: two concurrent requests race to insert and only one wins, where
+/// a count-then-insert let both through and duplicated every carried cost.
+model FinancialMonth {
+  id       String   @id @default(cuid())
+  agencyId String
+  /// "2026-07"
+  month    String
+  openedAt DateTime @default(now())
+
+  agency Agency @relation(fields: [agencyId], references: [id])
+
+  @@unique([agencyId, month])
 }
 
 /// A document, never a charge. Phase 1 cannot move money.

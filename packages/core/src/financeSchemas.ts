@@ -22,7 +22,22 @@ export const expenseSchema = z.object({
   note: z.string().max(500).nullish(),
 });
 
-export const expenseUpdateSchema = expenseSchema.partial();
+/**
+ * What may be changed after an expense exists.
+ *
+ * Deliberately narrower than expenseSchema: month and kind are decided when
+ * the row is created and are not editable, because moving a cost between
+ * months or flipping recurring to one-off silently rewrites a period that may
+ * already have been reported or exported.
+ */
+export const expenseUpdateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  categoryLine: z.string().min(1).max(40).optional(),
+  amountCents: z.number().int().min(0).max(100_000_000).nullish(),
+  incurredOn: z.string().datetime().nullish(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
+  note: z.string().max(500).nullish(),
+});
 
 export const revenueUpdateSchema = z.object({
   amountCents: z.number().int().min(0).max(100_000_000).optional(),

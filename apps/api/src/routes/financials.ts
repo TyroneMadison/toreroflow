@@ -14,6 +14,9 @@ import { deriveStatus, rollForward } from "../financials/month";
 
 const NOT_FOUND = { error: "not found" } as const;
 
+/** Prisma's code for "a unique constraint rejected this write". */
+const UNIQUE_VIOLATION = "P2002";
+
 /** First moment of the month a "2026-06" key names. */
 function monthStart(key: string): Date {
   const [y, m] = key.split("-").map(Number);
@@ -72,10 +75,24 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    // Roll recurring costs forward the first time a month is opened. An empty
-    // month means roll-forward has not run, not that there are no costs.
-    const existing = await prisma.expense.count({ where: { agencyId, month } });
-    if (existing === 0) {
+    // Roll recurring costs forward the first time a month is opened. Counting
+    // existing expenses cannot tell "never opened" from "every cost deleted on
+    // purpose", so open-ness is recorded explicitly instead. The insert is the
+    // claim: a unique-constraint violation means another request (or an
+    // earlier visit) already opened this month, so skip silently rather than
+    // erroring or rolling forward twice.
+    let justOpened = true;
+    try {
+      await prisma.financialMonth.create({ data: { agencyId, month } });
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? (error as { code: unknown }).code
+          : null;
+      if (code !== UNIQUE_VIOLATION) throw error;
+      justOpened = false;
+    }
+    if (justOpened) {
       const prev = await prisma.expense.findMany({
         where: { agencyId, month: previousMonth(month) },
       });
