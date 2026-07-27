@@ -46,8 +46,9 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
       const client = await api.post<{ id: string }>("/clients", { name: name.trim() });
       setClientId(client.id);
       await refreshClients();
-      // First brand auto-selects so the rest of the app comes alive.
-      if (clients.length === 0) selectClient(client.id);
+      // A new brand becomes the active brand so the Create section lands on
+      // its clean slate rather than staying on the previous brand.
+      selectClient(client.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not create client");
     } finally {
