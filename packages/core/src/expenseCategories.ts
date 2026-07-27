@@ -20,7 +20,7 @@ export interface ExpenseCategory {
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "advertising", scheduleCLine: "8", label: "Advertising", emoji: "📣" },
   { key: "car", scheduleCLine: "9", label: "Car and truck", emoji: "🚗" },
-  { key: "contract_labor", scheduleCLine: "11", label: "Contract labour", emoji: "👷" },
+  { key: "contract_labor", scheduleCLine: "11", label: "Contract labor", emoji: "👷" },
   { key: "depreciation", scheduleCLine: "13", label: "Equipment", emoji: "📷" },
   { key: "insurance", scheduleCLine: "15", label: "Insurance", emoji: "🛡" },
   { key: "legal_professional", scheduleCLine: "17", label: "Legal and professional", emoji: "⚖️" },

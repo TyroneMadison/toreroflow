@@ -219,7 +219,7 @@ lines, the export needs no translation.
 |---|---|---|---|
 | `advertising` | Line 8 | Advertising | 📣 |
 | `car` | Line 9 | Car and truck | 🚗 |
-| `contract_labor` | Line 11 | Contract labour | 👷 |
+| `contract_labor` | Line 11 | Contract labor | 👷 |
 | `depreciation` | Line 13 | Equipment | 📷 |
 | `insurance` | Line 15 | Insurance | 🛡 |
 | `legal_professional` | Line 17 | Legal and professional | ⚖️ |
