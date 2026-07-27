@@ -8,6 +8,5 @@
     "noEmit": true,
     "useDefineForClassFields": true
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.check.ts"]
+  "include": ["src"]
 }
