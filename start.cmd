@@ -16,7 +16,7 @@ echo   ==========
 echo.
 
 REM --- 1. Docker, which holds the database and the job queue ---------------
-echo   [1/4] Starting the database and queue...
+echo   [1/3] Starting the database and queue...
 docker info >nul 2>&1
 if errorlevel 1 (
   echo.
@@ -27,39 +27,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
-docker compose -f infra/docker-compose.yml up -d
+REM Postgres accepts connections a moment after its container starts, so
+REM migrating immediately fails with a connection error that looks alarming
+REM and is not. --wait holds until both services report healthy, using the
+REM healthchecks already declared in the compose file.
+REM
+REM An earlier version polled with "docker exec pg_isready" instead. It hung:
+REM docker exec attaches to the container, and from a double clicked script
+REM with no console attached that can block forever rather than returning a
+REM failure the loop could count. Compose already knows when a service is
+REM ready, so asking it beats re-implementing the question.
+docker compose -f infra/docker-compose.yml up -d --wait --wait-timeout 60
 if errorlevel 1 (
   echo.
-  echo   Could not start the containers. The message above says why.
+  echo   The database and queue did not come up healthy within 60 seconds.
+  echo   Open Docker Desktop and check the toreroflow containers.
   echo.
   pause
   exit /b 1
 )
-
-REM Postgres accepts connections a moment after the container starts, so
-REM migrating too early fails with a connection error that looks alarming
-REM and is not. Wait for it to actually answer.
-echo   [2/4] Waiting for the database to answer...
-set /a tries=0
-:waitloop
-docker exec toreroflow-postgres pg_isready -U toreroflow >nul 2>&1
-if not errorlevel 1 goto ready
-set /a tries+=1
-if %tries% geq 30 (
-  echo.
-  echo   The database did not answer within 30 seconds. Check Docker Desktop.
-  echo.
-  pause
-  exit /b 1
-)
-timeout /t 1 /nobreak >nul
-goto waitloop
-:ready
 
 REM --- 2. Migrations, so a pulled update reaches the database --------------
 REM Pulling new code that added a table does nothing until this runs, and the
 REM symptom is a confusing 500 rather than an obvious missing table.
-echo   [3/4] Applying any new database changes...
+echo   [2/3] Applying any new database changes...
 call pnpm --filter @toreroflow/db migrate:deploy
 if errorlevel 1 (
   echo.
@@ -71,7 +62,7 @@ if errorlevel 1 (
 )
 
 REM --- 3. The API and the background worker -------------------------------
-echo   [4/4] Starting the API and the background worker...
+echo   [3/3] Starting the API and the background worker...
 start "Toreroflow API" cmd /k "cd /d %~dp0 && pnpm dev:api"
 start "Toreroflow worker" cmd /k "cd /d %~dp0 && pnpm --filter @toreroflow/worker dev"
 
