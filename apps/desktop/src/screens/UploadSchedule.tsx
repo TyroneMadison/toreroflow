@@ -63,38 +63,47 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     (a) => a.status === "connected",
   ).length;
 
-  const loadPosts = useCallback(async () => {
-    if (!selectedClient) {
-      setPosts([]);
-      return;
-    }
-    try {
-      setPosts(await api.get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`));
-    } catch {
-      // API offline: keep whatever we have
-    }
-  }, [selectedClient]);
+  const loadPosts = useCallback(
+    async (opts?: { announce?: boolean }) => {
+      if (!selectedClient) {
+        setPosts([]);
+        return;
+      }
+      try {
+        setPosts(await api.get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`));
+      } catch (err) {
+        // Polls stay silent: the rows on screen are this brand's own. The
+        // first load of a mount follows a switch or navigation, so that
+        // failure is announced.
+        if (opts?.announce) toast.fail("Could not load the queue", err);
+      }
+    },
+    [selectedClient, toast],
+  );
 
   useEffect(() => {
-    void loadPosts();
+    void loadPosts({ announce: true });
     const t = setInterval(() => void loadPosts(), 15_000);
     return () => clearInterval(t);
   }, [loadPosts]);
 
-  const load = useCallback(async () => {
-    if (!selectedClient) {
-      setAssets([]);
-      return;
-    }
-    try {
-      setAssets(await api.get<MediaAssetInfo[]>(`/clients/${selectedClient.id}/media`));
-    } catch {
-      // API offline: keep whatever we have
-    }
-  }, [selectedClient]);
+  const load = useCallback(
+    async (opts?: { announce?: boolean }) => {
+      if (!selectedClient) {
+        setAssets([]);
+        return;
+      }
+      try {
+        setAssets(await api.get<MediaAssetInfo[]>(`/clients/${selectedClient.id}/media`));
+      } catch (err) {
+        if (opts?.announce) toast.fail("Could not load videos", err);
+      }
+    },
+    [selectedClient, toast],
+  );
 
   useEffect(() => {
-    void load();
+    void load({ announce: true });
   }, [load]);
 
   // Published history drives the best-times panel; it is cached server-side.

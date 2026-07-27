@@ -83,25 +83,31 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     rangeEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23, 59, 59, 999);
   }
 
-  const load = useCallback(async () => {
-    if (!selectedClient) {
-      setTargets([]);
-      return;
-    }
-    try {
-      setTargets(
-        await api.get<PostTargetInfo[]>(
-          `/clients/${selectedClient.id}/posts?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`,
-        ),
-      );
-    } catch {
-      // API offline: keep whatever we have
-    }
+  const load = useCallback(
+    async (opts?: { announce?: boolean }) => {
+      if (!selectedClient) {
+        setTargets([]);
+        return;
+      }
+      try {
+        setTargets(
+          await api.get<PostTargetInfo[]>(
+            `/clients/${selectedClient.id}/posts?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`,
+          ),
+        );
+      } catch (err) {
+        // Polls stay silent: the rows on screen are this brand's own. The
+        // first load of a mount or a range change is operator-initiated, so
+        // that failure is announced.
+        if (opts?.announce) toast.fail("Could not load the calendar", err);
+      }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClient, view, anchor.getTime()]);
+    [selectedClient, view, anchor.getTime(), toast],
+  );
 
   useEffect(() => {
-    void load();
+    void load({ announce: true });
     const t = setInterval(() => void load(), 15_000);
     return () => clearInterval(t);
   }, [load]);
