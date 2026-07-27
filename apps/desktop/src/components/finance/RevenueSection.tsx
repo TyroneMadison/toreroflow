@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatCents } from "@toreroflow/core";
 import { useToast } from "../Toasts";
 import { api, fileUrl, type ClientSummary } from "../../lib/api";
@@ -49,6 +49,10 @@ export default function RevenueSection({
   const [amountDraft, setAmountDraft] = useState("");
   // Two-step delete: first click arms, second click within the window fires.
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  // Escape unmounts the focused input, and that unmount fires a native blur
+  // which would commit the value the user just cancelled. The ref lets the
+  // blur handler tell an Escape-driven unmount from a real blur.
+  const cancelEdit = useRef(false);
 
   // Clients the API never returned a row for. /financials seeds a revenue
   // row for every client with a price (see routes/financials.ts), so a
@@ -197,10 +201,19 @@ export default function RevenueSection({
                   autoFocus
                   value={amountDraft}
                   onChange={(e) => setAmountDraft(e.target.value)}
-                  onBlur={() => void commitAmount(row)}
+                  onBlur={() => {
+                    if (cancelEdit.current) {
+                      cancelEdit.current = false;
+                      return;
+                    }
+                    void commitAmount(row);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
-                    if (e.key === "Escape") setEditingId(null);
+                    if (e.key === "Escape") {
+                      cancelEdit.current = true;
+                      setEditingId(null);
+                    }
                   }}
                 />
               </div>
