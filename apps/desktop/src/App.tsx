@@ -37,7 +37,7 @@ type ModalState =
   | null;
 
 function Shell() {
-  const { authReady, user } = useAppState();
+  const { authReady, user, selectedClientId } = useAppState();
   const [activeScreen, setActiveScreen] = useState<ScreenId>("dashboard");
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [modal, setModal] = useState<ModalState>(null);
@@ -144,10 +144,17 @@ function Shell() {
             />
           )}
           {activeScreen === "upload" && (
-            <UploadSchedule key="upload" onPreview={openPreview} onOpenConnect={openConnect} />
+            <UploadSchedule
+              key={`upload-${selectedClientId ?? "none"}`}
+              onPreview={openPreview}
+              onOpenConnect={openConnect}
+            />
           )}
           {activeScreen === "calendar" && (
-            <CalendarScreen key="calendar" onNewPost={() => setActiveScreen("upload")} />
+            <CalendarScreen
+              key={`calendar-${selectedClientId ?? "none"}`}
+              onNewPost={() => setActiveScreen("upload")}
+            />
           )}
           {activeScreen === "analytics" && (
             <AnalyticsScreen key="analytics" onOpenConnect={openConnect} />
@@ -168,7 +175,9 @@ function Shell() {
             />
           )}
           {activeScreen === "financials" && <FinancialsScreen key="financials" />}
-          {activeScreen === "workflows" && <WorkflowsScreen key="workflows" />}
+          {activeScreen === "workflows" && (
+            <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />
+          )}
           {activeScreen === "settings" && (
             <SettingsScreen key="settings" onOpenConnect={openConnect} />
           )}
