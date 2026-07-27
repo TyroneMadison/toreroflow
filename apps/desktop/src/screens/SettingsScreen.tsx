@@ -83,6 +83,97 @@ function ContactFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
   );
 }
 
+/**
+ * The standing price and billing mode, saved on blur like the contact
+ * fields. Changing the price never rewrites months that already seeded;
+ * only future months pick it up, which is why this lives in Settings and
+ * the per-month number lives on the Financials screen.
+ */
+function BillingFields({ client, onSaved }: { client: ClientSummary; onSaved(): void }) {
+  const toast = useToast();
+  const [dollars, setDollars] = useState(
+    client.monthlyPriceCents === null ? "" : (client.monthlyPriceCents / 100).toFixed(2),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const savePrice = async () => {
+    const stored = client.monthlyPriceCents === null ? "" : (client.monthlyPriceCents / 100).toFixed(2);
+    if (dollars.trim() === stored) return;
+    const parsed = dollars.trim() === "" ? null : Number.parseFloat(dollars);
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
+      toast.fail(`Could not save ${client.name}'s price`, new Error("enter a valid amount"));
+      setDollars(stored);
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.patch(`/clients/${client.id}/billing`, {
+        monthlyPriceCents: parsed === null ? null : Math.round(parsed * 100),
+      });
+      onSaved();
+    } catch (err) {
+      toast.fail(`Could not save ${client.name}'s price`, err);
+      setDollars(stored);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveMode = async (mode: "calendar" | "on_fulfilment") => {
+    if (mode === client.billingMode) return;
+    try {
+      await api.patch(`/clients/${client.id}/billing`, { billingMode: mode });
+      onSaved();
+    } catch (err) {
+      toast.fail(`Could not save ${client.name}'s billing mode`, err);
+    }
+  };
+
+  return (
+    <div className="pcontact">
+      <label className="cfield">
+        <span className="lab">
+          Monthly price
+          {saving && <i> saving…</i>}
+        </span>
+        <div className="pricein">
+          <span>$</span>
+          <input
+            className="field-in"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="not billed"
+            value={dollars}
+            onChange={(e) => setDollars(e.target.value)}
+            onBlur={() => void savePrice()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+          />
+        </div>
+      </label>
+      <label className="cfield">
+        <span className="lab">Billing</span>
+        <div className="modepick">
+          <button
+            className={client.billingMode === "calendar" ? "on" : ""}
+            onClick={() => void saveMode("calendar")}
+          >
+            Monthly
+          </button>
+          <button
+            className={client.billingMode === "on_fulfilment" ? "on" : ""}
+            onClick={() => void saveMode("on_fulfilment")}
+          >
+            When delivered
+          </button>
+        </div>
+      </label>
+    </div>
+  );
+}
+
 function ProfileCard({
   client,
   onConnect,
@@ -186,6 +277,7 @@ function ProfileCard({
       <div className="pexpand">
         <div className="pexpand-inner">
           <ContactFields client={client} onSaved={onContactSaved} />
+          <BillingFields client={client} onSaved={onContactSaved} />
 
           <div className="flabel" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
             Platforms
