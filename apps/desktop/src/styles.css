@@ -856,3 +856,56 @@
 .cwrap .sw{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:block}
 .cwrap .sw.on{border-color:#fff}
 [data-theme="light"] .cwrap .sw.on{border-color:#1b1c33}
+
+/* Financials top band: net + donut + at a glance, per the signed-off mockup. */
+.band{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:14px;margin-bottom:14px}
+.netcard{padding:22px;display:flex;flex-direction:column}
+.netcard .lbl{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+.netcard .big{font-size:36px;font-weight:700;letter-spacing:-1px;margin-top:10px;
+  background:linear-gradient(135deg,#eafff6,#57d6a0);-webkit-background-clip:text;background-clip:text;color:transparent}
+.chip{font-size:11px;font-weight:650;padding:3px 10px;border-radius:20px}
+.chip.up{color:var(--green);background:rgba(87,214,160,.14)}
+.chip.down{color:var(--red);background:rgba(255,107,122,.14)}
+.chip.flat{color:var(--txt-3);background:var(--glass-2)}
+.chipnote{font-size:11.5px;color:var(--txt-3)}
+.netcard .spark{margin-top:auto;padding-top:14px}
+.donutcard{padding:22px;display:flex;gap:22px;align-items:center}
+.dwrap{position:relative;flex:0 0 auto}
+.dctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.dctr small{font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
+.dctr b{font-size:19px;font-weight:700;letter-spacing:-.5px}
+.dbars{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+.db .dtop{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt-2);margin-bottom:6px}
+.db .dtop i{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
+.db .dtop b{margin-left:auto;color:var(--txt);font-size:12.5px;font-weight:650}
+.track{height:7px;border-radius:20px;background:rgba(255,255,255,.07);overflow:hidden}
+.track i{display:block;height:100%;border-radius:20px}
+.actcard{padding:14px 22px;display:flex;flex-direction:column}
+.act{display:flex;align-items:baseline;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--brd-soft)}
+.act:last-child{border-bottom:0}
+.act span{font-size:12px;color:var(--txt-3)}
+.act b{font-size:14.5px;font-weight:650}
+.act b.g{color:var(--green)}
+.act b.r{color:var(--red)}
+
+/* Twelve-month bars. Everything scoped under .chartcard: .col and .cap are
+   already taken by the calendar's CSS. */
+.chartcard{padding:22px;margin-bottom:14px}
+.chartcard .chartwrap{display:flex;gap:14px;margin-top:4px}
+.chartcard .yaxis{display:flex;flex-direction:column;justify-content:space-between;height:196px;padding-bottom:24px;flex:0 0 auto}
+.chartcard .yaxis span{font-size:10px;color:var(--txt-3)}
+.chartcard .chart{flex:1;display:flex;align-items:flex-end;gap:12px;height:196px}
+.chartcard .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;height:100%;position:relative}
+.chartcard .tk{flex:1;width:100%;max-width:46px;border-radius:14px;background:rgba(255,255,255,.055);
+  display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding:4px;gap:3px}
+.chartcard .fill{width:100%;border-radius:11px}
+.chartcard .fill.i{background:linear-gradient(180deg,#6fe3b0,#3fae80)}
+.chartcard .fill.o{background:linear-gradient(180deg,#ff8b97,#c9505f)}
+.chartcard .cap{font-size:10.5px;color:var(--txt-3)}
+.chartcard .col.on .cap{color:var(--txt);font-weight:600}
+.chartcard .col.on .tk{background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.13)}
+.chartcard .tip{position:absolute;top:-6px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:650;
+  padding:5px 11px;border-radius:10px;background:rgba(14,13,26,.96);border:1px solid var(--brd);box-shadow:0 10px 26px rgba(0,0,0,.55);z-index:5}
+[data-theme="light"] .chartcard .tip{background:rgba(248,249,255,.98);box-shadow:0 10px 26px rgba(50,55,110,.25)}
+[data-theme="light"] .chartcard .tk{background:rgba(20,22,50,.06)}
+[data-theme="light"] .track{background:rgba(20,22,50,.08)}
