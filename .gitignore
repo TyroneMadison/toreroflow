@@ -34,3 +34,9 @@ Thumbs.db
 .idea/
 .vscode/
 .superpowers/
+
+# personal working files, not part of the app
+.claude-session-history.md
+List of improvments for the app.md
+BluePrintUploadUI.png
+photo_*.jpg
