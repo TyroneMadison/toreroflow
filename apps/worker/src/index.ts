@@ -414,6 +414,7 @@ interface DayBucket {
  * with per-platform entries carrying accountId, metrics, and publish dates.
  * We attribute each post's metrics to its publish day, giving instant
  * backfilled history the moment an account connects.
+ * The pull is the full windowed history, and every post lands in the external store before the 200-day horizon trims anything.
  */
 async function ingestAnalytics(): Promise<void> {
   if (!zernio) return;
@@ -433,12 +434,30 @@ async function ingestAnalytics(): Promise<void> {
   let remoteAccounts: Awaited<ReturnType<typeof zernio.listAccounts>> = [];
   try {
     [posts, remoteAccounts] = await Promise.all([
-      zernio.analytics(500),
+      zernio.analyticsHistory(),
       zernio.listAccounts(),
     ]);
   } catch (error) {
     console.error("[worker] analytics pull failed:", error);
     return;
+  }
+
+  // The rolling store: every provider post persists before the horizon
+  // trim below, so all-time boards outlive Zernio's one-year window. The
+  // 200-day horizon only concerns MetricSnapshot day-bucketing.
+  const byProviderId = new Map(
+    accounts
+      .filter((a) => a.providerAccountId)
+      .map((a) => [
+        a.providerAccountId as string,
+        { socialAccountId: a.id, platform: a.platform },
+      ]),
+  );
+  try {
+    const written = await persistProviderPosts(prisma, posts, byProviderId);
+    console.log(`[worker] provider history persisted: ${written} rows`);
+  } catch (error) {
+    console.error("[worker] provider history persist failed:", error);
   }
 
   const horizon = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
