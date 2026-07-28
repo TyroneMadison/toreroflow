@@ -179,8 +179,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
 
     const revenueRows = revenue.map((r) => {
       const c = byClient.get(r.clientId);
-      // Met means every tracked format has reached its target. A client with
-      // no targets at all counts as met, because there is nothing to wait for.
+      // Met means every tracked format has reached its target. With no
+      // targets, the answer depends on billing: calendar owes by the month
+      // regardless, but a fulfilment client with no targets has nothing
+      // countable delivered, so its cycle is not met. See quotaMetFor.
       const d = deliveredByClient.get(r.clientId) ?? { short: 0, long: 0 };
       const quotaMet =
         !c ||
