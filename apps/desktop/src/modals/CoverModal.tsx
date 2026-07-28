@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import Modal from "./Modal";
 import { useToast } from "../components/Toasts";
-import { api, fileUrl, uploadCoverImage, type MediaAssetInfo } from "../lib/api";
+import { api, fileUrl, uploadCoverImage, videoLabel, type MediaAssetInfo } from "../lib/api";
 
 interface CoverModalProps {
   asset: MediaAssetInfo;
@@ -76,7 +76,7 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
       <div className="modal-head">
         <div>
           <h3>Edit cover</h3>
-          <p>{asset.name}</p>
+          <p>{videoLabel(asset)}</p>
         </div>
         <div className="modal-x" onClick={onClose}>
           <svg>

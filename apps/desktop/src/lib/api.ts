@@ -315,9 +315,12 @@ export interface Suggestion {
 }
 
 export interface DraftCopy {
-  /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
-  title?: string;
+  /** The video's label in the app, and the fallback for the fields below. */
+  name?: string;
+  /** The caption on Instagram, TikTok, Facebook and Snapchat. */
   description?: string;
+  youtubeTitle?: string;
+  youtubeDescription?: string;
   hashtags?: string[];
 }
 
@@ -340,6 +343,12 @@ export interface MediaAssetInfo {
   coverOffsetMs: number | null;
   /** The original upload; videos are published exactly as exported. */
   videoUrl: string | null;
+}
+
+/** What to call a video on screen: the typed name, else the file name. */
+export function videoLabel(asset: MediaAssetInfo): string {
+  const name = asset.draftCopy?.name?.trim();
+  return name ? name : asset.name;
 }
 
 export interface PostTargetInfo {
