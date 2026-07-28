@@ -669,7 +669,15 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                               : "Pick platforms and a time"
                         }
                         disabled={asset.status !== "ready" || connectedCount === 0}
-                        onClick={() => setScheduling(asset)}
+                        onClick={() => {
+                          // What posts has to be what is on screen. saveDraft
+                          // is a no-op when nothing was typed, and returns
+                          // false when the server refused, in which case the
+                          // modal stays shut rather than publishing older copy.
+                          void saveDraft(asset).then((ok) => {
+                            if (ok) setScheduling(asset);
+                          });
+                        }}
                       >
                         <svg>
                           <use href="#i-bolt" />
