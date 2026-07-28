@@ -47,6 +47,8 @@ export interface HistoryWindow {
 }
 
 const DAY_MS = 86_400_000;
+/** Per-window fetch ceiling in analyticsHistory; a full window warns that older posts may be missing. */
+const WINDOW_MAX = 2000;
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -150,7 +152,7 @@ export class ZernioProvider {
     const range =
       (fromDate ? `&fromDate=${fromDate}` : "") + (toDate ? `&toDate=${toDate}` : "");
     const out: Array<Record<string, unknown>> = [];
-    for (let page = 1; out.length < max && page <= 10; page++) {
+    for (let page = 1; out.length < max && page <= Math.ceil(max / pageSize); page++) {
       const data = await this.request<Record<string, unknown>>(
         "GET",
         `/analytics?limit=${pageSize}&page=${page}${range}`,
@@ -175,12 +177,17 @@ export class ZernioProvider {
     for (const w of historyWindows(new Date(), maxWindows)) {
       let items: Array<Record<string, unknown>>;
       try {
-        items = await this.analytics(1000, w.fromDate, w.toDate);
+        items = await this.analytics(WINDOW_MAX, w.fromDate, w.toDate);
       } catch (error) {
         if (!out.length) throw error;
         break;
       }
       if (!items.length) break;
+      if (items.length >= WINDOW_MAX) {
+        console.warn(
+          `[zernio] analytics window ${w.fromDate}..${w.toDate} returned the ${items.length}-item cap, older posts in this window may be missing`,
+        );
+      }
       out.push(...items);
     }
     return out;

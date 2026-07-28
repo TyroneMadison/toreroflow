@@ -414,7 +414,8 @@ interface DayBucket {
  * with per-platform entries carrying accountId, metrics, and publish dates.
  * We attribute each post's metrics to its publish day, giving instant
  * backfilled history the moment an account connects.
- * The pull is the full windowed history, and every post lands in the external store before the 200-day horizon trims anything.
+ * The pull is the full windowed history, and every post lands in the external
+ * store before the 200-day horizon trims anything.
  */
 async function ingestAnalytics(): Promise<void> {
   if (!zernio) return;
