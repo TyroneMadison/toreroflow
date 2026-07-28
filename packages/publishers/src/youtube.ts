@@ -21,6 +21,11 @@ export interface YouTubeVideo {
   durationSec: number | null;
 }
 
+export interface YouTubePlaylist {
+  id: string;
+  title: string;
+}
+
 /** ISO 8601 duration ("PT4M13S") to seconds. */
 export function parseIsoDuration(iso: string | undefined): number | null {
   if (!iso) return null;
@@ -182,6 +187,17 @@ export class YouTubeProvider {
       }
     }
     return out;
+  }
+
+  /** The channel's public playlists, for the schedule modal's dropdown. */
+  async listPlaylists(handleOrId: string): Promise<YouTubePlaylist[]> {
+    const { channelId } = await this.resolveChannel(handleOrId);
+    const data = await this.get<{
+      items?: Array<{ id?: string; snippet?: { title?: string } }>;
+    }>("/playlists", { part: "snippet", channelId, maxResults: "50" });
+    return (data.items ?? []).flatMap((p) =>
+      typeof p.id === "string" ? [{ id: p.id, title: p.snippet?.title ?? "(untitled playlist)" }] : [],
+    );
   }
 
   /** Whole catalogue for a handle or channel id, in one call. */

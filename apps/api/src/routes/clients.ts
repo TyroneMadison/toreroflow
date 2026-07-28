@@ -707,6 +707,64 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /**
+   * The client's stored YouTube catalogue, for the schedule modal's
+   * related-video picker. Reads the rolling store only; no live call, so
+   * it is fast and works offline from YouTube.
+   */
+  app.get<{ Params: { id: string } }>(
+    "/clients/:id/external/youtube/videos",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+      const videos = await prisma.externalVideo.findMany({
+        where: {
+          platform: "youtube",
+          socialAccount: { clientId: client.id, deletedAt: null },
+        },
+        select: {
+          platformVideoId: true,
+          title: true,
+          thumbnailUrl: true,
+          url: true,
+          publishedAt: true,
+          views: true,
+        },
+        orderBy: { publishedAt: "desc" },
+      });
+      return { videos };
+    },
+  );
+
+  /**
+   * The channel's public playlists for the schedule modal dropdown. An
+   * unconfigured provider, a missing account, or a failed fetch degrades
+   * to an empty list, because scheduling must never depend on this.
+   */
+  app.get<{ Params: { id: string } }>(
+    "/clients/:id/external/youtube/playlists",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        include: {
+          socialAccounts: { where: { deletedAt: null, platform: "youtube" } },
+        },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+      const handle = client.socialAccounts[0]?.handle;
+      if (!youtube || !handle) return { playlists: [] };
+      try {
+        return { playlists: await youtube.listPlaylists(handle) };
+      } catch (error) {
+        request.log.error({ err: error }, "youtube playlists fetch failed");
+        return { playlists: [] };
+      }
+    },
+  );
+
   /** Provider post list per client, cached briefly across brand switches. */
   const postsCache = new Map<string, { at: number; posts: unknown[] }>();
   const POSTS_TTL_MS = 5 * 60 * 1000;
