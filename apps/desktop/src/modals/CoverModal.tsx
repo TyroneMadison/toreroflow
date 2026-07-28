@@ -19,9 +19,10 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
   const toast = useToast();
   const video = useRef<HTMLVideoElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [positionSec, setPositionSec] = useState(
-    asset.coverOffsetMs != null ? asset.coverOffsetMs / 1000 : 1,
-  );
+  const [positionSec, setPositionSec] = useState(() => {
+    const fallback = Math.min(1, Math.max(asset.durationSec ?? 1, 0.1));
+    return asset.coverOffsetMs != null ? asset.coverOffsetMs / 1000 : fallback;
+  });
   const [busy, setBusy] = useState<"frame" | "upload" | "clear" | null>(null);
   const src = fileUrl(asset.videoUrl);
   const duration = asset.durationSec ?? 0;
@@ -86,7 +87,17 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
       <div className="modal-body">
         <div className="coverstage">
           {src ? (
-            <video ref={video} src={src} muted playsInline preload="auto" />
+            <video
+              ref={video}
+              src={src}
+              muted
+              playsInline
+              preload="auto"
+              onLoadedMetadata={() => {
+                // Paint the frame the slider claims, not frame zero.
+                if (video.current) video.current.currentTime = positionSec;
+              }}
+            />
           ) : (
             <div className="coverwait">Video not ready yet.</div>
           )}
