@@ -71,9 +71,6 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: `not connected: ${missing.join(", ")}` });
     }
 
-    // The title is what actually gets posted: YouTube's title, and the
-    // caption on Instagram and TikTok. `hook` is the pre-rename field name,
-    // still present on assets drafted before the change.
     // Older rows carry {hook, caption} or a `title` that used to mean both
     // the YouTube title and everyone's caption. Fold them onto `name`, which
     // is what every field falls back to, so nothing already drafted changes.
@@ -93,12 +90,15 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         String.fromCharCode(parseInt(hex, 16)),
       );
     const draft = {
-      // body.caption stays an explicit override of the whole caption.
-      name: decodeEscapes(body.caption ?? stored.name ?? stored.title ?? stored.hook ?? ""),
+      name: decodeEscapes(stored.name ?? stored.title ?? stored.hook ?? ""),
       description: decodeEscapes(stored.description ?? stored.caption ?? ""),
       youtubeTitle: decodeEscapes(stored.youtubeTitle ?? ""),
       youtubeDescription: decodeEscapes(stored.youtubeDescription ?? ""),
     };
+    // An explicit caption in the request replaces the body every platform
+    // receives, which is what this field has always meant. It does not touch
+    // YouTube's title: that is a separate field with its own input.
+    const captionOverride = body.caption ? decodeEscapes(body.caption) : "";
     const hashtags = (body.hashtags ?? stored.hashtags ?? []).map(decodeEscapes);
     // Collaborators arrive as typed usernames; strip the @ some people type.
     const igOptions = body.instagram
@@ -112,7 +112,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
 
     const ytOptions = body.youtube;
     const youtubeCaption = appendWatchNext(
-      captionFor("youtube", draft),
+      captionOverride || captionFor("youtube", draft),
       ytOptions?.relatedVideoUrl,
     );
 
@@ -126,7 +126,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           create: accounts.map(({ platform, account }) => ({
             socialAccountId: account!.id,
             platform,
-            caption: platform === "youtube" ? youtubeCaption : captionFor(platform, draft),
+            caption:
+              platform === "youtube"
+                ? youtubeCaption
+                : captionOverride || captionFor(platform, draft),
             hashtags,
             scheduledAt,
             status: "scheduled",
