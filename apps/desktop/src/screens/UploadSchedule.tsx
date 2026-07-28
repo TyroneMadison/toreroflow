@@ -64,6 +64,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
   const [revBusy, setRevBusy] = useState<string | null>(null);
+  const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const departTimer = useRef<number | null>(null);
 
@@ -668,21 +669,29 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                               ? "Connect platforms in Settings first"
                               : "Pick platforms and a time"
                         }
-                        disabled={asset.status !== "ready" || connectedCount === 0}
+                        disabled={
+                          asset.status !== "ready" ||
+                          connectedCount === 0 ||
+                          schedBusy === asset.id
+                        }
                         onClick={() => {
                           // What posts has to be what is on screen. saveDraft
                           // is a no-op when nothing was typed, and returns
                           // false when the server refused, in which case the
                           // modal stays shut rather than publishing older copy.
-                          void saveDraft(asset).then((ok) => {
-                            if (ok) setScheduling(asset);
-                          });
+                          if (schedBusy) return;
+                          setSchedBusy(asset.id);
+                          void saveDraft(asset)
+                            .then((ok) => {
+                              if (ok) setScheduling(asset);
+                            })
+                            .finally(() => setSchedBusy(null));
                         }}
                       >
                         <svg>
                           <use href="#i-bolt" />
                         </svg>{" "}
-                        Schedule
+                        {schedBusy === asset.id ? "Saving..." : "Schedule"}
                       </button>
                     </div>
                   </div>
