@@ -165,8 +165,23 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     if (!client) return reply.status(404).send({ error: "client not found" });
+    // The upload list means "not yet scheduled". A video leaves it once it
+    // has a live post, and comes back on its own if that post is removed
+    // from the queue, because removing a target deletes the row. A post
+    // whose every target failed is not live: nothing was published, so the
+    // operator can fix it and schedule again from the same card.
     const assets = await prisma.mediaAsset.findMany({
-      where: { clientId: client.id },
+      where: {
+        clientId: client.id,
+        posts: {
+          none: {
+            deletedAt: null,
+            targets: {
+              some: { status: { in: ["scheduled", "publishing", "posted"] } },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     return assets.map(assetView);
