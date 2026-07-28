@@ -287,6 +287,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       toast.fail("Could not remove the post from the queue", err);
     } finally {
       void loadPosts();
+      // The upload list holds only videos without a live post, so removing
+      // one is what brings its card back. Without this the card returns
+      // only after a navigation.
+      void load();
     }
   };
 
@@ -741,11 +745,17 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             void loadPosts();
             if (!departingId) return;
             setDeparting(departingId);
-            departTimer.current = window.setTimeout(() => {
-              departTimer.current = null;
-              setDeparting((d) => (d === departingId ? null : d));
-              void load();
+            if (departTimer.current !== null) window.clearTimeout(departTimer.current);
+            const timer = window.setTimeout(() => {
+              if (departTimer.current === timer) departTimer.current = null;
+              // Hold the collapsed state until the refreshed list is in hand.
+              // Dropping the class first lets a slow fetch re-inflate the card
+              // and then pop it away with no animation at all.
+              void load().finally(() => {
+                setDeparting((d) => (d === departingId ? null : d));
+              });
             }, 950);
+            departTimer.current = timer;
           }}
         />
       )}
