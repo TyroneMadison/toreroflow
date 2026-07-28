@@ -9,6 +9,7 @@ import MonthBars from "../components/finance/MonthBars";
 import { api, fileUrl } from "../lib/api";
 import { openExternal } from "../lib/external";
 import type { FinancialsMonth } from "../lib/financials";
+import { useAppState } from "../state/AppState";
 
 /** Months to offer, newest first, starting from the current one. */
 function monthOptions(count = 12): Array<{ value: string; label: string }> {
@@ -28,6 +29,7 @@ type Phase = "loading" | "ready" | "error";
 
 export default function FinancialsScreen() {
   const toast = useToast();
+  const { clients: knownClients } = useAppState();
   const months = monthOptions();
   const [month, setMonth] = useState(months[0]!.value);
   const [data, setData] = useState<FinancialsMonth | null>(null);
@@ -71,6 +73,15 @@ export default function FinancialsScreen() {
       toast.fail("Could not refresh the month", err);
     }
   }, [month, toast]);
+
+  // The RevenueSection's unpriced list already tracks the client context;
+  // this keeps the totals, donut, and charts in step with it when a client
+  // is added or priced mid-session. Skipped before first load so the mount
+  // does not double-fetch.
+  useEffect(() => {
+    if (data) void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [knownClients]);
 
   const year = exportYear ?? data?.years[0] ?? new Date().getFullYear();
 

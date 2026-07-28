@@ -41,7 +41,7 @@ export default function RevenueSection({
   onChanged(): void;
 }) {
   const toast = useToast();
-  const { clients } = useAppState();
+  const { clients, refreshClients } = useAppState();
 
   // Deleting a row only sticks where the month seeder will not recreate it:
   // past months, or clients with no standing price. Everywhere else the row
@@ -98,6 +98,10 @@ export default function RevenueSection({
         monthlyPriceCents: Math.round(dollars * 100),
         billingMode: draft.mode,
       });
+      // The delete button's resurrect guard reads the standing price from
+      // context; without this refresh it would offer delete on a row the
+      // month seeder immediately recreates.
+      await refreshClients();
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[client.id];

@@ -207,9 +207,11 @@ export default function ReportsScreen({
     }
   }, [toast]);
 
+  // A new client gets its permanent report slug at create; re-reading when
+  // the client list changes makes the link visible without a remount.
   useEffect(() => {
     void loadPublishing();
-  }, [loadPublishing]);
+  }, [loadPublishing, clients]);
 
   /**
    * The bell points here, so arriving is the acknowledgement. Without this
