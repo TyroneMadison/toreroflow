@@ -222,7 +222,11 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     const source = path.join(env.STORAGE_DIR, asset.storageKey);
     const coverKey = `${asset.clientId}/${asset.id}/cover.jpg`;
     await extractThumbnail(source, path.join(env.STORAGE_DIR, coverKey), body.offsetMs / 1000);
-    // An uploaded cover may exist under another extension; the jpg now wins.
+    // An uploaded .png cover may linger from before; the frame pick owns
+    // the pointer now, so remove the stale file too.
+    await fs.rm(path.join(env.STORAGE_DIR, `${asset.clientId}/${asset.id}/cover.png`), {
+      force: true,
+    });
     const updated = await prisma.mediaAsset.update({
       where: { id: asset.id },
       data: { coverOffsetMs: body.offsetMs, coverKey },
