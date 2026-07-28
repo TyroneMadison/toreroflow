@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@toreroflow/db";
+import { upsertExternalVideo } from "@toreroflow/db";
 import type { YouTubeProvider } from "@toreroflow/publishers";
 
 /**
@@ -6,7 +7,8 @@ import type { YouTubeProvider } from "@toreroflow/publishers";
  *
  * The publishing provider only keeps a recent rolling window, so all-time
  * rankings need the platform itself. Rows are upserted, so repeat runs
- * refresh view counts rather than duplicating them.
+ * refresh view counts rather than duplicating them. Every write also records
+ * the day's numbers through the shared store.
  *
  * Shared by the Analytics refresh and the report refresh: a report reads the
  * same `ExternalVideo` rows through buildMergedPosts, so updating a report's
@@ -40,8 +42,10 @@ export async function syncYouTubeCatalogue(
     try {
       const { channelTitle, videos } = await deps.youtube.allVideosForChannel(account.handle);
       for (const v of videos) {
-        const data = {
-          platform: "youtube" as const,
+        await upsertExternalVideo(deps.prisma, {
+          socialAccountId: account.id,
+          platform: "youtube",
+          platformVideoId: v.platformVideoId,
           title: v.title,
           thumbnailUrl: v.thumbnailUrl,
           url: v.url,
@@ -50,21 +54,6 @@ export async function syncYouTubeCatalogue(
           likes: v.likes,
           comments: v.comments,
           durationSec: v.durationSec,
-          fetchedAt: new Date(),
-        };
-        await deps.prisma.externalVideo.upsert({
-          where: {
-            socialAccountId_platformVideoId: {
-              socialAccountId: account.id,
-              platformVideoId: v.platformVideoId,
-            },
-          },
-          create: {
-            socialAccountId: account.id,
-            platformVideoId: v.platformVideoId,
-            ...data,
-          },
-          update: data,
         });
       }
       results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });
