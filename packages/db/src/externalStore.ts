@@ -48,13 +48,18 @@ export function utcDay(d: Date): Date {
 /**
  * One Zernio analytics post entry to one store row, or null when the
  * entry cannot be keyed (no platformPostId), cannot be dated, or belongs
- * to YouTube. Field picks mirror the merge in mergedPosts.ts so a stored
- * number can never differ from what the screen computed live.
+ * to YouTube. Field picks mirror the merge in mergedPosts.ts: views prefer
+ * the entry's own analytics and otherwise split the post total across the
+ * `entryCount` platform entries attributed to the post, exactly like the
+ * screen's byPlatform math. Likes and comments read post-level analytics
+ * only, because that is what the screen's top-line numbers show, not the
+ * per-entry figures. Duration is post-level too.
  */
 export function mapProviderEntry(
   post: Record<string, unknown>,
   entry: Record<string, unknown>,
   account: { socialAccountId: string; platform: Platform },
+  entryCount = 1,
 ): ExternalVideoRow | null {
   if (account.platform === "youtube") return null;
 
@@ -67,7 +72,8 @@ export function mapProviderEntry(
 
   const em = (entry.analytics ?? {}) as Record<string, unknown>;
   const pm = (post.analytics ?? {}) as Record<string, unknown>;
-  const pick = (...names: string[]) => num(em, ...names) ?? num(pm, ...names);
+  const entryViews = num(em, "views", "impressions", "plays");
+  const postViews = num(pm, "views", "impressions", "plays") ?? 0;
 
   return {
     socialAccountId: account.socialAccountId,
@@ -80,9 +86,9 @@ export function mapProviderEntry(
     thumbnailUrl: typeof post.thumbnailUrl === "string" ? post.thumbnailUrl : null,
     url: typeof post.platformPostUrl === "string" ? post.platformPostUrl : null,
     publishedAt,
-    views: pick("views", "impressions", "plays") ?? 0,
-    likes: pick("likes", "likeCount") ?? 0,
-    comments: pick("comments", "commentCount") ?? 0,
+    views: entryViews ?? (entryCount <= 1 ? postViews : Math.round(postViews / entryCount)),
+    likes: num(pm, "likes", "likeCount") ?? 0,
+    comments: num(pm, "comments", "commentCount") ?? 0,
     durationSec: num(pm, "duration", "videoDuration", "durationSec", "mediaDuration"),
   };
 }
@@ -131,11 +137,15 @@ export async function persistProviderPosts(
     const entries = Array.isArray(post.platforms)
       ? (post.platforms as Array<Record<string, unknown>>)
       : [];
-    for (const entry of entries) {
-      const accountId = typeof entry.accountId === "string" ? entry.accountId : null;
-      const account = accountId ? accountsByProviderId.get(accountId) : undefined;
+    // Denominator mirrors the screen, which counts youtube entries in its
+    // split too; only entries with one of our accounts get resolved here.
+    const resolved = entries.filter(
+      (e) => typeof e.accountId === "string" && accountsByProviderId.has(e.accountId as string),
+    );
+    for (const entry of resolved) {
+      const account = accountsByProviderId.get(entry.accountId as string);
       if (!account) continue;
-      const row = mapProviderEntry(post, entry, account);
+      const row = mapProviderEntry(post, entry, account, resolved.length);
       if (!row) continue;
       await upsertExternalVideo(prisma, row);
       written++;
