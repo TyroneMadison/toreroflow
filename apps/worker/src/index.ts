@@ -16,11 +16,11 @@ const anthropic = env.ANTHROPIC_API_KEY
 const DRAFT_SCHEMA = {
   type: "object",
   properties: {
-    title: { type: "string" },
+    name: { type: "string" },
     description: { type: "string" },
     hashtags: { type: "array", items: { type: "string" } },
   },
-  required: ["title", "description", "hashtags"],
+  required: ["name", "description", "hashtags"],
   additionalProperties: false,
 } as const;
 
@@ -68,12 +68,14 @@ async function draftCopy(
       },
       system:
         "You write short-form video post copy for a social media agency. " +
-        "Given a video transcript, produce: a title (this is used verbatim as " +
-        "the YouTube title and as the Instagram and TikTok caption, so make it " +
-        "punchy and under 100 characters, no hashtags inside), a description " +
-        "(2-4 sentences describing the video for the post description, no " +
-        "hashtags inside), and 5-8 relevant hashtags without the # sign. " +
-        "Write emoji as real characters, never as escape sequences.",
+        "Given a video transcript, produce: a name (a short label for the " +
+        "video, under 100 characters, no hashtags inside, which also serves " +
+        "as the YouTube title when the operator writes nothing more " +
+        "specific), a description (2-4 sentences, posted as the caption on " +
+        "Instagram, TikTok, Facebook and Snapchat and as the YouTube " +
+        "description, no hashtags inside), and 5-8 relevant hashtags without " +
+        "the # sign. Write emoji as real characters, never as escape " +
+        "sequences.",
       messages: [
         {
           role: "user",
