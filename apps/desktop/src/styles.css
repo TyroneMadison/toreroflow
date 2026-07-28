@@ -954,3 +954,23 @@
 .igcollabs .field-in{padding:8px 10px;font-size:12px}
 
 .qfail{color:var(--red)}
+
+/* Schedule confirmation. The ring and tick draw themselves with
+   stroke-dashoffset, then the row collapses using the grid-rows technique
+   .pexpand already uses, so the cards below slide up instead of jumping.
+   The delays match the plan: tick at 300ms, collapse at 600ms. */
+.jobwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s cubic-bezier(.2,.7,.2,1) .6s,opacity .32s ease .6s}
+.jobwrap>.job{position:relative}
+.jobwrap.departing{grid-template-rows:0fr;opacity:0}
+.jobwrap.departing>.job{overflow:hidden;min-height:0;margin-top:0;transition:margin-top .32s cubic-bezier(.2,.7,.2,1) .6s}
+.schedok{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:rgba(10,14,26,.55);border-radius:inherit;pointer-events:none}
+.okmark{width:64px;height:64px}
+.okmark circle,.okmark path,.failmark circle,.failmark path{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.okmark circle,.okmark path{stroke:var(--green)}
+.okmark circle{stroke-dasharray:145;stroke-dashoffset:145;animation:draw .34s cubic-bezier(.2,.7,.2,1) forwards}
+.okmark path{stroke-dasharray:36;stroke-dashoffset:36;animation:draw .26s cubic-bezier(.2,.7,.2,1) .3s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){
+  .jobwrap,.jobwrap.departing>.job{transition:none}
+  .okmark circle,.okmark path{animation:none;stroke-dashoffset:0}
+}

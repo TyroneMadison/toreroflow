@@ -49,6 +49,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  const [departing, setDeparting] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
   const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
@@ -360,7 +361,19 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 drafts[asset.id] ?? asset.draftCopy?.description ?? "";
               const title = titles[asset.id] ?? asset.draftCopy?.title ?? "";
               return (
-                <div className="job glass-sm" key={asset.id}>
+                <div
+                  className={`jobwrap${departing === asset.id ? " departing" : ""}`}
+                  key={asset.id}
+                >
+                  <div className="job glass-sm">
+                    {departing === asset.id && (
+                      <div className="schedok" aria-hidden="true">
+                        <svg className="okmark" viewBox="0 0 52 52">
+                          <circle cx="26" cy="26" r="23" />
+                          <path d="M15 27l8 8 15-16" />
+                        </svg>
+                      </div>
+                    )}
                   <div className="thumbcol">
                     <div
                       className="thumb"
@@ -551,6 +564,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       </button>
                     </div>
                   </div>
+                  </div>
                 </div>
               );
             })}
@@ -699,7 +713,21 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         <ScheduleModal
           asset={scheduling}
           onClose={() => setScheduling(null)}
-          onScheduled={() => void loadPosts()}
+          onScheduled={() => {
+            // The modal calls this and then closes, so `scheduling` still
+            // holds the asset that just went out. The queue refreshes at
+            // once; the card holds for its animation and only then refetches,
+            // so the list ends up authoritative rather than merely looking
+            // right.
+            const departingId = scheduling?.id ?? null;
+            void loadPosts();
+            if (!departingId) return;
+            setDeparting(departingId);
+            window.setTimeout(() => {
+              setDeparting((d) => (d === departingId ? null : d));
+              void load();
+            }, 950);
+          }}
         />
       )}
 
