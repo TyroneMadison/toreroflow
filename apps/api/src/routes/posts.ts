@@ -6,12 +6,20 @@ import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
-/** The name an operator typed for a video, or "" when they have not. */
+/**
+ * The name an operator typed for a video, or "" when they have not.
+ *
+ * Three field names because the shape was renamed twice: `hook` became
+ * `title` became `name`. The read-time normalizer in media.ts maps them the
+ * same way, so the queue and the upload list always agree about what a
+ * video is called.
+ */
 function draftName(draft: unknown): string {
   if (!draft || typeof draft !== "object") return "";
-  const d = draft as { name?: unknown; title?: unknown };
-  if (typeof d.name === "string" && d.name.trim()) return d.name.trim();
-  if (typeof d.title === "string" && d.title.trim()) return d.title.trim();
+  const d = draft as { name?: unknown; title?: unknown; hook?: unknown };
+  for (const v of [d.name, d.title, d.hook]) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
   return "";
 }
 
