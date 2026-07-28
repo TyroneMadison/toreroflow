@@ -417,10 +417,30 @@ model ExternalVideo {
   updatedAt       DateTime @updatedAt
 
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
+  metrics ExternalVideoMetric[]
 
   @@unique([socialAccountId, platformVideoId])
   @@index([socialAccountId, views])
   @@index([socialAccountId, publishedAt])
+}
+
+/// One row per external video per UTC day. Nothing reads this yet, on
+/// purpose: it is the rolling history future views-over-time charts and
+/// the site view counter draw from, accumulating from ship day.
+model ExternalVideoMetric {
+  id              String   @id @default(cuid())
+  externalVideoId String
+  /// UTC calendar date of the capture; one row per video per day.
+  capturedOn      DateTime @db.Date
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  externalVideo ExternalVideo @relation(fields: [externalVideoId], references: [id], onDelete: Cascade)
+
+  @@unique([externalVideoId, capturedOn])
 }
 
 model MetricSnapshot {
