@@ -87,4 +87,46 @@ assert.deepEqual(buildPostExtras({ platform: "tiktok", format: "short_form", cov
 assert.deepEqual(buildPostExtras({ platform: "facebook", format: "short_form", coverUrl: null }), {});
 assert.deepEqual(buildPostExtras({ platform: "snapchat", format: null, coverUrl: null }), {});
 
+// YouTube with every option set: aiLabel becomes containsSyntheticMedia,
+// relatedVideoUrl never reaches the wire (the route consumes it).
+const ytFull = buildPostExtras({
+  platform: "youtube",
+  format: "short_form",
+  coverUrl: null,
+  youtubeTitle: "ZR1X charging",
+  youtube: {
+    visibility: "unlisted",
+    madeForKids: false,
+    firstComment: "Full build on the channel",
+    categoryId: "2",
+    playlistId: "PLabc123",
+    aiLabel: true,
+    relatedVideoUrl: "https://www.youtube.com/watch?v=abc123",
+  },
+});
+assert.deepEqual(ytFull.platformSpecificData, {
+  title: "ZR1X charging",
+  visibility: "unlisted",
+  firstComment: "Full build on the channel",
+  categoryId: "2",
+  playlistId: "PLabc123",
+  containsSyntheticMedia: true,
+});
+
+// Made for kids rides the wire and drops the first comment: kids videos
+// have comments permanently disabled, so the pair can never coexist.
+const ytKids = buildPostExtras({
+  platform: "youtube",
+  format: "short_form",
+  coverUrl: null,
+  youtube: { madeForKids: true, firstComment: "never sent" },
+});
+assert.deepEqual(ytKids.platformSpecificData, { madeForKids: true });
+
+// Untouched YouTube options still send nothing at all.
+assert.deepEqual(
+  buildPostExtras({ platform: "youtube", format: "short_form", coverUrl: null }),
+  {},
+);
+
 console.log("options builder: all checks passed");
