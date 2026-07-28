@@ -322,6 +322,8 @@ export interface MediaAssetInfo {
   revisionOfId: string | null;
   createdAt: string;
   thumbUrl: string | null;
+  /** Millisecond offset of the chosen cover frame; null when auto or uploaded. */
+  coverOffsetMs: number | null;
   /** The original upload; videos are published exactly as exported. */
   videoUrl: string | null;
 }
@@ -351,6 +353,22 @@ export async function uploadMedia(clientId: string, file: File): Promise<MediaAs
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${API_URL}/clients/${clientId}/media`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const data: unknown = await res.json();
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data as MediaAssetInfo;
+}
+
+export async function uploadCoverImage(assetId: string, file: File): Promise<MediaAssetInfo> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_URL}/media/${assetId}/cover-image`, {
     method: "POST",
     headers,
     body: form,

@@ -14,6 +14,7 @@ import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import PostDetailModal from "../modals/PostDetailModal";
+import CoverModal from "../modals/CoverModal";
 import BestTimes from "../components/BestTimes";
 import QuotaCard from "../components/QuotaCard";
 import { useToast } from "../components/Toasts";
@@ -50,6 +51,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
   const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
+  const [coverEditing, setCoverEditing] = useState<MediaAssetInfo | null>(null);
   const [dragTargetId, setDragTargetId] = useState<string | null>(null);
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
   const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
@@ -354,24 +356,34 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               const title = titles[asset.id] ?? asset.draftCopy?.title ?? "";
               return (
                 <div className="job glass-sm" key={asset.id}>
-                  <div
-                    className="thumb"
-                    style={video ? { cursor: "pointer" } : undefined}
-                    title={video ? "Play the video" : undefined}
-                    onClick={() => {
-                      if (video) onPreview(asset.name, video);
-                    }}
-                  >
-                    {thumb && <img className="jobthumb-img" src={thumb} alt={asset.name} />}
-                    {asset.durationSec != null && (
-                      <span className="dur">{formatDuration(asset.durationSec)}</span>
-                    )}
-                    {video && (
-                      <div className="play">
-                        <svg>
-                          <use href="#i-play" />
-                        </svg>
-                      </div>
+                  <div className="thumbcol">
+                    <div
+                      className="thumb"
+                      style={video ? { cursor: "pointer" } : undefined}
+                      title={video ? "Play the video" : undefined}
+                      onClick={() => {
+                        if (video) onPreview(asset.name, video);
+                      }}
+                    >
+                      {thumb && <img className="jobthumb-img" src={thumb} alt={asset.name} />}
+                      {asset.durationSec != null && (
+                        <span className="dur">{formatDuration(asset.durationSec)}</span>
+                      )}
+                      {video && (
+                        <div className="play">
+                          <svg>
+                            <use href="#i-play" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    {asset.status === "ready" && (
+                      <button
+                        className="btn ghost coverbtn"
+                        onClick={() => setCoverEditing(asset)}
+                      >
+                        Edit cover
+                      </button>
                     )}
                   </div>
                   <div className="body">
@@ -689,6 +701,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           target={queueDetail}
           onClose={() => setQueueDetail(null)}
           onChanged={() => void loadPosts()}
+        />
+      )}
+
+      {coverEditing && (
+        <CoverModal
+          asset={coverEditing}
+          onClose={() => setCoverEditing(null)}
+          onChanged={() => void load()}
         />
       )}
     </section>
