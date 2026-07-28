@@ -6,6 +6,15 @@ import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
+/** The name an operator typed for a video, or "" when they have not. */
+function draftName(draft: unknown): string {
+  if (!draft || typeof draft !== "object") return "";
+  const d = draft as { name?: unknown; title?: unknown };
+  if (typeof d.name === "string" && d.name.trim()) return d.name.trim();
+  if (typeof d.title === "string" && d.title.trim()) return d.title.trim();
+  return "";
+}
+
 export async function postRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
@@ -171,7 +180,12 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         // Captions saved before emoji decoding landed still hold literal
         // "\uXXXX" text; clean them on the way out.
         caption: t.caption ? decodeEscapes(t.caption) : t.caption,
-        assetName: t.post.mediaAsset?.originalName ?? "post",
+        // The typed name when there is one, so the queue and calendar stop
+        // showing raw file names.
+        assetName:
+          draftName(t.post.mediaAsset?.draftCopy) ||
+          t.post.mediaAsset?.originalName ||
+          "post",
         thumbUrl: t.post.mediaAsset
           ? t.post.mediaAsset.coverKey
             ? `/files/${t.post.mediaAsset.coverKey}`

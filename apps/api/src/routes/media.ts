@@ -23,9 +23,12 @@ const formatSchema = z.object({
 });
 
 const draftSchema = z.object({
-  /** Posted verbatim: YouTube title, and the Instagram/TikTok caption. */
-  title: z.string().max(300).optional(),
+  /** The video's label in the app, and the fallback for the fields below. */
+  name: z.string().max(300).optional(),
+  /** The caption on Instagram, TikTok, Facebook and Snapchat. */
   description: z.string().max(4000).optional(),
+  youtubeTitle: z.string().max(100).optional(),
+  youtubeDescription: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
 });
 
@@ -39,9 +42,11 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("onRequest", requireAuth);
 
   /**
-   * Present draft copy in the current {title, description, hashtags} shape.
-   * Assets drafted before the rename carry {hook, caption}, so map those
-   * across on read rather than migrating rows.
+   * Present draft copy in the current shape. Older rows carry {hook, caption}
+   * from before the rename, and rows from before the split carry a `title`
+   * that meant "YouTube title and everyone's caption". Both map onto `name`,
+   * which is the field that still feeds every platform when nothing more
+   * specific was written, so nothing already drafted changes behavior.
    */
   const normalizeDraft = (draft: unknown): unknown => {
     if (!draft || typeof draft !== "object") return draft;
@@ -49,8 +54,10 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     const str = (v: unknown): string | undefined =>
       typeof v === "string" ? decodeEscapes(v) : undefined;
     return {
-      title: str(d.title) ?? str(d.hook) ?? "",
+      name: str(d.name) ?? str(d.title) ?? str(d.hook) ?? "",
       description: str(d.description) ?? str(d.caption) ?? "",
+      youtubeTitle: str(d.youtubeTitle) ?? "",
+      youtubeDescription: str(d.youtubeDescription) ?? "",
       hashtags: Array.isArray(d.hashtags)
         ? d.hashtags.map((h) => (typeof h === "string" ? decodeEscapes(h) : h))
         : [],
