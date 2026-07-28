@@ -8,8 +8,9 @@ import type { ZernioProvider } from "@toreroflow/publishers";
  * Two sources feed it. The publishing provider reports a rolling recent
  * window across every platform. The platform APIs (currently YouTube) report
  * a full lifetime catalogue with authoritative view counts. Where a video
- * appears in both, the platform's own numbers win and the provider's copy is
- * dropped, so nothing is double counted.
+ * appears in both, YouTube's own numbers win and the provider's copy is
+ * dropped; on every other platform the live provider post wins and the stored
+ * copy is dropped, so nothing is double counted either way.
  *
  * The Analytics screen and the client reports both call this, which is what
  * keeps a PDF from disagreeing with what was on screen when it was made.
@@ -43,6 +44,18 @@ function num(item: Record<string, unknown>, ...names: string[]): number | null {
     if (typeof v === "string" && v !== "" && Number.isFinite(Number(v))) return Number(v);
   }
   return null;
+}
+
+/**
+ * Whether a stored ExternalVideo row survives the merge when the provider
+ * also returned the same video live. YouTube's stored rows come straight
+ * from YouTube's own API and stay authoritative. Every other platform's
+ * stored rows are a previous pull of the same provider data, so the live
+ * post wins and the store only covers what the live window no longer
+ * reaches.
+ */
+export function keepStoredRow(platform: string, hasLiveMatch: boolean): boolean {
+  return platform === "youtube" || !hasLiveMatch;
 }
 
 interface Deps {
@@ -192,12 +205,18 @@ export async function buildMergedPosts(
   }>;
 
   if (external.length) {
-    const seen = new Set(external.map((v) => `${v.platform}:${v.platformVideoId}`));
+    const liveKeys = new Set(
+      posts.map((p) => p.platformKey).filter((k): k is string => k !== null),
+    );
+    const keptExternal = external.filter((v) =>
+      keepStoredRow(v.platform, liveKeys.has(`${v.platform}:${v.platformVideoId}`)),
+    );
+    const seen = new Set(keptExternal.map((v) => `${v.platform}:${v.platformVideoId}`));
     const kept = posts.filter((p) => !p.platformKey || !seen.has(p.platformKey));
     posts.length = 0;
     posts.push(
       ...kept,
-      ...external.map((v) => ({
+      ...keptExternal.map((v) => ({
         id: `ext:${v.id}`,
         platformKey: `${v.platform}:${v.platformVideoId}`,
         title: v.title,
