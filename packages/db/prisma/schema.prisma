@@ -255,6 +255,10 @@ model MediaAsset {
   isRevision   Boolean          @default(false)
   /// The upload this one revises, when known.
   revisionOfId String?
+  /// Millisecond offset of the operator-chosen cover frame, when frame-picked.
+  coverOffsetMs Int?
+  /// Storage key of the chosen cover image (frame-extracted or uploaded).
+  coverKey      String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -308,6 +312,8 @@ model PostTarget {
   platform        Platform
   caption         String?
   hashtags        String[]         @default([])
+  /// Per-platform publish options: { instagram: {...} } or { youtubeTitle }.
+  options         Json?
   scheduledAt     DateTime?
   status          PostTargetStatus @default(scheduled)
   remotePostId    String?
