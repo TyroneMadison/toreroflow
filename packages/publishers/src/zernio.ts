@@ -41,6 +41,34 @@ export function zernioProfileId(account: ZernioAccount): string | null {
   return null;
 }
 
+export interface HistoryWindow {
+  fromDate: string;
+  toDate: string;
+}
+
+const DAY_MS = 86_400_000;
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Contiguous 366-day windows walking backwards from `today`, newest
+ * first. Zernio's /analytics accepts at most a 366-day fromDate..toDate
+ * range and defaults to 90 days when the params are omitted, so deep
+ * history is fetched one window at a time.
+ */
+export function historyWindows(today: Date, maxWindows = 10): HistoryWindow[] {
+  const windows: HistoryWindow[] = [];
+  let to = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  for (let i = 0; i < maxWindows; i++) {
+    const from = new Date(to.getTime() - 365 * DAY_MS);
+    windows.push({ fromDate: isoDate(from), toDate: isoDate(to) });
+    to = new Date(from.getTime() - DAY_MS);
+  }
+  return windows;
+}
+
 /**
  * Zernio unified publishing provider (docs.zernio.com).
  * Model: one Zernio "profile" per Toreroflow client; accounts OAuth-connect to
@@ -110,20 +138,50 @@ export class ZernioProvider {
   /**
    * Performance data across connected accounts. Zernio's docs leave the item
    * shape loose, so callers normalize field names defensively and keep raw.
+   * Without dates Zernio serves its 90-day default window.
    */
-  async analytics(max = 500): Promise<Array<Record<string, unknown>>> {
+  async analytics(
+    max = 500,
+    fromDate?: string,
+    toDate?: string,
+  ): Promise<Array<Record<string, unknown>>> {
     // Zernio caps limit at 100 and paginates via ?page=N.
     const pageSize = 100;
+    const range =
+      (fromDate ? `&fromDate=${fromDate}` : "") + (toDate ? `&toDate=${toDate}` : "");
     const out: Array<Record<string, unknown>> = [];
     for (let page = 1; out.length < max && page <= 10; page++) {
       const data = await this.request<Record<string, unknown>>(
         "GET",
-        `/analytics?limit=${pageSize}&page=${page}`,
+        `/analytics?limit=${pageSize}&page=${page}${range}`,
       );
       const arr = (data.analytics ?? data.posts ?? data.data ?? data) as unknown;
       const items = Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [];
       out.push(...items);
       if (items.length < pageSize) break;
+    }
+    return out;
+  }
+
+  /**
+   * Everything Zernio can serve, walking historyWindows newest-first and
+   * stopping at the first empty window. A window that fails after the
+   * first stops the walk and returns what was already fetched; callers
+   * upsert, so a short pull refreshes less rather than losing anything.
+   * A first-window failure throws so total outages stay loud.
+   */
+  async analyticsHistory(maxWindows = 10): Promise<Array<Record<string, unknown>>> {
+    const out: Array<Record<string, unknown>> = [];
+    for (const w of historyWindows(new Date(), maxWindows)) {
+      let items: Array<Record<string, unknown>>;
+      try {
+        items = await this.analytics(1000, w.fromDate, w.toDate);
+      } catch (error) {
+        if (!out.length) throw error;
+        break;
+      }
+      if (!items.length) break;
+      out.push(...items);
     }
     return out;
   }

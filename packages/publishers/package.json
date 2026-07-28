@@ -9,7 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx src/options.check.ts",
+    "test": "tsx src/options.check.ts && tsx src/zernio.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
