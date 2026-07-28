@@ -71,6 +71,15 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     (a) => a.status === "connected",
   ).length;
 
+  const youtubeConnected = (selectedClient?.accounts ?? []).some(
+    (a) => a.platform === "youtube" && a.status === "connected",
+  );
+  // Disclosure only: this decides whether the YouTube fields are on screen,
+  // never where a video posts. Platform choice belongs to the schedule modal,
+  // and a second picker here would be a source of truth that can disagree.
+  const [ytOpen, setYtOpen] = useState<Record<string, boolean>>({});
+  const ytPanelOpen = (assetId: string): boolean => ytOpen[assetId] ?? youtubeConnected;
+
   // One source for the queue's rows so the empty state and the list can
   // never disagree about what counts as queued.
   const queued = queueRows(posts);
@@ -557,6 +566,21 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                             ? "Revision"
                             : "Counts toward quota"}
                       </span>
+                      {asset.status === "ready" && (
+                        <span
+                          className={`revtoggle${ytPanelOpen(asset.id) ? " on" : ""}`}
+                          title="Show the title and description used for YouTube"
+                          onClick={() =>
+                            setYtOpen((o) => ({
+                              ...o,
+                              [asset.id]: !ytPanelOpen(asset.id),
+                            }))
+                          }
+                        >
+                          <span className="knob" />
+                          YouTube
+                        </span>
+                      )}
                       {!asset.isRevision && asset.revisionOfId && (
                         <span
                           className="link"
@@ -573,6 +597,44 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         </span>
                       )}
                     </div>
+
+                    {asset.status === "ready" && ytPanelOpen(asset.id) && (
+                      <div className="ytpanel">
+                        <label className="flabel">
+                          Title for YouTube upload
+                          <span className="hint">
+                            falls back to the video's name
+                          </span>
+                        </label>
+                        <input
+                          className="field-in"
+                          value={ytTitle}
+                          maxLength={100}
+                          placeholder="Title this YouTube upload"
+                          onChange={(e) =>
+                            setYtTitles((t) => ({ ...t, [asset.id]: e.target.value }))
+                          }
+                        />
+                        <label className="flabel" style={{ marginTop: 12 }}>
+                          Description
+                          <span className="hint">
+                            falls back to the description above
+                          </span>
+                        </label>
+                        <div className="captionbox">
+                          <textarea
+                            value={ytDescription}
+                            placeholder="Write the YouTube description"
+                            onChange={(e) =>
+                              setYtDescriptions((d) => ({
+                                ...d,
+                                [asset.id]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className="schedrow">
                       <button className="btn ghost" onClick={() => void removeAsset(asset)}>
