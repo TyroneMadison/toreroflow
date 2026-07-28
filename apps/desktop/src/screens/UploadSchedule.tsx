@@ -62,6 +62,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [quotaKey, setQuotaKey] = useState(0);
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const departTimer = useRef<number | null>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
     (a) => a.status === "connected",
@@ -141,6 +142,23 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     const t = setInterval(() => void load(), 4000);
     return () => clearInterval(t);
   }, [assets, load]);
+
+  /**
+   * A brand switch cancels a farewell still in flight. Its refetch belongs
+   * to the brand that just left the screen, and letting it land would paint
+   * the previous brand's videos under the new brand's name. Keyed on the id
+   * so a mere object identity change from a client-list refresh does not
+   * cancel a legitimate animation.
+   */
+  useEffect(() => {
+    return () => {
+      if (departTimer.current !== null) {
+        window.clearTimeout(departTimer.current);
+        departTimer.current = null;
+      }
+      setDeparting(null);
+    };
+  }, [selectedClient?.id]);
 
   const addFiles = async (files: FileList | File[]) => {
     if (!selectedClient) return;
@@ -723,7 +741,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             void loadPosts();
             if (!departingId) return;
             setDeparting(departingId);
-            window.setTimeout(() => {
+            departTimer.current = window.setTimeout(() => {
+              departTimer.current = null;
               setDeparting((d) => (d === departingId ? null : d));
               void load();
             }, 950);

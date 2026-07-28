@@ -959,7 +959,7 @@
    stroke-dashoffset, then the row collapses using the grid-rows technique
    .pexpand already uses, so the cards below slide up instead of jumping.
    The delays match the plan: tick at 300ms, collapse at 600ms. */
-.jobwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s cubic-bezier(.2,.7,.2,1) .6s,opacity .32s ease .6s}
+.jobwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s cubic-bezier(.2,.7,.2,1) .6s,opacity .32s cubic-bezier(.2,.7,.2,1) .6s}
 .jobwrap>.job{position:relative}
 .jobwrap.departing{grid-template-rows:0fr;opacity:0}
 .jobwrap.departing>.job{overflow:hidden;min-height:0;margin-top:0;transition:margin-top .32s cubic-bezier(.2,.7,.2,1) .6s}
