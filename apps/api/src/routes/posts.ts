@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import { decodeEscapes, schedulePostSchema } from "@toreroflow/core";
+import { decodeEscapes, schedulePostSchema, appendWatchNext } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -78,6 +78,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         }
       : undefined;
 
+    const ytOptions = body.youtube;
+    const youtubeDescription = appendWatchNext(description, ytOptions?.relatedVideoUrl);
+
     const post = await prisma.post.create({
       data: {
         clientId: asset.clientId,
@@ -88,7 +91,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           create: accounts.map(({ platform, account }) => ({
             socialAccountId: account!.id,
             platform,
-            caption: platform === "youtube" && description ? description : caption,
+            caption: platform === "youtube" && youtubeDescription ? youtubeDescription : caption,
             hashtags,
             scheduledAt,
             status: "scheduled",
@@ -96,7 +99,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
               platform === "instagram" && igOptions
                 ? { instagram: igOptions }
                 : platform === "youtube"
-                  ? { youtubeTitle: caption }
+                  ? { youtubeTitle: caption, ...(ytOptions ? { youtube: ytOptions } : {}) }
                   : undefined,
           })),
         },
