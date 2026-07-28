@@ -160,7 +160,16 @@ export class ZernioProvider {
   async createPost(input: {
     content: string;
     mediaUrl?: string;
-    targets: Array<{ platform: Platform; accountId: string }>;
+    /** Thumbnail for the media item (YouTube long-form covers). */
+    mediaThumbnail?: string;
+    targets: Array<{
+      platform: Platform;
+      accountId: string;
+      /** Per-platform options, passed through verbatim. */
+      platformSpecificData?: Record<string, unknown>;
+    }>;
+    /** TikTok's options live at the top level of the request body. */
+    tiktokSettings?: Record<string, unknown>;
     publishNow?: boolean;
     scheduledFor?: string;
     timezone?: string;
@@ -170,11 +179,15 @@ export class ZernioProvider {
       platforms: input.targets.map((t) => ({
         platform: t.platform,
         accountId: t.accountId,
+        ...(t.platformSpecificData ? { platformSpecificData: t.platformSpecificData } : {}),
       })),
     };
     if (input.mediaUrl) {
-      body.mediaItems = [{ url: input.mediaUrl, type: "video" }];
+      const item: Record<string, unknown> = { url: input.mediaUrl, type: "video" };
+      if (input.mediaThumbnail) item.thumbnail = input.mediaThumbnail;
+      body.mediaItems = [item];
     }
+    if (input.tiktokSettings) body.tiktokSettings = input.tiktokSettings;
     if (input.publishNow) body.publishNow = true;
     if (input.scheduledFor) {
       body.scheduledFor = input.scheduledFor;
