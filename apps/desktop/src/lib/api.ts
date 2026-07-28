@@ -59,6 +59,20 @@ export const api = {
 
 /* ---- API response shapes ---- */
 
+export interface CatalogueVideo {
+  platformVideoId: string;
+  title: string;
+  thumbnailUrl: string | null;
+  url: string | null;
+  publishedAt: string;
+  views: number;
+}
+
+export interface YouTubePlaylistInfo {
+  id: string;
+  title: string;
+}
+
 export interface AccountInfo {
   id: string;
   platform: Platform;

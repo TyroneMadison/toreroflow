@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import { api, type MediaAssetInfo } from "../lib/api";
+import { api, type CatalogueVideo, type MediaAssetInfo, type YouTubePlaylistInfo } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -18,6 +18,24 @@ function localInputValue(d: Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+/** YouTube's stable category ids; Autos first because that is the clientele. */
+const YT_CATEGORIES: Array<[string, string]> = [
+  ["2", "Autos & Vehicles"],
+  ["24", "Entertainment"],
+  ["22", "People & Blogs"],
+  ["26", "Howto & Style"],
+  ["28", "Science & Technology"],
+  ["27", "Education"],
+  ["17", "Sports"],
+  ["23", "Comedy"],
+  ["10", "Music"],
+  ["20", "Gaming"],
+  ["19", "Travel & Events"],
+  ["25", "News & Politics"],
+  ["15", "Pets & Animals"],
+  ["1", "Film & Animation"],
+];
 
 export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleModalProps) {
   const { selectedClient } = useAppState();
@@ -44,7 +62,43 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [igFirstComment, setIgFirstComment] = useState("");
   const [igAiLabel, setIgAiLabel] = useState(false);
 
+  // YouTube-only options, applied to this scheduling action.
+  const [ytVisibility, setYtVisibility] = useState("");
+  const [ytKids, setYtKids] = useState(false);
+  const [ytAiLabel, setYtAiLabel] = useState(false);
+  const [ytFirstComment, setYtFirstComment] = useState("");
+  const [ytCategoryId, setYtCategoryId] = useState("");
+  const [ytPlaylistId, setYtPlaylistId] = useState("");
+  const [ytRelated, setYtRelated] = useState<CatalogueVideo | null>(null);
+  const [ytPickerOpen, setYtPickerOpen] = useState(false);
+  const [ytSearch, setYtSearch] = useState("");
+  const [ytCatalogue, setYtCatalogue] = useState<CatalogueVideo[] | null>(null);
+  const [ytCatalogueFailed, setYtCatalogueFailed] = useState(false);
+  const [ytPlaylists, setYtPlaylists] = useState<YouTubePlaylistInfo[] | null>(null);
+
   const igSelected = platforms.includes("instagram");
+  const ytSelected = platforms.includes("youtube");
+
+  // Catalogue and playlists load once, the first time the section shows.
+  // Quiet failures: the operator can always schedule without either.
+  useEffect(() => {
+    if (!ytSelected || !selectedClient || ytCatalogue !== null) return;
+    api
+      .get<{ videos: CatalogueVideo[] }>(
+        `/clients/${selectedClient.id}/external/youtube/videos`,
+      )
+      .then((r) => setYtCatalogue(r.videos))
+      .catch(() => {
+        setYtCatalogue([]);
+        setYtCatalogueFailed(true);
+      });
+    api
+      .get<{ playlists: YouTubePlaylistInfo[] }>(
+        `/clients/${selectedClient.id}/external/youtube/playlists`,
+      )
+      .then((r) => setYtPlaylists(r.playlists))
+      .catch(() => setYtPlaylists([]));
+  }, [ytSelected, selectedClient, ytCatalogue]);
 
   /** Only what was actually chosen; untouched controls send nothing. */
   const instagramBody = () => {
@@ -65,6 +119,23 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     return Object.keys(body).length ? body : undefined;
   };
 
+  /** Only what was actually chosen; untouched controls send nothing. */
+  const youtubeBody = () => {
+    if (!ytSelected) return undefined;
+    const body: Record<string, unknown> = {};
+    if (ytVisibility) body.visibility = ytVisibility;
+    if (ytKids) body.madeForKids = true;
+    if (ytFirstComment.trim() && !ytKids) body.firstComment = ytFirstComment.trim();
+    if (ytCategoryId) body.categoryId = ytCategoryId;
+    if (ytPlaylistId) body.playlistId = ytPlaylistId;
+    if (ytAiLabel) body.aiLabel = true;
+    if (ytRelated) {
+      body.relatedVideoUrl =
+        ytRelated.url ?? `https://www.youtube.com/watch?v=${ytRelated.platformVideoId}`;
+    }
+    return Object.keys(body).length ? body : undefined;
+  };
+
   const toggle = (p: Platform) =>
     setPlatforms((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
@@ -82,6 +153,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         platforms,
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
         instagram: instagramBody(),
+        youtube: youtubeBody(),
       });
       onScheduled();
       onClose();
@@ -217,6 +289,167 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               value={igFirstComment}
               onChange={(e) => setIgFirstComment(e.target.value)}
             />
+          </div>
+        )}
+
+        {ytSelected && (
+          <div className="ytopts">
+            <label className="flabel" style={{ marginTop: 18 }}>
+              YouTube options
+            </label>
+            <div className="igrow">
+              <span
+                className={`revtoggle${ytKids ? " on" : ""}`}
+                title="Declares the video made for kids. YouTube permanently disables comments, cards, and personalized ads on it"
+                onClick={() => setYtKids((v) => !v)}
+              >
+                Made for kids
+              </span>
+              <span
+                className={`revtoggle${ytAiLabel ? " on" : ""}`}
+                title="Discloses altered or synthetic content"
+                onClick={() => setYtAiLabel((v) => !v)}
+              >
+                AI label
+              </span>
+            </div>
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Visibility
+            </label>
+            <select
+              className="field-in"
+              value={ytVisibility}
+              onChange={(e) => setYtVisibility(e.target.value)}
+            >
+              <option value="">Public (default)</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="private">Private</option>
+            </select>
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Category
+            </label>
+            <select
+              className="field-in"
+              value={ytCategoryId}
+              onChange={(e) => setYtCategoryId(e.target.value)}
+            >
+              <option value="">Default (People &amp; Blogs)</option>
+              {YT_CATEGORIES.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Playlist
+            </label>
+            {ytPlaylists && ytPlaylists.length > 0 ? (
+              <select
+                className="field-in"
+                value={ytPlaylistId}
+                onChange={(e) => setYtPlaylistId(e.target.value)}
+              >
+                <option value="">None</option>
+                {ytPlaylists.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p style={{ fontSize: 12.5, color: "var(--txt-3)", marginTop: 4 }}>
+                {ytPlaylists === null ? "Loading playlists…" : "No public playlists found."}
+              </p>
+            )}
+            <label className="flabel" style={{ marginTop: 12 }}>
+              First comment
+              <span className="hint">
+                {ytKids
+                  ? "unavailable: made-for-kids videos have comments disabled"
+                  : "posted and pinned automatically"}
+              </span>
+            </label>
+            <input
+              className="field-in"
+              placeholder="e.g. full build playlist on the channel"
+              maxLength={10000}
+              disabled={ytKids}
+              value={ytFirstComment}
+              onChange={(e) => setYtFirstComment(e.target.value)}
+            />
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Related video
+              <span className="hint">
+                links it at the end of the description; the Studio pin stays manual
+              </span>
+            </label>
+            {ytRelated ? (
+              <div className="igrow">
+                <span
+                  className="revtoggle on"
+                  title="Remove the related video"
+                  onClick={() => setYtRelated(null)}
+                >
+                  {ytRelated.title.slice(0, 48)} ✕
+                </span>
+              </div>
+            ) : (
+              <>
+                <span className="revtoggle" onClick={() => setYtPickerOpen((v) => !v)}>
+                  {ytPickerOpen ? "Close list" : "Choose a video"}
+                </span>
+                {ytPickerOpen && (
+                  <div style={{ marginTop: 8 }}>
+                    <input
+                      className="field-in"
+                      placeholder="Search the channel's videos"
+                      value={ytSearch}
+                      onChange={(e) => setYtSearch(e.target.value)}
+                    />
+                    <div style={{ maxHeight: 210, overflowY: "auto", marginTop: 6 }}>
+                      {ytCatalogueFailed && (
+                        <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
+                          Could not load the catalogue. Try a refresh on Analytics first.
+                        </p>
+                      )}
+                      {(ytCatalogue ?? [])
+                        .filter((v) =>
+                          v.title.toLowerCase().includes(ytSearch.trim().toLowerCase()),
+                        )
+                        .slice(0, 30)
+                        .map((v) => (
+                          <div
+                            key={v.platformVideoId}
+                            className="rrow"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => {
+                              setYtRelated(v);
+                              setYtPickerOpen(false);
+                            }}
+                          >
+                            {v.thumbnailUrl && (
+                              <img
+                                src={v.thumbnailUrl}
+                                alt=""
+                                style={{
+                                  width: 42,
+                                  height: 24,
+                                  objectFit: "cover",
+                                  borderRadius: 4,
+                                }}
+                              />
+                            )}
+                            <span className="t">{v.title}</span>
+                            <span className="v">
+                              {v.views >= 1000 ? `${Math.round(v.views / 1000)}K` : v.views}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
