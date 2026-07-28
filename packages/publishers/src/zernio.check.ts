@@ -2,7 +2,7 @@
 // rejected by the API, a gap between windows would silently lose posts,
 // and an unbounded walk would hammer the provider forever.
 import assert from "node:assert/strict";
-import { historyWindows } from "./zernio";
+import { historyWindows, ZernioProvider } from "./zernio";
 
 {
   const today = new Date(Date.UTC(2026, 6, 28)); // 2026-07-28
@@ -32,6 +32,61 @@ import { historyWindows } from "./zernio";
 
   // Cap honored.
   assert.equal(historyWindows(today, 3).length, 3);
+}
+
+// Guards analyticsHistory's control flow: it must stop walking once a
+// window comes back empty, a failure on the very first window must stay
+// loud (total outage), and a failure on a later window must keep whatever
+// was already fetched rather than throwing away partial results.
+type AnalyticsStub = (
+  max?: number,
+  fromDate?: string,
+  toDate?: string,
+) => Promise<Array<Record<string, unknown>>>;
+
+{
+  // Stop-on-empty: the first window has items, the second is empty, so the
+  // walk must stop there and never fetch a third window.
+  const provider = new ZernioProvider("test-key");
+  const calls: Array<{ fromDate?: string; toDate?: string }> = [];
+  const stub: AnalyticsStub = async (_max, fromDate, toDate) => {
+    calls.push({ fromDate, toDate });
+    return calls.length === 1 ? [{ id: "1" }] : [];
+  };
+  provider.analytics = stub;
+
+  const result = await provider.analyticsHistory();
+  assert.equal(result.length, 1);
+  assert.equal(calls.length, 2);
+}
+
+{
+  // First-window failure: nothing has been fetched yet, so a total outage
+  // must throw instead of silently returning an empty history.
+  const provider = new ZernioProvider("test-key");
+  const stub: AnalyticsStub = async () => {
+    throw new Error("zernio outage");
+  };
+  provider.analytics = stub;
+
+  await assert.rejects(() => provider.analyticsHistory());
+}
+
+{
+  // Later-window failure: the first window already produced items, so a
+  // failure on the second window must return the partial results, not throw.
+  const provider = new ZernioProvider("test-key");
+  const calls: Array<{ fromDate?: string; toDate?: string }> = [];
+  const stub: AnalyticsStub = async (_max, fromDate, toDate) => {
+    calls.push({ fromDate, toDate });
+    if (calls.length === 1) return [{ id: "1" }, { id: "2" }];
+    throw new Error("later window failed");
+  };
+  provider.analytics = stub;
+
+  const result = await provider.analyticsHistory();
+  assert.equal(result.length, 2);
+  assert.deepEqual(result, [{ id: "1" }, { id: "2" }]);
 }
 
 console.log("zernio.check: all checks passed");
