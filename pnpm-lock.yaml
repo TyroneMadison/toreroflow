@@ -170,13 +170,22 @@ importers:
       '@prisma/client':
         specifier: ^6.5.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      '@toreroflow/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
       dotenv-cli:
         specifier: ^8.0.0
         version: 8.0.0
       prisma:
         specifier: ^6.5.0
         version: 6.19.3(typescript@5.9.3)
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
