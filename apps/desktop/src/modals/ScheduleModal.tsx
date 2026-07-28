@@ -462,7 +462,16 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
           independently with automatic retries.
         </p>
 
-        {error && <div className="autherr">{error}</div>}
+        {/* Keyed by the message so a second, different failure redraws. */}
+        {error && (
+          <div className="autherr" key={error}>
+            <svg className="failmark" viewBox="0 0 52 52" aria-hidden="true">
+              <circle cx="26" cy="26" r="23" />
+              <path d="M18 18L34 34M34 18L18 34" />
+            </svg>
+            {error}
+          </div>
+        )}
       </div>
       <div className="modal-foot">
         <button className="btn ghost" onClick={onClose}>
