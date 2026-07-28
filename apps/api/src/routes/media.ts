@@ -8,6 +8,7 @@ import IORedis from "ioredis";
 import { z } from "zod";
 import { decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
+import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -68,6 +69,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     format: string | null;
     isRevision: boolean;
     revisionOfId: string | null;
+    coverOffsetMs: number | null;
+    coverKey: string | null;
     createdAt: Date;
   }) => {
     const ready = a.status === "ready";
@@ -83,7 +86,12 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       isRevision: a.isRevision,
       revisionOfId: a.revisionOfId,
       createdAt: a.createdAt,
-      thumbUrl: ready ? `/files/${a.clientId}/${a.id}/thumb.jpg` : null,
+      coverOffsetMs: a.coverOffsetMs,
+      thumbUrl: ready
+        ? a.coverKey
+          ? `/files/${a.coverKey}`
+          : `/files/${a.clientId}/${a.id}/thumb.jpg`
+        : null,
       // The original upload: nothing is re-encoded, so preview and publish
       // both use the file exactly as it was exported.
       videoUrl: `/files/${a.storageKey}`,
@@ -190,6 +198,90 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       data: { draftCopy: { ...current, ...body } },
     });
     return { id: updated.id, draftCopy: updated.draftCopy };
+  });
+
+  const coverSchema = z.object({
+    offsetMs: z.number().int().min(0).max(4 * 60 * 60 * 1000),
+  });
+
+  /**
+   * Choose a frame of the video as the cover. The frame is extracted to
+   * cover.jpg beside the source; every platform that accepts a custom
+   * cover gets this image at publish, and the app's thumbnails switch to
+   * it so what the operator sees is what posts.
+   */
+  app.patch<{ Params: { id: string } }>("/media/:id/cover", async (request, reply) => {
+    const body = coverSchema.parse(request.body ?? {});
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+    if (asset.status !== "ready") {
+      return reply.status(409).send({ error: "asset is still processing" });
+    }
+    const source = path.join(env.STORAGE_DIR, asset.storageKey);
+    const coverKey = `${asset.clientId}/${asset.id}/cover.jpg`;
+    await extractThumbnail(source, path.join(env.STORAGE_DIR, coverKey), body.offsetMs / 1000);
+    // An uploaded cover may exist under another extension; the jpg now wins.
+    const updated = await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { coverOffsetMs: body.offsetMs, coverKey },
+    });
+    return assetView(updated);
+  });
+
+  /** Upload an image as the cover instead of picking a frame. */
+  app.post<{ Params: { id: string } }>("/media/:id/cover-image", async (request, reply) => {
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+    const file = await request.file();
+    if (!file) return reply.status(400).send({ error: "no file uploaded" });
+    const mime = file.mimetype;
+    if (mime !== "image/jpeg" && mime !== "image/png") {
+      return reply.status(400).send({ error: "cover must be a JPEG or PNG" });
+    }
+    const ext = mime === "image/png" ? ".png" : ".jpg";
+    const coverKey = `${asset.clientId}/${asset.id}/cover${ext}`;
+    await pipeline(
+      file.file,
+      createWriteStream(path.join(env.STORAGE_DIR, coverKey)),
+    );
+    if (file.file.truncated) {
+      await fs.rm(path.join(env.STORAGE_DIR, coverKey), { force: true });
+      return reply.status(413).send({ error: "file too large" });
+    }
+    // Remove the other-extension cover so exactly one exists.
+    const other = path.join(
+      env.STORAGE_DIR,
+      `${asset.clientId}/${asset.id}/cover${ext === ".jpg" ? ".png" : ".jpg"}`,
+    );
+    await fs.rm(other, { force: true });
+    const updated = await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { coverOffsetMs: null, coverKey },
+    });
+    return assetView(updated);
+  });
+
+  /** Back to the automatic thumbnail. */
+  app.delete<{ Params: { id: string } }>("/media/:id/cover", async (request, reply) => {
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+    for (const ext of [".jpg", ".png"]) {
+      await fs.rm(
+        path.join(env.STORAGE_DIR, `${asset.clientId}/${asset.id}/cover${ext}`),
+        { force: true },
+      );
+    }
+    const updated = await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { coverOffsetMs: null, coverKey: null },
+    });
+    return assetView(updated);
   });
 
   /**

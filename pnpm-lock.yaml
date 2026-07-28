@@ -31,6 +31,9 @@ importers:
       '@toreroflow/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@toreroflow/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@toreroflow/publishers':
         specifier: workspace:*
         version: link:../../packages/publishers

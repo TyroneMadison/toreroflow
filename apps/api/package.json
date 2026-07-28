@@ -17,6 +17,7 @@
     "@fastify/static": "^10.1.2",
     "@toreroflow/core": "workspace:*",
     "@toreroflow/db": "workspace:*",
+    "@toreroflow/media": "workspace:*",
     "@toreroflow/publishers": "workspace:*",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.81.0",
