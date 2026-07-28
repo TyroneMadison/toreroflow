@@ -4,6 +4,7 @@ import { useToast } from "../components/Toasts";
 import { api, type AccountOverview, type OverviewClient } from "../lib/api";
 import { PF_ID } from "../lib/platforms";
 import { openExternal } from "../lib/external";
+import { useAppState } from "../state/AppState";
 
 /**
  * Which client needs you today.
@@ -158,6 +159,7 @@ export default function AccountOverviewScreen({
   onOpenInsights(clientId: string): void;
 }) {
   const toast = useToast();
+  const { clients: knownClients } = useAppState();
   const [data, setData] = useState<AccountOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -171,9 +173,13 @@ export default function AccountOverviewScreen({
     }
   }, [toast]);
 
+  // Refetch whenever the client list changes (enroll, connect, sync), so a
+  // brand onboarded mid-session shows up here without navigating away. The
+  // array identity changes on every refreshClients, which is exactly the
+  // signal wanted.
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, knownClients]);
 
   const clients = data?.clients ?? [];
   const needing = clients.filter((c) => c.attention > 0).length;
