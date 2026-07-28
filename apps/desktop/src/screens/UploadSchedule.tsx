@@ -9,6 +9,7 @@ import {
   type VideoFormat,
 } from "../lib/api";
 import { formatDuration } from "../lib/video";
+import { queueRows } from "../lib/queue";
 import { useAppState } from "../state/AppState";
 import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
@@ -64,6 +65,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const connectedCount = (selectedClient?.accounts ?? []).filter(
     (a) => a.status === "connected",
   ).length;
+
+  // One source for the queue's rows so the empty state and the list can
+  // never disagree about what counts as queued.
+  const queued = queueRows(posts);
 
   const loadPosts = useCallback(
     async (opts?: { announce?: boolean }) => {
@@ -566,8 +571,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               <div className="rowhead">
                 <h3>Up next in queue</h3>
               </div>
-              {posts.filter((p) => p.status === "scheduled" || p.status === "publishing")
-                .length === 0 ? (
+              {queued.length === 0 ? (
                 <div className="empty">
                   <div className="eic">
                     <svg>
@@ -578,10 +582,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   <p>Schedule a processed video and it will line up here.</p>
                 </div>
               ) : (
-                posts
-                  .filter((p) => p.status === "scheduled" || p.status === "publishing")
-                  .slice(0, 6)
-                  .map((p) => (
+                queued.map((p) => (
                     <div
                       className={`queue-item${overTargetId === p.id ? " dragover" : ""}${
                         dragTargetId === p.id ? " dragging" : ""
@@ -624,22 +625,28 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       />
                       <div className="qmeta">
                         <b>{p.assetName}</b>
-                        <span>
+                        <span className={p.status === "failed" ? "qfail" : undefined}>
                           <Pf p={PF_ID[p.platform]} size="sm" />{" "}
-                          {p.status === "publishing" ? "publishing…" : fmtWhen(p.scheduledAt)}
+                          {p.status === "failed"
+                            ? `Failed: ${p.error ?? "unknown error"}`
+                            : p.status === "publishing"
+                              ? "publishing…"
+                              : fmtWhen(p.scheduledAt)}
                         </span>
                       </div>
-                      {p.status === "scheduled" && (
+                      {(p.status === "scheduled" || p.status === "failed") && (
                         <div className="qactions">
-                          <div
-                            className="iconbtn"
-                            title="Change day and time"
-                            onClick={() => setQueueDetail(p)}
-                          >
-                            <svg>
-                              <use href="#i-cal" />
-                            </svg>
-                          </div>
+                          {p.status === "scheduled" && (
+                            <div
+                              className="iconbtn"
+                              title="Change day and time"
+                              onClick={() => setQueueDetail(p)}
+                            >
+                              <svg>
+                                <use href="#i-cal" />
+                              </svg>
+                            </div>
+                          )}
                           <div
                             className={`iconbtn${confirmRemove === p.id ? " danger" : ""}`}
                             title={
