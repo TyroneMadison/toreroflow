@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal";
 import Pf from "../components/Pf";
 import { api } from "../lib/api";
@@ -79,7 +79,7 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     }
   };
 
-  const syncAccounts = async () => {
+  const syncAccounts = useCallback(async () => {
     if (!clientId) return;
     setBusy("sync");
     setError(null);
@@ -92,7 +92,18 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     } finally {
       setBusy(null);
     }
-  };
+  }, [clientId, refreshClients]);
+
+  // Finishing a platform login happens in the external browser; coming back
+  // to this window is the natural moment the accounts are ready, so sync
+  // then instead of waiting for a manual click. The button stays as a
+  // backstop for a login completed without the window ever losing focus.
+  useEffect(() => {
+    if (!awaitingAuth) return;
+    const onFocus = () => void syncAccounts();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [awaitingAuth, syncAccounts]);
 
   return (
     <Modal maxWidth={440} onClose={onClose}>
