@@ -15,6 +15,22 @@ export interface InstagramScheduleOptions {
   aiLabel?: boolean;
 }
 
+/**
+ * Options the operator can pick at schedule time for a YouTube target.
+ * relatedVideoUrl is consumed by the schedule route (it becomes a link at
+ * the end of the description) and never reaches the wire, so it has no
+ * mapping below.
+ */
+export interface YouTubeScheduleOptions {
+  visibility?: "public" | "unlisted" | "private";
+  madeForKids?: boolean;
+  firstComment?: string;
+  categoryId?: string;
+  playlistId?: string;
+  aiLabel?: boolean;
+  relatedVideoUrl?: string;
+}
+
 export interface TargetOptionsInput {
   platform: Platform;
   /** MediaAsset.format: "short_form" | "long_form" | null. */
@@ -22,6 +38,7 @@ export interface TargetOptionsInput {
   /** Public URL of the uploaded cover image, when one was chosen. */
   coverUrl: string | null;
   instagram?: InstagramScheduleOptions | null;
+  youtube?: YouTubeScheduleOptions | null;
   youtubeTitle?: string | null;
 }
 
@@ -75,9 +92,21 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   }
 
   if (input.platform === "youtube") {
-    if (input.youtubeTitle) {
-      out.platformSpecificData = { title: input.youtubeTitle };
+    const psd: Record<string, unknown> = {};
+    if (input.youtubeTitle) psd.title = input.youtubeTitle;
+    const yt = input.youtube;
+    if (yt) {
+      if (yt.visibility) psd.visibility = yt.visibility;
+      if (yt.madeForKids) psd.madeForKids = true;
+      // Kids videos have comments permanently disabled, so a pinned first
+      // comment cannot exist on one; drop it rather than send a request
+      // YouTube must reject.
+      if (yt.firstComment && !yt.madeForKids) psd.firstComment = yt.firstComment;
+      if (yt.categoryId) psd.categoryId = yt.categoryId;
+      if (yt.playlistId) psd.playlistId = yt.playlistId;
+      if (yt.aiLabel) psd.containsSyntheticMedia = true;
     }
+    if (Object.keys(psd).length) out.platformSpecificData = psd;
     if (input.coverUrl && input.format === "long_form") {
       out.mediaThumbnail = input.coverUrl;
     }

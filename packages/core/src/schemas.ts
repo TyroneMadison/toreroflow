@@ -56,12 +56,23 @@ export const instagramOptionsSchema = z.object({
   aiLabel: z.boolean().optional(),
 });
 
+export const youtubeOptionsSchema = z.object({
+  visibility: z.enum(["public", "unlisted", "private"]).optional(),
+  madeForKids: z.boolean().optional(),
+  firstComment: z.string().max(10_000).optional(),
+  categoryId: z.string().max(10).optional(),
+  playlistId: z.string().max(60).optional(),
+  aiLabel: z.boolean().optional(),
+  relatedVideoUrl: z.string().url().max(300).optional(),
+});
+
 export const schedulePostSchema = z.object({
   platforms: z.array(platformSchema).min(1),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
   instagram: instagramOptionsSchema.optional(),
+  youtube: youtubeOptionsSchema.optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 
