@@ -30,7 +30,7 @@ function cleanDraft(draft: unknown): unknown {
   const str = (v: unknown) => (typeof v === "string" ? decodeEscapes(v) : v);
   return {
     ...d,
-    title: str(d.title),
+    name: str(d.name),
     description: str(d.description),
     hashtags: Array.isArray(d.hashtags) ? d.hashtags.map((h) => str(h)) : d.hashtags,
   };
