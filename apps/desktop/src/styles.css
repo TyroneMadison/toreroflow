@@ -982,3 +982,11 @@
 @media (prefers-reduced-motion:reduce){
   .failmark circle,.failmark path{animation:none;stroke-dashoffset:0}
 }
+
+/* The card's name is an editable heading: it reads as text until focused,
+   so an untitled video shows its placeholder rather than a form control. */
+.namein{flex:1;min-width:0;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--txt-1);font:inherit;padding:2px 6px;margin-left:-6px}
+.namein:hover:not(:disabled){border-color:var(--brd-soft)}
+.namein:focus{outline:none;border-color:var(--brd-soft);background:var(--glass-2)}
+.namein::placeholder{color:var(--txt-3)}
+.filename{font-size:11.5px;color:var(--txt-3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

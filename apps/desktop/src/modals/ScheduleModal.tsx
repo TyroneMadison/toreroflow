@@ -3,7 +3,13 @@ import Modal from "./Modal";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import { api, type CatalogueVideo, type MediaAssetInfo, type YouTubePlaylistInfo } from "../lib/api";
+import {
+  api,
+  videoLabel,
+  type CatalogueVideo,
+  type MediaAssetInfo,
+  type YouTubePlaylistInfo,
+} from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 
@@ -176,7 +182,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       <div className="modal-head">
         <div>
           <h3>Schedule post</h3>
-          <p>{asset.name}</p>
+          <p>{videoLabel(asset)}</p>
         </div>
         <div className="modal-x" onClick={onClose}>
           <svg>

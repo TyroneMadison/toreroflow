@@ -3,6 +3,7 @@ import {
   api,
   fileUrl,
   uploadMedia,
+  videoLabel,
   type ClientPost,
   type MediaAssetInfo,
   type PostTargetInfo,
@@ -47,7 +48,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [ytTitles, setYtTitles] = useState<Record<string, string>>({});
+  const [ytDescriptions, setYtDescriptions] = useState<Record<string, string>>({});
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [departing, setDeparting] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -188,23 +191,36 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     void addFiles(e.dataTransfer.files);
   };
 
-  const saveDraft = async (asset: MediaAssetInfo) => {
+  /** Persist whatever was typed. Returns false when the server refused. */
+  const saveDraft = async (asset: MediaAssetInfo): Promise<boolean> => {
     const description = drafts[asset.id];
-    const title = titles[asset.id];
-    if (description === undefined && title === undefined) return;
+    const name = names[asset.id];
+    const youtubeTitle = ytTitles[asset.id];
+    const youtubeDescription = ytDescriptions[asset.id];
+    if (
+      description === undefined &&
+      name === undefined &&
+      youtubeTitle === undefined &&
+      youtubeDescription === undefined
+    ) {
+      return true;
+    }
     try {
       await api.patch(`/media/${asset.id}/draft`, {
-        ...(title !== undefined ? { title } : {}),
+        ...(name !== undefined ? { name } : {}),
         ...(description !== undefined ? { description } : {}),
+        ...(youtubeTitle !== undefined ? { youtubeTitle } : {}),
+        ...(youtubeDescription !== undefined ? { youtubeDescription } : {}),
       });
     } catch (err) {
       // Never flash "Saved" over copy the server rejected.
-      toast.fail(`Could not save the copy for ${asset.name}`, err);
-      return;
+      toast.fail(`Could not save the copy for ${videoLabel(asset)}`, err);
+      return false;
     }
     setSavedFlash(asset.id);
     setTimeout(() => setSavedFlash((s) => (s === asset.id ? null : s)), 2000);
     void load();
+    return true;
   };
 
   /**
@@ -309,7 +325,17 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       delete next[asset.id];
       return next;
     });
-    setTitles((t) => {
+    setNames((t) => {
+      const next = { ...t };
+      delete next[asset.id];
+      return next;
+    });
+    setYtTitles((t) => {
+      const next = { ...t };
+      delete next[asset.id];
+      return next;
+    });
+    setYtDescriptions((t) => {
       const next = { ...t };
       delete next[asset.id];
       return next;
@@ -384,7 +410,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               const video = asset.status === "ready" ? fileUrl(asset.videoUrl) : null;
               const description =
                 drafts[asset.id] ?? asset.draftCopy?.description ?? "";
-              const title = titles[asset.id] ?? asset.draftCopy?.title ?? "";
+              const name = names[asset.id] ?? asset.draftCopy?.name ?? "";
+              const ytTitle = ytTitles[asset.id] ?? asset.draftCopy?.youtubeTitle ?? "";
+              const ytDescription =
+                ytDescriptions[asset.id] ?? asset.draftCopy?.youtubeDescription ?? "";
               return (
                 <div
                   className={`jobwrap${departing === asset.id ? " departing" : ""}`}
@@ -431,7 +460,16 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   </div>
                   <div className="body">
                     <div className="name">
-                      {asset.name}
+                      <input
+                        className="namein"
+                        value={name}
+                        maxLength={300}
+                        placeholder="Name this video"
+                        disabled={asset.status !== "ready"}
+                        onChange={(e) =>
+                          setNames((n) => ({ ...n, [asset.id]: e.target.value }))
+                        }
+                      />
                       {asset.isRevision && <span className="tag rev">Revision</span>}
                       {asset.status === "ready" && asset.hasTranscript && (
                         <span className="tag ok">Transcribed</span>
@@ -445,33 +483,19 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         </span>
                       )}
                     </div>
+                    <div className="filename" title={asset.name}>
+                      {asset.name}
+                    </div>
 
                     {asset.status !== "ready" ? (
                       <div className="transcript">{STATUS_LABEL[asset.status]}</div>
                     ) : (
                       <>
                         <label className="flabel" style={{ marginTop: 10 }}>
-                          Title
-                          <span className="hint">
-                            YouTube title · Instagram &amp; TikTok caption
-                          </span>
-                        </label>
-                        <input
-                          className="field-in titlein"
-                          value={title}
-                          maxLength={300}
-                          placeholder={
-                            asset.draftCopy
-                              ? "Title this video…"
-                              : "Title this video. Add ANTHROPIC_API_KEY to get AI drafts."
-                          }
-                          onChange={(e) =>
-                            setTitles((t) => ({ ...t, [asset.id]: e.target.value }))
-                          }
-                        />
-
-                        <label className="flabel" style={{ marginTop: 12 }}>
                           Description
+                          <span className="hint">
+                            Instagram, TikTok, Facebook and Snapchat caption
+                          </span>
                         </label>
                         <div className="captionbox">
                           <textarea
@@ -559,7 +583,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           className="btn ghost"
                           onClick={() => void saveDraft(asset)}
                           disabled={
-                            drafts[asset.id] === undefined && titles[asset.id] === undefined
+                            drafts[asset.id] === undefined &&
+                            names[asset.id] === undefined &&
+                            ytTitles[asset.id] === undefined &&
+                            ytDescriptions[asset.id] === undefined
                           }
                         >
                           {savedFlash === asset.id ? "Saved ✓" : "Save copy"}
