@@ -333,18 +333,23 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState<string | null>(null);
-  const autoSynced = useRef(false);
+  const autoSynced = useRef(new Set<string>());
 
   useEffect(() => {
     void getAutostart().then(setAutostartState);
   }, []);
 
-  // Pull provider-side connections in automatically when Settings opens.
+  // Pull provider-side connections in automatically when Settings opens,
+  // and again for any client that appears while it stays open. The latch is
+  // per client id, so enrolling a brand mid-visit still gets its sync; the
+  // ids are added before the requests so the refresh at the end cannot
+  // retrigger the effect into a loop.
   useEffect(() => {
-    if (autoSynced.current || !clients.length) return;
-    autoSynced.current = true;
+    const unsynced = clients.filter((c) => !autoSynced.current.has(c.id));
+    if (!unsynced.length) return;
+    for (const c of unsynced) autoSynced.current.add(c.id);
     void (async () => {
-      for (const client of clients) {
+      for (const client of unsynced) {
         try {
           await api.post(`/clients/${client.id}/accounts/sync`, {});
         } catch {
