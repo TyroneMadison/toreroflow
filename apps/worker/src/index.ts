@@ -284,6 +284,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
     const targetOptions =
       (target.options as {
         instagram?: import("@toreroflow/publishers").InstagramScheduleOptions;
+        youtube?: import("@toreroflow/publishers").YouTubeScheduleOptions;
         youtubeTitle?: string;
       } | null) ?? {};
 
@@ -303,6 +304,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         format: asset?.format ?? null,
         coverUrl,
         instagram: targetOptions.instagram ?? null,
+        youtube: targetOptions.youtube ?? null,
         youtubeTitle: targetOptions.youtubeTitle ?? null,
       });
       const result = await zernio.createPost({
@@ -328,6 +330,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         format: asset?.format ?? null,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
         instagram: targetOptions.instagram ?? null,
+        youtube: targetOptions.youtube ?? null,
         youtubeTitle: targetOptions.youtubeTitle ?? null,
       });
       const result = await publisher.publish({
