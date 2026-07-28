@@ -244,12 +244,12 @@ async function zernioMediaUrl(assetId: string, filePath: string): Promise<string
   return publicUrl;
 }
 
-/** Cover images change when re-picked, so cache on the exact key. */
-const coverUrlCache = new Map<string, string>();
-
+/**
+ * Covers are re-uploaded on every publish on purpose: a re-picked frame
+ * overwrites the same file path, so any cache keyed on the path would
+ * silently post the old image.
+ */
 async function zernioCoverUrl(coverKey: string): Promise<string> {
-  const cached = coverUrlCache.get(coverKey);
-  if (cached) return cached;
   const contentType = coverKey.endsWith(".png") ? "image/png" : "image/jpeg";
   const filePath = path.join(env.STORAGE_DIR, coverKey);
   const { uploadUrl, publicUrl } = await zernio!.presignMedia(
@@ -258,7 +258,6 @@ async function zernioCoverUrl(coverKey: string): Promise<string> {
   );
   const body = await fs.readFile(filePath);
   await zernio!.uploadMedia(uploadUrl, body, contentType);
-  coverUrlCache.set(coverKey, publicUrl);
   return publicUrl;
 }
 
