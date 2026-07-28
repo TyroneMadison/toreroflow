@@ -175,7 +175,7 @@ model Client {
   contactEmail         String?
   contactPhone         String?
   /// Permanent path of this client's shareable web report, e.g.
-  /// "caleb-end-of-month-report". Assigned once and never regenerated on
+  /// "northstar-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.
   reportSlug           String?        @unique
   /// Absolute URL of the last published report page; null until first publish.
@@ -255,6 +255,10 @@ model MediaAsset {
   isRevision   Boolean          @default(false)
   /// The upload this one revises, when known.
   revisionOfId String?
+  /// Millisecond offset of the operator-chosen cover frame, when frame-picked.
+  coverOffsetMs Int?
+  /// Storage key of the chosen cover image (frame-extracted or uploaded).
+  coverKey      String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -308,6 +312,8 @@ model PostTarget {
   platform        Platform
   caption         String?
   hashtags        String[]         @default([])
+  /// Per-platform publish options: { instagram: {...} } or { youtubeTitle }.
+  options         Json?
   scheduledAt     DateTime?
   status          PostTargetStatus @default(scheduled)
   remotePostId    String?
