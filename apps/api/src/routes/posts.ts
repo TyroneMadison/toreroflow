@@ -1,7 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import { decodeEscapes, schedulePostSchema, appendWatchNext } from "@toreroflow/core";
+import {
+  appendWatchNext,
+  captionFor,
+  decodeEscapes,
+  schedulePostSchema,
+  youtubeTitleFor,
+} from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -68,23 +74,32 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     // The title is what actually gets posted: YouTube's title, and the
     // caption on Instagram and TikTok. `hook` is the pre-rename field name,
     // still present on assets drafted before the change.
-    const draft =
+    // Older rows carry {hook, caption} or a `title` that used to mean both
+    // the YouTube title and everyone's caption. Fold them onto `name`, which
+    // is what every field falls back to, so nothing already drafted changes.
+    const stored =
       (asset.draftCopy as {
+        name?: string;
         title?: string;
         hook?: string;
         description?: string;
+        caption?: string;
+        youtubeTitle?: string;
+        youtubeDescription?: string;
         hashtags?: string[];
       } | null) ?? {};
     const decodeEscapes = (v: string): string =>
       v.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) =>
         String.fromCharCode(parseInt(hex, 16)),
       );
-    const rawCaption = body.caption ?? draft.title ?? draft.hook ?? "";
-    const caption = decodeEscapes(rawCaption);
-    const hashtags = (body.hashtags ?? draft.hashtags ?? []).map(decodeEscapes);
-    // YouTube's caption is the description; everywhere else the title IS the
-    // caption. The description was being written and never sent before this.
-    const description = decodeEscapes(draft.description ?? "");
+    const draft = {
+      // body.caption stays an explicit override of the whole caption.
+      name: decodeEscapes(body.caption ?? stored.name ?? stored.title ?? stored.hook ?? ""),
+      description: decodeEscapes(stored.description ?? stored.caption ?? ""),
+      youtubeTitle: decodeEscapes(stored.youtubeTitle ?? ""),
+      youtubeDescription: decodeEscapes(stored.youtubeDescription ?? ""),
+    };
+    const hashtags = (body.hashtags ?? stored.hashtags ?? []).map(decodeEscapes);
     // Collaborators arrive as typed usernames; strip the @ some people type.
     const igOptions = body.instagram
       ? {
@@ -96,7 +111,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       : undefined;
 
     const ytOptions = body.youtube;
-    const youtubeDescription = appendWatchNext(description || caption, ytOptions?.relatedVideoUrl);
+    const youtubeCaption = appendWatchNext(
+      captionFor("youtube", draft),
+      ytOptions?.relatedVideoUrl,
+    );
 
     const post = await prisma.post.create({
       data: {
@@ -108,7 +126,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           create: accounts.map(({ platform, account }) => ({
             socialAccountId: account!.id,
             platform,
-            caption: platform === "youtube" && youtubeDescription ? youtubeDescription : caption,
+            caption: platform === "youtube" ? youtubeCaption : captionFor(platform, draft),
             hashtags,
             scheduledAt,
             status: "scheduled",
@@ -116,7 +134,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
               platform === "instagram" && igOptions
                 ? { instagram: igOptions }
                 : platform === "youtube"
-                  ? { youtubeTitle: caption, ...(ytOptions ? { youtube: ytOptions } : {}) }
+                  ? {
+                      youtubeTitle: youtubeTitleFor(draft),
+                      ...(ytOptions ? { youtube: ytOptions } : {}),
+                    }
                   : undefined,
           })),
         },
