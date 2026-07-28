@@ -79,7 +79,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       : undefined;
 
     const ytOptions = body.youtube;
-    const youtubeDescription = appendWatchNext(description, ytOptions?.relatedVideoUrl);
+    const youtubeDescription = appendWatchNext(description || caption, ytOptions?.relatedVideoUrl);
 
     const post = await prisma.post.create({
       data: {
