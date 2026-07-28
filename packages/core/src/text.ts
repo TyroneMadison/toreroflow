@@ -20,3 +20,13 @@ export function decodeEscapes(value: string): string {
       .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, "$1")
   );
 }
+
+/**
+ * The related-video link for a YouTube description. The Shorts "Related
+ * video" pin is Studio-only with no API anywhere, so a link at the end of
+ * the description is the closest any tool can get.
+ */
+export function appendWatchNext(description: string, url: string | undefined): string {
+  if (!url) return description;
+  return description ? `${description}\n\nWatch next: ${url}` : `Watch next: ${url}`;
+}
