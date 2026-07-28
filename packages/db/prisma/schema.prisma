@@ -416,8 +416,8 @@ model ExternalVideo {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
-  metrics ExternalVideoMetric[]
+  socialAccount SocialAccount         @relation(fields: [socialAccountId], references: [id])
+  metrics       ExternalVideoMetric[]
 
   @@unique([socialAccountId, platformVideoId])
   @@index([socialAccountId, views])

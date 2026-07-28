@@ -139,6 +139,8 @@ export async function persistProviderPosts(
   accountsByProviderId: Map<string, { socialAccountId: string; platform: Platform }>,
 ): Promise<number> {
   let written = 0;
+  const now = new Date();
+  // ponytail: serial per-row upserts, batch with createMany/transactions if ingest volume ever hurts
   for (const post of posts) {
     const entries = Array.isArray(post.platforms)
       ? (post.platforms as Array<Record<string, unknown>>)
@@ -153,7 +155,7 @@ export async function persistProviderPosts(
       if (!account) continue;
       const row = mapProviderEntry(post, entry, account, resolved.length);
       if (!row) continue;
-      await upsertExternalVideo(prisma, row);
+      await upsertExternalVideo(prisma, row, now);
       written++;
     }
   }
