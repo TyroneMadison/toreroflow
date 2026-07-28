@@ -55,6 +55,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       (asset.draftCopy as {
         title?: string;
         hook?: string;
+        description?: string;
         hashtags?: string[];
       } | null) ?? {};
     const decodeEscapes = (v: string): string =>
@@ -64,6 +65,18 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const rawCaption = body.caption ?? draft.title ?? draft.hook ?? "";
     const caption = decodeEscapes(rawCaption);
     const hashtags = (body.hashtags ?? draft.hashtags ?? []).map(decodeEscapes);
+    // YouTube's caption is the description; everywhere else the title IS the
+    // caption. The description was being written and never sent before this.
+    const description = decodeEscapes(draft.description ?? "");
+    // Collaborators arrive as typed usernames; strip the @ some people type.
+    const igOptions = body.instagram
+      ? {
+          ...body.instagram,
+          collaborators: body.instagram.collaborators
+            ?.map((c) => c.replace(/^@/, "").trim())
+            .filter(Boolean),
+        }
+      : undefined;
 
     const post = await prisma.post.create({
       data: {
@@ -75,10 +88,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           create: accounts.map(({ platform, account }) => ({
             socialAccountId: account!.id,
             platform,
-            caption,
+            caption: platform === "youtube" && description ? description : caption,
             hashtags,
             scheduledAt,
             status: "scheduled",
+            options:
+              platform === "instagram" && igOptions
+                ? { instagram: igOptions }
+                : platform === "youtube"
+                  ? { youtubeTitle: caption }
+                  : undefined,
           })),
         },
       },

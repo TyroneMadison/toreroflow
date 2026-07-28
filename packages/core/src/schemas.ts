@@ -46,11 +46,22 @@ export const createWorkflowSchema = z.object({
 });
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 
+export const instagramOptionsSchema = z.object({
+  trial: z.boolean().optional(),
+  graduationStrategy: z.enum(["MANUAL", "SS_PERFORMANCE"]).optional(),
+  collaborators: z.array(z.string().max(80)).max(3).optional(),
+  audioName: z.string().max(120).optional(),
+  shareToFeed: z.boolean().optional(),
+  firstComment: z.string().max(2200).optional(),
+  aiLabel: z.boolean().optional(),
+});
+
 export const schedulePostSchema = z.object({
   platforms: z.array(platformSchema).min(1),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
+  instagram: instagramOptionsSchema.optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 
