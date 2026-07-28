@@ -32,6 +32,8 @@ export interface PublishInput {
   caption: string;
   hashtags: string[];
   scheduledAt?: Date;
+  /** Built platform extras, logged verbatim so dry runs can be inspected. */
+  extras?: unknown;
 }
 
 export interface PublishResult {
@@ -92,6 +94,7 @@ export class DryRunPublisher implements Publisher {
       caption: input.caption.slice(0, 80),
       hashtags: input.hashtags,
       scheduledAt: input.scheduledAt?.toISOString(),
+      extras: input.extras ?? null,
     });
     return { remotePostId: `dryrun-${this.platform}-${input.account.id}-${Date.now()}` };
   }
