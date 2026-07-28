@@ -40,8 +40,8 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.platformVideoId, "18000000000000001");
   assert.equal(row.title, "Widebody day 3 \u{1F525}"); // escapes decoded
   assert.equal(row.views, 250000); // entry views still win over the post total
-  assert.equal(row.likes, 5); // likes are post-level, matching the screen's top line
-  assert.equal(row.comments, 1); // comments are post-level too
+  assert.equal(row.likes, 1200); // entry likes win too, same rule as views
+  assert.equal(row.comments, 88); // entry comments win too, same rule as views
   assert.equal(row.durationSec, 31.5); // duration only exists post-level
   assert.equal(row.thumbnailUrl, "https://cdn.example/t.jpg");
   assert.equal(row.url, "https://instagram.com/p/abc");
@@ -65,13 +65,14 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.comments, 0); // absent metric is 0, matching the merge
 }
 
-/* No entry-level views: the post total splits across attributed entries,
-   matching the screen's byPlatform math. */
+/* No entry-level metrics: the post total splits across attributed entries
+   for every metric, matching the screen's byPlatform math, so cross-post
+   sibling rows sum back to the post total instead of each copying it whole. */
 {
   const post = {
     content: "cross-post",
     publishedAt: "2026-06-01T00:00:00.000Z",
-    analytics: { views: 1000 },
+    analytics: { views: 1000, likes: 10, comments: 4 },
   };
   const entry = { accountId: "za1", platformPostId: "pp5" };
   const account = { socialAccountId: "sa1", platform: "instagram" as const };
@@ -79,10 +80,14 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   const split = mapProviderEntry(post, entry, account, 2);
   assert.ok(split);
   assert.equal(split.views, 500); // 1000 split across 2 attributed entries
+  assert.equal(split.likes, 5); // 10 split across 2 attributed entries
+  assert.equal(split.comments, 2); // 4 split across 2 attributed entries
 
   const single = mapProviderEntry(post, entry, account, 1);
   assert.ok(single);
   assert.equal(single.views, 1000); // one entry gets the whole post total
+  assert.equal(single.likes, 10);
+  assert.equal(single.comments, 4);
 }
 
 /* An entry with its own views never gets split, no matter entryCount. */
