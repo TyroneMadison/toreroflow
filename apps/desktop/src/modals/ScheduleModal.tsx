@@ -50,7 +50,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const instagramBody = () => {
     if (!igSelected) return undefined;
     const collaborators = igCollaborators
-      .map((c) => c.replace(/^@/, "").trim())
+      .map((c) => c.trim().replace(/^@/, ""))
       .filter(Boolean);
     const body: Record<string, unknown> = {};
     if (igTrial) {

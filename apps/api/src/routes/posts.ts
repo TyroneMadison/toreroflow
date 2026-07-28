@@ -73,7 +73,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       ? {
           ...body.instagram,
           collaborators: body.instagram.collaborators
-            ?.map((c) => c.replace(/^@/, "").trim())
+            ?.map((c) => c.trim().replace(/^@/, ""))
             .filter(Boolean),
         }
       : undefined;
@@ -170,7 +170,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         caption: t.caption ? decodeEscapes(t.caption) : t.caption,
         assetName: t.post.mediaAsset?.originalName ?? "post",
         thumbUrl: t.post.mediaAsset
-          ? `/files/${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`
+          ? t.post.mediaAsset.coverKey
+            ? `/files/${t.post.mediaAsset.coverKey}`
+            : `/files/${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`
           : null,
       }));
     },
