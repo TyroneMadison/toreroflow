@@ -1,5 +1,6 @@
 import type { Platform } from "@toreroflow/core";
 
+export * from "./options";
 export * from "./zernio";
 export * from "./youtube";
 
