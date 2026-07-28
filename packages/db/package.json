@@ -13,14 +13,18 @@
     "migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "studio": "dotenv -e ../../.env -- prisma studio",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/externalStore.check.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.5.0"
+    "@prisma/client": "^6.5.0",
+    "@toreroflow/core": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "dotenv-cli": "^8.0.0",
     "prisma": "^6.5.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.0"
   }
 }
