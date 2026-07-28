@@ -12,7 +12,7 @@ import {
   sumCents,
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
-import { deriveStatus, rollForward } from "../financials/month";
+import { deriveStatus, quotaMetFor, rollForward } from "../financials/month";
 import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
 import { renderReportPdf } from "../reports/renderPdf";
@@ -184,8 +184,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       const d = deliveredByClient.get(r.clientId) ?? { short: 0, long: 0 };
       const quotaMet =
         !c ||
-        ((c.quotaShort == null || d.short >= c.quotaShort) &&
-          (c.quotaLong == null || d.long >= c.quotaLong));
+        quotaMetFor(
+          { quotaShort: c.quotaShort, quotaLong: c.quotaLong, billingMode: c.billingMode },
+          d,
+        );
       // Delivered and target summed over tracked formats only, so an
       // untracked format neither inflates nor blocks the fraction shown
       // beside the row. Both null when nothing is tracked.

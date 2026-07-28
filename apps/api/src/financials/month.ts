@@ -63,3 +63,30 @@ export function rollForward(previous: RollForwardRow[], month: string): RollForw
       month,
     }));
 }
+
+export interface QuotaMetInput {
+  quotaShort: number | null;
+  quotaLong: number | null;
+  billingMode: string;
+}
+
+/**
+ * Whether a client's cycle counts as delivered.
+ *
+ * With targets, every tracked format must have reached its target. Without
+ * targets the answer depends on the billing mode: a calendar client owes by
+ * the month so nothing blocks, but a fulfilment client with no targets has
+ * nothing countable delivered, and treating that as met would offer an
+ * invoice before any work exists.
+ */
+export function quotaMetFor(
+  input: QuotaMetInput,
+  delivered: { short: number; long: number },
+): boolean {
+  const hasTargets = input.quotaShort != null || input.quotaLong != null;
+  if (!hasTargets) return input.billingMode !== "on_fulfilment";
+  return (
+    (input.quotaShort == null || delivered.short >= input.quotaShort) &&
+    (input.quotaLong == null || delivered.long >= input.quotaLong)
+  );
+}

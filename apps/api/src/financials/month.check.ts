@@ -1,4 +1,4 @@
-import { deriveStatus, rollForward } from "./month";
+import { deriveStatus, quotaMetFor, rollForward } from "./month";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -56,5 +56,29 @@ eq(next[1]!.amountCents, null, "a variable cost rolls forward with no amount, so
 eq(next[0]!.month, "2026-07", "rolled rows belong to the new month");
 eq(next[1]!.color, "#ffcf6b", "colour is carried so a category stays the same colour");
 eq(rollForward([], "2026-07").length, 0, "an empty previous month rolls nothing");
+
+// A fulfilment client with no targets has nothing countable delivered, so
+// the cycle is not met and no invoice is offered. Calendar clients are
+// unaffected: their money is owed by the month, not by delivery.
+eq(
+  quotaMetFor({ quotaShort: null, quotaLong: null, billingMode: "on_fulfilment" }, { short: 9, long: 9 }),
+  false,
+  "a fulfilment client with no targets is not met even with delivered work",
+);
+eq(
+  quotaMetFor({ quotaShort: null, quotaLong: null, billingMode: "calendar" }, { short: 0, long: 0 }),
+  true,
+  "a calendar client with no targets is always met",
+);
+eq(
+  quotaMetFor({ quotaShort: 10, quotaLong: null, billingMode: "on_fulfilment" }, { short: 10, long: 0 }),
+  true,
+  "meeting the short quota counts as met when long is not tracked",
+);
+eq(
+  quotaMetFor({ quotaShort: 10, quotaLong: 2, billingMode: "on_fulfilment" }, { short: 10, long: 1 }),
+  false,
+  "meeting short but not long does not count as met",
+);
 
 console.log("financials month: all checks passed");
