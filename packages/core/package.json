@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/money.check.ts && tsx src/expenseCategories.check.ts && tsx src/financeSchemas.check.ts && tsx src/text.check.ts"
+    "test": "tsx src/money.check.ts && tsx src/expenseCategories.check.ts && tsx src/financeSchemas.check.ts && tsx src/text.check.ts && tsx src/postCopy.check.ts"
   },
   "dependencies": {
     "zod": "^3.25.0"
