@@ -72,7 +72,10 @@ remains the final proof.
   contradiction even if a stale UI sends one.
 - **The related video is a description link, not the Studio pin.** The
   route appends one line, `Watch next: <url>`, to the end of the YouTube
-  description when `relatedVideoUrl` is present. Appending happens
+  description when `relatedVideoUrl` is present. When hashtags exist they
+  trail after it (the worker appends the hashtag block last), so the link
+  sits above the hashtags in the published description, which also reads
+  better for click-through. Appending happens
   server-side in the one place the description is assembled. The wall is
   named in the UI copy so the operator knows the real pin stays a manual
   Studio step.
