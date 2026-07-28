@@ -733,16 +733,26 @@ git commit -m "Add the thank-you page for the post-payment landing"
 
 ---
 
-## After the plan: Tyrone's two manual steps plus deploy
+## After the plan: Tyrone's manual steps plus deploy
 
-Recorded here so they are not lost; neither can be done by the implementation:
+Recorded here so they are not lost; none can be done by the implementation:
 
-1. Create a free resend.com account, then in Netlify site settings add the
-   environment variable `RESEND_API_KEY`. Until then every lead still lands
-   in Netlify Forms and its plain notification email (enable the email
+1. BLOCKING, before the deploy: in the Netlify dashboard under Forms, turn
+   ON form detection for the site. This site has never had forms, so it is
+   almost certainly off. With detection off, the deploy never registers the
+   form, the browser's POST falls through the SPA redirect with a 200, and
+   every lead is silently lost while the visitor still reaches Stripe and
+   pays. The first deploy MUST be followed by a real test submission that
+   shows up under Forms before the funnel is trusted.
+2. Create a free resend.com account USING Toreronee@gmail.com as the
+   account address (Resend's shared onboarding@resend.dev sender only
+   delivers to the account owner's own address; a different account address
+   means the branded email silently never arrives). Then in Netlify site
+   settings add the environment variable `RESEND_API_KEY`. Until then every
+   lead still lands in Netlify Forms; also enable the plain email
    notification for the `onboarding` form in the Netlify Forms settings,
-   pointed at Toreronee@gmail.com).
-2. In the Stripe dashboard, edit each of the five payment links and set the
+   pointed at Toreronee@gmail.com, as the always-on fallback.
+3. In the Stripe dashboard, edit each of the five payment links and set the
    after-payment confirmation page to `https://torerone.com/thank-you`.
-3. Push hero-app and deploy on Netlify as usual. Forms registration and the
+4. Push hero-app and deploy on Netlify as usual. Forms registration and the
    function only take effect after a deploy.
