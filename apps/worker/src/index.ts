@@ -4,7 +4,7 @@ import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import Anthropic from "@anthropic-ai/sdk";
 import { decodeEscapes, formatFromDuration } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
 
@@ -197,8 +197,10 @@ async function refreshYouTubeCatalogues(): Promise<void> {
     try {
       const { videos } = await youtube.allVideosForChannel(account.handle);
       for (const v of videos) {
-        const data = {
-          platform: "youtube" as const,
+        await upsertExternalVideo(prisma, {
+          socialAccountId: account.id,
+          platform: "youtube",
+          platformVideoId: v.platformVideoId,
           title: v.title,
           thumbnailUrl: v.thumbnailUrl,
           url: v.url,
@@ -207,17 +209,6 @@ async function refreshYouTubeCatalogues(): Promise<void> {
           likes: v.likes,
           comments: v.comments,
           durationSec: v.durationSec,
-          fetchedAt: new Date(),
-        };
-        await prisma.externalVideo.upsert({
-          where: {
-            socialAccountId_platformVideoId: {
-              socialAccountId: account.id,
-              platformVideoId: v.platformVideoId,
-            },
-          },
-          create: { socialAccountId: account.id, platformVideoId: v.platformVideoId, ...data },
-          update: data,
         });
       }
       total += videos.length;
