@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import Pf from "../components/Pf";
 import { api } from "../lib/api";
@@ -22,6 +22,12 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [awaitingAuth, setAwaitingAuth] = useState(false);
+
+  // The focus listener and the manual button can both fire a sync; two
+  // interleaved syncs can duplicate account rows server-side, so only one
+  // runs at a time. A ref, not state: the callback would close over stale
+  // state.
+  const syncInFlight = useRef(false);
 
   // Keep the connected set in step with the server after every refresh/sync.
   useEffect(() => {
@@ -80,7 +86,8 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
   };
 
   const syncAccounts = useCallback(async () => {
-    if (!clientId) return;
+    if (!clientId || syncInFlight.current) return;
+    syncInFlight.current = true;
     setBusy("sync");
     setError(null);
     try {
@@ -90,6 +97,7 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     } catch (err) {
       setError(err instanceof Error ? err.message : "sync failed");
     } finally {
+      syncInFlight.current = false;
       setBusy(null);
     }
   }, [clientId, refreshClients]);
