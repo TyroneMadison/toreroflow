@@ -974,3 +974,11 @@
   .jobwrap,.jobwrap.departing>.job{transition:none}
   .okmark circle,.okmark path{animation:none;stroke-dashoffset:0}
 }
+
+.failmark{width:30px;height:30px;vertical-align:-8px;margin-right:6px}
+.failmark circle,.failmark path{stroke:var(--red)}
+.failmark circle{stroke-dasharray:145;stroke-dashoffset:145;animation:draw .34s cubic-bezier(.2,.7,.2,1) forwards}
+.failmark path{stroke-dasharray:46;stroke-dashoffset:46;animation:draw .26s cubic-bezier(.2,.7,.2,1) .3s forwards}
+@media (prefers-reduced-motion:reduce){
+  .failmark circle,.failmark path{animation:none;stroke-dashoffset:0}
+}
