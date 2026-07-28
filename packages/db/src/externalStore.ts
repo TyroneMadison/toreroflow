@@ -48,12 +48,13 @@ export function utcDay(d: Date): Date {
 /**
  * One Zernio analytics post entry to one store row, or null when the
  * entry cannot be keyed (no platformPostId), cannot be dated, or belongs
- * to YouTube. Field picks mirror the merge in mergedPosts.ts: views prefer
- * the entry's own analytics and otherwise split the post total across the
- * `entryCount` platform entries attributed to the post, exactly like the
- * screen's byPlatform math. Likes and comments read post-level analytics
- * only, because that is what the screen's top-line numbers show, not the
- * per-entry figures. Duration is post-level too.
+ * to YouTube. Every metric on a store row is the per-platform value: the
+ * entry's own number when it reports one, otherwise an even split of the
+ * post total across the `entryCount` platform entries attributed to the
+ * post, exactly like the screen's byPlatform math. For a single-entry
+ * post that equals the screen's top-line numbers; for a cross-post the
+ * sibling rows sum to them. Duration is post-level only, there is no
+ * per-platform duration to prefer.
  */
 export function mapProviderEntry(
   post: Record<string, unknown>,
@@ -74,6 +75,10 @@ export function mapProviderEntry(
   const pm = (post.analytics ?? {}) as Record<string, unknown>;
   const entryViews = num(em, "views", "impressions", "plays");
   const postViews = num(pm, "views", "impressions", "plays") ?? 0;
+  const entryLikes = num(em, "likes", "likeCount");
+  const postLikes = num(pm, "likes", "likeCount") ?? 0;
+  const entryComments = num(em, "comments", "commentCount");
+  const postComments = num(pm, "comments", "commentCount") ?? 0;
 
   return {
     socialAccountId: account.socialAccountId,
@@ -87,8 +92,9 @@ export function mapProviderEntry(
     url: typeof post.platformPostUrl === "string" ? post.platformPostUrl : null,
     publishedAt,
     views: entryViews ?? (entryCount <= 1 ? postViews : Math.round(postViews / entryCount)),
-    likes: num(pm, "likes", "likeCount") ?? 0,
-    comments: num(pm, "comments", "commentCount") ?? 0,
+    likes: entryLikes ?? (entryCount <= 1 ? postLikes : Math.round(postLikes / entryCount)),
+    comments:
+      entryComments ?? (entryCount <= 1 ? postComments : Math.round(postComments / entryCount)),
     durationSec: num(pm, "duration", "videoDuration", "durationSec", "mediaDuration"),
   };
 }

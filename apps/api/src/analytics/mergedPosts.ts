@@ -58,6 +58,21 @@ export function keepStoredRow(platform: string, hasLiveMatch: boolean): boolean 
   return platform === "youtube" || !hasLiveMatch;
 }
 
+/**
+ * The "platform:platformPostId" identity of one platforms[] entry, or null
+ * when the entry has no platform post id to key on.
+ */
+export function entryPlatformKey(
+  entry: Record<string, unknown>,
+  accountPlatform: Map<string, string>,
+): string | null {
+  if (typeof entry.platformPostId !== "string" || !entry.platformPostId) return null;
+  const platform =
+    accountPlatform.get(entry.accountId as string) ??
+    (typeof entry.platform === "string" ? entry.platform : "");
+  return `${platform}:${entry.platformPostId}`;
+}
+
 interface Deps {
   prisma: {
     client: {
@@ -118,6 +133,7 @@ export async function buildMergedPosts(
   }
 
   const posts: MergedPost[] = [];
+  const liveKeys = new Set<string>();
   for (const p of raw) {
     const entries = Array.isArray(p.platforms)
       ? (p.platforms as Array<Record<string, unknown>>)
@@ -133,6 +149,10 @@ export async function buildMergedPosts(
     if (Number.isNaN(published.getTime())) continue;
 
     const use = mine.length ? mine : entries;
+    for (const e of use) {
+      const k = entryPlatformKey(e, accountPlatform);
+      if (k) liveKeys.add(k);
+    }
     const m = (p.analytics ?? {}) as Record<string, unknown>;
     const views = num(m, "views", "impressions", "plays") ?? 0;
 
@@ -155,10 +175,7 @@ export async function buildMergedPosts(
 
     const id = typeof p._id === "string" ? p._id : String(p.id ?? "");
     const first = use[0];
-    const platformKey =
-      first && typeof first.platformPostId === "string"
-        ? `${accountPlatform.get(first.accountId as string) ?? String(first.platform ?? "")}:${first.platformPostId}`
-        : null;
+    const platformKey = first ? entryPlatformKey(first, accountPlatform) : null;
 
     const title =
       typeof p.content === "string" && p.content.trim()
@@ -205,9 +222,6 @@ export async function buildMergedPosts(
   }>;
 
   if (external.length) {
-    const liveKeys = new Set(
-      posts.map((p) => p.platformKey).filter((k): k is string => k !== null),
-    );
     const keptExternal = external.filter((v) =>
       keepStoredRow(v.platform, liveKeys.has(`${v.platform}:${v.platformVideoId}`)),
     );
