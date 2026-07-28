@@ -163,7 +163,12 @@ async function processAsset(assetId: string): Promise<void> {
 
 /* ---- publish pipeline (spec Section 10) ---- */
 
-import { DryRunPublisher, YouTubeProvider, ZernioProvider } from "@toreroflow/publishers";
+import {
+  buildPostExtras,
+  DryRunPublisher,
+  YouTubeProvider,
+  ZernioProvider,
+} from "@toreroflow/publishers";
 import type { Platform } from "@toreroflow/core";
 
 const zernio =
@@ -239,6 +244,24 @@ async function zernioMediaUrl(assetId: string, filePath: string): Promise<string
   return publicUrl;
 }
 
+/** Cover images change when re-picked, so cache on the exact key. */
+const coverUrlCache = new Map<string, string>();
+
+async function zernioCoverUrl(coverKey: string): Promise<string> {
+  const cached = coverUrlCache.get(coverKey);
+  if (cached) return cached;
+  const contentType = coverKey.endsWith(".png") ? "image/png" : "image/jpeg";
+  const filePath = path.join(env.STORAGE_DIR, coverKey);
+  const { uploadUrl, publicUrl } = await zernio!.presignMedia(
+    path.basename(coverKey),
+    contentType,
+  );
+  const body = await fs.readFile(filePath);
+  await zernio!.uploadMedia(uploadUrl, body, contentType);
+  coverUrlCache.set(coverKey, publicUrl);
+  return publicUrl;
+}
+
 const PUBLISH_ATTEMPTS = 3;
 
 async function publishTarget(targetId: string, attemptsMade: number): Promise<void> {
@@ -267,41 +290,66 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       .filter(Boolean)
       .join("\n\n");
 
+    const asset = target.post.mediaAsset;
+    const targetOptions =
+      (target.options as {
+        instagram?: import("@toreroflow/publishers").InstagramScheduleOptions;
+        youtubeTitle?: string;
+      } | null) ?? {};
+
     let remotePostId: string;
     let remoteUrl: string | undefined;
 
     const viaZernio =
       zernio && target.socialAccount.tokensEncrypted === "provider:zernio";
     if (viaZernio) {
-      const asset = target.post.mediaAsset;
       // Always the original upload; the app no longer produces re-encodes.
       const fileKey = asset?.storageKey;
       if (!fileKey) throw new Error("no media file for post");
       const mediaUrl = await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      const coverUrl = asset?.coverKey ? await zernioCoverUrl(asset.coverKey) : null;
+      const extras = buildPostExtras({
+        platform: target.platform as Platform,
+        format: asset?.format ?? null,
+        coverUrl,
+        instagram: targetOptions.instagram ?? null,
+        youtubeTitle: targetOptions.youtubeTitle ?? null,
+      });
       const result = await zernio.createPost({
         content: caption,
         mediaUrl,
+        mediaThumbnail: extras.mediaThumbnail,
         targets: [
           {
             platform: target.platform as Platform,
             accountId: target.socialAccount.providerAccountId ?? "",
+            platformSpecificData: extras.platformSpecificData,
           },
         ],
+        tiktokSettings: extras.tiktokSettings,
         publishNow: true,
       });
       remotePostId = result.remotePostId;
     } else {
       // Dry-run accounts (and dev without a provider key) log instead of post.
       const publisher = new DryRunPublisher(target.platform as Platform);
+      const extras = buildPostExtras({
+        platform: target.platform as Platform,
+        format: asset?.format ?? null,
+        coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
+        instagram: targetOptions.instagram ?? null,
+        youtubeTitle: targetOptions.youtubeTitle ?? null,
+      });
       const result = await publisher.publish({
         account: {
           id: target.socialAccount.id,
           platform: target.platform as Platform,
           handle: target.socialAccount.handle,
         },
-        videoUrl: target.post.mediaAsset?.storageKey ?? "",
+        videoUrl: asset?.storageKey ?? "",
         caption,
         hashtags: target.hashtags,
+        extras,
       });
       remotePostId = result.remotePostId;
       remoteUrl = result.remoteUrl;
