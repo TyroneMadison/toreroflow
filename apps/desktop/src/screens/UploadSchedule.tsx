@@ -104,6 +104,11 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       }
       try {
         setAssets(await api.get<MediaAssetInfo[]>(`/clients/${selectedClient.id}/media`));
+        // The period counter is derived from these same videos, so any refresh
+        // of the list can have moved it: an upload adds one, a delete removes
+        // one, and processing finishing moves one out of unclassified into
+        // short or long. Refreshing it here means no caller has to remember.
+        setQuotaKey((k) => k + 1);
       } catch (err) {
         if (opts?.announce) toast.fail("Could not load videos", err);
       }
@@ -257,7 +262,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       );
     } finally {
       setRevBusy(null);
-      setQuotaKey((k) => k + 1);
       void load();
       void loadPosts();
     }
@@ -273,7 +277,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       toast.fail(`Could not change the format for ${asset.name}`, err);
     } finally {
       setRevBusy(null);
-      setQuotaKey((k) => k + 1);
       void load();
     }
   };
