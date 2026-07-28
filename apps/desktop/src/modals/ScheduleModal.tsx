@@ -35,6 +35,36 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [error, setError] = useState<string | null>(null);
   const [confirmNow, setConfirmNow] = useState(false);
 
+  // Instagram-only options, applied to this scheduling action.
+  const [igTrial, setIgTrial] = useState(false);
+  const [igGraduate, setIgGraduate] = useState(false);
+  const [igCollaborators, setIgCollaborators] = useState(["", "", ""]);
+  const [igAudioName, setIgAudioName] = useState("");
+  const [igShareToFeed, setIgShareToFeed] = useState(true);
+  const [igFirstComment, setIgFirstComment] = useState("");
+  const [igAiLabel, setIgAiLabel] = useState(false);
+
+  const igSelected = platforms.includes("instagram");
+
+  /** Only what was actually chosen; untouched controls send nothing. */
+  const instagramBody = () => {
+    if (!igSelected) return undefined;
+    const collaborators = igCollaborators
+      .map((c) => c.replace(/^@/, "").trim())
+      .filter(Boolean);
+    const body: Record<string, unknown> = {};
+    if (igTrial) {
+      body.trial = true;
+      body.graduationStrategy = igGraduate ? "SS_PERFORMANCE" : "MANUAL";
+    }
+    if (collaborators.length) body.collaborators = collaborators;
+    if (igAudioName.trim()) body.audioName = igAudioName.trim();
+    if (!igShareToFeed) body.shareToFeed = false;
+    if (igFirstComment.trim()) body.firstComment = igFirstComment.trim();
+    if (igAiLabel) body.aiLabel = true;
+    return Object.keys(body).length ? body : undefined;
+  };
+
   const toggle = (p: Platform) =>
     setPlatforms((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
@@ -51,6 +81,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       await api.post(`/media/${asset.id}/schedule`, {
         platforms,
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
+        instagram: instagramBody(),
       });
       onScheduled();
       onClose();
@@ -107,6 +138,87 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             );
           })}
         </div>
+
+        {igSelected && (
+          <div className="igopts">
+            <label className="flabel" style={{ marginTop: 18 }}>
+              Instagram options
+            </label>
+            <div className="igrow">
+              <span
+                className={`revtoggle${igTrial ? " on" : ""}`}
+                title="Show this reel to non-followers first; it will not appear on the profile unless it graduates"
+                onClick={() => setIgTrial((v) => !v)}
+              >
+                Trial reel
+              </span>
+              {igTrial && (
+                <span
+                  className={`revtoggle${igGraduate ? " on" : ""}`}
+                  title="Share to everyone automatically if the trial performs"
+                  onClick={() => setIgGraduate((v) => !v)}
+                >
+                  Auto-share if it performs
+                </span>
+              )}
+              <span
+                className={`revtoggle${igShareToFeed ? " on" : ""}`}
+                title="Also show the reel in the main feed"
+                onClick={() => setIgShareToFeed((v) => !v)}
+              >
+                Share to feed
+              </span>
+              <span
+                className={`revtoggle${igAiLabel ? " on" : ""}`}
+                title="Label this post as AI-generated content"
+                onClick={() => setIgAiLabel((v) => !v)}
+              >
+                AI label
+              </span>
+            </div>
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Collaborators
+              <span className="hint">up to 3 public business or creator accounts</span>
+            </label>
+            <div className="igcollabs">
+              {igCollaborators.map((value, i) => (
+                <input
+                  key={i}
+                  className="field-in"
+                  placeholder={`@username ${i + 1}`}
+                  value={value}
+                  onChange={(e) =>
+                    setIgCollaborators((prev) =>
+                      prev.map((v, j) => (j === i ? e.target.value : v)),
+                    )
+                  }
+                />
+              ))}
+            </div>
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Rename audio
+              <span className="hint">replaces "Original Audio"</span>
+            </label>
+            <input
+              className="field-in"
+              placeholder="e.g. Torerone Original"
+              maxLength={120}
+              value={igAudioName}
+              onChange={(e) => setIgAudioName(e.target.value)}
+            />
+            <label className="flabel" style={{ marginTop: 12 }}>
+              First comment
+              <span className="hint">posted automatically right after the reel</span>
+            </label>
+            <input
+              className="field-in"
+              placeholder="e.g. the hashtags, or a question for the comments"
+              maxLength={2200}
+              value={igFirstComment}
+              onChange={(e) => setIgFirstComment(e.target.value)}
+            />
+          </div>
+        )}
 
         <label className="flabel" style={{ marginTop: 18 }}>
           Post at
