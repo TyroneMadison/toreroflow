@@ -635,7 +635,6 @@
 .pdstatus.failed{color:var(--red);background:rgba(255,107,122,.14);border-color:rgba(255,107,122,.35)}
 .pdcaption{margin-top:6px;padding:11px 13px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);font-size:12.5px;line-height:1.5;color:var(--txt-2);white-space:pre-wrap}
 
-.titlein{width:100%;font-weight:600}
 .flabel .hint{margin-left:8px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--txt-3)}
 
 .anuploads{padding:16px 18px}

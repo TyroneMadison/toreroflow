@@ -472,6 +472,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                     <div className="name">
                       <input
                         className="namein"
+                        aria-label="Video name"
                         value={name}
                         maxLength={300}
                         placeholder="Name this video"
