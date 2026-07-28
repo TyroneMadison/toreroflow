@@ -39,9 +39,9 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.platform, "instagram");
   assert.equal(row.platformVideoId, "18000000000000001");
   assert.equal(row.title, "Widebody day 3 \u{1F525}"); // escapes decoded
-  assert.equal(row.views, 250000); // entry analytics win over post analytics
-  assert.equal(row.likes, 1200);
-  assert.equal(row.comments, 88);
+  assert.equal(row.views, 250000); // entry views still win over the post total
+  assert.equal(row.likes, 5); // likes are post-level, matching the screen's top line
+  assert.equal(row.comments, 1); // comments are post-level too
   assert.equal(row.durationSec, 31.5); // duration only exists post-level
   assert.equal(row.thumbnailUrl, "https://cdn.example/t.jpg");
   assert.equal(row.url, "https://instagram.com/p/abc");
@@ -63,6 +63,42 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.views, 4200); // string numbers normalize
   assert.equal(row.likes, 7);
   assert.equal(row.comments, 0); // absent metric is 0, matching the merge
+}
+
+/* No entry-level views: the post total splits across attributed entries,
+   matching the screen's byPlatform math. */
+{
+  const post = {
+    content: "cross-post",
+    publishedAt: "2026-06-01T00:00:00.000Z",
+    analytics: { views: 1000 },
+  };
+  const entry = { accountId: "za1", platformPostId: "pp5" };
+  const account = { socialAccountId: "sa1", platform: "instagram" as const };
+
+  const split = mapProviderEntry(post, entry, account, 2);
+  assert.ok(split);
+  assert.equal(split.views, 500); // 1000 split across 2 attributed entries
+
+  const single = mapProviderEntry(post, entry, account, 1);
+  assert.ok(single);
+  assert.equal(single.views, 1000); // one entry gets the whole post total
+}
+
+/* An entry with its own views never gets split, no matter entryCount. */
+{
+  const row = mapProviderEntry(
+    {
+      content: "cross-post",
+      publishedAt: "2026-06-01T00:00:00.000Z",
+      analytics: { views: 1000 },
+    },
+    { accountId: "za1", platformPostId: "pp6", analytics: { views: 777 } },
+    { socialAccountId: "sa1", platform: "instagram" },
+    3,
+  );
+  assert.ok(row);
+  assert.equal(row.views, 777); // entry's own views win, untouched by the split
 }
 
 /* YouTube never persists through this path; the direct sync owns it. */
