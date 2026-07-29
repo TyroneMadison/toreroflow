@@ -4,19 +4,13 @@ import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
+import { canMove, POST_STATUS } from "../lib/postStatus";
 
 interface PostDetailModalProps {
   target: PostTargetInfo;
   onClose(): void;
   onChanged(): void;
 }
-
-const STATUS_TEXT: Record<PostTargetInfo["status"], string> = {
-  scheduled: "Scheduled",
-  publishing: "Publishing now",
-  posted: "Published",
-  failed: "Failed",
-};
 
 /** Local datetime value ("YYYY-MM-DDTHH:mm") for the picker. */
 function localValue(iso: string | null): string {
@@ -30,7 +24,7 @@ function localValue(iso: string | null): string {
  * editable in place. Published and in-flight posts are read-only.
  */
 export default function PostDetailModal({ target, onClose, onChanged }: PostDetailModalProps) {
-  const editable = target.status === "scheduled";
+  const editable = canMove(target.status);
   const [when, setWhen] = useState(() => localValue(target.scheduledAt));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +72,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
         <div>
           <h3>{target.assetName}</h3>
           <p>
-            {PLATFORM_LABELS[target.platform]} · {STATUS_TEXT[target.status]}
+            {PLATFORM_LABELS[target.platform]} · {POST_STATUS[target.status].label}
           </p>
         </div>
         <div className="modal-x" onClick={onClose}>
@@ -98,7 +92,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
               <Pf p={PF_ID[target.platform]} size="sm" />
               <span>{PLATFORM_LABELS[target.platform]}</span>
             </div>
-            <div className={`pdstatus ${target.status}`}>{STATUS_TEXT[target.status]}</div>
+            <div className={`pdstatus ${target.status}`}>{POST_STATUS[target.status].label}</div>
             {target.publishedAt && (
               <div className="sub">
                 Published {new Date(target.publishedAt).toLocaleString([], {

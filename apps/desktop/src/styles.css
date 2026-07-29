@@ -205,13 +205,29 @@
   .slotwrap{display:flex;flex-direction:column;gap:8px;padding:0 3px}
   .ev{border-radius:12px;padding:8px;position:relative;overflow:hidden;cursor:pointer;transition:.18s;border:1px solid var(--brd-soft);background:var(--glass)}
   .ev:hover{transform:translateY(-2px);background:var(--glass-2)}
-  .ev::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
-  .ev.v::before{background:var(--v)}.ev.b::before{background:var(--b)}
+  .ev::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--st)}
   .ev .t1{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--txt-3)}
+  /* Lets the time shrink so the padlock is never the thing that gets clipped. */
+  .evwhen{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .ev .t2{font-size:11.5px;font-weight:600;margin-top:5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .ev .evthumb{width:100%;height:52px;border-radius:8px;margin-top:7px;position:relative;overflow:hidden}
   .ghost-ev{border:1.5px dashed var(--brd-soft);border-radius:12px;padding:14px 8px;text-align:center;font-size:11px;color:var(--txt-3);cursor:pointer}
   .ghost-ev:hover{border-color:var(--v);color:var(--txt-2)}
+
+  /* Post status: one colour per state, used by the dot, the icon and the
+     card's accent bar. Red is reserved for failure, so waiting work is blue. */
+  .st-scheduled{--st:var(--b)}
+  .st-publishing{--st:var(--amber)}
+  .st-posted{--st:var(--green)}
+  .st-failed{--st:var(--red)}
+  .ev.st-failed{border-color:rgba(255,107,122,.5)}
+  .stdot{width:7px;height:7px;border-radius:50%;background:var(--st);flex:0 0 auto}
+  .stdot.pulse{animation:livepulse 2.1s ease-in-out infinite}
+  .sticon{width:12px;height:12px;stroke:var(--st);stroke-width:2;fill:none;flex:0 0 auto;margin-left:auto}
+  @media (prefers-reduced-motion:reduce){.stdot{animation:none !important;opacity:1}}
+  .callegend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;padding:0 4px 12px;font-size:11px;color:var(--txt-3)}
+  .callegend .litem{display:flex;align-items:center;gap:6px}
+  .callegend .sticon{margin-left:0}
 
   /* analytics */
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
@@ -451,7 +467,13 @@
 .mcell .mnum span{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:50%}
 .mcell.today .mnum span{background:var(--grad);color:#0b0b18}
 .mev{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--txt-2);padding:2px 5px;border-radius:6px;background:var(--glass-2);margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.mev .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+/* The month row has no accent bar and no room for a word, so the dot and the
+   padlock carry the state on their own. The platform tile shrinks to suit. */
+.mev .stdot{width:6px;height:6px}
+/* Flat at this size: a month can hold a hundred of these, and the frosted
+   blur behind each one is not free. The gradient still names the platform. */
+.mev .pf.sm{width:13px;height:13px;border-radius:4px;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none}
+.mev .sticon{width:10px;height:10px}
 .mhol{font-size:9.5px;color:var(--txt-3);opacity:.85;display:flex;gap:4px;align-items:center;margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .mhol img{width:12px;height:12px;flex:0 0 auto}
 
@@ -630,8 +652,11 @@
 .pdmeta .line{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600}
 .pdstatus{align-self:flex-start;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.3px;
   background:var(--glass-2);color:var(--txt-2);border:1px solid var(--brd-soft)}
-.pdstatus.scheduled{color:#8b7bff;background:rgba(139,123,255,.14);border-color:rgba(139,123,255,.35)}
-.pdstatus.posted{color:#34d399;background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.35)}
+/* The modal opens straight off a calendar card, so the pill speaks the same
+   four colours the dot does. Violet used to mean scheduled here alone. */
+.pdstatus.scheduled{color:var(--b);background:rgba(78,168,255,.14);border-color:rgba(78,168,255,.35)}
+.pdstatus.publishing{color:var(--amber);background:rgba(255,207,107,.14);border-color:rgba(255,207,107,.35)}
+.pdstatus.posted{color:var(--green);background:rgba(87,214,160,.14);border-color:rgba(87,214,160,.35)}
 .pdstatus.failed{color:var(--red);background:rgba(255,107,122,.14);border-color:rgba(255,107,122,.35)}
 .pdcaption{margin-top:6px;padding:11px 13px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);font-size:12.5px;line-height:1.5;color:var(--txt-2);white-space:pre-wrap}
 

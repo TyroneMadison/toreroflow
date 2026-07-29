@@ -3,7 +3,8 @@ import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { holidayFor } from "../lib/holidays";
-import { PF_ID, type Platform } from "../lib/platforms";
+import { PF_ID } from "../lib/platforms";
+import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
 import { useAppState } from "../state/AppState";
 import PostDetailModal from "../modals/PostDetailModal";
 
@@ -19,29 +20,35 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-/** Instagram and Snapchat lean violet, TikTok and YouTube lean blue. */
-const EV_CLASS: Record<Platform, "v" | "b"> = {
-  instagram: "v",
-  snapchat: "v",
-  tiktok: "b",
-  youtube: "b",
-  facebook: "b",
+const ICON_HREF: Record<StatusMeta["icon"], string> = {
+  lock: "#i-lock",
+  unlock: "#i-unlock",
+  alert: "#i-alert",
 };
 
-const EV_DOT: Record<Platform, string> = {
-  instagram: "#d62976",
-  tiktok: "#25f4ee",
-  youtube: "#ff4237",
-  snapchat: "#ffe600",
-  facebook: "#1877f2",
-};
+/**
+ * The status dot, in every view and in the legend.
+ *
+ * Colour is never the only carrier: the label goes to screen readers here,
+ * and the card's `title` says it in plain words for everyone else.
+ */
+function StatusDot({ status, decorative }: { status: PostStatus; decorative?: boolean }) {
+  const meta = POST_STATUS[status];
+  const cls = `stdot st-${status}${meta.pulses ? " pulse" : ""}`;
+  // In the legend the words sit right beside it, so announcing the label
+  // again would just read the status twice.
+  if (decorative) return <span className={cls} aria-hidden="true" />;
+  return <span className={cls} role="img" aria-label={meta.label} />;
+}
 
-const STATUS_SUFFIX: Record<PostTargetInfo["status"], string> = {
-  scheduled: "",
-  publishing: " · publishing",
-  posted: " · posted",
-  failed: " · failed",
-};
+/** Padlock, open padlock or warning triangle, following the drag rule. */
+function StatusIcon({ status }: { status: PostStatus }) {
+  return (
+    <svg className={`sticon st-${status}`} aria-hidden="true">
+      <use href={ICON_HREF[POST_STATUS[status].icon]} />
+    </svg>
+  );
+}
 
 const startOfDay = (d: Date): Date => {
   const x = new Date(d);
@@ -194,26 +201,34 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       ? { outline: "1.5px dashed rgba(139,123,255,.7)", outlineOffset: -2, borderRadius: 12 }
       : undefined;
 
+  /** Plain words for the hover, since the dot and the padlock are shapes. */
+  const evTitle = (t: PostTargetInfo): string => {
+    const meta = POST_STATUS[t.status];
+    if (t.status === "failed") return `${t.assetName} - failed: ${t.error ?? "unknown error"}`;
+    if (meta.movable) return `${t.assetName} - click for details, drag to move`;
+    return `${t.assetName} - ${meta.label.toLowerCase()}, cannot be moved`;
+  };
+
   const renderEvent = (t: PostTargetInfo) => {
     const thumb = fileUrl(t.thumbUrl);
-    const movable = t.status === "scheduled";
+    const movable = canMove(t.status);
+    const when = t.scheduledAt ? fmtTime(t.scheduledAt) : "";
+    const label = POST_STATUS[t.status].label;
     return (
       <div
-        className={`ev ${EV_CLASS[t.platform]}`}
+        className={`ev st-${t.status}`}
         key={t.id}
-        title={movable ? "Click for details, drag to move" : (t.error ?? t.assetName)}
+        title={evTitle(t)}
         draggable={movable}
         onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
         onClick={() => setDetail(t)}
-        style={{
-          ...(t.status === "failed" ? { borderColor: "rgba(255,107,122,.5)" } : {}),
-          cursor: movable ? "grab" : "pointer",
-        }}
+        style={{ cursor: movable ? "grab" : "pointer" }}
       >
         <div className="t1">
-          <Pf p={PF_ID[t.platform]} size="sm" />{" "}
-          {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
-          {STATUS_SUFFIX[t.status]}
+          <StatusDot status={t.status} />
+          <Pf p={PF_ID[t.platform]} size="sm" />
+          <span className="evwhen">{when ? `${when} · ${label}` : label}</span>
+          <StatusIcon status={t.status} />
         </div>
         <div className="t2">{t.assetName}</div>
         {thumb && <div className="evthumb" style={{ background: `url(${thumb}) center/cover` }} />}
@@ -298,6 +313,17 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           </div>
         </div>
 
+        {/* Always on, in every view: the key to the dots and the padlocks. */}
+        <div className="callegend">
+          {(Object.keys(POST_STATUS) as PostStatus[]).map((s) => (
+            <span className="litem" key={s}>
+              <StatusDot status={s} decorative />
+              <StatusIcon status={s} />
+              {POST_STATUS[s].label}, {POST_STATUS[s].hint}
+            </span>
+          ))}
+        </div>
+
         {view === "week" && (
           <div className="cal glass">
             {week.map((day, i) => {
@@ -370,24 +396,23 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                     {eventsFor(day)
                       .slice(0, 3)
                       .map((t) => {
-                        const movable = t.status === "scheduled";
+                        const movable = canMove(t.status);
                         return (
                           <div
-                            className="mev"
+                            className={`mev st-${t.status}`}
                             key={t.id}
-                            title={
-                              movable
-                                ? `${t.assetName} - click for details, drag to move`
-                                : `${t.assetName}${STATUS_SUFFIX[t.status]}`
-                            }
+                            title={evTitle(t)}
                             draggable={movable}
                             style={{ cursor: movable ? "grab" : "pointer" }}
                             onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
                             onClick={() => setDetail(t)}
                           >
-                            <span className="d" style={{ background: EV_DOT[t.platform] }} />
-                            {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
-                            {STATUS_SUFFIX[t.status]}
+                            <StatusDot status={t.status} />
+                            <Pf p={PF_ID[t.platform]} size="sm" />
+                            <span className="evwhen">
+                              {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
+                            </span>
+                            <StatusIcon status={t.status} />
                           </div>
                         );
                       })}
@@ -402,8 +427,9 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         )}
 
         <div className="note">
-          Posts are color-coded by platform; click one for details, drag a scheduled post to
-          another day. Holidays appear as reminders across all views.
+          The dot and the padlock show where a post stands; click one for details, and drag a
+          scheduled post to another day. Anything already posted or going out now is locked.
+          Holidays appear as reminders across all views.
         </div>
       </div>
 
