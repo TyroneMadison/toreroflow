@@ -206,6 +206,57 @@ export class NetlifyPublisher {
   }
 
   /**
+   * Takes `paths` off the site, keeping everything else.
+   *
+   * The same whole-site deploy as `publish`, with those entries left out of
+   * the manifest. That is what makes it a delete: Netlify removes anything a
+   * new deploy does not declare.
+   *
+   * Carries the identical refusal as `publish` for a site that reports no
+   * files while having a published deploy, because here the failure mode is
+   * worse: an empty listing would deploy an empty manifest and take the whole
+   * site down rather than merely replacing it.
+   *
+   * Returns how many of the requested paths were actually there. Removing
+   * something already gone is not an error, so offboarding a client whose
+   * page was never published still succeeds.
+   */
+  async remove(
+    siteId: string,
+    paths: string[],
+  ): Promise<{ deployId: string; state: string; removed: number; remaining: number }> {
+    const existing = await this.currentFiles(siteId);
+    if (existing.length === 0) {
+      if (await this.hasPublishedDeploy(siteId)) {
+        throw new NetlifyError(
+          502,
+          "netlify listed no files for a site that has a published deploy; refusing to deploy because that would delete the existing site",
+        );
+      }
+      return { deployId: "", state: "skipped", removed: 0, remaining: 0 };
+    }
+
+    const doomed = new Set(paths);
+    const keep = existing.filter((f) => !doomed.has(f.path));
+    const removed = existing.length - keep.length;
+    if (removed === 0) {
+      return { deployId: "", state: "unchanged", removed: 0, remaining: existing.length };
+    }
+
+    const manifest: Record<string, string> = {};
+    for (const f of keep) manifest[f.path] = f.sha;
+
+    const deploy = await this.request<{ id: string; state: string }>(
+      "POST",
+      `/sites/${siteId}/deploys`,
+      { files: manifest, async: false },
+    );
+    // Every kept file is already stored by content hash, so nothing uploads.
+    const final = await this.waitForReady(deploy.id);
+    return { deployId: deploy.id, state: final.state, removed, remaining: keep.length };
+  }
+
+  /**
    * Waits for a deploy to actually go live.
    *
    * A deploy is not servable the moment its files finish uploading; it moves
