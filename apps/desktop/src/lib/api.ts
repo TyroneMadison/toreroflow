@@ -247,6 +247,8 @@ export interface OverviewClient {
     stale: boolean;
   };
   needsReconnect: boolean;
+  /** The latest "what to do next" run, null when never generated. */
+  insight: { status: string; url: string | null; completedAt: string | null } | null;
   /** Higher means more overdue attention. Drives the sort order. */
   attention: number;
 }
@@ -312,6 +314,20 @@ export interface Suggestion {
   title: string;
   detail: string;
   category: string;
+}
+
+/**
+ * A "what to do next" run. Generation happens on the worker, so this is
+ * polled rather than returned by the request that starts it.
+ */
+export interface ClientInsight {
+  status: string;
+  suggestions: Suggestion[] | null;
+  /** The rendered PDF, null until the run lands. */
+  url: string | null;
+  error: string | null;
+  requestedAt: string;
+  completedAt: string | null;
 }
 
 export interface DraftCopy {

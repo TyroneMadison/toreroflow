@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { isReady, isRunning } from "@toreroflow/core";
 import Modal from "./Modal";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import { api, ApiError, type ClientAnalytics, type Suggestion } from "../lib/api";
+import {
+  api,
+  ApiError,
+  fileUrl,
+  type ClientAnalytics,
+  type ClientInsight,
+} from "../lib/api";
+import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 
 interface ClientInsightsModalProps {
@@ -20,8 +28,16 @@ function fmt(n: number | null | undefined): string {
 export default function ClientInsightsModal({ clientId, onClose }: ClientInsightsModalProps) {
   const toast = useToast();
   const [data, setData] = useState<ClientAnalytics | null>(null);
-  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
-  const [suggesting, setSuggesting] = useState(false);
+  const [insight, setInsight] = useState<ClientInsight | null>(null);
+  const [starting, setStarting] = useState(false);
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,13 +52,34 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
     };
   }, [clientId]);
 
-  const generate = async () => {
-    setSuggesting(true);
+  const loadInsight = useCallback(async () => {
     try {
-      const result = await api.post<{ suggestions: Suggestion[] }>(
-        `/clients/${clientId}/suggestions`,
-      );
-      setSuggestions(result.suggestions);
+      const row = await api.get<ClientInsight | null>(`/clients/${clientId}/suggestions`);
+      if (alive.current) setInsight(row);
+    } catch {
+      // Polls stay silent. A finished run is on the row either way, and the
+      // operator was told they could walk away from this screen.
+    }
+  }, [clientId]);
+
+  // A finished run is already stored, so reopening shows it without paying
+  // for the model again.
+  useEffect(() => {
+    void loadInsight();
+  }, [loadInsight]);
+
+  // Poll only while the worker is actually doing something.
+  useEffect(() => {
+    if (!isRunning(insight?.status)) return;
+    const t = setInterval(() => void loadInsight(), 3000);
+    return () => clearInterval(t);
+  }, [insight?.status, loadInsight]);
+
+  const generate = async () => {
+    setStarting(true);
+    try {
+      // Returns as soon as the run is queued: the work happens on the worker.
+      setInsight(await api.post<ClientInsight>(`/clients/${clientId}/suggestions`));
     } catch (err) {
       // A missing key comes back as a 503, and the fix is the whole message.
       if (err instanceof ApiError && err.status === 503) {
@@ -50,12 +87,16 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
           "AI suggestions need an Anthropic API key. Add ANTHROPIC_API_KEY to the repo .env and restart the API.",
         );
       } else {
-        toast.fail("Could not generate suggestions", err);
+        toast.fail("Could not start the plan", err);
       }
     } finally {
-      setSuggesting(false);
+      if (alive.current) setStarting(false);
     }
   };
+
+  const running = isRunning(insight?.status);
+  const suggestions = isReady(insight?.status) ? insight?.suggestions : null;
+  const pdfUrl = isReady(insight?.status) ? fileUrl(insight?.url ?? null) : null;
 
   return (
     <Modal maxWidth={640} onClose={onClose}>
@@ -108,12 +149,36 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
         <div className="rowhead" style={{ marginTop: 20, marginBottom: 4 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 620 }}>Deep research suggestions</h3>
-            <div className="sub">AI-generated moves to improve this brand's numbers</div>
+            <div className="sub">
+              {running
+                ? "Working on it. You can close this and carry on."
+                : "AI-generated moves to improve this brand's numbers"}
+            </div>
           </div>
-          <button className="cbtn" disabled={suggesting} onClick={() => void generate()}>
-            {suggesting ? "Thinking…" : suggestions ? "Regenerate" : "Generate"}
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {pdfUrl && (
+              <button className="cbtn" onClick={() => void openExternal(pdfUrl)}>
+                Open PDF
+              </button>
+            )}
+            <button className="cbtn" disabled={starting || running} onClick={() => void generate()}>
+              {running ? "Working…" : suggestions ? "Regenerate" : "Generate"}
+            </button>
+          </div>
         </div>
+
+        {running && (
+          <p className="insworking">
+            The plan is being written in the background. It will be here when you come back, and
+            it saves itself as a PDF.
+          </p>
+        )}
+
+        {insight?.status === "failed" && (
+          <p className="insfailed">
+            That run did not finish: {insight.error ?? "unknown error"}
+          </p>
+        )}
 
         {suggestions?.map((s, i) => (
           <div className="sugg" key={i}>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import { api, type AccountOverview, type OverviewClient } from "../lib/api";
@@ -88,6 +89,16 @@ function ClientRow({
       tone: "ok",
       label: client.daysQuiet === 0 ? "Posted today" : `Posted ${client.daysQuiet}d ago`,
     });
+  }
+
+  // The plan runs on the worker, so this row is where an operator who closed
+  // the modal finds out it landed.
+  if (isRunning(client.insight?.status)) {
+    signals.push({ tone: "warn", label: "Writing a plan", detail: "running in the background" });
+  } else if (client.insight?.status === "failed") {
+    signals.push({ tone: "bad", label: "Plan did not finish", detail: "open it to see why" });
+  } else if (isReady(client.insight?.status)) {
+    signals.push({ tone: "ok", label: "Plan ready", detail: "what to do next is written up" });
   }
 
   if (report.stale) {
@@ -183,6 +194,15 @@ export default function AccountOverviewScreen({
 
   const clients = data?.clients ?? [];
   const needing = clients.filter((c) => c.attention > 0).length;
+  const anyRunning = clients.some((c) => isRunning(c.insight?.status));
+
+  // Poll only while a plan is actually being written, so a screen left open
+  // overnight is not hitting the API every few seconds for nothing.
+  useEffect(() => {
+    if (!anyRunning) return;
+    const t = setInterval(() => void load(), 4000);
+    return () => clearInterval(t);
+  }, [anyRunning, load]);
 
   return (
     <section className="screen active" data-screen="account-overview">
