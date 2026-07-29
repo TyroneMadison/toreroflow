@@ -96,13 +96,20 @@ Nothing schedules research. It happens when the operator presses the button,
 because an unattended loop against a metered API is how a wallet empties
 overnight.
 
-### Handles resolve against both platforms, and the operator confirms
+### The client says which app, and the operator still confirms the match
 
-The form does not record which platform a handle belongs to. Rather than
-guess or make the client fill in more fields, each handle is looked up on
-Instagram and TikTok, and whatever is found is shown for confirmation before
-anything expensive runs. A wrong account researched is worse than a slow one:
-it produces a confident game plan about a stranger.
+Settled 2026-07-29: the website form now asks which app each inspiration
+account is on (Instagram, TikTok or both) and the field is live. So the
+platform is known rather than guessed for everyone who signs up from now on.
+
+Resolution is still required, because the posts endpoints want an internal id
+rather than a handle, and the resolved account is still shown for
+confirmation before anything expensive runs. A wrong account researched is
+worse than a slow one: it produces a confident game plan about a stranger.
+
+Anyone who signed up before today has no platform recorded. There are none
+today, since the form went live the same day, but the code still treats
+`platform` as possibly unknown and falls back to trying both.
 
 ### Transcripts are a separate, opt-in step
 
@@ -117,6 +124,32 @@ aggregate patterns rather than as text to rewrite.
 
 **This is a judgement call, not legal advice.** Before transcripts are used
 in anything billed, it is worth a lawyer's twenty minutes.
+
+## The endpoints, confirmed against the live account
+
+Read from Monid's own catalog on 2026-07-29, not from documentation.
+
+| Step | Instagram | TikTok |
+|---|---|---|
+| Handle to id | `tikhub /api/v1/instagram/v1/fetch_user_info_by_username` | `tikhub /api/v1/tiktok/web/fetch_search_user` |
+| Id to posts | `tikhub /api/v1/instagram/v1/fetch_user_posts` | `tikhub /api/v1/tiktok/web/fetch_user_post` |
+
+**Resolution is mandatory, not a nicety.** Neither posts endpoint accepts a
+handle: Instagram's requires a numeric `user_id`, TikTok's requires a
+`secUid`. So every creator costs two calls the first time and one call on
+every run after, which is the whole reason `InspirationAccount.externalId`
+exists.
+
+Pricing is `PER_CALL` at $0.0015 for the tikhub endpoints and $0.00225 for
+the Apify equivalents. A first full run for one client, five creators across
+both platforms, is roughly 20 calls at about three cents. Later runs are
+about half that. The `$1` starting balance is therefore around thirty full
+runs, which is plenty to build and prove the feature and nowhere near enough
+to leave unattended.
+
+The `tikhub /api/v1/tiktok/creator/*` endpoints look tempting and are not
+usable: they are creator analytics for an account you control, not public
+data about someone else's.
 
 ## Phase 1 scope
 
@@ -209,8 +242,8 @@ is pressed.
 
 ## Open, needs Tyrone
 
-- A Monid API key, and a decision on how much to keep in the wallet.
-- Whether the five inspiration slots should gain a platform toggle on the
-  website form, which would remove the resolve-and-confirm step for every
-  future signup. Cheap to add now, impossible to backfill for anyone who has
-  already signed up.
+- How much to keep in the Monid wallet. The starting balance is $1, roughly
+  thirty full runs. The key is in `.env` as `MONID_API_KEY` and verified
+  working against the live account.
+- Whether transcripts are worth a lawyer's review before phase 2 uses them in
+  anything billed.
