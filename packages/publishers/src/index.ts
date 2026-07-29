@@ -1,3 +1,4 @@
+export * from "./plaid";
 import type { Platform } from "@toreroflow/core";
 
 export * from "./options";

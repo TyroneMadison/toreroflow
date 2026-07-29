@@ -16,6 +16,10 @@ export const env = {
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
+  /** Bank oversight. Empty disables the bank sync queue. */
+  PLAID_ENV: process.env.PLAID_ENV ?? "sandbox",
+  PLAID_CLIENT_ID: process.env.PLAID_CLIENT_ID ?? "",
+  PLAID_SECRET: process.env.PLAID_SECRET ?? "",
   /** Competitor research gateway. Empty disables the research queue. */
   MONID_API_KEY: process.env.MONID_API_KEY ?? "",
   /** Empty means lifetime YouTube refresh is skipped, not failed. */

@@ -1,5 +1,3 @@
-import { env } from "../env";
-
 /**
  * The bank data provider, read-only.
  *
@@ -69,13 +67,9 @@ export class PlaidClient {
   constructor(
     private readonly clientId: string,
     private readonly secret: string,
-    envName: string = env.PLAID_ENV,
+    envName = "sandbox",
   ) {
     this.host = HOSTS[envName] ?? HOSTS.sandbox!;
-  }
-
-  static configured(): boolean {
-    return Boolean(env.PLAID_CLIENT_ID && env.PLAID_SECRET);
   }
 
   private async call<T>(path: string, body: Record<string, unknown>): Promise<T> {

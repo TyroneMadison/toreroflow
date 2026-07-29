@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
 import { isCashAccount, toCents, totalsFor, totalsByMonth } from "@toreroflow/core";
 import { encryptSecret, getPrisma } from "@toreroflow/db";
 import { env } from "../env";
-import { PlaidClient } from "../bank/plaid";
+import { PlaidClient } from "@toreroflow/publishers";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -16,9 +18,17 @@ import { requireAuth } from "../plugins/requireAuth";
 
 export async function bankRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  app.addHook("onRequest", requireAuth);
+  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const bankQueue = new Queue<{ connectionId?: string }>("bank", { connection });
 
-  const client = () => new PlaidClient(env.PLAID_CLIENT_ID, env.PLAID_SECRET);
+  app.addHook("onRequest", requireAuth);
+  app.addHook("onClose", async () => {
+    await bankQueue.close();
+    connection.disconnect();
+  });
+
+  const configured = (): boolean => Boolean(env.PLAID_CLIENT_ID && env.PLAID_SECRET);
+  const client = () => new PlaidClient(env.PLAID_CLIENT_ID, env.PLAID_SECRET, env.PLAID_ENV);
 
   const notConfigured = {
     error: "bank oversight unavailable",
@@ -34,9 +44,9 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
       include: { accounts: { orderBy: { name: "asc" } } },
     });
     return {
-      configured: PlaidClient.configured(),
+      configured: configured(),
       environment: env.PLAID_ENV,
-      reason: PlaidClient.configured() ? null : notConfigured.detail,
+      reason: configured() ? null : notConfigured.detail,
       connections: connections.map((c) => ({
         id: c.id,
         institutionName: c.institutionName,
@@ -62,7 +72,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
 
   /** A short-lived token the desktop app hands to the bank picker. */
   app.post("/bank/link-token", async (request, reply) => {
-    if (!PlaidClient.configured()) return reply.status(503).send(notConfigured);
+    if (!configured()) return reply.status(503).send(notConfigured);
     try {
       const linkToken = await client().createLinkToken(request.user.agencyId);
       return { linkToken, environment: env.PLAID_ENV };
@@ -85,7 +95,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
    * alongside the business checking account.
    */
   app.post<{ Body: { publicToken?: string } }>("/bank/exchange", async (request, reply) => {
-    if (!PlaidClient.configured()) return reply.status(503).send(notConfigured);
+    if (!configured()) return reply.status(503).send(notConfigured);
     const publicToken = request.body?.publicToken;
     if (!publicToken) return reply.status(400).send({ error: "publicToken is required" });
 
@@ -230,6 +240,31 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
         pending: r.pending,
       })),
     };
+  });
+
+  /**
+   * Pulls the latest transactions.
+   *
+   * Queued rather than done here: the feed is paged and can take a while, and
+   * a request that holds open for it would time out on a first sync. One job
+   * per connection at a time, keyed by its id, so an impatient second press
+   * joins the run already going instead of starting a competing one.
+   */
+  app.post<{ Params: { id: string } }>("/bank/connections/:id/sync", async (request, reply) => {
+    const found = await prisma.bankConnection.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId },
+      select: { id: true },
+    });
+    if (!found) return reply.status(404).send({ error: "connection not found" });
+    await bankQueue.add(
+      "sync",
+      { connectionId: found.id },
+      // No colon in the job id: the queue uses it as a key separator and
+      // rejects custom ids containing one. The connection id alone is already
+      // unique, and the queue name scopes it.
+      { jobId: found.id, removeOnComplete: true, removeOnFail: true },
+    );
+    return reply.status(202).send({ queued: true });
   });
 
   /** Forgets a bank entirely, transactions and all. */

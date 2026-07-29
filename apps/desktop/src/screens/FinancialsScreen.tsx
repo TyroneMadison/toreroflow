@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../components/Toasts";
+import BankSection from "../components/finance/BankSection";
 import RevenueSection from "../components/finance/RevenueSection";
 import ExpenseSection from "../components/finance/ExpenseSection";
 import NetCard from "../components/finance/NetCard";
@@ -144,6 +145,8 @@ export default function FinancialsScreen() {
                 entered, so the out and net figures are incomplete.
               </div>
             )}
+
+            <BankSection />
 
             <RevenueSection
               rows={data.revenue}

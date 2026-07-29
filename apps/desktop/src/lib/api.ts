@@ -454,3 +454,49 @@ export interface InspirationsView {
   quoteCents: number;
   run: ResearchRun | null;
 }
+
+/** One account inside a linked bank. */
+export interface BankAccountInfo {
+  id: string;
+  name: string;
+  officialName: string | null;
+  mask: string | null;
+  type: string | null;
+  subtype: string | null;
+  currentCents: number | null;
+  availableCents: number | null;
+  currency: string;
+  /** Whether it counts towards money in and money out. */
+  includeInCashFlow: boolean;
+}
+
+export interface BankConnectionInfo {
+  id: string;
+  institutionName: string | null;
+  /** active | needs_reconnect | error. */
+  status: string;
+  error: string | null;
+  lastSyncedAt: string | null;
+  accounts: BankAccountInfo[];
+}
+
+export interface BankConnectionsView {
+  configured: boolean;
+  environment: string;
+  reason: string | null;
+  connections: BankConnectionInfo[];
+}
+
+export interface BankFlowTotalsInfo {
+  inCents: number;
+  outCents: number;
+  netCents: number;
+  counted: number;
+}
+
+export interface BankCashflowView {
+  months: number;
+  totals: BankFlowTotalsInfo;
+  byMonth: Array<{ month: string } & BankFlowTotalsInfo>;
+  recent: Array<{ date: string; name: string; amountCents: number; pending: boolean }>;
+}
