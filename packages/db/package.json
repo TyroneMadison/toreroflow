@@ -14,7 +14,7 @@
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/externalStore.check.ts"
+    "test": "tsx src/externalStore.check.ts && tsx src/secrets.check.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",
