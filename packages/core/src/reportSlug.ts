@@ -2,11 +2,11 @@
  * Readable, unguessable report links.
  *
  * A client's report lives at a permanent path like
- * `caleb-report-copper-falcon-drift-ember`, so the same link can be sent once
+ * `northstar-report-copper-falcon-drift-ember`, so the same link can be sent once
  * and keeps working as each month is republished.
  *
  * The word suffix exists for privacy, not decoration. A bare
- * `/caleb-report` would be trivially guessable, and anyone could walk client
+ * `/northstar-report` would be trivially guessable, and anyone could walk client
  * names to read their numbers. Four words from the list below give roughly
  * 4.3 billion combinations, which is not walkable by hand or by a casual
  * script, while still reading like language rather than a hash.
@@ -67,19 +67,26 @@ export function clientSlug(name: string): string {
   return base || "client";
 }
 
+/** The tail every report path ends in, e.g. "northstar-monthly-reports". */
+export const REPORT_SLUG_SUFFIX = "monthly-reports";
+
 /**
- * Report path for a client: "<client>-end-of-month-report".
+ * Report path for a client: "<client>-monthly-reports".
  *
  * Short and predictable by explicit choice: the operator preferred a clean,
  * memorable link over an unguessable one, having been told these pages can
  * be found by guessing a client name. Pages carry noindex so they stay out
  * of search results, but the URL itself is not a secret.
  *
+ * Lower case throughout. Netlify serves paths case sensitively, so a link
+ * written "Northstar-Monthly-Reports" and typed back in lower case would 404,
+ * and a client retyping a link from a phone is exactly when that happens.
+ *
  * `withSuffix` remains available for anyone who later wants the unguessable
  * form; `randomInt` is injected so it stays pure and testable.
  */
 export function buildReportSlug(clientName: string): string {
-  return `${clientSlug(clientName)}-end-of-month-report`;
+  return `${clientSlug(clientName)}-${REPORT_SLUG_SUFFIX}`;
 }
 
 /** Unguessable variant, kept for if the privacy tradeoff is revisited. */

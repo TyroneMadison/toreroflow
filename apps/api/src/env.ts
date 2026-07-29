@@ -45,6 +45,16 @@ export interface Env {
   NETLIFY_AUTH_TOKEN: string;
   /** Site the report pages are published into. Empty disables publishing. */
   NETLIFY_SITE_ID: string;
+  /**
+   * Public address report links are built from, when it is not the site they
+   * are deployed to.
+   *
+   * Reports are published to their own Netlify site and torerone.com proxies
+   * to it, so the address a client is given and the address the files live at
+   * are different. Empty falls back to the deploy site's own URL, which is
+   * what happens before that proxy exists.
+   */
+  REPORTS_PUBLIC_BASE: string;
 }
 
 export const env: Env = {
@@ -61,4 +71,5 @@ export const env: Env = {
   REPO_ROOT: repoRoot,
   NETLIFY_AUTH_TOKEN: process.env.NETLIFY_AUTH_TOKEN ?? "",
   NETLIFY_SITE_ID: process.env.NETLIFY_SITE_ID ?? "",
+  REPORTS_PUBLIC_BASE: (process.env.REPORTS_PUBLIC_BASE ?? "").replace(/\/+$/, ""),
 };

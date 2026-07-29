@@ -341,6 +341,29 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
   /* ---- Publishing to the public web ---- */
 
+  /**
+   * Whether `url` returns exactly the bytes we just deployed.
+   *
+   * Byte equality rather than a heuristic, because the thing being ruled out
+   * is a host that answers 200 with the wrong page. Any failure counts as
+   * "no": a false negative only costs a less pretty link, while a false
+   * positive would hand a client a URL that shows something else entirely.
+   */
+  const servesExactly = async (url: string, expected: string): Promise<boolean> => {
+    try {
+      const res = await fetch(url, {
+        redirect: "follow",
+        headers: { "cache-control": "no-cache" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return false;
+      return (await res.text()) === expected;
+    } catch {
+      // Offline, DNS, timeout: all mean the link is not proven, so it is not used.
+      return false;
+    }
+  };
+
   const publisher =
     env.NETLIFY_AUTH_TOKEN && env.NETLIFY_SITE_ID
       ? new NetlifyPublisher(env.NETLIFY_AUTH_TOKEN)
@@ -370,7 +393,19 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     // The deploy URL is per-deploy; the permanent link is the site's own
     // address plus the slug, which is what actually gets sent to a client.
     const siteUrl = (await publisher.siteUrl(env.NETLIFY_SITE_ID)).replace(/\/+$/, "");
-    const url = `${siteUrl}/${slug}`;
+    const direct = `${siteUrl}/${slug}`;
+
+    // Reports can be fronted by torerone.com, which proxies to this site, so
+    // the address the client is given is not the address the files sit on.
+    // That link is only offered once it has been proven to serve this exact
+    // page, because torerone.com answers 200 for every unknown path: without
+    // the proxy in place it returns the marketing homepage, and a client
+    // opening the agency's front page instead of their numbers would have no
+    // idea anything was wrong. Falling back to the plain link is ugly and
+    // correct, which is the right way round.
+    const proxied = env.REPORTS_PUBLIC_BASE ? `${env.REPORTS_PUBLIC_BASE}/${slug}` : null;
+    const publicBaseServes = proxied ? await servesExactly(proxied, built.html) : false;
+    const url = publicBaseServes ? proxied! : direct;
 
     await prisma.client.update({
       where: { id: client.id },
@@ -386,6 +421,11 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       slug,
       month: monthKey(period.start),
       periods: built.periods,
+      /** Set when a configured public base is not actually serving the page. */
+      publicBaseWarning:
+        proxied && !publicBaseServes
+          ? `${env.REPORTS_PUBLIC_BASE} is not serving this report yet, so the link above points straight at the report site. Deploy the website redirect and publish again to switch it over.`
+          : null,
       deploy: { id: result.deployId, state: result.state, uploaded: result.uploaded, preserved: result.preserved },
     };
   };
