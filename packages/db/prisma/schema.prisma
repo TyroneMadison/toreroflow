@@ -206,6 +206,8 @@ model Client {
   reports        ClientReport[]
   alerts         SystemAlert[]
   insight        ClientInsight?
+  inspirations   InspirationAccount[]
+  researchRuns   ResearchRun[]
 
   @@index([agencyId])
 }
@@ -608,4 +610,81 @@ model Invoice {
 
   @@unique([agencyId, number])
   @@index([clientId])
+}
+
+/// An account a client named at signup as one they want their content to be like.
+///
+/// One row per platform: a client who says "both" for a handle gets two rows,
+/// so `externalId` stays single valued and a snapshot always belongs to one
+/// real account on one real app.
+model InspirationAccount {
+  id          String    @id @default(cuid())
+  clientId    String
+  /// instagram | tiktok. Recorded from the website form.
+  platform    String
+  /// Exactly as the client typed it, minus the @ and any profile URL wrapper.
+  handle      String
+  /// What they called the account, if they gave it a name.
+  displayName String?
+  /// The platform's own id for this account. Instagram wants a numeric user
+  /// id and TikTok a secUid, and neither posts endpoint accepts a handle, so
+  /// this is resolved once and reused rather than paid for on every run.
+  externalId  String?
+  /// Set when the operator has eyeballed the resolved account and agreed it
+  /// is the right person. Nothing expensive runs before this.
+  confirmedAt DateTime?
+  /// Why the last resolve failed, so a bad handle explains itself.
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  snapshots CompetitorSnapshot[]
+
+  /// The same handle on the same app is one account, however often it arrives.
+  @@unique([clientId, platform, handle])
+  @@index([clientId])
+}
+
+/// One paid fetch of what an inspiration account has been posting.
+///
+/// The provider payload is kept verbatim. Every fetch costs real money, so
+/// throwing away fields we did not think to parse would mean paying twice for
+/// the same data the first time a later phase wants something new.
+model CompetitorSnapshot {
+  id        String   @id @default(cuid())
+  accountId String
+  runId     String?
+  fetchedAt DateTime @default(now())
+  raw       Json
+  /// Integer cents, so the run ceiling is enforceable without float drift.
+  costCents Int      @default(0)
+
+  account InspirationAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  run     ResearchRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, fetchedAt])
+}
+
+/// One press of the research button.
+///
+/// Carries its own spending ceiling. Research is never scheduled and never
+/// retried automatically: an unattended loop against a metered API is how a
+/// prepaid wallet empties overnight.
+model ResearchRun {
+  id          String    @id @default(cuid())
+  clientId    String
+  /// running | ready | failed. Same vocabulary as ClientInsight.
+  status      String
+  /// Agreed before the run starts. It stops when it reaches this.
+  maxCents    Int
+  spentCents  Int       @default(0)
+  error       String?
+  requestedAt DateTime  @default(now())
+  completedAt DateTime?
+
+  client    Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  snapshots CompetitorSnapshot[]
+
+  @@index([clientId, requestedAt])
 }

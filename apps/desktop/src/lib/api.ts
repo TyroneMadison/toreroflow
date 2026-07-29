@@ -424,3 +424,33 @@ export async function uploadCoverImage(assetId: string, file: File): Promise<Med
 }
 
 export type { AuthUser, LoginResponse, Platform };
+
+/** An account a client said they want their content to be like. */
+export interface InspirationAccount {
+  id: string;
+  platform: string;
+  handle: string;
+  displayName: string | null;
+  /** The platform's own id is known, so a run costs one call instead of two. */
+  resolved: boolean;
+  confirmedAt: string | null;
+  error: string | null;
+  lastFetchedAt: string | null;
+}
+
+export interface ResearchRun {
+  id: string;
+  status: string;
+  maxCents: number;
+  spentCents: number;
+  error: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+export interface InspirationsView {
+  accounts: InspirationAccount[];
+  /** What pressing the button would cost, in cents, before it is pressed. */
+  quoteCents: number;
+  run: ResearchRun | null;
+}
