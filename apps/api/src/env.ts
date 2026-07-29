@@ -55,6 +55,11 @@ export interface Env {
    * what happens before that proxy exists.
    */
   REPORTS_PUBLIC_BASE: string;
+  /** sandbox | production. Decides which Plaid host is called. */
+  PLAID_ENV: string;
+  /** Empty disables bank oversight; the screen says why. */
+  PLAID_CLIENT_ID: string;
+  PLAID_SECRET: string;
 }
 
 export const env: Env = {
@@ -72,4 +77,7 @@ export const env: Env = {
   NETLIFY_AUTH_TOKEN: process.env.NETLIFY_AUTH_TOKEN ?? "",
   NETLIFY_SITE_ID: process.env.NETLIFY_SITE_ID ?? "",
   REPORTS_PUBLIC_BASE: (process.env.REPORTS_PUBLIC_BASE ?? "").replace(/\/+$/, ""),
+  PLAID_ENV: process.env.PLAID_ENV ?? "sandbox",
+  PLAID_CLIENT_ID: process.env.PLAID_CLIENT_ID ?? "",
+  PLAID_SECRET: process.env.PLAID_SECRET ?? "",
 };
