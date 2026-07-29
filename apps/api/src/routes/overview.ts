@@ -160,7 +160,10 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
           insight: c.insight
             ? {
                 status: c.insight.status,
-                url: c.insight.storageKey ? `/files/${c.insight.storageKey}` : null,
+                // Stamped so a regenerated plan is never served from cache.
+                url: c.insight.storageKey
+                  ? `/files/${c.insight.storageKey}?v=${c.insight.completedAt?.getTime() ?? 0}`
+                  : null,
                 completedAt: c.insight.completedAt,
               }
             : null,

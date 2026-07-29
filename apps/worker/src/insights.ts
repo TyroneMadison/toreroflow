@@ -1,12 +1,13 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import Anthropic from "@anthropic-ai/sdk";
+import { toPlainText } from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { renderReportPdf } from "@toreroflow/media";
 import { env } from "./env";
 
 /**
- * "What to do next" for one client: ask the model, print the answer.
+ * The client's game plan: ask the model, print it as something sendable.
  *
  * This used to run inside `POST /clients/:id/suggestions`, holding the
  * request open for the whole model call and losing the result the moment the
@@ -92,19 +93,33 @@ async function askForSuggestions(
       format: { type: "json_schema", schema: SUGGESTIONS_SCHEMA },
     },
     system:
-      "You are a short-form video growth strategist for a social media agency. " +
-      "Give specific, actionable suggestions to improve a client's social analytics. " +
-      "When there is no metrics history yet, focus on the highest-leverage setup and " +
-      "early-growth moves for their connected platforms. 4 to 6 suggestions, each " +
-      "concrete enough to act on this week. No fluff.",
+      "You write a short game plan that is handed straight to the client. " +
+      "Write to them, as 'you'. Never mention the agency, its tools, its " +
+      "software, dashboards, analytics platforms, or how any of this was put " +
+      "together. The client only ever sees the steps.\n\n" +
+      "Rules for the writing:\n" +
+      "- A sixth grader must understand every sentence. Short words, short " +
+      "sentences, no marketing or industry jargon.\n" +
+      "- Use as few words as possible. Two or three sentences per step, and " +
+      "cut any word that is not doing work.\n" +
+      "- Never use an em dash, an en dash, or an arrow of any kind. Use " +
+      "commas, full stops and the word 'to'.\n" +
+      "- No metric names the client would not recognise. Say 'how long people " +
+      "watch' rather than 'average watch time', 'people who follow you' " +
+      "rather than 'follower count'.\n" +
+      "- Every step is something they can actually do themselves this week. " +
+      "Say what to do, then why it helps, in plain terms.\n\n" +
+      "Give 4 to 6 steps, in the order they should be done.",
     messages: [
       {
         role: "user",
         content:
-          `Client: ${client.name} (plan: ${client.plan ?? "unknown"})\n` +
-          `Connected accounts:\n${accountSummary}\n` +
-          `Repost workflows configured: ${client.workflows.length}\n` +
-          `Agency context: short-form video (Reels/TikTok/Shorts/Spotlight), operator manages posting and analytics via Toreroflow.`,
+          `Write the game plan for ${client.name}.\n\n` +
+          `Here is what their accounts look like right now. This is background ` +
+          `for you, do not quote it back at them or mention where it came from:\n` +
+          `${accountSummary}\n\n` +
+          `They make short vertical videos for Instagram, TikTok, YouTube, ` +
+          `Facebook and Snapchat.`,
       },
     ],
   });
@@ -113,7 +128,13 @@ async function askForSuggestions(
   const text = response.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") throw new Error("the model returned an empty response");
   const parsed = JSON.parse(text.text) as { suggestions: InsightSuggestion[] };
-  return parsed.suggestions;
+  // The prompt asks for plain punctuation, but asking is not enforcing, and
+  // this document goes to a paying client. See packages/core/src/plainText.ts.
+  return parsed.suggestions.map((s) => ({
+    title: toPlainText(s.title),
+    detail: toPlainText(s.detail),
+    category: toPlainText(s.category),
+  }));
 }
 
 /**
@@ -162,9 +183,12 @@ export async function generateInsight(clientId: string): Promise<void> {
     const suggestions = await askForSuggestions(anthropic, client);
 
     const now = new Date();
-    const generatedLabel = now.toLocaleString("en-US", {
-      dateStyle: "long",
-      timeStyle: "short",
+    // Date only. A timestamp reading "2:25 AM" on a client's document says
+    // a machine made it at 2am, which is exactly the impression to avoid.
+    const generatedLabel = now.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
     });
     const templatePath = path.join(env.REPO_ROOT, "assets", "insights-template.html");
     const template = await fs.readFile(templatePath, "utf8");
@@ -174,11 +198,15 @@ export async function generateInsight(clientId: string): Promise<void> {
       suggestions,
     });
 
-    // Kept out of `reports/` on purpose: these are internal notes about a
-    // client's weaknesses, and the report folder is the one that gets
-    // published to the public web.
-    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const storageKey = `${client.id}/insights/what-to-do-next-${stamp}.pdf`;
+    // Its own folder, not `reports/`: this is a document Tyrone hands over
+    // directly, while `reports/` is what the Netlify publisher sweeps onto
+    // the public web. Two different ways of reaching a client, kept apart.
+    //
+    // One fixed name, overwritten per run, because only the latest plan is
+    // ever referenced. A dated name left every superseded plan on disk
+    // forever with nothing pointing at it. The date the client cares about
+    // is printed on the page itself.
+    const storageKey = `${client.id}/insights/what-to-do-next.pdf`;
     const absPath = path.join(env.STORAGE_DIR, storageKey);
     await fs.mkdir(path.dirname(absPath), { recursive: true });
     await fs.writeFile(absPath, pdf);

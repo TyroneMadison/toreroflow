@@ -8,4 +8,5 @@ export * from "./money";
 export * from "./expenseCategories";
 export * from "./financeSchemas";
 export * from "./insightStatus";
+export * from "./plainText";
 export * as tokens from "./tokens";
