@@ -69,13 +69,53 @@ asks what to do next, and next has one answer. A growing pile of stale
 advice is a list nobody reads, which is the same reasoning that made
 `SystemAlert` rows delete themselves when the check passes.
 
-### The PDF is for the operator, not the client
+### The PDF is the thing the client receives
 
-It is written to `${clientId}/insights/what-to-do-next-<stamp>.pdf`, kept
-away from `reports/`, and never touched by the report publisher. These are
-internal growth notes naming a client's weaknesses. Putting them anywhere
-near the client-facing report pipeline risks one being sent to the person
-it is about.
+Revised 2026-07-29, after review. The first build treated this as internal
+notes. It is the opposite: Tyrone hands this document to the client as their
+game plan, so it carries the Torerone brand and speaks to them directly.
+
+Consequences, all of them load-bearing:
+
+- **It is written to the client, as "you".** No mention of the agency, the
+  app, dashboards or analytics tooling. The client sees steps, never the
+  machinery. The first version told them to "Build 3 workflows in Toreroflow
+  this week", which is Tyrone's job, not theirs.
+- **Sixth grade reading level, fewest possible words.** Metric names are
+  translated: "how long people watch", not "average watch time".
+- **No em dashes, no en dashes, no arrows, ever.** They read as machine
+  output. See the enforcement decision below.
+- **Design follows `Torerone_Portfolio_Canva.pptx.pdf`**, whose exact
+  palette was read out of the file: page `#0B0B10`, cards `#14141C` with
+  `#282834` borders, coral `#FF6F61` accent, cool grey body text
+  `#A6A6B4` / `#B9B9C6`. The portfolio sets headlines in Anton and body in
+  Montserrat; neither is installed and this prints offline, so Impact and
+  Segoe UI stand in. Embedding the real pair is a download away if wanted.
+- **One page.** Spacing is tuned so six steps and the header fit on a single
+  Letter page, because a plan someone has to turn over is a plan they read
+  half of.
+
+It still lives in `${clientId}/insights/`, away from `reports/`, because the
+report folder is what the Netlify publisher sweeps onto the public web.
+These are two different ways of reaching a client and they stay apart.
+
+### The punctuation rule is enforced in code, not asked for in a prompt
+
+`packages/core/src/plainText.ts` strips em dashes, en dashes, arrows in
+every common shape including the ASCII ones, smart quotes and ellipses, and
+the worker runs every field through it before storing.
+
+A prompt is a request. This document goes to a paying client under Tyrone's
+name, and one run in ten will still produce an em dash however firmly it is
+told not to. The check pins real strings that came back from the model.
+
+### One fixed file name
+
+`what-to-do-next.pdf`, overwritten per run. A dated name left every
+superseded plan on disk with nothing pointing at it. The date the client
+cares about is printed on the page. Because the path is now stable, both
+routes stamp the URL with the run's completion time so a viewer can never
+serve the previous plan from cache.
 
 ### The renderer moves to `packages/media`
 
@@ -146,10 +186,10 @@ produces.
 
 ### 6. The insights template
 
-`apps/worker/src/insights/template.html`, printed the same way the report
-template is: data injected as `window.REPORT_DATA` ahead of the loader.
-Carries the brand name, the date, and the suggestions grouped by category.
-Styled to match the app, and explicitly marked as an internal document.
+`assets/insights-template.html`, beside the report template and printed the
+same way: data injected as `window.REPORT_DATA` ahead of the loader. Carries
+the Torerone wordmark, the client's name, the date, and the steps as
+numbered cards in the portfolio's card style.
 
 ### 7. `apps/desktop`
 
@@ -170,8 +210,8 @@ answer arrives there. A global notifier is a bigger idea than this item.
 
 **History.** One row per client, overwritten per run.
 
-**Changing the advice.** Same model, same prompt, same schema, same
-categories.
+**Changing the schema.** Same model, same four categories, same
+title-and-detail shape. The prompt changed; the structure did not.
 
 ## Verification
 

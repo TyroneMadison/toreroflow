@@ -957,7 +957,12 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     suggestions: (row.suggestions ?? null) as
       | Array<{ title: string; detail: string; category: string }>
       | null,
-    url: row.storageKey ? `/files/${row.storageKey}` : null,
+    // The file name is fixed so regenerating overwrites in place, which means
+    // a viewer would happily show the previous plan from cache. The stamp
+    // changes every run, so it never can.
+    url: row.storageKey
+      ? `/files/${row.storageKey}?v=${row.completedAt?.getTime() ?? row.requestedAt.getTime()}`
+      : null,
     error: row.error,
     requestedAt: row.requestedAt,
     completedAt: row.completedAt,
