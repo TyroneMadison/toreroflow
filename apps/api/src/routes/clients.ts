@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import nodePath from "node:path";
 import { promises as fsp, createWriteStream } from "node:fs";
-import Anthropic from "@anthropic-ai/sdk";
 import PDFDocument from "pdfkit";
 import {
   connectAccountSchema,
   contactSchema,
   createClientSchema,
+  isRunning,
   platformSchema,
   PLATFORMS,
   type Platform,
@@ -52,43 +52,19 @@ const quotaSchema = z.object({
   reset: z.boolean().optional(),
 });
 
-const SUGGESTIONS_SCHEMA = {
-  type: "object",
-  properties: {
-    suggestions: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          detail: { type: "string" },
-          category: {
-            type: "string",
-            enum: ["content", "timing", "platform", "growth", "setup"],
-          },
-        },
-        required: ["title", "detail", "category"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["suggestions"],
-  additionalProperties: false,
-} as const;
-
 export async function clientRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const anthropic = env.ANTHROPIC_API_KEY
-    ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
-    : null;
+  // The model call itself lives on the worker now. All this route needs to
+  // know is whether asking for one can possibly work.
+  const hasAnthropicKey = Boolean(env.ANTHROPIC_API_KEY);
   const zernio =
     env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
   const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
-  const analyticsQueue = new Queue("analytics", {
-    connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
-  });
+  const queueConnection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+  const analyticsQueue = new Queue("analytics", { connection: queueConnection });
+  const insightsQueue = new Queue("insights", { connection: queueConnection });
 
   /** Zernio profile backing this client, created on first use. */
   const ensureProviderProfile = async (client: {
@@ -968,16 +944,39 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send({ url: `/files/${relPath}` });
   });
 
+  /** The stored row in the shape the app reads. */
+  const insightView = (row: {
+    status: string;
+    suggestions: unknown;
+    storageKey: string | null;
+    error: string | null;
+    requestedAt: Date;
+    completedAt: Date | null;
+  }) => ({
+    status: row.status,
+    suggestions: (row.suggestions ?? null) as
+      | Array<{ title: string; detail: string; category: string }>
+      | null,
+    url: row.storageKey ? `/files/${row.storageKey}` : null,
+    error: row.error,
+    requestedAt: row.requestedAt,
+    completedAt: row.completedAt,
+  });
+
   /**
-   * AI growth suggestions for a client. Uses the operator's ANTHROPIC_API_KEY;
-   * without one the endpoint explains how to enable it instead of failing
-   * silently. Daily metric ingestion arrives in M5 - until then suggestions
-   * lean on the client profile and connection state.
+   * Start a "what to do next" run.
+   *
+   * The model call and the PDF render happen on the worker's `insights`
+   * queue, so this returns as soon as the row is marked running: the
+   * operator asked not to be held at the screen while it thinks.
+   *
+   * The key check stays here rather than moving to the worker, because a
+   * missing key can be answered instantly and the message is the fix.
    */
   app.post<{ Params: { id: string } }>(
     "/clients/:id/suggestions",
     async (request, reply) => {
-      if (!anthropic) {
+      if (!hasAnthropicKey) {
         return reply.status(503).send({
           error: "suggestions unavailable",
           detail:
@@ -991,67 +990,61 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
           agencyId: request.user.agencyId,
           deletedAt: null,
         },
-        include: {
-          socialAccounts: {
-            where: { deletedAt: null },
-            include: {
-              metricSnapshots: { orderBy: { capturedAt: "desc" }, take: 14 },
-            },
-          },
-          workflows: true,
-        },
+        select: { id: true },
       });
       if (!client) return reply.status(404).send(NOT_FOUND);
 
-      const accountSummary = client.socialAccounts.length
-        ? client.socialAccounts
-            .map((a) => {
-              const latest = a.metricSnapshots[0];
-              const metrics = latest
-                ? `views=${latest.views ?? "?"} reach=${latest.reach ?? "?"} followers=${latest.followers ?? "?"} engagement=${latest.engagementRate ?? "?"}% avgWatch=${latest.avgWatchSec ?? "?"}s (captured ${latest.capturedAt.toISOString()})`
-                : "no metrics captured yet";
-              return `- ${a.platform} @${a.handle} [${a.status}]: ${metrics}`;
-            })
-            .join("\n")
-        : "- no platforms connected yet";
+      // A second press while one is in flight returns the run already going.
+      // Without this an impatient double click bills a second model call and
+      // races the first one's write.
+      const existing = await prisma.clientInsight.findUnique({
+        where: { clientId: client.id },
+      });
+      if (existing && isRunning(existing.status)) {
+        return reply.status(202).send(insightView(existing));
+      }
 
-      const response = await anthropic.messages.create({
-        model: env.SUGGESTIONS_MODEL,
-        max_tokens: 2048,
-        thinking: { type: "adaptive" },
-        output_config: {
-          effort: "low",
-          format: { type: "json_schema", schema: SUGGESTIONS_SCHEMA },
+      const row = await prisma.clientInsight.upsert({
+        where: { clientId: client.id },
+        create: { clientId: client.id, status: "running" },
+        update: {
+          status: "running",
+          error: null,
+          requestedAt: new Date(),
+          completedAt: null,
         },
-        system:
-          "You are a short-form video growth strategist for a social media agency. " +
-          "Give specific, actionable suggestions to improve a client's social analytics. " +
-          "When there is no metrics history yet, focus on the highest-leverage setup and " +
-          "early-growth moves for their connected platforms. 4 to 6 suggestions, each " +
-          "concrete enough to act on this week. No fluff.",
-        messages: [
-          {
-            role: "user",
-            content:
-              `Client: ${client.name} (plan: ${client.plan ?? "unknown"})\n` +
-              `Connected accounts:\n${accountSummary}\n` +
-              `Repost workflows configured: ${client.workflows.length}\n` +
-              `Agency context: short-form video (Reels/TikTok/Shorts/Spotlight), operator manages posting and analytics via Toreroflow.`,
-          },
-        ],
       });
 
-      if (response.stop_reason === "refusal") {
-        return reply.status(502).send({ error: "model declined the request" });
-      }
-      const text = response.content.find((b) => b.type === "text");
-      if (!text || text.type !== "text") {
-        return reply.status(502).send({ error: "empty model response" });
-      }
-      const parsed = JSON.parse(text.text) as {
-        suggestions: Array<{ title: string; detail: string; category: string }>;
-      };
-      return { clientId: client.id, suggestions: parsed.suggestions };
+      // jobId is the client id, so BullMQ refuses a duplicate for as long as
+      // the job exists, which is the same guard one layer down.
+      await insightsQueue.add(
+        "generate",
+        { clientId: client.id },
+        { jobId: client.id, removeOnComplete: true, removeOnFail: true },
+      );
+
+      return reply.status(202).send(insightView(row));
+    },
+  );
+
+  /** The current run, or null when this client has never generated one. */
+  app.get<{ Params: { id: string } }>(
+    "/clients/:id/suggestions",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: {
+          id: request.params.id,
+          agencyId: request.user.agencyId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      const row = await prisma.clientInsight.findUnique({
+        where: { clientId: client.id },
+      });
+      return row ? insightView(row) : null;
     },
   );
 }

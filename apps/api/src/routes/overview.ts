@@ -68,6 +68,9 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
           where: { deletedAt: null },
           select: { id: true, platform: true, handle: true, status: true, avatarUrl: true },
         },
+        insight: {
+          select: { status: true, storageKey: true, completedAt: true },
+        },
       },
     });
 
@@ -147,6 +150,20 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
             stale: c.reportUrl !== null && c.reportPublishedMonth !== month.key,
           },
           needsReconnect: c.socialAccounts.some((a) => a.status === "needs_reconnect"),
+          /**
+           * The latest "what to do next" run, null when never generated.
+           *
+           * Here so the row can say a plan is waiting without the operator
+           * opening every modal to find out, and so the screen knows whether
+           * anything is still being worked on.
+           */
+          insight: c.insight
+            ? {
+                status: c.insight.status,
+                url: c.insight.storageKey ? `/files/${c.insight.storageKey}` : null,
+                completedAt: c.insight.completedAt,
+              }
+            : null,
         };
       }),
     );

@@ -205,8 +205,32 @@ model Client {
   workflows      Workflow[]
   reports        ClientReport[]
   alerts         SystemAlert[]
+  insight        ClientInsight?
 
   @@index([agencyId])
+}
+
+/// The latest "what to do next" run for a client, and where its PDF landed.
+///
+/// One row per client, overwritten per run: the question has one answer, and
+/// a growing pile of stale advice is a list nobody reads. Generation happens
+/// on the worker's `insights` queue, so this row is also how the app knows a
+/// run is still going.
+model ClientInsight {
+  id          String    @id @default(cuid())
+  clientId    String    @unique
+  /// running | ready | failed. See packages/core/src/insightStatus.ts.
+  status      String
+  /// The model's suggestions, in the shape the modal renders.
+  suggestions Json?
+  /// Storage path of the rendered PDF, served from /files/<key>.
+  storageKey  String?
+  /// Why the last run failed, shown when the modal reopens.
+  error       String?
+  requestedAt DateTime  @default(now())
+  completedAt DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model SocialAccount {

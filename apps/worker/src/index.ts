@@ -7,6 +7,7 @@ import { decodeEscapes, formatFromDuration } from "@toreroflow/core";
 import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
+import { generateInsight } from "./insights";
 
 const prisma = getPrisma();
 const anthropic = env.ANTHROPIC_API_KEY
@@ -641,6 +642,16 @@ new Worker<{ targetId: string }>(
   { connection, concurrency: 2 },
 );
 
+// One at a time: these are model calls plus a headless browser print, and
+// the operator is asking about one brand at a time anyway.
+new Worker<{ clientId: string }>(
+  "insights",
+  async (job) => {
+    await generateInsight(job.data.clientId);
+  },
+  { connection, concurrency: 1 },
+);
+
 import { Queue } from "bullmq";
 
 const analyticsQueue = new Queue("analytics", { connection });
@@ -665,5 +676,5 @@ void (async () => {
 })();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

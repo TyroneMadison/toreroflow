@@ -7,4 +7,5 @@ export * from "./reportSlug";
 export * from "./money";
 export * from "./expenseCategories";
 export * from "./financeSchemas";
+export * from "./insightStatus";
 export * as tokens from "./tokens";
