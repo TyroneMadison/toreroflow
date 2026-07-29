@@ -9,6 +9,7 @@ import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/med
 import { env } from "./env";
 import { generateInsight } from "./insights";
 import { runResearch } from "./research";
+import { syncAllBanks, syncBankConnection } from "./bank";
 
 const prisma = getPrisma();
 const anthropic = env.ANTHROPIC_API_KEY
@@ -647,6 +648,16 @@ new Worker<{ targetId: string }>(
 // the operator is asking about one brand at a time anyway.
 // One at a time: every run spends real money against a prepaid wallet, and
 // research is something the operator watches rather than fires and forgets.
+// One at a time: this reads a real bank and there is exactly one of them.
+new Worker<{ connectionId?: string }>(
+  "bank",
+  async (job) => {
+    if (job.data.connectionId) await syncBankConnection(job.data.connectionId);
+    else await syncAllBanks();
+  },
+  { connection, concurrency: 1 },
+);
+
 new Worker<{ runId: string }>(
   "research",
   async (job) => {
@@ -687,5 +698,5 @@ void (async () => {
 })();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights, research (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );
