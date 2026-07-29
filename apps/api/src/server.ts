@@ -8,6 +8,7 @@ import { env } from "./env";
 import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
 import { clientRoutes } from "./routes/clients";
+import { bankRoutes } from "./routes/bank";
 import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
 import { mediaRoutes } from "./routes/media";
@@ -81,6 +82,7 @@ export async function buildServer(
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(clientRoutes);
+  await app.register(bankRoutes);
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
   await app.register(mediaRoutes);

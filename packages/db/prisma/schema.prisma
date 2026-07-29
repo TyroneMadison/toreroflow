@@ -93,6 +93,7 @@ model Agency {
   expenses        Expense[]
   invoices        Invoice[]
   financialMonths FinancialMonth[]
+  bankConnections BankConnection[]
 }
 
 /**
@@ -687,4 +688,102 @@ model ResearchRun {
   snapshots CompetitorSnapshot[]
 
   @@index([clientId, requestedAt])
+}
+
+/// A linked bank, for read-only oversight of the agency's own money.
+///
+/// Agency-level, not per client: this is Tyrone's business account, not a
+/// client's. Nothing in this feature can move money in either direction; it
+/// reads balances and transactions and nothing else.
+model BankConnection {
+  id              String    @id @default(cuid())
+  agencyId        String
+  /// The provider's identifier for this link. Unique so reconnecting the same
+  /// bank updates the row rather than stacking a second copy of every account.
+  itemId          String    @unique
+  institutionName String?
+  /// The access token, encrypted with packages/db/src/secrets.ts. Never
+  /// written in plaintext: this is a long-lived key to a real bank's
+  /// transaction history.
+  accessTokenEnc  String
+  /// Where the incremental transaction sync left off. Null means never synced,
+  /// which is different from synced and finding nothing.
+  cursor          String?
+  /// active | needs_reconnect | error. A bank that wants re-authentication is
+  /// not broken, and reads differently to a failure.
+  status          String    @default("active")
+  /// Why the last sync failed, so a stale feed explains itself.
+  error           String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  agency   Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  accounts BankAccount[]
+
+  @@index([agencyId])
+}
+
+/// One account inside a linked bank.
+model BankAccount {
+  id              String  @id @default(cuid())
+  connectionId    String
+  plaidAccountId  String  @unique
+  name            String
+  officialName    String?
+  /// Last four digits, for telling two accounts apart on screen.
+  mask            String?
+  /// depository | credit | loan | investment | other.
+  type            String?
+  subtype         String?
+  /// Integer cents, like every other figure in this app. Null when the
+  /// provider has no figure, which is not the same as zero.
+  currentCents    Int?
+  availableCents  Int?
+  currency        String  @default("USD")
+  /// Whether this account counts towards money in and money out.
+  ///
+  /// Defaults from the account type: a single link returns a mortgage, a 401k
+  /// and student loans alongside the checking account, and folding those into
+  /// cash flow would make the number meaningless. Still an operator decision,
+  /// because only they know which account the business actually runs on.
+  includeInCashFlow Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  connection   BankConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  transactions BankTransaction[]
+
+  @@index([connectionId])
+}
+
+/// One transaction on a linked account.
+model BankTransaction {
+  id                 String  @id @default(cuid())
+  accountId          String
+  plaidTransactionId String  @unique
+  /// ISO "2026-07-26", stored as text on purpose.
+  ///
+  /// This is a date, not an instant. Putting it in a timestamp column invites
+  /// the classic off-by-one where a transaction slides into the previous month
+  /// depending on the reader's timezone, and month totals are the whole point
+  /// of this feature. ISO strings also sort and range-query correctly.
+  date               String
+  name               String
+  merchantName       String?
+  /// Integer cents in OUR convention: positive means money arrived.
+  ///
+  /// Deliberately not the provider's sign, which is inverted (positive means
+  /// money left the account). The flip happens once, in
+  /// packages/core/src/banking.ts, so nothing downstream has to remember it.
+  amountCents        Int
+  /// Pending rows can change amount or vanish, so totals exclude them.
+  pending            Boolean @default(false)
+  category           String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date])
 }
