@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@toreroflow/db";
-import { buildReportSlug, clientSlug } from "@toreroflow/core";
+import { buildReportSlug, clientSlug, REPORT_SLUG_SUFFIX } from "@toreroflow/core";
 
 /** Prisma's code for "a unique constraint rejected this write". */
 const UNIQUE_VIOLATION = "P2002";
@@ -32,7 +32,7 @@ export async function ensureReportSlug(
   const base = clientSlug(client.name);
   for (let n = 1; n <= 50; n++) {
     const candidate =
-      n === 1 ? buildReportSlug(client.name) : `${base}-${n}-end-of-month-report`;
+      n === 1 ? buildReportSlug(client.name) : `${base}-${n}-${REPORT_SLUG_SUFFIX}`;
     try {
       const updated = await prisma.client.update({
         where: { id: client.id },

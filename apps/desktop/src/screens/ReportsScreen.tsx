@@ -257,6 +257,9 @@ export default function ReportsScreen({
       );
       await loadPublishing();
       toast.success(`${name} is live at ${res.url}`);
+      // The link is always correct, but it may not be the pretty one yet.
+      // Said out loud so the fallback is a decision, not a surprise.
+      if (res.publicBaseWarning) toast.error(res.publicBaseWarning);
     } catch (err) {
       toast.fail(`Could not publish the report for ${name}`, err);
     } finally {

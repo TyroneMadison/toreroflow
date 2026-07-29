@@ -218,6 +218,12 @@ export interface PublishResult {
   slug: string;
   month: string;
   periods: string[];
+  /**
+   * Set when a configured public address is not actually serving the report,
+   * so `url` fell back to the report site's own link. Null when there is
+   * nothing to say.
+   */
+  publicBaseWarning: string | null;
 }
 
 /** One brand's standing on the Account Overview screen. */

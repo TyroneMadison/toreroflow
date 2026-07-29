@@ -67,19 +67,26 @@ export function clientSlug(name: string): string {
   return base || "client";
 }
 
+/** The tail every report path ends in, e.g. "caleb-monthly-reports". */
+export const REPORT_SLUG_SUFFIX = "monthly-reports";
+
 /**
- * Report path for a client: "<client>-end-of-month-report".
+ * Report path for a client: "<client>-monthly-reports".
  *
  * Short and predictable by explicit choice: the operator preferred a clean,
  * memorable link over an unguessable one, having been told these pages can
  * be found by guessing a client name. Pages carry noindex so they stay out
  * of search results, but the URL itself is not a secret.
  *
+ * Lower case throughout. Netlify serves paths case sensitively, so a link
+ * written "Caleb-Monthly-Reports" and typed back in lower case would 404,
+ * and a client retyping a link from a phone is exactly when that happens.
+ *
  * `withSuffix` remains available for anyone who later wants the unguessable
  * form; `randomInt` is injected so it stays pure and testable.
  */
 export function buildReportSlug(clientName: string): string {
-  return `${clientSlug(clientName)}-end-of-month-report`;
+  return `${clientSlug(clientName)}-${REPORT_SLUG_SUFFIX}`;
 }
 
 /** Unguessable variant, kept for if the privacy tradeoff is revisited. */
