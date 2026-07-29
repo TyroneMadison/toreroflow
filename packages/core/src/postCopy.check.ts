@@ -43,6 +43,31 @@ assert.equal(youtubeTitleFor({ youtubeTitle: "\n\t ", name: "n" }), "n");
 assert.equal(captionFor("instagram", {}), "");
 assert.equal(captionFor("youtube", {}), "");
 
+/*
+ * YouTube's description is never left empty while any field has words in it.
+ *
+ * This is the fix for a real upload that went out reading "Video uploaded via
+ * social media scheduler": the provider fills an empty description with its
+ * own text, so the only way to keep that off a client's channel is to never
+ * send one. The title is the last thing standing between the operator's words
+ * and the provider's.
+ */
+assert.equal(captionFor("youtube", { youtubeTitle: "Only a title" }), "Only a title");
+assert.equal(
+  captionFor("youtube", { youtubeTitle: "Title", description: "Body" }),
+  "Body",
+  "a real description still wins over the title",
+);
+for (const draft of [
+  { name: "n" },
+  { description: "d" },
+  { youtubeTitle: "t" },
+  { youtubeDescription: "yd" },
+  { name: "n", youtubeTitle: "t" },
+]) {
+  assert.notEqual(captionFor("youtube", draft), "", `youtube left empty for ${JSON.stringify(draft)}`);
+}
+
 /* Values are trimmed on the way out. */
 assert.equal(captionFor("instagram", { description: "  spaced  " }), "spaced");
 

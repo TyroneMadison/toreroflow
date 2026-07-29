@@ -34,10 +34,18 @@ function firstOf(...values: Array<string | undefined>): string {
   return "";
 }
 
-/** The caption body this platform receives. */
+/**
+ * The caption body this platform receives.
+ *
+ * YouTube's chain ends at the title on purpose. An empty description is not
+ * neutral there: handing the provider nothing means the provider decides what
+ * appears, and one real upload came back reading "Video uploaded via social
+ * media scheduler" on a client's channel. Repeating the title is plain and
+ * ours; anything the provider writes is neither.
+ */
 export function captionFor(platform: string, draft: DraftCopy): string {
   if (platform === "youtube") {
-    return firstOf(draft.youtubeDescription, draft.description, draft.name);
+    return firstOf(draft.youtubeDescription, draft.description, draft.name, draft.youtubeTitle);
   }
   return firstOf(draft.description, draft.name);
 }
