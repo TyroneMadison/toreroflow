@@ -91,6 +91,18 @@ export default function IconDefs() {
       <symbol id="i-usd" viewBox="0 0 24 24">
         <path d="M12 2v20M17 6.5c0-2-2.2-3.5-5-3.5S7 4.5 7 6.5s2 3 5 3.5 5 1.5 5 3.5-2.2 3.5-5 3.5-5-1.5-5-3.5" />
       </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <rect x="4" y="11" width="16" height="10" rx="2.5" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </symbol>
+      <symbol id="i-unlock" viewBox="0 0 24 24">
+        <rect x="4" y="11" width="16" height="10" rx="2.5" />
+        <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path d="M12 3.5L2.8 19.5a1.4 1.4 0 0 0 1.2 2h16a1.4 1.4 0 0 0 1.2-2z" />
+        <path d="M12 9.5v4.5M12 17.6v.01" />
+      </symbol>
       {/* platform logos */}
       <symbol id="p-ig" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="18" rx="5.2" fill="none" stroke="currentColor" strokeWidth="2.1" />

@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { formatDuration } from "../lib/video";
 import { queueRows } from "../lib/queue";
+import { canMove } from "../lib/postStatus";
 import { useAppState } from "../state/AppState";
 import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
@@ -734,9 +735,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         dragTargetId === p.id ? " dragging" : ""
                       }`}
                       key={p.id}
-                      draggable={p.status === "scheduled"}
+                      draggable={canMove(p.status)}
                       title={
-                        p.status === "scheduled"
+                        canMove(p.status)
                           ? "Drag onto another queued post to swap their times"
                           : undefined
                       }
