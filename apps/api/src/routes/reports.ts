@@ -29,7 +29,7 @@ import {
 } from "../reports/buildWebReport";
 import { embedThumbnails } from "../reports/embedThumbnails";
 import { NetlifyError, NetlifyPublisher } from "../reports/netlify";
-import { findBrowser, renderReportPdf } from "../reports/renderPdf";
+import { findBrowser, renderReportPdf } from "@toreroflow/media";
 import { ensureReportSlug } from "../reports/slug";
 
 const NOT_FOUND = { error: "client not found" } as const;
