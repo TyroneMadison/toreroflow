@@ -111,10 +111,28 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       : undefined;
 
     const ytOptions = body.youtube;
-    const youtubeCaption = appendWatchNext(
-      captionOverride || captionFor("youtube", draft),
-      ytOptions?.relatedVideoUrl,
-    );
+    const youtubeBody = captionOverride || captionFor("youtube", draft);
+
+    /*
+     * A YouTube upload never leaves here with an empty description.
+     *
+     * Sending nothing does not produce an empty description on the channel,
+     * it produces whatever the provider decides to write: one real upload
+     * went out reading "Video uploaded via social media scheduler". The
+     * fallback chain covers every case where the operator wrote anything at
+     * all, so reaching here means the video has no name, no description and
+     * no title, which is not something to publish to a client's channel and
+     * quietly let someone else caption.
+     */
+    if (accounts.some(({ platform }) => platform === "youtube") && !youtubeBody) {
+      return reply.status(400).send({
+        error: "youtube needs words",
+        detail:
+          "Give this video a name or a description before scheduling it to YouTube. An empty description gets filled in by the scheduler, and that text ends up on your client's channel.",
+      });
+    }
+
+    const youtubeCaption = appendWatchNext(youtubeBody, ytOptions?.relatedVideoUrl);
 
     const post = await prisma.post.create({
       data: {
