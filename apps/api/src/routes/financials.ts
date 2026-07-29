@@ -15,7 +15,7 @@ import { requireAuth } from "../plugins/requireAuth";
 import { deriveStatus, quotaMetFor, rollForward } from "../financials/month";
 import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
-import { renderReportPdf } from "../reports/renderPdf";
+import { renderReportPdf } from "@toreroflow/media";
 import { buildInvoiceHtml } from "../financials/invoicePdf";
 import {
   buildTaxExportHtml,
