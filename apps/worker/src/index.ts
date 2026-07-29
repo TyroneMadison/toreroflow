@@ -8,6 +8,7 @@ import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@t
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
 import { generateInsight } from "./insights";
+import { runResearch } from "./research";
 
 const prisma = getPrisma();
 const anthropic = env.ANTHROPIC_API_KEY
@@ -644,6 +645,16 @@ new Worker<{ targetId: string }>(
 
 // One at a time: these are model calls plus a headless browser print, and
 // the operator is asking about one brand at a time anyway.
+// One at a time: every run spends real money against a prepaid wallet, and
+// research is something the operator watches rather than fires and forgets.
+new Worker<{ runId: string }>(
+  "research",
+  async (job) => {
+    await runResearch(job.data.runId);
+  },
+  { connection, concurrency: 1 },
+);
+
 new Worker<{ clientId: string }>(
   "insights",
   async (job) => {
@@ -676,5 +687,5 @@ void (async () => {
 })();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

@@ -9,4 +9,5 @@ export * from "./expenseCategories";
 export * from "./financeSchemas";
 export * from "./insightStatus";
 export * from "./plainText";
+export * from "./research";
 export * as tokens from "./tokens";
