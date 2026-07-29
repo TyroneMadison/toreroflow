@@ -11,3 +11,4 @@ export function getPrisma(): PrismaClient {
 }
 
 export * from "./externalStore";
+export * from "./secrets";
