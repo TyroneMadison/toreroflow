@@ -81,8 +81,9 @@ export default function WorkflowsScreen() {
         <div className="h">
           <h2>Workflows</h2>
           <p>
-            Repurpose-style fan-out: upload to one platform, auto-publish to the rest.
-            Rules save now; auto-posting activates when publishing goes live.
+            Fan-out rules for reposting one upload across platforms. Saved here, but
+            nothing runs them yet, so a video only ever goes to the platforms you tick
+            when you schedule it.
           </p>
         </div>
       </div>
@@ -105,7 +106,8 @@ export default function WorkflowsScreen() {
               <div className="card glass">
                 <h3>New workflow for {selectedClient.name}</h3>
                 <div className="sub" style={{ marginBottom: 14 }}>
-                  When a video is posted to the source, it republished to every destination.
+                  Describes what should happen when a video is posted to the source. Kept
+                  for when fan-out is built; it does not repost anything today.
                 </div>
 
                 <label className="flabel">Workflow name</label>
