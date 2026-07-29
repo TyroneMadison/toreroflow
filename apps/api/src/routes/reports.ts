@@ -30,6 +30,7 @@ import {
 import { embedThumbnails } from "../reports/embedThumbnails";
 import { NetlifyError, NetlifyPublisher } from "../reports/netlify";
 import { findBrowser, renderReportPdf } from "@toreroflow/media";
+import { setReportPageHooks } from "../reports/onboardHook";
 import { ensureReportSlug } from "../reports/slug";
 
 const NOT_FOUND = { error: "client not found" } as const;
@@ -349,6 +350,16 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
    * "no": a false negative only costs a less pretty link, while a false
    * positive would hand a client a URL that shows something else entirely.
    */
+  /**
+   * The one address a client is ever given for their report.
+   *
+   * Derived from the slug, so it is fixed the moment a client is onboarded
+   * and cannot drift. Falls back to the storage site only when no public base
+   * is configured at all, which is a fresh checkout rather than normal use.
+   */
+  const reportUrlFor = (slug: string, storageSiteUrl: string): string =>
+    `${env.REPORTS_PUBLIC_BASE || storageSiteUrl.replace(/\/+$/, "")}/${slug}`;
+
   const servesExactly = async (url: string, expected: string): Promise<boolean> => {
     try {
       const res = await fetch(url, {
@@ -390,22 +401,18 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       [`/${slug}/index.html`]: built.html,
     });
 
-    // The deploy URL is per-deploy; the permanent link is the site's own
-    // address plus the slug, which is what actually gets sent to a client.
-    const siteUrl = (await publisher.siteUrl(env.NETLIFY_SITE_ID)).replace(/\/+$/, "");
-    const direct = `${siteUrl}/${slug}`;
+    // One address, decided at onboarding and never changed: the public base
+    // plus the client's permanent slug. The Netlify site the files actually
+    // sit on is storage, and its address is never shown to anyone.
+    const url = reportUrlFor(slug, await publisher.siteUrl(env.NETLIFY_SITE_ID));
 
-    // Reports can be fronted by torerone.com, which proxies to this site, so
-    // the address the client is given is not the address the files sit on.
-    // That link is only offered once it has been proven to serve this exact
-    // page, because torerone.com answers 200 for every unknown path: without
-    // the proxy in place it returns the marketing homepage, and a client
-    // opening the agency's front page instead of their numbers would have no
-    // idea anything was wrong. Falling back to the plain link is ugly and
-    // correct, which is the right way round.
-    const proxied = env.REPORTS_PUBLIC_BASE ? `${env.REPORTS_PUBLIC_BASE}/${slug}` : null;
-    const publicBaseServes = proxied ? await servesExactly(proxied, built.html) : false;
-    const url = publicBaseServes ? proxied! : direct;
+    // The link is canonical, but that does not make it live. torerone.com
+    // answers 200 for every unknown path, so before the website's redirect is
+    // deployed this URL quietly serves the marketing homepage. Checked by
+    // comparing bytes rather than status, and reported rather than worked
+    // around, because silently handing back a different address is exactly
+    // the "lingering URL" this design is meant to remove.
+    const publicBaseServes = await servesExactly(url, built.html);
 
     await prisma.client.update({
       where: { id: client.id },
@@ -421,14 +428,40 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       slug,
       month: monthKey(period.start),
       periods: built.periods,
-      /** Set when a configured public base is not actually serving the page. */
-      publicBaseWarning:
-        proxied && !publicBaseServes
-          ? `${env.REPORTS_PUBLIC_BASE} is not serving this report yet, so the link above points straight at the report site. Deploy the website redirect and publish again to switch it over.`
-          : null,
+      /** Set when the permanent link is not being served yet. */
+      publicBaseWarning: publicBaseServes
+        ? null
+        : `${url} is not serving this report yet. Deploy the website so its /reports redirect goes live; the link itself is already correct and permanent.`,
       deploy: { id: result.deployId, state: result.state, uploaded: result.uploaded, preserved: result.preserved },
     };
   };
+
+  /** Takes a client's page off the site, for when they are offboarded. */
+  const unpublishSlug = async (slug: string): Promise<void> => {
+    if (!publisher) return;
+    const result = await publisher.remove(env.NETLIFY_SITE_ID, [`/${slug}/index.html`]);
+    app.log.info(
+      { slug, removed: result.removed, remaining: result.remaining },
+      "removed a report page",
+    );
+  };
+
+  /**
+   * Offered to the client routes, so onboarding creates a page and
+   * offboarding removes one without either of them owning this machinery.
+   */
+  setReportPageHooks({
+    publish: async (clientId) => {
+      const client = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { id: true, name: true, reportSlug: true },
+      });
+      if (!client) return;
+      // The month that just ended, the same period a month-end report covers.
+      await publishFor(client, lastCompletedMonth());
+    },
+    unpublish: unpublishSlug,
+  });
 
   /**
    * Whether publishing is switched on, and where every client currently

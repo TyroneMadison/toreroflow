@@ -28,6 +28,7 @@ import {
 import { buildMergedPosts } from "../analytics/mergedPosts";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { withReportPage } from "../reports/onboardHook";
 import { ensureReportSlug } from "../reports/slug";
 
 const NOT_FOUND = { error: "client not found" } as const;
@@ -150,9 +151,19 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         avatarSeed: avatarSeed(body.name),
       },
     });
-    // Claim the report path now rather than at first publish, so the Reports
-    // screen can show the operator the link before they decide to create it.
+    // The report path is claimed here, at onboarding, and never changes for
+    // the life of the client.
     const reportSlug = await ensureReportSlug(prisma, client);
+
+    // Their page goes up now too, so the link works the moment it exists
+    // rather than only after the first month-end publish. Not awaited: a slow
+    // Netlify deploy must not hold up onboarding, and the page can be rebuilt
+    // with one button if this run fails.
+    void withReportPage(
+      (h) => h.publish(client.id),
+      (err) => app.log.error({ err, clientId: client.id }, "could not publish the new client's report page"),
+    );
+
     return reply.status(201).send({ ...client, reportSlug });
   });
 
@@ -212,6 +223,19 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         data: { deletedAt: now },
       }),
     ]);
+
+    // Offboarding takes their page off the public web with them. Their
+    // numbers should not outlive the relationship, and a page nothing in the
+    // app points at any more is exactly the kind of orphan that accumulates.
+    // Awaited, unlike the publish on create: leaving a client's report public
+    // after they have been removed is worth a couple of seconds.
+    if (client.reportSlug) {
+      const slug = client.reportSlug;
+      await withReportPage(
+        (h) => h.unpublish(slug),
+        (err) => app.log.error({ err, slug }, "could not remove the offboarded client's report page"),
+      );
+    }
     return { ok: true };
   });
 
