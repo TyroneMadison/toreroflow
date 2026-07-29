@@ -86,11 +86,15 @@ Consequences, all of them load-bearing:
 - **No em dashes, no en dashes, no arrows, ever.** They read as machine
   output. See the enforcement decision below.
 - **Design follows `Torerone_Portfolio_Canva.pptx.pdf`**, whose exact
-  palette was read out of the file: page `#0B0B10`, cards `#14141C` with
-  `#282834` borders, coral `#FF6F61` accent, cool grey body text
-  `#A6A6B4` / `#B9B9C6`. The portfolio sets headlines in Anton and body in
-  Montserrat; neither is installed and this prints offline, so Impact and
-  Segoe UI stand in. Embedding the real pair is a download away if wanted.
+  palette and typefaces were read out of the file: page `#0B0B10`, cards
+  `#14141C` with `#282834` borders, coral `#FF6F61` accent, cool grey body
+  text `#A6A6B4` / `#B9B9C6`, headlines in Anton and body in Montserrat.
+  Neither font is installed on the machine and the render has no network, so
+  both are embedded in the template as base64 data URIs. Originals and
+  licence notes live in `assets/fonts/`; both are SIL OFL 1.1, which permits
+  this. A linked or system font would have silently fallen back to something
+  that is not the brand, which is the failure mode worth paying 75KB to
+  avoid.
 - **One page.** Spacing is tuned so six steps and the header fit on a single
   Letter page, because a plan someone has to turn over is a plan they read
   half of.
