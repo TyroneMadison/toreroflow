@@ -5,6 +5,7 @@ import {
   appendWatchNext,
   captionFor,
   decodeEscapes,
+  INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
   youtubeTitleFor,
 } from "@toreroflow/core";
@@ -134,6 +135,24 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
 
     const youtubeCaption = appendWatchNext(youtubeBody, ytOptions?.relatedVideoUrl);
 
+    /*
+     * "Also share to my story" is a second Instagram post, not a setting on
+     * the reel: Instagram treats them as different things and gives a story
+     * none of the reel's options. So it becomes its own target, carrying the
+     * story flag, alongside the reel.
+     */
+    const igAccount = accounts.find((a) => a.platform === "instagram");
+    const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount);
+
+    if (wantsStory && asset.durationSec != null && asset.durationSec > INSTAGRAM_STORY_MAX_SECONDS) {
+      // Refused here rather than at publish, where it would fail hours later
+      // against a client's account with nobody watching.
+      return reply.status(400).send({
+        error: "too long for a story",
+        detail: `Instagram stories stop at ${INSTAGRAM_STORY_MAX_SECONDS} seconds and this video is ${Math.round(asset.durationSec)}. Schedule it without the story, or trim it first.`,
+      });
+    }
+
     const post = await prisma.post.create({
       data: {
         clientId: asset.clientId,
@@ -166,8 +185,27 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       include: { targets: true },
     });
 
+    // Queued alongside the rest below, not separately: a target with no job
+    // is a post that silently never happens.
+    const storyTarget = wantsStory
+      ? await prisma.postTarget.create({
+          data: {
+            postId: post.id,
+            socialAccountId: igAccount!.account!.id,
+            platform: "instagram",
+            // Instagram does not display a story's caption, so storing one
+            // here would suggest words that never appear.
+            caption: null,
+            hashtags: [],
+            scheduledAt,
+            status: "scheduled",
+            options: { instagram: { story: true } },
+          },
+        })
+      : null;
+
     const delay = Math.max(0, scheduledAt.getTime() - Date.now());
-    for (const target of post.targets) {
+    for (const target of [...post.targets, ...(storyTarget ? [storyTarget] : [])]) {
       // jobId = target id so a reschedule can replace the delayed job.
       await publishQueue.add(
         "publish",

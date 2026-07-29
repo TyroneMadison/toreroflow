@@ -13,6 +13,15 @@ export interface InstagramScheduleOptions {
   shareToFeed?: boolean;
   firstComment?: string;
   aiLabel?: boolean;
+  /**
+   * Publish this target to Stories rather than as a reel.
+   *
+   * A story is its own post, not a setting on the reel, so "also share this
+   * to my story" is a second Instagram target carrying this flag. Instagram
+   * gives stories none of the options below: no collaborators, no trial, no
+   * first comment, and the caption is not shown at all.
+   */
+  story?: boolean;
 }
 
 /**
@@ -63,6 +72,14 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   const out: BuiltPostExtras = {};
 
   if (input.platform === "instagram") {
+    // A story carries nothing else. Instagram does not show its caption and
+    // offers it none of the reel options, so sending them would be noise the
+    // provider has to reject rather than something the operator chose.
+    if (input.instagram?.story) {
+      out.platformSpecificData = { contentType: "story" };
+      return out;
+    }
+
     const psd: Record<string, unknown> = { contentType: "reels" };
     if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
     const ig = input.instagram;

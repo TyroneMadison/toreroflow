@@ -67,6 +67,8 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [igShareToFeed, setIgShareToFeed] = useState(true);
   const [igFirstComment, setIgFirstComment] = useState("");
   const [igAiLabel, setIgAiLabel] = useState(false);
+  /** A story is a second post, not a setting on the reel. */
+  const [igAlsoStory, setIgAlsoStory] = useState(false);
 
   // YouTube-only options, applied to this scheduling action.
   const [ytVisibility, setYtVisibility] = useState("");
@@ -122,6 +124,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     if (!igShareToFeed) body.shareToFeed = false;
     if (igFirstComment.trim()) body.firstComment = igFirstComment.trim();
     if (igAiLabel) body.aiLabel = true;
+    if (igAlsoStory) body.alsoStory = true;
     return Object.keys(body).length ? body : undefined;
   };
 
@@ -253,7 +256,20 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               >
                 AI label
               </span>
+              <span
+                className={`revtoggle${igAlsoStory ? " on" : ""}`}
+                title="Put this on the story as well, as a second post. Stories last 24 hours, show no caption, and must be 60 seconds or less."
+                onClick={() => setIgAlsoStory((v) => !v)}
+              >
+                Also to story
+              </span>
             </div>
+            {igAlsoStory && (
+              <p className="insworking" style={{ marginTop: 8 }}>
+                Goes up as its own post alongside the reel. Stories disappear after 24 hours,
+                do not show a caption, and Instagram refuses anything over 60 seconds.
+              </p>
+            )}
             <label className="flabel" style={{ marginTop: 12 }}>
               Collaborators
               <span className="hint">up to 3 public business or creator accounts</span>
