@@ -54,7 +54,12 @@ export const instagramOptionsSchema = z.object({
   shareToFeed: z.boolean().optional(),
   firstComment: z.string().max(2200).optional(),
   aiLabel: z.boolean().optional(),
+  /** Also put this video on the account's story, as a second post. */
+  alsoStory: z.boolean().optional(),
 });
+
+/** Instagram refuses stories longer than this. */
+export const INSTAGRAM_STORY_MAX_SECONDS = 60;
 
 export const youtubeOptionsSchema = z.object({
   visibility: z.enum(["public", "unlisted", "private"]).optional(),

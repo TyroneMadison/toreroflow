@@ -130,3 +130,59 @@ assert.deepEqual(
 );
 
 console.log("options builder: all checks passed");
+
+/*
+ * A story is its own post and carries none of the reel's settings.
+ *
+ * Instagram does not display a story's caption and rejects collaborators,
+ * trials and first comments on one. Sending them anyway would mean a target
+ * that looks configured on screen and is quietly stripped on the wire, so
+ * the story branch is deliberately bare.
+ */
+{
+  const story = buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: "https://example.com/cover.jpg",
+    instagram: {
+      story: true,
+      trial: true,
+      collaborators: ["someone"],
+      firstComment: "first!",
+      shareToFeed: true,
+      audioName: "some audio",
+      aiLabel: true,
+    },
+  });
+  assert.deepEqual(
+    story.platformSpecificData,
+    { contentType: "story" },
+    "a story must carry contentType only",
+  );
+  assert.equal(story.mediaThumbnail, undefined, "stories take no thumbnail");
+}
+
+/* Without the flag, Instagram is still a reel with all its options intact. */
+{
+  const reel = buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    instagram: { collaborators: ["a"], firstComment: "hi" },
+  });
+  const psd = reel.platformSpecificData as Record<string, unknown>;
+  assert.equal(psd.contentType, "reels");
+  assert.deepEqual(psd.collaborators, ["a"]);
+  assert.equal(psd.firstComment, "hi");
+}
+
+/* story: false is the same as not asking for one. */
+{
+  const reel = buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    instagram: { story: false, firstComment: "hi" },
+  });
+  assert.equal((reel.platformSpecificData as Record<string, unknown>).contentType, "reels");
+}
