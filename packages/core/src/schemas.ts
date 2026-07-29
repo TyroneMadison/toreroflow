@@ -67,7 +67,18 @@ export const youtubeOptionsSchema = z.object({
 });
 
 export const schedulePostSchema = z.object({
-  platforms: z.array(platformSchema).min(1),
+  /**
+   * Exactly the platforms chosen, each once.
+   *
+   * One target is created per entry, so a repeated platform would publish the
+   * same video to that account twice. The checkboxes cannot produce it, but a
+   * request can, and a double post on a client's channel is not recoverable
+   * by deleting a row here.
+   */
+  platforms: z
+    .array(platformSchema)
+    .min(1)
+    .transform((list) => [...new Set(list)]),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),

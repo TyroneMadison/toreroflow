@@ -69,7 +69,6 @@ async function askForSuggestions(
         capturedAt: Date;
       }>;
     }>;
-    workflows: unknown[];
   },
 ): Promise<InsightSuggestion[]> {
   const accountSummary = client.socialAccounts.length
@@ -172,7 +171,6 @@ export async function generateInsight(clientId: string): Promise<void> {
           where: { deletedAt: null },
           include: { metricSnapshots: { orderBy: { capturedAt: "desc" }, take: 14 } },
         },
-        workflows: true,
       },
     });
     if (!client) {
