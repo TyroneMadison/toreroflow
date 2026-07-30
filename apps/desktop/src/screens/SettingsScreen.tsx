@@ -275,6 +275,24 @@ function ProfileCard({
           <button className="btn pexp" onClick={() => setOpen((o) => !o)}>
             {open ? "Collapse" : "Expand"}
           </button>
+          {/*
+            Checking whether they have connected yet is the thing done most
+            often while waiting on a client, so it sits on the card rather than
+            inside the expanded view.
+          */}
+          <div
+            className="iconbtn pstyle"
+            title={
+              busyKey === `sync:${client.id}`
+                ? "Checking"
+                : `Check whether ${client.name} has connected any accounts`
+            }
+            onClick={onSync}
+          >
+            <svg>
+              <use href="#i-refresh" />
+            </svg>
+          </div>
           <div
             className="iconbtn pstyle"
             title={
@@ -427,6 +445,42 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       }
       await refreshClients();
     })();
+  }, [clients, refreshClients]);
+
+  /*
+   * Coming back to the window re-checks every brand.
+   *
+   * The latch above only fires once per visit, so a client who connects their
+   * account while this screen is open would not appear until it was left and
+   * reopened. Waiting on someone to tap a link is exactly when this screen is
+   * sat on, so returning to the window is the moment to look again.
+   *
+   * Single-flight: two interleaved syncs can duplicate account rows server
+   * side. A ref, not state, because the listener would close over a stale one.
+   */
+  const focusSyncing = useRef(false);
+  useEffect(() => {
+    const onFocus = () => {
+      if (focusSyncing.current || !clients.length) return;
+      focusSyncing.current = true;
+      void (async () => {
+        try {
+          for (const c of clients) {
+            try {
+              await api.post(`/clients/${c.id}/accounts/sync`, {});
+            } catch {
+              // A provider outage must not stop the rest, and the button is
+              // still there. Silent on purpose: nobody asked for this one.
+            }
+          }
+          await refreshClients();
+        } finally {
+          focusSyncing.current = false;
+        }
+      })();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [clients, refreshClients]);
 
   const toggleAutostart = async () => {
