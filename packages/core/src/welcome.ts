@@ -7,16 +7,22 @@ import { normalizeHandle } from "./research";
  * that arrives as a form submission. This file is the part that decides what
  * of it reaches the database.
  *
- * The rule running through it: a reply may fill a blank, and may correct a
- * field the client themselves filled in earlier, but must never blank
- * something out. A form left half finished is the normal case, not the
- * exception, and a client who skips the phone box should not wipe the number
- * that was already on file.
+ * The rule running through it: an answer wins, a blank changes nothing.
+ *
+ * The client is the authority on their own name, number and handles, so what
+ * they write replaces what is on file even where something is already there.
+ * That is the point of sending the link to a brand that already exists: they
+ * correct what is wrong and add what is missing.
+ *
+ * A box they left empty is not an answer and never clears anything. Nothing on
+ * the form is required, so a half finished reply is the normal case, and a
+ * client who skips the phone box must not wipe the number already stored.
  */
 
 /** The exact field names on the welcome form. Changing one changes the form. */
 export const WELCOME_FIELDS = {
   token: "client-token",
+  businessName: "business-name",
   contactName: "contact-name",
   contactEmail: "email",
   contactPhone: "phone",
@@ -36,6 +42,8 @@ export interface WelcomeReply {
 }
 
 export interface ClientPatch {
+  /** The brand's own name. Theirs to correct, so it can rename the client. */
+  name?: string;
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
@@ -83,6 +91,8 @@ export function handleFrom(input: unknown): string | null {
 export function readWelcomeReply(reply: WelcomeReply): AppliedWelcome {
   const d = reply.data ?? {};
   const patch: ClientPatch = {};
+  const business = text(d[WELCOME_FIELDS.businessName]);
+  if (business) patch.name = business;
   const name = text(d[WELCOME_FIELDS.contactName]);
   const email = text(d[WELCOME_FIELDS.contactEmail]);
   const phone = text(d[WELCOME_FIELDS.contactPhone]);
@@ -105,18 +115,37 @@ export function readWelcomeReply(reply: WelcomeReply): AppliedWelcome {
 }
 
 /**
- * What to actually write, given what is already on file.
+ * What to actually write.
  *
- * Only fills blanks. A client correcting a detail they gave earlier is a real
- * case, but it is not one this can tell apart from a stale autofill, so the
- * value already stored wins and the reply is kept for the operator to read.
+ * Every answer they gave, and nothing else. An earlier version of this only
+ * filled blanks and let a stored value win, which meant a client correcting
+ * their own phone number changed nothing. They are the authority on their own
+ * details, so an answer replaces what is there.
+ *
+ * A blank is not an answer: `readWelcomeReply` has already dropped empty boxes,
+ * so nothing here can produce an empty string to write over something real.
  */
-export function fieldsToFill(patch: ClientPatch, current: ClientPatch): ClientPatch {
+export function fieldsToUpdate(patch: ClientPatch): ClientPatch {
   const out: ClientPatch = {};
-  for (const key of ["contactName", "contactEmail", "contactPhone"] as const) {
-    const incoming = patch[key];
-    const existing = current[key];
-    if (incoming && !existing?.trim()) out[key] = incoming;
+  for (const key of ["name", "contactName", "contactEmail", "contactPhone"] as const) {
+    const value = patch[key];
+    if (value && value.trim()) out[key] = value.trim();
   }
+  return out;
+}
+
+/**
+ * Their handles, merged over whatever was recorded before.
+ *
+ * A platform they left blank keeps whatever was already known, so filling in
+ * only the missing YouTube box does not erase the Instagram handle from last
+ * time.
+ */
+export function mergeHandles(
+  stored: Record<string, string> | null | undefined,
+  incoming: WelcomeHandle[],
+): Record<string, string> {
+  const out: Record<string, string> = { ...(stored ?? {}) };
+  for (const h of incoming) out[h.platform] = h.handle;
   return out;
 }

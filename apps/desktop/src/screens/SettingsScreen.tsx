@@ -326,6 +326,25 @@ function ProfileCard({
 
       <div className="pexpand">
         <div className="pexpand-inner">
+          {/*
+            What they said their own accounts are, from their welcome form.
+            Shown apart from the connected platforms above because these cannot
+            post: this is how a platform nobody had yet becomes known, and the
+            connect tap is what makes it postable.
+          */}
+          {client.handles && Object.keys(client.handles).length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <span className="lab">Handles they gave</span>
+              <div className="pplat" style={{ gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                {Object.entries(client.handles).map(([platform, handle]) => (
+                  <span key={platform} style={{ fontSize: 11.5, color: "var(--txt-3)" }}>
+                    {platform}: <b style={{ color: "var(--txt-2)" }}>@{handle}</b>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <ContactFields client={client} onSaved={onContactSaved} />
           <BillingFields client={client} onSaved={onContactSaved} />
 

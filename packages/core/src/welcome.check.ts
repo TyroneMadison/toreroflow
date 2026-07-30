@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
-import { fieldsToFill, handleFrom, readWelcomeReply, WELCOME_FIELDS } from "./welcome";
+import {
+  fieldsToUpdate,
+  handleFrom,
+  mergeHandles,
+  readWelcomeReply,
+  WELCOME_FIELDS,
+} from "./welcome";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/core test`.
  *
- * The property being defended is that a client's own reply can fill a blank
- * and can never empty something. A half finished form is the normal case, and
- * a client who skips the phone box must not wipe the number already on file.
+ * Two properties. An answer wins, because the client is the authority on their
+ * own details and the whole point of sending the link to an existing brand is
+ * that they correct what is wrong. And a blank changes nothing, because no
+ * field is required, so a half finished reply is the normal case and a skipped
+ * phone box must not wipe the number already on file.
  */
 
 /* ---- handles, however they were typed ---- */
@@ -40,6 +48,7 @@ assert.equal(
     createdAt: "2026-07-30T12:00:00Z",
     data: {
       [WELCOME_FIELDS.token]: "tok_abc",
+      [WELCOME_FIELDS.businessName]: "  Reyes Auto Group ",
       [WELCOME_FIELDS.contactName]: "  Caleb Concepcion ",
       [WELCOME_FIELDS.contactEmail]: "caleb@example.com",
       [WELCOME_FIELDS.contactPhone]: "   ",
@@ -51,6 +60,7 @@ assert.equal(
   });
 
   assert.equal(reply.token, "tok_abc");
+  assert.equal(reply.patch.name, "Reyes Auto Group", "the brand renames itself");
   assert.equal(reply.patch.contactName, "Caleb Concepcion", "trimmed");
   assert.equal(reply.patch.contactEmail, "caleb@example.com");
   assert.equal("contactPhone" in reply.patch, false, "a blank box is not an answer");
@@ -85,42 +95,67 @@ assert.equal(
 /* ---- what actually gets written ---- */
 
 {
-  // A blank on file gets filled.
-  const fill = fieldsToFill(
-    { contactName: "Caleb", contactEmail: "caleb@example.com" },
-    { contactName: undefined, contactEmail: "" },
-  );
-  assert.deepEqual(fill, { contactName: "Caleb", contactEmail: "caleb@example.com" });
-}
-{
-  // Something already on file is never overwritten, and never emptied.
-  const fill = fieldsToFill(
-    { contactName: "New Name" },
-    { contactName: "Existing Name", contactPhone: "+1 555 0100" },
-  );
-  assert.deepEqual(fill, {}, "a stored value wins over a reply");
-}
-{
-  // A reply that says nothing about a field leaves it exactly as it was.
-  const fill = fieldsToFill({}, { contactName: "Existing", contactPhone: "+1 555 0100" });
-  assert.deepEqual(fill, {});
-}
-{
-  // Whitespace on file counts as blank, so a form can still fill it.
-  const fill = fieldsToFill({ contactPhone: "+1 555 0111" }, { contactPhone: "   " });
-  assert.deepEqual(fill, { contactPhone: "+1 555 0111" });
+  // Everything they answered, whatever was there before. An earlier version of
+  // this only filled blanks, which meant a client correcting their own phone
+  // number changed nothing at all.
+  const update = fieldsToUpdate({
+    name: "Reyes Auto Group",
+    contactName: "Dana Reyes",
+    contactEmail: "dana@example.com",
+  });
+  assert.deepEqual(update, {
+    name: "Reyes Auto Group",
+    contactName: "Dana Reyes",
+    contactEmail: "dana@example.com",
+  });
 }
 
-/* Nothing in this file can ever produce an empty string to write. */
+{
+  // A blank is not an answer and clears nothing: readWelcomeReply has already
+  // dropped empty boxes, and anything whitespace-only is dropped here too.
+  assert.deepEqual(fieldsToUpdate({}), {});
+  assert.deepEqual(fieldsToUpdate({ contactPhone: "   " }), {});
+  assert.deepEqual(fieldsToUpdate({ contactName: "  Dana  " }), { contactName: "Dana" });
+}
+
+/* Nothing here can ever produce an empty string to write over something real. */
 for (const patch of [
-  { contactName: "x" },
-  { contactEmail: "y" },
-  { contactPhone: "z" },
+  { name: "x" },
+  { contactName: " y " },
+  { contactEmail: "z" },
+  { contactPhone: "" },
   {},
 ]) {
-  for (const value of Object.values(fieldsToFill(patch, {}))) {
+  for (const value of Object.values(fieldsToUpdate(patch))) {
     assert.equal(value.length > 0, true, "a written value is never empty");
   }
+}
+
+/* ---- handles ---- */
+
+{
+  // Filling in only the missing YouTube box must not erase the rest.
+  const merged = mergeHandles({ instagram: "cacvmotors", tiktok: "cacvmotors" }, [
+    { platform: "youtube", handle: "realcaleb" },
+  ]);
+  assert.deepEqual(merged, {
+    instagram: "cacvmotors",
+    tiktok: "cacvmotors",
+    youtube: "realcaleb",
+  });
+}
+{
+  // A handle they corrected replaces the old one.
+  const merged = mergeHandles({ instagram: "old_handle" }, [
+    { platform: "instagram", handle: "new_handle" },
+  ]);
+  assert.deepEqual(merged, { instagram: "new_handle" });
+}
+{
+  // Nothing stored yet, and nothing given, are both fine.
+  assert.deepEqual(mergeHandles(null, [{ platform: "tiktok", handle: "a" }]), { tiktok: "a" });
+  assert.deepEqual(mergeHandles({ tiktok: "a" }, []), { tiktok: "a" });
+  assert.deepEqual(mergeHandles(null, []), {});
 }
 
 console.log("welcome: all checks passed");
