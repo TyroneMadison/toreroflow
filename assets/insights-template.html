@@ -69,6 +69,37 @@
   .step p { margin: 0; color: #B9B9C6; font-size: 9.5pt; }
   .empty { color: #9A9AA8; }
 
+  /* What the accounts they want to be like are doing. Starts a fresh page:
+     the steps are the thing to act on and should not be pushed around by how
+     many accounts happen to have been researched. */
+  .rival-sec { break-before: page; page-break-before: always; padding-top: 4px; }
+  h2.sec {
+    font-family: "Anton", Impact, sans-serif;
+    font-size: 22pt; line-height: 1; letter-spacing: 0.4px;
+    text-transform: uppercase; margin: 0; color: #FFFFFF;
+  }
+  h2.sec .accent { color: #FF6F61; }
+  .note {
+    background: #14141C; border: 1px solid #282834; border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 8px; color: #B9B9C6; font-size: 9.5pt;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .rival {
+    background: #14141C; border: 1px solid #282834; border-radius: 10px;
+    padding: 11px 15px; margin-bottom: 8px;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .rival .who { font-size: 11pt; font-weight: 700; color: #FFFFFF; margin: 0 0 6px; }
+  .rival .who .on { font-size: 7.5pt; font-weight: 700; letter-spacing: 1.6px;
+    text-transform: uppercase; color: #FF8160; margin-left: 7px; }
+  .rival .facts { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0 0 6px; }
+  .rival .fact {
+    border: 1px solid #282834; border-radius: 7px; padding: 4px 8px;
+    font-size: 8.5pt; color: #B9B9C6;
+  }
+  .rival .fact b { color: #FFFFFF; font-weight: 700; }
+  .rival .quote { margin: 0; color: #9A9AA8; font-size: 9pt; font-style: italic; }
+
   footer {
     margin-top: 18px; padding-top: 11px; border-top: 1px solid #282834;
     display: flex; justify-content: space-between; align-items: baseline;
@@ -89,6 +120,14 @@
 
   <main id="steps"></main>
 
+  <section class="rival-sec" id="rivals" style="display:none">
+    <p class="eyebrow">The accounts you want to be like</p>
+    <h2 class="sec">What is working <span class="accent">for them</span></h2>
+    <div class="rule"></div>
+    <div id="rivalnotes"></div>
+    <div id="rivallist"></div>
+  </section>
+
   <footer>
     <!--
       The signature line, where the registered company belongs. The display
@@ -107,6 +146,66 @@
     });
   }
 
+  function group(n) {
+    return Number(n).toLocaleString("en-US");
+  }
+
+  /* Rounded for reading: a client cannot act on 21.3 posts a week. Under one
+     a week keeps its decimal, because "about 0 posts a week" says nothing. */
+  function rate(n) {
+    return n >= 1 ? String(Math.round(n)) : String(n);
+  }
+
+  function renderRivals(notes, rivals) {
+    var host = document.getElementById("rivals");
+    if (!notes.length && !rivals.length) return;
+    host.style.display = "block";
+
+    document.getElementById("rivalnotes").innerHTML = notes
+      .map(function (n) {
+        return '<p class="note">' + esc(n) + "</p>";
+      })
+      .join("");
+
+    document.getElementById("rivallist").innerHTML = rivals
+      .map(function (r) {
+        /* Only facts that were actually measured. A carousel has no play
+           count and a fresh account has no cadence, and an empty box reading
+           "0 views" would be read as a real number. */
+        var facts = [];
+        if (r.typicalViews != null)
+          facts.push("Typical video <b>" + group(r.typicalViews) + " views</b>");
+        if (r.bestViews != null) facts.push("Best video <b>" + group(r.bestViews) + " views</b>");
+        if (r.typicalSeconds != null)
+          facts.push("Usually <b>" + r.typicalSeconds + " seconds</b> long");
+        if (r.postsPerWeek != null)
+          facts.push("About <b>" + rate(r.postsPerWeek) + " posts a week</b>");
+
+        return (
+          '<section class="rival">' +
+          '<p class="who">@' +
+          esc(r.handle) +
+          '<span class="on">' +
+          esc(r.platform) +
+          "</span></p>" +
+          (facts.length
+            ? '<div class="facts">' +
+              facts
+                .map(function (f) {
+                  return '<span class="fact">' + f + "</span>";
+                })
+                .join("") +
+              "</div>"
+            : "") +
+          (r.bestOpening
+            ? '<p class="quote">Their best video opens with: "' + esc(r.bestOpening) + '"</p>'
+            : "") +
+          "</section>"
+        );
+      })
+      .join("");
+  }
+
   function render(data) {
     var brand = (data && data.clientName) || "";
     document.title = brand ? brand + " - your game plan" : "Your game plan";
@@ -115,6 +214,11 @@
       : "Here is what to work on next. Take them in order.";
     document.getElementById("when").textContent = (data && data.generatedLabel) || "";
     document.getElementById("mark").textContent = (data && data.businessName) || "TORERONE";
+
+    renderRivals(
+      (data && data.competitorNotes) || [],
+      (data && data.competitors) || [],
+    );
 
     var list = (data && data.suggestions) || [];
     var host = document.getElementById("steps");
