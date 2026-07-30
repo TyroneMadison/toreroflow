@@ -5,18 +5,25 @@ const POLL_INTERVAL_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 3_000;
 
 /**
- * Small glass pill showing connectivity to the Toreroflow API.
- * Polls GET {API_URL}/health every 15s; green when {status:"ok"}, red otherwise.
- * (Intentional addition on top of the design prototype.)
+ * Small glass pill showing whether the stack behind the app is working.
+ *
+ * Two separate things, because they fail apart. The API answering is what
+ * makes the screens load. The worker is what transcodes an upload, publishes
+ * a scheduled post and pulls analytics, and when it is not running the app
+ * still accepts an upload that then never finishes. That happened, and the
+ * only symptom anywhere was a card stuck on "Queued for processing", so a
+ * dead worker now says so here.
  */
 export default function ApiStatus() {
   const [online, setOnline] = useState(false);
+  const [workerUp, setWorkerUp] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     async function check() {
       let ok = false;
+      let worker = true;
       try {
         const res = await fetch(`${API_URL}/health`, {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -27,11 +34,16 @@ export default function ApiStatus() {
             typeof data === "object" &&
             data !== null &&
             (data as { status?: unknown }).status === "ok";
+          // An older API that does not report it is not a dead worker.
+          worker = (data as { worker?: unknown })?.worker !== "down";
         }
       } catch {
         ok = false;
       }
-      if (!cancelled) setOnline(ok);
+      if (!cancelled) {
+        setOnline(ok);
+        setWorkerUp(worker);
+      }
     }
 
     void check();
@@ -42,10 +54,17 @@ export default function ApiStatus() {
     };
   }, []);
 
-  const color = online ? "var(--green)" : "var(--red)";
+  // Amber, not red: the app works, but nothing is being processed behind it.
+  const color = !online ? "var(--red)" : workerUp ? "var(--green)" : "var(--amber)";
+  const label = !online ? "API offline" : workerUp ? "API online" : "Worker offline";
   return (
     <div
       className="glass-sm"
+      title={
+        online && !workerUp
+          ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
+          : undefined
+      }
       style={{
         display: "flex",
         alignItems: "center",
@@ -66,7 +85,7 @@ export default function ApiStatus() {
           flex: "0 0 auto",
         }}
       />
-      {online ? "API online" : "API offline"}
+      {label}
     </div>
   );
 }

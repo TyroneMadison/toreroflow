@@ -26,6 +26,14 @@ export interface HealthResponse {
   service: "toreroflow-api";
   version: string;
   time: string;
+  /**
+   * Whether the background worker is alive.
+   *
+   * The API answering says nothing about the process that transcodes video,
+   * publishes posts and pulls analytics. When that is down, uploads are still
+   * accepted and simply never finish, so the app has to be able to say so.
+   */
+  worker: "up" | "down";
 }
 
 export interface AuthUser {

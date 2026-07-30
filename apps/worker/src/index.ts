@@ -717,6 +717,26 @@ void (async () => {
   await refreshYouTubeCatalogues();
 })();
 
+/*
+ * A heartbeat, so the app can say when this process is not running.
+ *
+ * Without it a dead worker is invisible: an upload is accepted, its job goes
+ * on the queue, and the card sits at "Queued for processing" forever with
+ * nothing anywhere saying why. That is exactly what happened, and the videos
+ * looked like the broken thing when the worker was the broken thing.
+ *
+ * A key with a TTL rather than a flag, because a worker that is killed cannot
+ * clear a flag on the way out, and a stale "running" is worse than no signal.
+ */
+const HEARTBEAT_KEY = "toreroflow:worker:alive";
+const HEARTBEAT_SECONDS = 30;
+
+const beat = () => {
+  void connection.set(HEARTBEAT_KEY, String(Date.now()), "EX", HEARTBEAT_SECONDS * 3);
+};
+beat();
+setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();
+
 console.log(
   `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );
