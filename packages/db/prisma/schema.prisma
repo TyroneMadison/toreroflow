@@ -79,6 +79,9 @@ model Agency {
   /// Stamped onto the year-end export. A CPA needs these, not just totals.
   legalName        String?
   ein              String?
+  /// Free text, printed on invoices and the year-end export. A registered
+  /// company's documents carry an address; a person's spreadsheet does not.
+  businessAddress  String?
   /// NAICS principal business activity code.
   businessCode     String?
   /// cash or accrual. Decides whether unpaid revenue appears in the export.

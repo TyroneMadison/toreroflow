@@ -11,4 +11,5 @@ export * from "./insightStatus";
 export * from "./plainText";
 export * from "./research";
 export * from "./banking";
+export * from "./business";
 export * as tokens from "./tokens";
