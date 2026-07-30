@@ -90,7 +90,12 @@
   <main id="steps"></main>
 
   <footer>
-    <span class="mark">TORERONE</span>
+    <!--
+      The signature line, where the registered company belongs. The display
+      mark at the top of the page stays the brand: it is set in Anton at 19pt
+      and is a logo, not a legal statement.
+    -->
+    <span class="mark" id="mark">TORERONE</span>
     <span id="when"></span>
   </footer>
 </div>
@@ -109,6 +114,7 @@
       ? "Here is what to work on next, " + brand + ". Take them in order."
       : "Here is what to work on next. Take them in order.";
     document.getElementById("when").textContent = (data && data.generatedLabel) || "";
+    document.getElementById("mark").textContent = (data && data.businessName) || "TORERONE";
 
     var list = (data && data.suggestions) || [];
     var host = document.getElementById("steps");

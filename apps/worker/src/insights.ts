@@ -178,6 +178,15 @@ export async function generateInsight(clientId: string): Promise<void> {
       return;
     }
 
+    // The registered company signs the page where there is one. This is a
+    // document handed to a paying client, so it names the entity, not just
+    // the brand.
+    const agency = await prisma.agency.findUnique({
+      where: { id: client.agencyId },
+      select: { name: true, legalName: true },
+    });
+    const businessName = agency?.legalName ?? agency?.name ?? "Torerone";
+
     const suggestions = await askForSuggestions(anthropic, client);
 
     const now = new Date();
@@ -192,6 +201,7 @@ export async function generateInsight(clientId: string): Promise<void> {
     const template = await fs.readFile(templatePath, "utf8");
     const pdf = await renderReportPdf(template, {
       clientName: client.name,
+      businessName,
       generatedLabel,
       suggestions,
     });

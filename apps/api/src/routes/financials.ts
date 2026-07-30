@@ -416,7 +416,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         }),
         prisma.agency.findUnique({
           where: { id: agencyId },
-          select: { name: true, legalName: true, ein: true },
+          select: { name: true, legalName: true, ein: true, businessAddress: true },
         }),
       ]);
       if (!client || !agency) return reply.status(404).send(NOT_FOUND);
@@ -475,7 +475,11 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         number,
         issuedAt: invoice.issuedAt.toISOString(),
         periodLabel: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-        business: { legalName: agency.legalName ?? agency.name, ein: agency.ein },
+        business: {
+          legalName: agency.legalName ?? agency.name,
+          ein: agency.ein,
+          address: agency.businessAddress,
+        },
         client: {
           name: client.name,
           contactName: client.contactName,
@@ -518,6 +522,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
           name: true,
           legalName: true,
           ein: true,
+          businessAddress: true,
           businessCode: true,
           accountingMethod: true,
         },
@@ -554,6 +559,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         business: {
           legalName: agency.legalName ?? agency.name,
           ein: agency.ein,
+          address: agency.businessAddress,
           businessCode: agency.businessCode,
           accountingMethod: cashBasis ? "Cash" : "Accrual",
         },

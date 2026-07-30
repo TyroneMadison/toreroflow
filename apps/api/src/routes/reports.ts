@@ -101,6 +101,14 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!client) return null;
 
+    // The registered company where there is one: a report a client keeps
+    // should name the entity they are paying, not just the brand.
+    const agency = await prisma.agency.findUnique({
+      where: { id: client.agencyId },
+      select: { name: true, legalName: true },
+    });
+    const businessName = agency?.legalName ?? agency?.name ?? "Torerone";
+
     const accounts: ReportAccount[] = client.socialAccounts.map((a) => ({
       platform: a.platform,
       handle: a.handle,
@@ -131,7 +139,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       thumbnailUrl: p.thumbnailUrl,
     }));
 
-    return { client, accounts, posts };
+    return { client, accounts, posts, businessName };
   };
 
   /** Build, render, and store a report for one month. */
@@ -141,6 +149,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
 
     const data = buildReportData({
       clientName: inputs.client.name,
+      businessName: inputs.businessName,
       accounts: inputs.accounts,
       posts: inputs.posts,
       periodStart: period.start,
@@ -201,6 +210,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         key: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`,
         data: buildReportData({
           clientName: inputs.client.name,
+          businessName: inputs.businessName,
           accounts: inputs.accounts,
           posts: inputs.posts,
           periodStart: start,
