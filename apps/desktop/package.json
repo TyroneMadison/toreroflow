@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/lib/viewTiers.check.ts && tsx src/lib/financials.check.ts && tsx src/lib/queue.check.ts && tsx src/lib/postStatus.check.ts"
+    "test": "tsx src/lib/viewTiers.check.ts && tsx src/lib/financials.check.ts && tsx src/lib/queue.check.ts && tsx src/lib/motion.check.ts && tsx src/lib/postStatus.check.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.4.0",

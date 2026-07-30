@@ -358,8 +358,12 @@
   .livedot{width:7px;height:7px;border-radius:50%;display:inline-block;position:relative}
   .livedot.on{background:var(--green);animation:livepulse 2.1s ease-in-out infinite}
   .livedot.off{background:var(--red);animation:livepulse 2.1s ease-in-out infinite;animation-delay:.4s}
+  /* Opacity only. This ran forever on every publishing and failed dot on the
+     calendar, and carried a box-shadow of 0 0 0 0 at both ends: invisible, but
+     still a shadow the browser had to consider on every frame of an animation
+     that never stops. */
   @keyframes livepulse{
-    0%,100%{box-shadow:0 0 0 0 currentColor;opacity:.55}
+    0%,100%{opacity:.55}
     50%{opacity:1}
   }
   .livedot.on{color:rgba(87,214,160,.55)}
@@ -707,7 +711,7 @@
 .rrow .t{flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rrow .v{font-size:12px;font-weight:700;color:var(--b)}
 
-.pcard{position:relative;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:0;transition:transform .35s cubic-bezier(.2,.7,.2,1),box-shadow .35s}
+.pcard{position:relative;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:0;transition:transform .35s cubic-bezier(.2,.7,.2,1)}
 .pcard:hover{transform:translateY(-3px)}
 .pmedia{border-radius:18px;overflow:hidden;aspect-ratio:1/0.9;position:relative;z-index:2;transition:aspect-ratio .5s cubic-bezier(.2,.7,.2,1),opacity .4s}
 .pmedia img{width:100%;height:100%;object-fit:cover;display:block}
@@ -1021,3 +1025,74 @@
 /* The YouTube panel: the blueprint's second card, folded into the row it
    belongs to so the video stays one object on screen. */
 .ytpanel{margin-top:14px;padding:14px;border-radius:14px;background:var(--glass-2);border:1px solid var(--brd-soft)}
+
+/* ============================================================
+   Motion
+   ============================================================
+
+   The rule this whole section follows: animate only `transform` and
+   `opacity`. Those two are handled by the compositor, so a frame costs no
+   layout and no repaint. Anything else (width, height, margin, top, filter,
+   box-shadow) makes the browser redo work on every frame of every animation,
+   which is what turns "nice motion" into a warm laptop.
+
+   The second rule is about this app in particular. Almost every card is
+   `.glass`, which carries a 38px backdrop-filter, and moving a backdrop
+   filtered element forces its blur to be recomputed each frame. So the motion
+   here is deliberately lopsided: big glass surfaces get one short entrance and
+   then hold still, while the small flat things nobody blurs (rows, buttons,
+   pills, toggles) are where the interaction lives.
+
+   Everything below is disabled in one place at the bottom for anyone who has
+   asked their system to reduce motion. */
+
+:root{
+  --dur-tap:.13s;    /* presses, toggles: has to feel instant */
+  --dur-hover:.2s;   /* hovers and small reveals */
+  --dur-enter:.34s;  /* things arriving on screen */
+  --ease-out:cubic-bezier(.2,.7,.2,1);
+  --ease-soft:cubic-bezier(.33,.9,.4,1);
+}
+
+/* Rows arriving in a list, one just after another.
+   The stagger stops at the sixth row on purpose: past that the delays stop
+   reading as a sequence and start reading as a wait, and a hundred row list
+   would otherwise animate a hundred elements. Everything beyond simply
+   arrives with the sixth. */
+.stagger>*{animation:rowin var(--dur-enter) var(--ease-out) both}
+.stagger>*:nth-child(1){animation-delay:0ms}
+.stagger>*:nth-child(2){animation-delay:35ms}
+.stagger>*:nth-child(3){animation-delay:70ms}
+.stagger>*:nth-child(4){animation-delay:105ms}
+.stagger>*:nth-child(5){animation-delay:140ms}
+.stagger>*:nth-child(n+6){animation-delay:175ms}
+@keyframes rowin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* Press feedback. Cheap, and the one piece of motion that makes an app feel
+   answerable rather than decorative. */
+.btn,.cbtn,.dangerbtn{transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.btn:active,.cbtn:active,.dangerbtn:active{transform:scale(.97)}
+.btn:disabled,.cbtn:disabled,.dangerbtn:disabled{transform:none}
+
+/* Rows lift very slightly under the pointer. Transform only: the background
+   and border stay exactly as they are, so nothing repaints. */
+.best,.rrow{transition:transform var(--dur-hover) var(--ease-soft)}
+.best:hover,.rrow:hover{transform:translateX(2px)}
+
+/* A brand card lifts on hover and nothing else. It used to carry a
+   `box-shadow .35s` transition as well, but no rule ever changed its shadow, so
+   that was a per-frame property the browser watched for an effect that did not
+   exist. The card clips its overflow, so a shadow drawn on a pseudo element
+   here would be clipped away too: the lift is the whole interaction. */
+
+/* One place to turn all of it off. Entrances collapse to their finished state
+   rather than disappearing, so nothing is left invisible. */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+    scroll-behavior:auto !important;
+  }
+  .stagger>*{animation-delay:0ms !important;opacity:1;transform:none}
+}

@@ -206,7 +206,7 @@ export default function BankSection() {
       )}
 
       {flow && flow.totals.counted > 0 && (
-        <div className="kpis" style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 14 }}>
+        <div className="kpis stagger" style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 14 }}>
           <div className="kpi glass-sm">
             <div className="lab">Money in</div>
             <div className="val">{money(flow.totals.inCents)}</div>
