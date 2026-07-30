@@ -106,6 +106,34 @@ export interface AgencyBusiness {
   businessAddress: string | null;
   businessCode: string | null;
   accountingMethod: string | null;
+  taxState: string | null;
+  filingStatus: string | null;
+  otherIncomeCents: number | null;
+  stateTaxRatePct: number | null;
+}
+
+/** What to set aside for tax on this year's profit. An estimate, not advice. */
+export interface TaxEstimateView {
+  year: number;
+  ratesYear: number;
+  basis: "cash" | "accrual";
+  receiptsCents: number;
+  deductibleCents: number;
+  netProfitCents: number;
+  selfEmploymentCents: number;
+  federalIncomeCents: number;
+  stateIncomeCents: number;
+  totalCents: number;
+  effectiveRatePct: number;
+  quarterlyCents: number;
+  halfSelfEmploymentCents: number;
+  qbiDeductionCents: number;
+  taxableIncomeCents: number;
+  state: string;
+  stateRatePct: number;
+  stateRateExact: boolean;
+  stateName: string | null;
+  stateChosen: boolean;
 }
 
 export interface ClientSummary {

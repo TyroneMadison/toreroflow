@@ -18,6 +18,12 @@ export async function agencyRoutes(app: FastifyInstance): Promise<void> {
 
   app.addHook("onRequest", requireAuth);
 
+  /*
+   * Everything the Settings and tax screens can write, so what they read back
+   * is the whole stored truth. A field missing here reads as null on the
+   * screen no matter what the database holds, which looks exactly like a save
+   * that silently failed.
+   */
   const shape = {
     id: true,
     name: true,
@@ -26,6 +32,10 @@ export async function agencyRoutes(app: FastifyInstance): Promise<void> {
     businessAddress: true,
     businessCode: true,
     accountingMethod: true,
+    taxState: true,
+    filingStatus: true,
+    otherIncomeCents: true,
+    stateTaxRatePct: true,
   } as const;
 
   app.get("/agency", async (request, reply) => {

@@ -49,7 +49,7 @@ export const businessSchema = z.object({
     .transform((s) => (s.length ? s : null))
     .nullable()
     .refine((s) => s === null || normalizeEin(s) !== null, {
-      message: "An EIN is nine digits, written 12-3456789.",
+      message: "An EIN is 9 digits, written 12-3456789.",
     })
     .transform((s) => (s === null ? null : normalizeEin(s)))
     .optional(),
@@ -63,10 +63,33 @@ export const businessSchema = z.object({
     .transform((s) => (s.length ? s : null))
     .nullable()
     .refine((s) => s === null || /^\d{6}$/.test(s), {
-      message: "A business activity code is six digits.",
+      message: "A business activity code is 6 digits.",
     })
     .optional(),
   accountingMethod: z.enum(["cash", "accrual"]).optional(),
+
+  /* ---- what the tax estimate needs ---- */
+
+  /** Two letter state. Blank means no state tax is applied at all. */
+  taxState: z
+    .string()
+    .max(2)
+    .transform((s) => s.trim().toUpperCase())
+    .transform((s) => (s.length ? s : null))
+    .nullable()
+    .refine((s) => s === null || /^[A-Z]{2}$/.test(s), { message: "Pick a state." })
+    .optional(),
+  filingStatus: z.enum(["single", "married_joint", "head_of_household"]).optional(),
+  /** Wages and anything else taxed the same way, in cents. */
+  otherIncomeCents: z.number().int().min(0).max(1_000_000_000).nullish(),
+  /**
+   * Overrides the built-in state rate, as a percentage.
+   *
+   * Capped well above any real rate rather than at one: a state could raise
+   * its own, and refusing a true number because a table says otherwise is the
+   * wrong way round.
+   */
+  stateTaxRatePct: z.number().min(0).max(30).nullish(),
 });
 
 export type BusinessInput = z.infer<typeof businessSchema>;
