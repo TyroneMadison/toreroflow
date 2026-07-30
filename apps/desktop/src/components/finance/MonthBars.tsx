@@ -39,7 +39,7 @@ export default function MonthBars({ series }: { series: SeriesPoint[] }) {
     <div className="card glass finchart">
       <div className="rowhead">
         <div>
-          <h3>Last twelve months</h3>
+          <h3>Last 12 months</h3>
           <div className="sub">Each bar is what came in. Red is what it cost you, green is what you kept.</div>
         </div>
       </div>

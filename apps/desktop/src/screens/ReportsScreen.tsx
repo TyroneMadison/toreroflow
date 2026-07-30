@@ -401,7 +401,7 @@ export default function ReportsScreen({
           <div className="btnote" style={{ marginTop: 12 }}>
             Watch time is estimated from views, and follower change is left out until there
             is a full month of history to compare against. A published page carries the last
-            three months and stays at the same link for good.
+            3 months and stays at the same link for good.
           </div>
         </div>
       </div>

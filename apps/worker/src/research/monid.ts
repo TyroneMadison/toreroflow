@@ -176,7 +176,7 @@ export class MonidProvider implements ResearchProvider {
         if (isTerminal(result)) break;
       }
       if (!isTerminal(result)) {
-        throw new ResearchError("the research provider is still working after three minutes");
+        throw new ResearchError("the research provider is still working after 3 minutes");
       }
     }
 

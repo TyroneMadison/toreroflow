@@ -767,13 +767,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
               />
               <RankCard
                 title="100K to 999K"
-                range="Top 10 videos in the hundred-thousands"
+                range="Top 10 videos with 100,000 to 999,999 views"
                 tier={tier100k}
                 rangeLabel={rangeLabel}
               />
               <RankCard
                 title="10K to 99K"
-                range="Top 10 videos in the ten-thousands"
+                range="Top 10 videos with 10,000 to 99,999 views"
                 tier={tier10k}
                 rangeLabel={rangeLabel}
               />
