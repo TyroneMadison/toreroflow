@@ -210,6 +210,47 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!client) return reply.status(404).send(NOT_FOUND);
 
+    /*
+     * Offboarding reaches the publishing provider too.
+     *
+     * Removing a client here used to leave their workspace standing at the
+     * provider with their Instagram still authorised to it: a standing charge
+     * for a client who left, and an access nobody agreed to keep. Every
+     * account is disconnected first because connected ones refuse the profile
+     * delete, then the workspace itself goes.
+     *
+     * Best effort, and deliberately before the local delete: if the provider
+     * is unreachable the operator's own record still goes, because refusing to
+     * offboard a client while a third party is down is the wrong answer. What
+     * failed is logged and can be cleared by hand.
+     */
+    if (zernio) {
+      const remoteAccounts = await prisma.socialAccount.findMany({
+        where: { clientId: client.id, deletedAt: null, providerAccountId: { not: null } },
+        select: { id: true, providerAccountId: true, platform: true },
+      });
+      for (const account of remoteAccounts) {
+        try {
+          await zernio.disconnectAccount(account.providerAccountId!);
+        } catch (err) {
+          app.log.error(
+            { err, platform: account.platform },
+            "could not disconnect the account at the provider while offboarding",
+          );
+        }
+      }
+      if (client.providerProfileId) {
+        try {
+          await zernio.deleteProfile(client.providerProfileId);
+        } catch (err) {
+          app.log.error(
+            { err, profileId: client.providerProfileId },
+            "could not delete the client's workspace at the provider while offboarding",
+          );
+        }
+      }
+    }
+
     // Soft delete; tokens are purged immediately (spec Section 15: provide a
     // way to disconnect an account and delete its tokens).
     const now = new Date();
