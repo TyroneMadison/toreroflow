@@ -7,9 +7,13 @@ import {
   EXPENSE_CATEGORIES,
   expenseSchema,
   expenseUpdateSchema,
+  estimateTax,
   monthKeySchema,
   revenueUpdateSchema,
+  STATE_TAX,
   sumCents,
+  TAX_YEAR,
+  type FilingStatus,
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
 import { deriveStatus, quotaMetFor, rollForward } from "../financials/month";
@@ -507,13 +511,85 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
    * method is accrual the export includes unpaid revenue and says so on the
    * cover, because the two must never be ambiguous on a tax document.
    */
+  /**
+   * What to set aside for tax on this year's profit.
+   *
+   * Built from the same figures the year-end export uses, so the two can never
+   * disagree: receipts on the agency's own accounting basis, minus what is
+   * actually deductible, with business meals already halved.
+   *
+   * An estimate for a single member LLC that has not elected corporate
+   * treatment. It is not tax advice and the screen says so.
+   */
+  app.get<{ Querystring: { year?: string } }>("/financials/tax-estimate", async (request) => {
+    const agencyId = request.user.agencyId;
+    const year = Number.parseInt(request.query.year ?? "", 10);
+    const useYear = Number.isInteger(year) && year >= 2000 && year <= 2100
+      ? year
+      : new Date().getFullYear();
+
+    const agency = await prisma.agency.findUnique({
+      where: { id: agencyId },
+      select: {
+        accountingMethod: true,
+        taxState: true,
+        filingStatus: true,
+        otherIncomeCents: true,
+        stateTaxRatePct: true,
+      },
+    });
+
+    const prefix = `${useYear}-`;
+    const [expenses, revenue] = await Promise.all([
+      prisma.expense.findMany({ where: { agencyId, month: { startsWith: prefix } } }),
+      prisma.revenueEntry.findMany({ where: { agencyId, month: { startsWith: prefix } } }),
+    ]);
+
+    const cashBasis = (agency?.accountingMethod ?? "cash") === "cash";
+    const counted = cashBasis ? revenue.filter((r) => r.receivedAt !== null) : revenue;
+    const receiptsCents = sumCents(counted.map((r) => r.amountCents));
+
+    // Grouped rather than summed raw, because that is where meals are halved.
+    // Summing the raw amounts would overstate the deduction and understate the
+    // tax, which is the wrong direction for a reserve.
+    const groups = groupForScheduleC(
+      expenses.map((e) => ({
+        name: e.name,
+        categoryLine: e.categoryLine,
+        amountCents: e.amountCents,
+      })),
+    );
+    const deductibleCents = sumCents(groups.map((g) => g.deductibleCents));
+
+    const estimate = estimateTax({
+      netProfitCents: receiptsCents - deductibleCents,
+      otherIncomeCents: agency?.otherIncomeCents ?? 0,
+      filingStatus: (agency?.filingStatus as FilingStatus | null) ?? "single",
+      state: agency?.taxState ?? "",
+      stateRateOverride: agency?.stateTaxRatePct ?? null,
+    });
+
+    return {
+      year: useYear,
+      /** The year the built-in rates were published for, so staleness is visible. */
+      ratesYear: TAX_YEAR,
+      basis: cashBasis ? "cash" : "accrual",
+      receiptsCents,
+      deductibleCents,
+      ...estimate,
+      stateName: agency?.taxState ? (STATE_TAX[agency.taxState]?.note ?? null) : null,
+      /** Null until a state is chosen, which is different from a state with no tax. */
+      stateChosen: Boolean(agency?.taxState),
+    };
+  });
+
   app.get<{ Querystring: { year?: string } }>(
     "/financials/export",
     async (request, reply) => {
       const agencyId = request.user.agencyId;
       const year = Number.parseInt(request.query.year ?? "", 10);
       if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-        return reply.status(400).send({ error: "year must be a four digit year" });
+        return reply.status(400).send({ error: "year must be a 4 digit year" });
       }
 
       const agency = await prisma.agency.findUnique({

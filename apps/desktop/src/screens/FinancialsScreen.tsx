@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../components/Toasts";
 import BankSection from "../components/finance/BankSection";
+import TaxCard from "../components/finance/TaxCard";
 import RevenueSection from "../components/finance/RevenueSection";
 import ExpenseSection from "../components/finance/ExpenseSection";
 import NetCard from "../components/finance/NetCard";
@@ -147,6 +148,7 @@ export default function FinancialsScreen() {
             )}
 
             <BankSection />
+            <TaxCard year={year} />
 
             <RevenueSection
               rows={data.revenue}

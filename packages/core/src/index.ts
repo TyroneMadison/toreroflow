@@ -12,4 +12,5 @@ export * from "./plainText";
 export * from "./research";
 export * from "./banking";
 export * from "./business";
+export * from "./tax";
 export * as tokens from "./tokens";

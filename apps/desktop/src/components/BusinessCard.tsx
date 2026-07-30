@@ -26,14 +26,14 @@ const FIELDS = [
   {
     key: "ein" as const,
     label: "EIN",
-    hint: "Nine digits. Left blank, documents say it is not recorded.",
+    hint: "9 digits. Left blank, documents say it is not recorded.",
     placeholder: "12-3456789",
     type: "text",
   },
   {
     key: "businessCode" as const,
     label: "Business activity code",
-    hint: "The six digit NAICS code from your return, Schedule C line B.",
+    hint: "The 6 digit NAICS code from your return, Schedule C line B.",
     placeholder: "541800",
     type: "text",
   },

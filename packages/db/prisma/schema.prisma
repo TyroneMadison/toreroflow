@@ -86,6 +86,17 @@ model Agency {
   businessCode     String?
   /// cash or accrual. Decides whether unpaid revenue appears in the export.
   accountingMethod String?  @default("cash")
+  /// Two letter state, for the tax estimate. Decides the state rate applied to
+  /// profit that passes through to the owner.
+  taxState         String?
+  /// single | married_joint | head_of_household. Decides the brackets used.
+  filingStatus     String?  @default("single")
+  /// Wages and anything else taxed the same way, so the estimate knows which
+  /// bracket the business profit actually lands in.
+  otherIncomeCents Int?
+  /// Overrides the built-in state rate, as a percentage. A table of state rates
+  /// goes stale every January, so the operator can always correct it.
+  stateTaxRatePct  Float?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
