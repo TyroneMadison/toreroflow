@@ -22,6 +22,7 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [awaitingAuth, setAwaitingAuth] = useState(false);
+  const [welcomeUrl, setWelcomeUrl] = useState<string | null>(null);
 
   // The focus listener and the manual button can both fire a sync; two
   // interleaved syncs can duplicate account rows server-side, so only one
@@ -43,6 +44,50 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
       );
     }
   }, [clients, clientId]);
+
+  /**
+   * The link this client fills in themselves.
+   *
+   * Minted once and kept: it may already be sitting in their messages, and a
+   * fresh one would break the link they were told to use. Only the link is
+   * shown, because sending the link is the whole job here.
+   */
+  const getWelcomeLink = async () => {
+    if (!clientId) return;
+    setBusy("welcome");
+    setError(null);
+    try {
+      const link = await api.post<{ url: string }>(`/clients/${clientId}/welcome-link`);
+      setWelcomeUrl(link.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not make a welcome link");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const checkReplies = async () => {
+    setBusy("replies");
+    setError(null);
+    try {
+      const result = await api.post<{
+        checked: number;
+        applied: Array<{ client: string }>;
+      }>("/onboarding/check");
+      await refreshClients();
+      setError(
+        result.applied.length
+          ? null
+          : result.checked === 0
+            ? "No replies yet."
+            : "Replies found, but nothing new to fill in.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not check for replies");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const createClient = async () => {
     if (!name.trim()) return;
@@ -152,6 +197,43 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
         </div>
 
         <label className="flabel" style={{ marginTop: 18 }}>
+          Welcome link
+        </label>
+        <p style={{ fontSize: 12, color: "var(--txt-3)", margin: "4px 0 8px" }}>
+          Send this to the client so they can fill in their details and connect their own
+          accounts from their phone, and it lands here.
+        </p>
+        {welcomeUrl ? (
+          <div className="connect-row">
+            <div className="cinfo" style={{ minWidth: 0 }}>
+              <b style={{ wordBreak: "break-all", fontWeight: 500 }}>{welcomeUrl}</b>
+            </div>
+            <button
+              className="cbtn"
+              onClick={() => {
+                void navigator.clipboard.writeText(welcomeUrl);
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        ) : (
+          <div className="connect-row" style={clientId ? undefined : { opacity: 0.5 }}>
+            <div className="cinfo">
+              <b>Their welcome link</b>
+              <span>{clientId ? "One link, theirs for good" : "Enroll the client first"}</span>
+            </div>
+            <button
+              className="cbtn"
+              disabled={!clientId || busy === "welcome"}
+              onClick={() => void getWelcomeLink()}
+            >
+              {busy === "welcome" ? "…" : "Get the link"}
+            </button>
+          </div>
+        )}
+
+        <label className="flabel" style={{ marginTop: 18 }}>
           Connect platforms
         </label>
         {!clientId && (
@@ -191,6 +273,15 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
         {error && <div className="autherr">{error}</div>}
       </div>
       <div className="modal-foot">
+        {/* The other half of the welcome link: replies are pulled when asked,
+            because nothing can push to an API running on this machine. */}
+        <button
+          className="btn ghost"
+          disabled={busy === "replies"}
+          onClick={() => void checkReplies()}
+        >
+          {busy === "replies" ? "Checking…" : "Check for replies"}
+        </button>
         {awaitingAuth && (
           <button
             className="btn ghost"

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import BusinessCard from "../components/BusinessCard";
-import WelcomeCard from "../components/WelcomeCard";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import { api, type ClientAnalytics, type ClientSummary } from "../lib/api";
@@ -523,8 +522,6 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             </div>
           )}
         </div>
-
-        <WelcomeCard />
 
         <BusinessCard />
 
