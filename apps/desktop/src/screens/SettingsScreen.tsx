@@ -197,6 +197,31 @@ function ProfileCard({
   const [open, setOpen] = useState(false);
   const [cover, setCover] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [welcomeUrl, setWelcomeUrl] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const toast = useToast();
+
+  /**
+   * This brand's own welcome link, copied ready to send.
+   *
+   * Minted once and kept, so the same link keeps working however often it is
+   * sent. That is the point of it being here rather than only where a client
+   * is first added: when someone's accounts drop off months later, they need
+   * the same link again, not a new brand.
+   */
+  const copyWelcomeLink = async () => {
+    setLinkBusy(true);
+    try {
+      const link = await api.post<{ url: string }>(`/clients/${client.id}/welcome-link`);
+      setWelcomeUrl(link.url);
+      await navigator.clipboard.writeText(link.url);
+      toast.success(`Welcome link for ${client.name} copied.`);
+    } catch (err) {
+      toast.fail(`Could not get ${client.name}'s welcome link`, err);
+    } finally {
+      setLinkBusy(false);
+    }
+  };
 
   const connected = client.accounts.filter((a) => a.status === "connected");
   const avatar = clientAvatarUrl(client);
@@ -237,10 +262,34 @@ function ProfileCard({
             <Pf key={a.id} p={PF_ID[a.platform]} size="sm" />
           ))}
         </div>
+        {welcomeUrl && (
+          <div
+            className="sub"
+            style={{ fontSize: 11, wordBreak: "break-all", margin: "2px 0 8px" }}
+            title="Copied. Send this to them."
+          >
+            {welcomeUrl}
+          </div>
+        )}
         <div className="pactions">
           <button className="btn pexp" onClick={() => setOpen((o) => !o)}>
             {open ? "Collapse" : "Expand"}
           </button>
+          <div
+            className="iconbtn pstyle"
+            title={
+              linkBusy
+                ? "Getting the link"
+                : `Copy ${client.name}'s welcome link, for them to fill in their details or reconnect their accounts`
+            }
+            onClick={() => {
+              if (!linkBusy) void copyWelcomeLink();
+            }}
+          >
+            <svg>
+              <use href="#i-copy" />
+            </svg>
+          </div>
           <div
             className="iconbtn pstyle"
             title="Switch card style"
