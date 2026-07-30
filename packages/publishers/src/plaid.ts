@@ -90,7 +90,22 @@ export class PlaidClient {
     private readonly secret: string,
     envName = "sandbox",
   ) {
-    this.host = HOSTS[envName] ?? HOSTS.sandbox!;
+    /*
+     * An unrecognised environment is refused rather than quietly treated as
+     * sandbox.
+     *
+     * Falling back is the one mistake in switching to production that would not
+     * announce itself: PLAID_ENV=prod would keep calling the test host while
+     * every screen claimed to be showing a real bank. Wrong figures that look
+     * right are worse than a connection that plainly refuses to start.
+     */
+    const host = HOSTS[envName.trim()];
+    if (!host) {
+      throw new Error(
+        `PLAID_ENV is "${envName}", which is not a bank environment. Set it to exactly "sandbox" or "production" in the repo root .env and restart the API and worker.`,
+      );
+    }
+    this.host = host;
   }
 
   private async call<T>(path: string, body: Record<string, unknown>): Promise<T> {
