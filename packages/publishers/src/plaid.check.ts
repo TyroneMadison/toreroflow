@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { linkTokenBody, needsReconnect } from "./plaid";
+import { linkTokenBody, needsReconnect, PlaidClient } from "./plaid";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/publishers test`.
@@ -45,6 +45,27 @@ for (const token of [undefined, "tok"]) {
   const body = linkTokenBody("agency_1", token);
   const keys = ["products", "access_token"].filter((k) => k in body);
   assert.equal(keys.length, 1, `expected one mode key, got ${keys.join(" and ")}`);
+}
+
+/*
+ * ---- which environment is being called ----
+ *
+ * Anything unrecognised must throw. Quietly treating it as sandbox is the one
+ * mistake in switching to production that would not announce itself: the app
+ * would keep calling the test host while every screen claimed to show a real
+ * bank.
+ */
+assert.doesNotThrow(() => new PlaidClient("id", "secret", "sandbox"));
+assert.doesNotThrow(() => new PlaidClient("id", "secret", "production"));
+assert.doesNotThrow(() => new PlaidClient("id", "secret"), "the default is a real environment");
+// Surrounding whitespace is a typo, not a different environment.
+assert.doesNotThrow(() => new PlaidClient("id", "secret", " production "));
+for (const bad of ["prod", "Production", "PRODUCTION", "live", "development", "", "  "]) {
+  assert.throws(
+    () => new PlaidClient("id", "secret", bad),
+    /not a bank environment/,
+    `"${bad}" must be refused rather than silently treated as sandbox`,
+  );
 }
 
 /* ---- which failures mean "log in again" rather than "broken" ---- */

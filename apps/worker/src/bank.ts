@@ -59,7 +59,6 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
     return;
   }
 
-  const plaid = new PlaidClient(env.PLAID_CLIENT_ID, env.PLAID_SECRET, env.PLAID_ENV);
   const accountIdByPlaidId = new Map(connection.accounts.map((a) => [a.plaidAccountId, a.id]));
 
   let cursor = connection.cursor;
@@ -68,6 +67,11 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
   let removed = 0;
 
   try {
+    // Built inside the try on purpose: a misconfigured PLAID_ENV throws here,
+    // and out here it would end the job with nothing written to the connection,
+    // so the screen would show a stale figure and no reason for it.
+    const plaid = new PlaidClient(env.PLAID_CLIENT_ID, env.PLAID_SECRET, env.PLAID_ENV);
+
     for (let page = 0; page < MAX_PAGES; page++) {
       const res = await plaid.syncTransactions(accessToken, cursor);
 
