@@ -125,3 +125,22 @@ assert.equal(isStale(new Date("2026-07-22T12:00:00Z"), now), true, "exactly seve
 assert.equal(isStale(new Date("2026-07-28T12:00:00Z"), now, 1), true, "honours a custom age");
 
 console.log("research: all checks passed");
+
+/*
+ * Links from the other apps, and links that name nobody.
+ *
+ * Only Instagram and TikTok were parsed while the research form was the only
+ * caller. The client welcome form asks for YouTube, Facebook and Snapchat too,
+ * and a YouTube link used to fall through and come out as "https:", which
+ * would have become an account by that name.
+ */
+assert.equal(normalizeHandle("https://youtube.com/@realnorthstar/videos"), "realnorthstar");
+assert.equal(normalizeHandle("https://www.facebook.com/examplemotors"), "examplemotors");
+assert.equal(normalizeHandle("https://snapchat.com/add/carguy"), "add", "first segment wins");
+// A link with nothing after the host names nobody.
+for (const empty of ["https://instagram.com/", "https://instagram.com", "tiktok.com/"]) {
+  assert.equal(normalizeHandle(empty), "", `${empty} is not a handle`);
+}
+// A handle with a dot in it is a handle, not a domain.
+assert.equal(normalizeHandle("real.carguy"), "real.carguy");
+assert.equal(normalizeHandle("not a handle"), "", "a space means it was never a handle");
