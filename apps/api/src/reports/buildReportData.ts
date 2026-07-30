@@ -362,7 +362,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       title: "Trends",
       weekly: {
         title: "Views by month",
-        sub: "Last three months",
+        sub: "Last 3 months",
         bars: monthBars,
       },
       engagement: {
@@ -421,7 +421,7 @@ function derivePlanItems(
 
   if (avgWatch != null && avgWatch > 0) {
     items.push(
-      `Average watch time sat at <b>${fmtDur(avgWatch)}</b>. Tightening the first three seconds is where retention is usually won.`,
+      `Average watch time sat at <b>${fmtDur(avgWatch)}</b>. Tightening the first 3 seconds is where retention is usually won.`,
     );
   }
 

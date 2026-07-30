@@ -282,7 +282,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
 
         {insp && insp.accounts.length === 0 && (
           <p className="insworking">
-            No accounts yet. New clients name five of these when they sign up; add them by hand
+            No accounts yet. New clients name 5 of these when they sign up; add them by hand
             for anyone who joined before that.
           </p>
         )}
