@@ -1,6 +1,7 @@
 // Local so the file stays part of the package's typecheck without pulling
 // in node's assert types beyond the existing @types/node devDependency.
 import assert from "node:assert/strict";
+import { mediaItemsFor } from "./zernio";
 import { buildPostExtras } from "./options";
 
 // Instagram short-form with every option set.
@@ -185,4 +186,38 @@ console.log("options builder: all checks passed");
     instagram: { story: false, firstComment: "hi" },
   });
   assert.equal((reel.platformSpecificData as Record<string, unknown>).contentType, "reels");
+}
+
+/*
+ * ---- what a post carries ----
+ *
+ * One video or a set of images, never both. Sending a video alongside images
+ * would leave the provider deciding what lands on a client's account.
+ */
+{
+  const video = mediaItemsFor({ mediaUrl: "https://x/v.mp4" });
+  assert.deepEqual(video, [{ url: "https://x/v.mp4", type: "video" }]);
+
+  const withThumb = mediaItemsFor({ mediaUrl: "https://x/v.mp4", mediaThumbnail: "https://x/t.jpg" });
+  assert.deepEqual(withThumb, [
+    { url: "https://x/v.mp4", type: "video", thumbnail: "https://x/t.jpg" },
+  ]);
+
+  // A carousel: every image, in the order given, because the first one decides
+  // the aspect ratio of the whole post.
+  const carousel = mediaItemsFor({ imageUrls: ["https://x/1.png", "https://x/2.png"] });
+  assert.deepEqual(carousel, [
+    { url: "https://x/1.png", type: "image" },
+    { url: "https://x/2.png", type: "image" },
+  ]);
+  assert.equal(carousel.every((i) => i.type === "image"), true);
+
+  // Both present is not a real state, but it must resolve one way, not two.
+  const both = mediaItemsFor({ mediaUrl: "https://x/v.mp4", imageUrls: ["https://x/1.png"] });
+  assert.equal(both.length, 1);
+  assert.equal(both[0]!.type, "image", "images win, never a mixture");
+
+  // Nothing at all sends no media key rather than an empty array.
+  assert.deepEqual(mediaItemsFor({}), []);
+  assert.deepEqual(mediaItemsFor({ imageUrls: [] }), []);
 }

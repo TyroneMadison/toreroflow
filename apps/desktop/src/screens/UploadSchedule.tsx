@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from "react"
 import {
   api,
   fileUrl,
+  uploadCarousel,
   uploadMedia,
   videoLabel,
   type ClientPost,
@@ -64,6 +65,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
+  const carouselInput = useRef<HTMLInputElement>(null);
+  const [carouselBusy, setCarouselBusy] = useState(false);
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -193,6 +196,26 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         setUploadingNames((prev) => prev.filter((n) => n !== file.name));
         void load();
       }
+    }
+  };
+
+  /**
+   * Several images as one post.
+   *
+   * Sent in one request so the whole set arrives or none of it does: a
+   * carousel missing a slide would publish silently short.
+   */
+  const addCarousel = async (files: File[]) => {
+    if (!selectedClient) return;
+    setCarouselBusy(true);
+    try {
+      await uploadCarousel(selectedClient.id, files);
+      toast.success(`Carousel added with ${files.length} images. Schedule it to Instagram.`);
+    } catch (err) {
+      toast.fail("Could not add that carousel", err);
+    } finally {
+      setCarouselBusy(false);
+      void load();
     }
   };
 
@@ -405,6 +428,34 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 <span className="mini">Video never re-encoded</span>
               </div>
             </div>
+
+            {/*
+              Its own button rather than the same drop zone: a carousel is a
+              deliberate choice about a set of images, and inferring it from
+              whatever landed on a zone marked "drop videos" would post the
+              wrong thing on a client's account.
+            */}
+            <input
+              ref={carouselInput}
+              type="file"
+              accept="image/jpeg,image/png"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files?.length) void addCarousel(Array.from(e.target.files));
+                e.target.value = "";
+              }}
+            />
+            <button
+              className="btn ghost"
+              style={{ width: "100%", marginTop: 8 }}
+              disabled={!selectedClient || carouselBusy}
+              onClick={() =>
+                selectedClient ? carouselInput.current?.click() : onOpenConnect()
+              }
+            >
+              {carouselBusy ? "Uploading images…" : "Add an Instagram carousel"}
+            </button>
 
             {uploadingNames.map((name) => (
               <div className="job glass-sm" key={`up-${name}`}>

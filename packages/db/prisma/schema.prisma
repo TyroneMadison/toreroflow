@@ -223,6 +223,8 @@ model Client {
   insight        ClientInsight?
   inspirations   InspirationAccount[]
   researchRuns   ResearchRun[]
+  knowledgeNotes KnowledgeNote[]
+  carouselDrafts CarouselDraft[]
 
   @@index([agencyId])
 }
@@ -279,6 +281,14 @@ model SocialAccount {
 model MediaAsset {
   id           String           @id @default(cuid())
   clientId     String
+  /// video | carousel. A carousel is several images posted as one Instagram
+  /// post; it rides this table so it reaches the calendar, the queue and the
+  /// scheduler without any of them learning a second kind of thing.
+  kind         String           @default("video")
+  /// Ordered storage keys of a carousel's images. Null for a video. The order
+  /// is the order Instagram shows them in, and the first one decides the
+  /// aspect ratio of the whole post.
+  slideKeys    Json?
   storageKey   String
   originalName String
   durationSec  Float?
@@ -806,4 +816,40 @@ model BankTransaction {
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, date])
+}
+
+/// Something worth knowing about a brand's niche, kept so the carousel writer
+/// has more than a handle to work from. Free text on purpose: the useful facts
+/// about a niche do not fit a schema, and one that tried would be a form
+/// nobody fills in.
+model KnowledgeNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// A carousel's words, before anything has been designed. Kept server side so
+/// closing the screen never loses a generation that was paid for.
+model CarouselDraft {
+  id        String   @id @default(cuid())
+  clientId  String
+  topic     String
+  /// [{ headline, body }], in order. At most 10, which is Instagram's limit.
+  slides    Json
+  caption   String   @default("")
+  /// Bare words, no leading hash. The hash is added when the caption is built.
+  hashtags  String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }

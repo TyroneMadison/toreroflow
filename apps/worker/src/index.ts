@@ -245,7 +245,7 @@ async function zernioMediaUrl(assetId: string, filePath: string): Promise<string
  * overwrites the same file path, so any cache keyed on the path would
  * silently post the old image.
  */
-async function zernioCoverUrl(coverKey: string): Promise<string> {
+async function zernioImageUrl(coverKey: string): Promise<string> {
   const contentType = coverKey.endsWith(".png") ? "image/png" : "image/jpeg";
   const filePath = path.join(env.STORAGE_DIR, coverKey);
   const { uploadUrl, publicUrl } = await zernio!.presignMedia(
@@ -302,8 +302,27 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       // Always the original upload; the app no longer produces re-encodes.
       const fileKey = asset?.storageKey;
       if (!fileKey) throw new Error("no media file for post");
-      const mediaUrl = await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
-      const coverUrl = asset?.coverKey ? await zernioCoverUrl(asset.coverKey) : null;
+
+      /*
+       * A carousel is a set of images, not a video, so it takes a different
+       * road to the provider: every slide is uploaded in order, because the
+       * first one decides the aspect ratio of the whole post and the rest
+       * follow it.
+       *
+       * Uploaded fresh each publish rather than cached by key, for the same
+       * reason covers are: a re-picked image overwrites the same path, and a
+       * path-keyed cache would post the old one.
+       */
+      const slideKeys = Array.isArray(asset?.slideKeys) ? (asset.slideKeys as string[]) : [];
+      const isCarousel = asset?.kind === "carousel" && slideKeys.length > 0;
+      const imageUrls = isCarousel
+        ? await Promise.all(slideKeys.map((key) => zernioImageUrl(key)))
+        : undefined;
+
+      const mediaUrl = isCarousel
+        ? undefined
+        : await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      const coverUrl = asset?.coverKey ? await zernioImageUrl(asset.coverKey) : null;
       const extras = buildPostExtras({
         platform: target.platform as Platform,
         format: asset?.format ?? null,
@@ -315,6 +334,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       const result = await zernio.createPost({
         content: caption,
         mediaUrl,
+        imageUrls,
         mediaThumbnail: extras.mediaThumbnail,
         targets: [
           {

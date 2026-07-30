@@ -125,6 +125,26 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * no title, which is not something to publish to a client's channel and
      * quietly let someone else caption.
      */
+    /*
+     * A carousel is images, and only Instagram is known to take them here.
+     * Refused at schedule time rather than at publish, where it would fail
+     * hours later against a client's account with nobody watching. Only
+     * Instagram is allowed because only Instagram has been verified: the
+     * others may well work, and can be opened up once one has actually gone
+     * out and been looked at.
+     */
+    if (asset.kind === "carousel") {
+      const wrong = accounts.filter(({ platform }) => platform !== "instagram");
+      if (wrong.length) {
+        return reply.status(400).send({
+          error: "carousels go to Instagram",
+          detail: `A carousel is a set of images and only Instagram takes them here, so ${wrong
+            .map((w) => w.platform)
+            .join(" and ")} cannot be part of this one.`,
+        });
+      }
+    }
+
     if (accounts.some(({ platform }) => platform === "youtube") && !youtubeBody) {
       return reply.status(400).send({
         error: "youtube needs words",

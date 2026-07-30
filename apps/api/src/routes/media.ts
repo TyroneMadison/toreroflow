@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
-import { decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
+import { decodeEscapes, looksLikeRevisionOf, MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
@@ -78,6 +78,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     revisionOfId: string | null;
     coverOffsetMs: number | null;
     coverKey: string | null;
+    kind?: string;
+    slideKeys?: unknown;
     createdAt: Date;
   }) => {
     const ready = a.status === "ready";
@@ -85,6 +87,9 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       id: a.id,
       clientId: a.clientId,
       name: a.originalName,
+      /** video | carousel. A carousel has images instead of a duration. */
+      kind: a.kind ?? "video",
+      slideCount: Array.isArray(a.slideKeys) ? a.slideKeys.length : 0,
       durationSec: a.durationSec,
       status: a.status,
       hasTranscript: Array.isArray(a.transcript) && a.transcript.length > 0,
@@ -94,10 +99,14 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       revisionOfId: a.revisionOfId,
       createdAt: a.createdAt,
       coverOffsetMs: a.coverOffsetMs,
+      // A carousel has no video to take a frame from, so its first slide is
+      // its own thumbnail. Pointing at thumb.jpg would render a blank card.
       thumbUrl: ready
-        ? a.coverKey
-          ? `/files/${a.coverKey}`
-          : `/files/${a.clientId}/${a.id}/thumb.jpg`
+        ? a.kind === "carousel"
+          ? `/files/${a.storageKey}`
+          : a.coverKey
+            ? `/files/${a.coverKey}`
+            : `/files/${a.clientId}/${a.id}/thumb.jpg`
         : null,
       // The original upload: nothing is re-encoded, so preview and publish
       // both use the file exactly as it was exported.
@@ -161,6 +170,81 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     return reply
       .status(201)
       .send(assetView(updated));
+  });
+
+  /**
+   * A carousel: several images posted to Instagram as one post.
+   *
+   * Stored as one asset with an ordered list of image keys, so the calendar,
+   * the queue and the scheduler reach it without learning a second kind of
+   * thing. None of the video pipeline runs on it: there is no duration to
+   * probe, no transcript to make, no cover to pick, and it is not a video, so
+   * it never spends a slot in the client's video quota.
+   *
+   * The order files arrive in is the order Instagram shows them, and the first
+   * one decides the aspect ratio of the whole post.
+   */
+  app.post<{ Params: { id: string } }>("/clients/:id/carousel", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+    });
+    if (!client) return reply.status(404).send({ error: "client not found" });
+
+    const asset = await prisma.mediaAsset.create({
+      data: {
+        clientId: client.id,
+        kind: "carousel",
+        originalName: "carousel",
+        storageKey: "pending",
+        // Ready on arrival: nothing has to happen to an image before it posts.
+        status: "ready",
+      },
+    });
+    const dir = path.join(env.STORAGE_DIR, client.id, asset.id);
+    await fs.mkdir(dir, { recursive: true });
+
+    const slideKeys: string[] = [];
+    let firstName: string | null = null;
+    try {
+      for await (const part of request.parts()) {
+        if (part.type !== "file") continue;
+        const mime = part.mimetype;
+        if (mime !== "image/jpeg" && mime !== "image/png") {
+          throw new Error("a carousel takes JPG or PNG images");
+        }
+        if (slideKeys.length >= MAX_CAROUSEL_SLIDES) {
+          throw new Error(`Instagram takes at most ${MAX_CAROUSEL_SLIDES} images in one carousel`);
+        }
+        const ext = mime === "image/png" ? ".png" : ".jpg";
+        const key = `${client.id}/${asset.id}/slide-${slideKeys.length + 1}${ext}`;
+        await pipeline(part.file, createWriteStream(path.join(env.STORAGE_DIR, key)));
+        if (part.file.truncated) throw new Error("that image was too large");
+        firstName ??= part.filename ?? null;
+        slideKeys.push(key);
+      }
+      if (!slideKeys.length) throw new Error("no images uploaded");
+    } catch (err) {
+      // Nothing half-made survives: a carousel missing a slide would publish
+      // silently short.
+      await fs.rm(dir, { recursive: true, force: true });
+      await prisma.mediaAsset.delete({ where: { id: asset.id } });
+      return reply.status(400).send({
+        error: "could not save that carousel",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const updated = await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: {
+        slideKeys,
+        // The first image doubles as the asset's file, so every existing
+        // screen that shows a thumbnail keeps working unchanged.
+        storageKey: slideKeys[0]!,
+        originalName: firstName ?? "carousel",
+      },
+    });
+    return reply.status(201).send(assetView(updated));
   });
 
   app.get<{ Params: { id: string } }>("/clients/:id/media", async (request, reply) => {
