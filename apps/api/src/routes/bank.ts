@@ -8,7 +8,7 @@ import {
   totalsFor,
   totalsByMonth,
 } from "@toreroflow/core";
-import { encryptSecret, getPrisma } from "@toreroflow/db";
+import { decryptSecret, encryptSecret, getPrisma, isEncrypted } from "@toreroflow/db";
 import { env } from "../env";
 import { PlaidClient } from "@toreroflow/publishers";
 import { requireAuth } from "../plugins/requireAuth";
@@ -92,6 +92,47 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * A token that repairs an existing link rather than making a new one.
+   *
+   * This is the only correct answer to a bank asking for a fresh login. Banks
+   * do that routinely, every few months. Connecting again from scratch creates
+   * a second link to the same bank, and since both copies of the accounts
+   * default into cash flow, money in and money out both double. Repairing keeps
+   * the same link, so the stored history and the operator's cash-flow choices
+   * survive untouched.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/bank/connections/:id/relink",
+    async (request, reply) => {
+      if (!configured()) return reply.status(503).send(notConfigured);
+      const connection = await prisma.bankConnection.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId },
+        select: { accessTokenEnc: true },
+      });
+      if (!connection) return reply.status(404).send({ error: "connection not found" });
+      if (!isEncrypted(connection.accessTokenEnc)) {
+        return reply.status(409).send({
+          error: "this connection cannot be repaired",
+          detail: "Its stored token is unreadable. Disconnect the bank and connect it again.",
+        });
+      }
+      try {
+        const linkToken = await client().createLinkToken(
+          request.user.agencyId,
+          decryptSecret(connection.accessTokenEnc),
+        );
+        return { linkToken, environment: env.PLAID_ENV };
+      } catch (err) {
+        app.log.error({ err }, "could not create a bank relink token");
+        return reply.status(502).send({
+          error: "could not start the reconnection",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
+
+  /**
    * Finishes a connection.
    *
    * The one-time token from the widget is traded for the long-lived access
@@ -108,24 +149,66 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
     try {
       const plaid = client();
       const { accessToken, itemId } = await plaid.exchangePublicToken(publicToken);
-      const [accounts, institutionName] = await Promise.all([
+      const [accounts, institution] = await Promise.all([
         plaid.accounts(accessToken),
-        plaid.institutionName(accessToken),
+        plaid.institution(accessToken),
       ]);
 
-      // Upsert on itemId: reconnecting the same bank updates this row rather
-      // than stacking a second copy of every account.
+      /*
+       * A second link to a bank that is already connected is refused.
+       *
+       * Both copies of the accounts would default into cash flow, so money in
+       * and money out would silently double. Measured on the sandbox: $1,512.66
+       * became $3,025.32. Refusing loses nothing, because Reconnect repairs the
+       * existing link in place and Disconnect removes it deliberately.
+       *
+       * Keyed on the bank's id, never on a null: two connections whose lookup
+       * failed are not evidence of the same bank.
+       */
+      if (institution.id) {
+        const already = await prisma.bankConnection.findFirst({
+          where: {
+            agencyId: request.user.agencyId,
+            institutionId: institution.id,
+            itemId: { not: itemId },
+          },
+          select: { id: true, institutionName: true, status: true },
+        });
+        if (already) {
+          // The link exists at the provider by now, so refusing it here would
+          // leave it alive and billable with nothing pointing at it. Revoke it
+          // before answering. Best effort: the refusal is the important part.
+          try {
+            await plaid.removeItem(accessToken);
+          } catch (err) {
+            app.log.error({ err }, "could not revoke the duplicate bank link");
+          }
+          return reply.status(409).send({
+            error: `${already.institutionName ?? "That bank"} is already connected`,
+            detail:
+              already.status === "needs_reconnect"
+                ? "Press Reconnect on it instead. Connecting again would add a second copy of every account and double the figures."
+                : "Connecting it again would add a second copy of every account and double the figures. Disconnect it first if you want to start over.",
+          });
+        }
+      }
+
+      // Upsert on itemId: repairing an existing link comes back with the same
+      // item, so this updates the row rather than stacking a second copy of
+      // every account.
       const connection = await prisma.bankConnection.upsert({
         where: { itemId },
         create: {
           agencyId: request.user.agencyId,
           itemId,
-          institutionName,
+          institutionId: institution.id,
+          institutionName: institution.name,
           accessTokenEnc: encryptSecret(accessToken),
           status: "active",
         },
         update: {
-          institutionName,
+          institutionId: institution.id,
+          institutionName: institution.name,
           accessTokenEnc: encryptSecret(accessToken),
           status: "active",
           error: null,
@@ -275,9 +358,30 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string } }>("/bank/connections/:id", async (request, reply) => {
     const connection = await prisma.bankConnection.findFirst({
       where: { id: request.params.id, agencyId: request.user.agencyId },
-      select: { id: true },
+      select: { id: true, accessTokenEnc: true },
     });
     if (!connection) return reply.status(404).send({ error: "connection not found" });
+
+    /*
+     * Revoked at the provider first, then deleted here.
+     *
+     * Forgetting the row without this would leave a live link to a real bank
+     * standing at the provider, with the only key to it gone from our side, and
+     * a monthly charge for a connection nobody is watching. The operator asked
+     * for it to be gone.
+     *
+     * Best effort on purpose: if the provider is unreachable, the local delete
+     * still happens, because refusing to disconnect while a third party is down
+     * is worse than a link that outlives the row. It is logged when it happens.
+     */
+    if (configured() && isEncrypted(connection.accessTokenEnc)) {
+      try {
+        await client().removeItem(decryptSecret(connection.accessTokenEnc));
+      } catch (err) {
+        app.log.error({ err }, "could not revoke the bank link at the provider");
+      }
+    }
+
     // Cascades to accounts and transactions: unlinking a bank should not leave
     // its transaction history sitting in the database.
     await prisma.bankConnection.delete({ where: { id: connection.id } });

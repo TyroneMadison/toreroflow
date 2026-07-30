@@ -104,6 +104,47 @@ export default function BankSection() {
     }
   };
 
+  /**
+   * Repairs a link the bank has expired, rather than making a new one.
+   *
+   * Connecting again from scratch would leave two links to the same bank and
+   * double every figure, so this is the only route out of "needs you to log in
+   * again". The stored history and the counted/ignored choices survive.
+   */
+  const reconnect = async (id: string) => {
+    setBusy(true);
+    try {
+      const { linkToken } = await api.post<{ linkToken: string }>(
+        `/bank/connections/${id}/relink`,
+      );
+      const Plaid = await loadLink();
+      handler.current?.destroy();
+      handler.current = Plaid.create({
+        token: linkToken,
+        onSuccess: () => {
+          // Update mode keeps the existing token working, so there is nothing to
+          // exchange. Pulling is what proves the repair took and clears the
+          // warning, so it is started here rather than left as another button.
+          void (async () => {
+            try {
+              await api.post(`/bank/connections/${id}/sync`);
+              toast.success("Bank reconnected. Pulling transactions.");
+              setTimeout(() => void load(), 6000);
+            } catch (err) {
+              toast.fail("Reconnected, but could not pull transactions", err);
+            }
+          })();
+        },
+        onExit: () => undefined,
+      });
+      handler.current.open();
+    } catch (err) {
+      toast.fail("Could not start the reconnection", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const sync = async (id: string) => {
     setBusy(true);
     try {
@@ -195,9 +236,19 @@ export default function BankSection() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="cbtn" disabled={busy} onClick={() => void sync(c.id)}>
-                Pull transactions
-              </button>
+              {/*
+                One action, not two. While a bank wants a fresh login, pulling
+                can only fail with the same message, so offering it is a trap.
+              */}
+              {c.status === "needs_reconnect" ? (
+                <button className="cbtn" disabled={busy} onClick={() => void reconnect(c.id)}>
+                  Reconnect
+                </button>
+              ) : (
+                <button className="cbtn" disabled={busy} onClick={() => void sync(c.id)}>
+                  Pull transactions
+                </button>
+              )}
               <button className="dangerbtn" onClick={() => void disconnect(c.id)}>
                 Disconnect
               </button>
