@@ -4,7 +4,7 @@ Written 2026-07-26, after YouTube lifetime history shipped.
 
 ## The problem
 
-The publishing provider serves 76 Instagram posts. Caleb's account actually
+The publishing provider serves 76 Instagram posts. The client's account actually
 holds **468 media items**. So Instagram rankings and all-time totals are
 missing roughly 85% of his catalogue, the same gap YouTube had before we
 read it directly from the platform.
@@ -81,7 +81,7 @@ agency tool reading accounts the agency manages tends to go better than
 vague descriptions.
 
 ### Step 5, we build the OAuth flow
-Once approved: Caleb authorizes our app, we store his long-lived token,
+Once approved: the client authorizes our app, we store their long-lived token,
 refresh it before the 60-day expiry, and page `/{ig-user-id}/media` for the
 full catalogue plus per-media insights.
 

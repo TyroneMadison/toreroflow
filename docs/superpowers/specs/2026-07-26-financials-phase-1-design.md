@@ -55,7 +55,7 @@ arithmetic**, and quota does not compute money.
 
 | Mode | Behaviour | Example |
 |---|---|---|
-| `calendar` | Paid monthly on a fixed day regardless of what was delivered. | Caleb |
+| `calendar` | Paid monthly on a fixed day regardless of what was delivered. | Northstar |
 | `on_fulfilment` | A payment buys a block of work. The next payment is not due until the previous block is delivered. If the content is not done by the billing day, work continues into the next month and the cycle slips. | Everyone else |
 
 So **quota gates the timing of billing, never the amount.** For

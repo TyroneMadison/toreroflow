@@ -48,7 +48,7 @@ const post = (
   byPlatform: platforms.map((p) => ({ platform: p, views })),
 });
 
-/* A catalogue shaped like Caleb's: the big hits are old. */
+/* A catalogue shaped like a real one: the big hits are old. */
 const catalogue: ClientPost[] = [
   post("a", 13_465_743, 296),
   post("b", 7_039_241, 257),

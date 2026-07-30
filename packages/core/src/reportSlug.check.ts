@@ -19,11 +19,11 @@ import {
 
 assert.equal(buildReportSlug("Northstar"), "northstar-monthly-reports");
 assert.equal(buildReportSlug("CACV Motors"), "cacv-motors-monthly-reports");
-assert.equal(buildReportSlug("Vantage Auto LLC"), "jr-michael-llc-monthly-reports");
+assert.equal(buildReportSlug("Vantage Auto LLC"), "vantage-auto-llc-monthly-reports");
 
 // Lower case throughout: Netlify serves paths case sensitively, so a link
 // retyped in lower case has to hit the same page.
-assert.equal(buildReportSlug("CALEB"), buildReportSlug("northstar"));
+assert.equal(buildReportSlug("NORTHSTAR"), buildReportSlug("northstar"));
 assert.equal(buildReportSlug("Northstar"), buildReportSlug("Northstar").toLowerCase());
 
 // Punctuation, accents and spacing all collapse to something URL safe.

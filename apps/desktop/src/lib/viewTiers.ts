@@ -7,7 +7,7 @@ import type { ClientPost, Platform } from "./api";
  * selector. A "1M+ club" is a lifetime record: a video does not leave it
  * because it aged past thirty days. Wiring the boards to the range filter is
  * what made them look broken, since the default 30 day window held none of
- * Caleb's six million-view videos, the newest of which is from October 2025.
+ * One client's six million-view videos, the newest of which is from October 2025.
  *
  * The range still means something here, so each tier also reports how many of
  * its members landed inside the selected window. That is momentum rather than
