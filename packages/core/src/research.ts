@@ -24,12 +24,31 @@ export function isResearchPlatform(value: unknown): value is ResearchPlatform {
 export function normalizeHandle(input: string): string {
   let s = input.trim();
   if (!s) return "";
-  // A pasted profile link, from either platform, with or without a protocol.
-  const url = s.match(
-    /(?:instagram\.com|tiktok\.com)\/+(?:@)?([^/?#\s]+)/i,
-  );
-  if (url) s = url[1]!;
-  s = s.replace(/^@+/, "").split(/[/?#]/)[0]!;
+
+  /*
+   * A pasted profile link, from any app rather than only Instagram and TikTok:
+   * the client welcome form asks for YouTube, Facebook and Snapchat too, and a
+   * YouTube link used to fall through and come out as "https:".
+   *
+   * Anything containing a slash is treated as a link and must yield a path
+   * segment. Anything without one is treated as a handle and left alone, which
+   * is what keeps a real handle with a dot in it, like real.carguy, from being
+   * mistaken for a bare domain.
+   */
+  const hadScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(s);
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  if (s.includes("/")) {
+    const segment = s.match(/\/+(?:@)?([^/?#\s]+)/);
+    // A link with nothing after the host names nobody.
+    if (!segment) return "";
+    s = segment[1]!;
+  } else if (hadScheme) {
+    // "https://instagram.com" was written as a link and named nobody.
+    return "";
+  }
+  s = s.replace(/^@+/, "").split(/[?#]/)[0]!;
+  // Something with a space in it was never a handle, whatever else it was.
+  if (/\s/.test(s.trim())) return "";
   // TikTok shows handles with a leading @ and Instagram without; neither
   // platform's handles are case sensitive.
   return s.trim().toLowerCase();

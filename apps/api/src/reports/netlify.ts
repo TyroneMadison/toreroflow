@@ -77,6 +77,39 @@ export class NetlifyPublisher {
   }
 
   /**
+   * Replies to one form on a site.
+   *
+   * This is what lets a client fill something in on their phone and have it
+   * reach an app running on a laptop: the host holds the submissions and this
+   * pulls them when asked. Nothing has to be reachable from the internet.
+   *
+   * A form that has never been submitted to does not exist yet as far as the
+   * host is concerned, and that is not an error: it is the ordinary state
+   * before the first client replies.
+   */
+  async formSubmissions(
+    siteId: string,
+    formName: string,
+  ): Promise<Array<{ id: string; createdAt: string; data: Record<string, unknown> }>> {
+    const forms = await this.request<Array<{ id: string; name: string }>>(
+      "GET",
+      `/sites/${siteId}/forms`,
+    );
+    const form = forms.find((f) => f.name === formName);
+    if (!form) return [];
+
+    const raw = await this.request<
+      Array<{ id: string; created_at: string; data?: Record<string, unknown> }>
+    >("GET", `/forms/${form.id}/submissions?per_page=200`);
+
+    return raw.map((s) => ({
+      id: s.id,
+      createdAt: s.created_at,
+      data: s.data ?? {},
+    }));
+  }
+
+  /**
    * The site's public address, preferring the custom domain.
    *
    * `ssl_url` already reflects the primary custom domain once one is

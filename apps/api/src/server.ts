@@ -11,6 +11,7 @@ import { authRoutes } from "./routes/auth";
 import { clientRoutes } from "./routes/clients";
 import { agencyRoutes } from "./routes/agency";
 import { carouselRoutes } from "./routes/carousels";
+import { onboardingRoutes } from "./routes/onboarding";
 import { bankRoutes } from "./routes/bank";
 import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
@@ -90,6 +91,7 @@ export async function buildServer(
   await app.register(agencyRoutes);
   await app.register(bankRoutes);
   await app.register(carouselRoutes);
+  await app.register(onboardingRoutes);
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
   await app.register(mediaRoutes);

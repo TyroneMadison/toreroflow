@@ -200,6 +200,12 @@ model Client {
   reportPublishedAt    DateTime?
   /// Reporting month the published page currently leads with ("2026-06").
   reportPublishedMonth String?
+  /// Identifies this brand in their own welcome link, so a reply that comes
+  /// back through a form on the website can be matched to them. Minted once
+  /// and kept, because the link may already be in a client's phone.
+  onboardingToken      String?        @unique
+  /// When their welcome reply was applied. Null means it has not arrived.
+  onboardedAt          DateTime?
   /// Current retainer. A default for seeding a month, not a historical record:
   /// history lives in RevenueEntry, so raising this leaves past months alone.
   monthlyPriceCents    Int?
