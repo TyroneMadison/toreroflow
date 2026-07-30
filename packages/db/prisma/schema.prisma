@@ -206,6 +206,11 @@ model Client {
   onboardingToken      String?        @unique
   /// When their welcome reply was applied. Null means it has not arrived.
   onboardedAt          DateTime?
+  /// Ids of welcome replies already applied to this client, so the same one is
+  /// never applied twice. Without this every check would re-apply every reply,
+  /// and since an answer wins, a detail corrected by hand would be silently
+  /// reverted to what the client typed weeks earlier.
+  welcomeRepliesApplied String[]      @default([])
   /// Handles the client gave for themselves, keyed by platform. Not connected
   /// accounts: a typed handle cannot post anything, and a connected account
   /// only ever comes back from the provider. This is what they say their
