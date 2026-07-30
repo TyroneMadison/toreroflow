@@ -141,6 +141,28 @@ export class ZernioProvider {
     return id;
   }
 
+  /**
+   * Disconnects one connected account, at the provider.
+   *
+   * Offboarding a client has to reach this. Removing them locally leaves their
+   * Instagram still authorised to a workspace nobody is watching, which is
+   * both a standing charge and an access nobody agreed to keep.
+   */
+  async disconnectAccount(accountId: string): Promise<void> {
+    await this.request("DELETE", `/accounts/${accountId}`);
+  }
+
+  /**
+   * Deletes a profile, the workspace backing one client.
+   *
+   * Connected accounts block this with a 400, so they are disconnected first.
+   * That order matters and is the caller's job, because a half-finished
+   * offboarding is worse than one that refused.
+   */
+  async deleteProfile(profileId: string): Promise<void> {
+    await this.request("DELETE", `/profiles/${profileId}`);
+  }
+
   /** Hosted OAuth page URL for connecting one platform to a profile. */
   async connectUrl(platform: Platform, profileId: string): Promise<string> {
     const data = await this.request<{ authUrl?: string; url?: string }>(
