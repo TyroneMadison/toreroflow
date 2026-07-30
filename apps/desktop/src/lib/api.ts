@@ -97,6 +97,17 @@ export interface AccountInfo {
   followers: number | null;
 }
 
+/** The registered company, as stored. Printed on every outgoing document. */
+export interface AgencyBusiness {
+  id: string;
+  name: string;
+  legalName: string | null;
+  ein: string | null;
+  businessAddress: string | null;
+  businessCode: string | null;
+  accountingMethod: string | null;
+}
+
 export interface ClientSummary {
   id: string;
   name: string;
