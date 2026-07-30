@@ -9,7 +9,7 @@ const PLATFORM_COLOR: Record<string, string> = {
   snapchat: "#ffe600",
   facebook: "#1877f2",
 };
-const color = (p: string): string => PLATFORM_COLOR[p] ?? "#8b7bff";
+const color = (p: string): string => PLATFORM_COLOR[p] ?? "#FF6F61";
 
 const W = 760;
 const H = 260;
@@ -137,8 +137,8 @@ export default function ViewsChart({
       >
         <defs>
           <linearGradient id="vc-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#8b7bff" stopOpacity="0.28" />
-            <stop offset="1" stopColor="#8b7bff" stopOpacity="0" />
+            <stop offset="0" stopColor="#FF6F61" stopOpacity="0.28" />
+            <stop offset="1" stopColor="#FF6F61" stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -170,7 +170,7 @@ export default function ViewsChart({
             key={s.platform}
             d={linePath(s.values)}
             fill="none"
-            stroke={s.platform === "__total" ? "#8b7bff" : color(s.platform)}
+            stroke={s.platform === "__total" ? "#FF6F61" : color(s.platform)}
             strokeWidth={s.platform === "__total" ? 2.6 : 1.8}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -193,7 +193,7 @@ export default function ViewsChart({
                 cx={x(hover!)}
                 cy={y(s.values[hover!]!)}
                 r={s.platform === "__total" ? 4 : 3}
-                fill={s.platform === "__total" ? "#8b7bff" : color(s.platform)}
+                fill={s.platform === "__total" ? "#FF6F61" : color(s.platform)}
               />
             ))}
           </g>
@@ -216,7 +216,7 @@ export default function ViewsChart({
           <>
             {!single && (
               <span className="vc-key">
-                <i style={{ background: "#8b7bff" }} />
+                <i style={{ background: "#FF6F61" }} />
                 All platforms
               </span>
             )}

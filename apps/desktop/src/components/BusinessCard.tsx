@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import Select from "./Select";
 import { useToast } from "./Toasts";
 import { api, type AgencyBusiness } from "../lib/api";
 
@@ -147,11 +148,13 @@ export default function BusinessCard() {
             Accounting method
             {saving === "accountingMethod" && <i> saving…</i>}
           </span>
-          <select
-            className="field-in"
+          <Select
             value={method}
-            onChange={(e) => {
-              const next = e.target.value;
+            options={[
+              { value: "cash", label: "Cash" },
+              { value: "accrual", label: "Accrual" },
+            ]}
+            onChange={(next) => {
               setSaving("accountingMethod");
               void (async () => {
                 try {
@@ -165,10 +168,7 @@ export default function BusinessCard() {
                 }
               })();
             }}
-          >
-            <option value="cash">Cash</option>
-            <option value="accrual">Accrual</option>
-          </select>
+          />
           <span className="sub" style={{ fontSize: 11 }}>
             Cash counts money when it arrives, so unpaid months stay out of the export.
           </span>

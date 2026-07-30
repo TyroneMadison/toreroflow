@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, api, getToken } from "../lib/api";
+import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import { useAppState } from "../state/AppState";
 
@@ -256,17 +257,14 @@ export default function CarouselsScreen() {
             </label>
             <label className="cfield">
               <span className="lab">Slides</span>
-              <select
-                className="field-in"
-                value={slideCount}
-                onChange={(e) => setSlideCount(Number(e.target.value))}
-              >
-                {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={String(slideCount)}
+                onChange={(v) => setSlideCount(Number(v))}
+                options={[3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({
+                  value: String(n),
+                  label: String(n),
+                }))}
+              />
             </label>
             <button
               className="cbtn"

@@ -17,11 +17,11 @@ function fmt(n: number | null | undefined): string {
 }
 
 const AVATAR_GRADIENTS = [
-  "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+  "linear-gradient(135deg,#FF6F61,#FF9A73)",
   "linear-gradient(135deg,#a07bff,#6a5bff)",
-  "linear-gradient(135deg,#4ea8ff,#6a5bff)",
-  "linear-gradient(135deg,#6a5bff,#4ea8ff)",
-  "linear-gradient(135deg,#8b7bff,#5e9bff)",
+  "linear-gradient(135deg,#FF9A73,#FF6F61)",
+  "linear-gradient(135deg,#E8563F,#FF9A73)",
+  "linear-gradient(135deg,#FF6F61,#FFB08A)",
 ];
 
 /** Quick glance across every brand; the Analytics tab is the deep dive. */

@@ -23,7 +23,7 @@ const PLATFORM_COLOR: Record<Platform, string> = {
   facebook: "#1877f2",
 };
 
-const color = (p: string): string => PLATFORM_COLOR[p as Platform] ?? "#8b7bff";
+const color = (p: string): string => PLATFORM_COLOR[p as Platform] ?? "#FF6F61";
 
 function fmt(n: number | null | undefined): string {
   if (n == null) return "-";
@@ -381,7 +381,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       borderRadius: 8,
                       fontSize: 10,
                       overflow: "hidden",
-                      background: "linear-gradient(135deg,#8b7bff,#4ea8ff)",
+                      background: "linear-gradient(135deg,#FF6F61,#FF9A73)",
                     }}
                   >
                     {clientAvatarUrl(client) ? (

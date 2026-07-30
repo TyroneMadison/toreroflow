@@ -394,7 +394,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           <div>
             <div
               className="drop"
-              style={dragOver ? { borderColor: "rgba(139,123,255,.65)" } : undefined}
+              style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);

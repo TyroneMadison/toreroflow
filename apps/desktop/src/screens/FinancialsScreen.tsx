@@ -10,6 +10,7 @@ import GlanceCard from "../components/finance/GlanceCard";
 import MonthBars from "../components/finance/MonthBars";
 import { api, fileUrl } from "../lib/api";
 import { openExternal } from "../lib/external";
+import Select from "../components/Select";
 import type { FinancialsMonth } from "../lib/financials";
 import { useAppState } from "../state/AppState";
 
@@ -94,17 +95,13 @@ export default function FinancialsScreen() {
           <h2>Financials</h2>
           <p>What came in, what went out, and what is left.</p>
         </div>
-        <select
-          className="field-in repmonth"
+        <Select
+          className="repmonth"
           value={month}
-          onChange={(e) => setMonth(e.target.value)}
-        >
-          {months.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          onChange={setMonth}
+          aria-label="Month"
+          options={months.map((m) => ({ value: m.value, label: m.label }))}
+        />
       </div>
 
       <div className="stage">
@@ -190,17 +187,13 @@ export default function FinancialsScreen() {
                   split at the deductible 50%, and your business details on the cover.
                 </div>
               </div>
-              <select
-                className="field-in repmonth"
-                value={year}
-                onChange={(e) => setExportYear(Number(e.target.value))}
-              >
-                {data.years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
+              <Select
+                className="repmonth"
+                value={String(year)}
+                onChange={(v) => setExportYear(Number(v))}
+                aria-label="Export year"
+                options={data.years.map((y) => ({ value: String(y), label: String(y) }))}
+              />
               <button
                 className="btn"
                 onClick={() => {
