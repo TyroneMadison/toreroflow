@@ -3,6 +3,7 @@ import {
   directionOf,
   isCashAccount,
   monthKeyOf,
+  monthWindowStart,
   signedCents,
   toCents,
   totalsByMonth,
@@ -126,6 +127,37 @@ assert.equal(monthKeyOf("2026-07-26"), "2026-07");
   assert.equal(byMonth.get("2026-06")!.outCents, 1000);
   assert.equal(byMonth.get("2026-07")!.outCents, 2000);
   assert.equal(byMonth.get("2026-07")!.inCents, 5000);
+}
+
+/*
+ * The window start, which must not depend on today's day of the month.
+ *
+ * `Date.setMonth` rolls a nonexistent day forward, so six months back from 29
+ * July 2026 became 1 March instead of 1 February and the window lost a month.
+ * Every day after the 28th hit it.
+ */
+{
+  const jul29 = new Date(2026, 6, 29);
+  assert.equal(monthWindowStart(6, jul29), "2026-02-01", "29 July must not skip February");
+  assert.equal(monthWindowStart(1, jul29), "2026-07-01");
+  assert.equal(monthWindowStart(12, jul29), "2025-08-01");
+  assert.equal(monthWindowStart(24, jul29), "2024-08-01");
+  // Crossing a year boundary backwards.
+  assert.equal(monthWindowStart(3, new Date(2026, 0, 31)), "2025-11-01");
+  // The 31st of a month whose target month is short: the old bug's home.
+  assert.equal(monthWindowStart(2, new Date(2026, 2, 31)), "2026-02-01", "31 March, 2 months");
+  assert.equal(monthWindowStart(2, new Date(2026, 4, 31)), "2026-04-01", "31 May, 2 months");
+  // Same answer on every day of a month, which is the property that failed.
+  for (let day = 1; day <= 31; day++) {
+    assert.equal(
+      monthWindowStart(6, new Date(2026, 6, day)),
+      "2026-02-01",
+      `July ${day} must give the same window start`,
+    );
+  }
+  // A nonsense span never reaches into the future.
+  assert.equal(monthWindowStart(0, jul29), "2026-07-01");
+  assert.equal(monthWindowStart(-5, jul29), "2026-07-01");
 }
 
 /* ---- which accounts count ---- */

@@ -1,7 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import { isCashAccount, toCents, totalsFor, totalsByMonth } from "@toreroflow/core";
+import {
+  isCashAccount,
+  monthWindowStart,
+  toCents,
+  totalsFor,
+  totalsByMonth,
+} from "@toreroflow/core";
 import { encryptSecret, getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { PlaidClient } from "@toreroflow/publishers";
@@ -200,9 +206,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get<{ Querystring: { months?: string } }>("/bank/cashflow", async (request) => {
     const months = Math.min(24, Math.max(1, Number(request.query.months ?? 6) || 6));
-    const since = new Date();
-    since.setMonth(since.getMonth() - (months - 1));
-    const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-01`;
+    const sinceKey = monthWindowStart(months);
 
     const rows = await prisma.bankTransaction.findMany({
       where: {

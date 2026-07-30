@@ -97,6 +97,23 @@ export function monthKeyOf(isoDate: string): string {
   return isoDate.slice(0, 7);
 }
 
+/**
+ * The first day of the month a window of `months` ending today starts on,
+ * as "2026-02-01".
+ *
+ * Done with plain arithmetic rather than `Date.setMonth`, which clamps by
+ * rolling **forward**: on 29 July, six months back is 29 February, a date that
+ * does not exist in 2026, so it becomes 1 March and the window quietly loses a
+ * month. Every date after the 28th hits this, which is most of the month.
+ */
+export function monthWindowStart(months: number, today = new Date()): string {
+  const span = Math.max(1, Math.trunc(months));
+  const shifted = today.getFullYear() * 12 + today.getMonth() - (span - 1);
+  const year = Math.floor(shifted / 12);
+  const month = shifted - year * 12;
+  return `${year}-${String(month + 1).padStart(2, "0")}-01`;
+}
+
 /** Totals per calendar month, keyed "2026-07". */
 export function totalsByMonth(
   rows: BankFlowRow[],
