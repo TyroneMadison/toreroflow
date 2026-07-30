@@ -1,4 +1,9 @@
   :root{
+    /* The native <select> popup is painted by the browser, not by this
+       stylesheet. With no scheme declared it renders light while its options
+       inherit the near-white text set for the dark control, which is white on
+       white. This also darkens scrollbars and the date and number spinners. */
+    color-scheme:dark;
     --bg-0:#030208;
     --bg-1:#080611;
     --glass:rgba(255,255,255,0.05);
@@ -304,8 +309,9 @@
   [data-theme="light"] .themetoggle .knob::after{left:16px}
 
   /* ---- light theme ---- */
-  [data-theme="light"]{--bg-0:#e8eaf4;--bg-1:#f3f4fb;--glass:rgba(255,255,255,.6);--glass-2:rgba(255,255,255,.82);--glass-3:rgba(30,30,70,.07);--brd:rgba(30,30,70,.12);--brd-soft:rgba(30,30,70,.07);--txt:rgba(24,26,45,.94);--txt-2:rgba(24,26,45,.62);--txt-3:rgba(24,26,45,.42)}
+  [data-theme="light"]{color-scheme:light;--bg-0:#e8eaf4;--bg-1:#f3f4fb;--glass:rgba(255,255,255,.6);--glass-2:rgba(255,255,255,.82);--glass-3:rgba(30,30,70,.07);--brd:rgba(30,30,70,.12);--brd-soft:rgba(30,30,70,.07);--txt:rgba(24,26,45,.94);--txt-2:rgba(24,26,45,.62);--txt-3:rgba(24,26,45,.42)}
   [data-theme="light"] body{background:var(--bg-0)}
+  [data-theme="light"] option{background:#fff;color:rgba(24,26,45,.94)}
   [data-theme="light"] .field{background:radial-gradient(900px 620px at 14% -12%,rgba(139,123,255,.22),transparent 60%),radial-gradient(820px 520px at 102% -6%,rgba(78,168,255,.2),transparent 55%),linear-gradient(180deg,#f3f4fb,#e6e8f4)}
   [data-theme="light"] .blob{opacity:.3;mix-blend-mode:normal;filter:blur(100px)}
   [data-theme="light"] .grain{opacity:.02}
@@ -343,6 +349,10 @@
   .modal-foot{display:flex;gap:12px;justify-content:flex-end;padding:16px 22px;border-top:1px solid var(--brd-soft)}
   .field-in{width:100%;padding:12px 14px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);color:var(--txt);font-family:var(--font);font-size:14px;outline:none}
   .field-in:focus{border-color:rgba(139,123,255,.6)}
+  select.field-in{cursor:pointer}
+  /* A popup cannot be translucent, so the glass fill of the closed control is
+     no use inside the list. This is its solid equivalent. */
+  option{background:#12121b;color:rgba(255,255,255,.94)}
   .flabel{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--txt-3);margin:0 0 8px;display:block}
 
   .connect-row{display:flex;align-items:center;gap:12px;padding:12px 13px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);margin-top:10px}
