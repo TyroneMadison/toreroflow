@@ -206,6 +206,11 @@ model Client {
   onboardingToken      String?        @unique
   /// When their welcome reply was applied. Null means it has not arrived.
   onboardedAt          DateTime?
+  /// Handles the client gave for themselves, keyed by platform. Not connected
+  /// accounts: a typed handle cannot post anything, and a connected account
+  /// only ever comes back from the provider. This is what they say their
+  /// accounts are, which is how a platform nobody had yet becomes known.
+  handles              Json?
   /// Current retainer. A default for seeding a month, not a historical record:
   /// history lives in RevenueEntry, so raising this leaves past months alone.
   monthlyPriceCents    Int?

@@ -127,6 +127,8 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         contactName: c.contactName,
         contactEmail: c.contactEmail,
         contactPhone: c.contactPhone,
+        /** What they told us their own accounts are. Not connected accounts. */
+        handles: (c.handles ?? null) as Record<string, string> | null,
         monthlyPriceCents: c.monthlyPriceCents,
         billingMode: c.billingMode,
         createdAt: c.createdAt,

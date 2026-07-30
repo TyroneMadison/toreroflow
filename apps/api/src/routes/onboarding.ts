@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { fieldsToFill, readWelcomeReply, type WelcomeReply } from "@toreroflow/core";
+import {
+  fieldsToUpdate,
+  mergeHandles,
+  readWelcomeReply,
+  type WelcomeReply,
+} from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { NetlifyPublisher } from "../reports/netlify";
 import { env } from "../env";
@@ -128,9 +133,11 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Pulls replies and applies them.
    *
-   * Only fills blanks. A reply may complete a record and may never empty a
-   * field, because a client skipping a box is the normal case and must not
-   * wipe what is already known.
+   * An answer wins. The client is the authority on their own name, number and
+   * handles, so what they write replaces what is on file: that is the point of
+   * sending the link to a brand that already exists. A box they left empty is
+   * not an answer and clears nothing, because no field on the form is required
+   * and a half finished reply is the normal case.
    */
   app.post("/onboarding/check", async (request, reply) => {
     const net = publisher();
@@ -169,28 +176,35 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
           agencyId: request.user.agencyId,
           deletedAt: null,
         },
-        select: {
-          id: true,
-          name: true,
-          contactName: true,
-          contactEmail: true,
-          contactPhone: true,
-        },
+        select: { id: true, name: true, handles: true },
       });
       if (!client) {
         unmatched += 1;
         continue;
       }
 
-      const fill = fieldsToFill(parsed.patch, {
-        contactName: client.contactName ?? undefined,
-        contactEmail: client.contactEmail ?? undefined,
-        contactPhone: client.contactPhone ?? undefined,
-      });
+      const fill = fieldsToUpdate(parsed.patch);
+
+      /*
+       * Their handles are merged, not replaced. Answering only the YouTube box
+       * must not erase the Instagram handle they gave last time.
+       *
+       * Stored apart from connected accounts on purpose: a typed handle cannot
+       * post anything, and writing one in as an account would put a row on
+       * screen that looks connected and is not. Connecting is the separate tap
+       * that goes to the provider.
+       */
+      const handles = parsed.handles.length
+        ? mergeHandles(client.handles as Record<string, string> | null, parsed.handles)
+        : undefined;
 
       await prisma.client.update({
         where: { id: client.id },
-        data: { ...fill, onboardedAt: new Date() },
+        data: {
+          ...fill,
+          ...(handles ? { handles } : {}),
+          onboardedAt: new Date(),
+        },
       });
 
       /*
@@ -220,7 +234,9 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
       }
 
       applied.push({
-        client: client.name,
+        // The name they gave, where they gave one, so the operator reads what
+        // the brand is called now rather than what it used to be.
+        client: fill.name ?? client.name,
         filled: Object.keys(fill),
         handles: parsed.handles.length,
       });

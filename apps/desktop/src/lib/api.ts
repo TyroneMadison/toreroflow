@@ -145,6 +145,12 @@ export interface ClientSummary {
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  /**
+   * Handles the client gave for themselves on their welcome form, by platform.
+   * Not connected accounts: these cannot post, and are how a platform nobody
+   * had yet becomes known.
+   */
+  handles: Record<string, string> | null;
   /** Standing monthly price; the Financials month seeds from this. */
   monthlyPriceCents: number | null;
   billingMode: "calendar" | "on_fulfilment";
