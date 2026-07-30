@@ -2,6 +2,29 @@ import type { Platform } from "@toreroflow/core";
 
 const BASE = "https://zernio.com/api/v1";
 
+/**
+ * What a post actually carries: one video, or a set of images.
+ *
+ * Never both. A carousel has no single video to fall back to, and sending a
+ * video alongside images would leave the provider to decide what a client's
+ * account receives. Images win where both somehow arrive.
+ */
+export function mediaItemsFor(input: {
+  mediaUrl?: string;
+  mediaThumbnail?: string;
+  imageUrls?: string[];
+}): Array<Record<string, unknown>> {
+  if (input.imageUrls?.length) {
+    return input.imageUrls.map((url) => ({ url, type: "image" }));
+  }
+  if (input.mediaUrl) {
+    const item: Record<string, unknown> = { url: input.mediaUrl, type: "video" };
+    if (input.mediaThumbnail) item.thumbnail = input.mediaThumbnail;
+    return [item];
+  }
+  return [];
+}
+
 export class ZernioError extends Error {
   constructor(
     public status: number,
@@ -227,6 +250,14 @@ export class ZernioProvider {
     mediaUrl?: string;
     /** Thumbnail for the media item (YouTube long-form covers). */
     mediaThumbnail?: string;
+    /**
+     * Images posted as one carousel, in order.
+     *
+     * Instagram takes at most 10 and gives every one the aspect ratio of the
+     * first. Used instead of `mediaUrl`, never alongside it: a post is either
+     * one video or a set of images.
+     */
+    imageUrls?: string[];
     targets: Array<{
       platform: Platform;
       accountId: string;
@@ -247,11 +278,8 @@ export class ZernioProvider {
         ...(t.platformSpecificData ? { platformSpecificData: t.platformSpecificData } : {}),
       })),
     };
-    if (input.mediaUrl) {
-      const item: Record<string, unknown> = { url: input.mediaUrl, type: "video" };
-      if (input.mediaThumbnail) item.thumbnail = input.mediaThumbnail;
-      body.mediaItems = [item];
-    }
+    const items = mediaItemsFor(input);
+    if (items.length) body.mediaItems = items;
     if (input.tiktokSettings) body.tiktokSettings = input.tiktokSettings;
     if (input.publishNow) body.publishNow = true;
     if (input.scheduledFor) {

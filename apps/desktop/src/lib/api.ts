@@ -402,6 +402,10 @@ export interface MediaAssetInfo {
   id: string;
   clientId: string;
   name: string;
+  /** video | carousel. A carousel is images posted as one Instagram post. */
+  kind: "video" | "carousel";
+  /** How many images the carousel holds. Zero for a video. */
+  slideCount: number;
   durationSec: number | null;
   status: "uploaded" | "processing" | "ready" | "failed";
   hasTranscript: boolean;
@@ -551,4 +555,29 @@ export interface BankCashflowView {
   totals: BankFlowTotalsInfo;
   byMonth: Array<{ month: string } & BankFlowTotalsInfo>;
   recent: Array<{ date: string; name: string; amountCents: number; pending: boolean }>;
+}
+
+/**
+ * Several images as one carousel.
+ *
+ * Order matters: it is the order Instagram shows them in, and the first image
+ * decides the aspect ratio of the whole post.
+ */
+export async function uploadCarousel(
+  clientId: string,
+  files: File[],
+): Promise<MediaAssetInfo> {
+  const form = new FormData();
+  files.forEach((f, i) => form.append(`slide${i + 1}`, f, f.name));
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_URL}/clients/${clientId}/carousel`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const data: unknown = await res.json();
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data as MediaAssetInfo;
 }

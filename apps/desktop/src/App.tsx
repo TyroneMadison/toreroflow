@@ -8,6 +8,7 @@ import AnalyticsScreen from "./screens/AnalyticsScreen";
 import ReportsScreen from "./screens/ReportsScreen";
 import AccountOverviewScreen from "./screens/AccountOverviewScreen";
 import FinancialsScreen from "./screens/FinancialsScreen";
+import CarouselsScreen from "./screens/CarouselsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AuthScreen from "./screens/AuthScreen";
@@ -27,6 +28,7 @@ export type ScreenId =
   | "reports"
   | "overview"
   | "financials"
+  | "carousels"
   | "workflows"
   | "settings";
 
@@ -175,6 +177,9 @@ function Shell() {
             />
           )}
           {activeScreen === "financials" && <FinancialsScreen key="financials" />}
+          {activeScreen === "carousels" && (
+            <CarouselsScreen key={`carousels-${selectedClientId ?? "none"}`} />
+          )}
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />
           )}

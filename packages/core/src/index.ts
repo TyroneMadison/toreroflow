@@ -13,4 +13,5 @@ export * from "./research";
 export * from "./banking";
 export * from "./business";
 export * from "./tax";
+export * from "./carousel";
 export * as tokens from "./tokens";
