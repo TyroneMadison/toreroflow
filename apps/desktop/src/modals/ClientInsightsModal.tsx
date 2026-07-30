@@ -166,7 +166,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
         </div>
       </div>
       <div className="modal-body">
-        <div className="kpis" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+        <div className="kpis stagger" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
           <div className="kpi glass-sm">
             <div className="lab">Views</div>
             <div className="val">{fmt(data?.totals.views ?? null)}</div>
