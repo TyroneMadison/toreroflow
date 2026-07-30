@@ -1,7 +1,13 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import Anthropic from "@anthropic-ai/sdk";
-import { toPlainText } from "@toreroflow/core";
+import {
+  captionLead,
+  competitorBrief,
+  digestCompetitor,
+  toPlainText,
+  type CompetitorDigest,
+} from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { renderReportPdf } from "@toreroflow/media";
 import { env } from "./env";
@@ -39,8 +45,16 @@ const SUGGESTIONS_SCHEMA = {
         additionalProperties: false,
       },
     },
+    /**
+     * What the researched accounts are doing that works.
+     *
+     * Empty when nothing has been researched. No length bounds: the model's
+     * structured output rejects minItems above 1 and maxItems entirely, so
+     * the count is asked for in the prompt instead.
+     */
+    competitorNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["suggestions"],
+  required: ["suggestions", "competitorNotes"],
   additionalProperties: false,
 } as const;
 
@@ -48,6 +62,30 @@ export interface InsightSuggestion {
   title: string;
   detail: string;
   category: string;
+}
+
+/** One researched account as the PDF shows it. Numbers, never model prose. */
+export interface CompetitorCard {
+  handle: string;
+  platform: string;
+  typicalViews: number | null;
+  bestViews: number | null;
+  typicalSeconds: number | null;
+  postsPerWeek: number | null;
+  /** The single best post, so the page shows one concrete example. */
+  bestOpening: string | null;
+}
+
+function competitorCards(digests: CompetitorDigest[]): CompetitorCard[] {
+  return digests.map((d) => ({
+    handle: d.handle,
+    platform: d.platform,
+    typicalViews: d.medianViews,
+    bestViews: d.bestViews,
+    typicalSeconds: d.typicalSeconds,
+    postsPerWeek: d.postsPerWeek,
+    bestOpening: d.top[0]?.caption ? toPlainText(captionLead(d.top[0].caption, 110)) : null,
+  }));
 }
 
 /** Model call, unchanged from the route it came from. */
@@ -70,7 +108,9 @@ async function askForSuggestions(
       }>;
     }>;
   },
-): Promise<InsightSuggestion[]> {
+  /** What the accounts this client wants to be like are actually posting. */
+  competitors: CompetitorDigest[],
+): Promise<{ suggestions: InsightSuggestion[]; competitorNotes: string[] }> {
   const accountSummary = client.socialAccounts.length
     ? client.socialAccounts
         .map((a) => {
@@ -83,9 +123,13 @@ async function askForSuggestions(
         .join("\n")
     : "- no platforms connected yet";
 
+  const brief = competitorBrief(competitors);
+
   const response = await anthropic.messages.create({
     model: env.COPY_MODEL,
-    max_tokens: 2048,
+    // Room for the steps and the competitor notes together. A truncated answer
+    // is not partial output here, it is unparseable JSON and a failed run.
+    max_tokens: 3072,
     thinking: { type: "adaptive" },
     output_config: {
       effort: "low",
@@ -108,7 +152,24 @@ async function askForSuggestions(
       "rather than 'follower count'.\n" +
       "- Every step is something they can actually do themselves this week. " +
       "Say what to do, then why it helps, in plain terms.\n\n" +
-      "Give 4 to 6 steps, in the order they should be done.",
+      "Give 4 to 6 steps, in the order they should be done.\n\n" +
+      "You may also be given what the accounts this person said they want to " +
+      "be like are posting right now. When you are:\n" +
+      "- Build the steps on it. A step that copies something already working " +
+      "for those accounts beats a general tip every time.\n" +
+      "- Name the account when it helps, the way they would: 'that account " +
+      "posts about 20 times a week' becomes better as '@their_handle posts " +
+      "about 20 times a week'. They chose these accounts, so they know who " +
+      "they are.\n" +
+      "- Use only numbers you were given. Never invent one, and never round a " +
+      "number up to sound better.\n" +
+      "- Also fill competitorNotes with 2 to 4 short observations about what " +
+      "those accounts do that works: how long their videos are, how often " +
+      "they post, how they open, what their best post did. One or two " +
+      "sentences each, same plain language as the steps, written to the " +
+      "client as 'you' or about the account by name.\n" +
+      "When you are given nothing about those accounts, return an empty " +
+      "competitorNotes list and do not mention them at all.",
     messages: [
       {
         role: "user",
@@ -118,7 +179,12 @@ async function askForSuggestions(
           `for you, do not quote it back at them or mention where it came from:\n` +
           `${accountSummary}\n\n` +
           `They make short vertical videos for Instagram, TikTok, YouTube, ` +
-          `Facebook and Snapchat.`,
+          `Facebook and Snapchat.` +
+          (brief
+            ? `\n\nThese are the accounts they said they want their content to ` +
+              `be like, and what those accounts have been posting. Every number ` +
+              `here is measured, so use them as they are:\n${brief}`
+            : ""),
       },
     ],
   });
@@ -126,14 +192,22 @@ async function askForSuggestions(
   if (response.stop_reason === "refusal") throw new Error("the model declined the request");
   const text = response.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") throw new Error("the model returned an empty response");
-  const parsed = JSON.parse(text.text) as { suggestions: InsightSuggestion[] };
+  const parsed = JSON.parse(text.text) as {
+    suggestions: InsightSuggestion[];
+    competitorNotes?: string[];
+  };
   // The prompt asks for plain punctuation, but asking is not enforcing, and
   // this document goes to a paying client. See packages/core/src/plainText.ts.
-  return parsed.suggestions.map((s) => ({
-    title: toPlainText(s.title),
-    detail: toPlainText(s.detail),
-    category: toPlainText(s.category),
-  }));
+  return {
+    suggestions: parsed.suggestions.map((s) => ({
+      title: toPlainText(s.title),
+      detail: toPlainText(s.detail),
+      category: toPlainText(s.category),
+    })),
+    competitorNotes: (parsed.competitorNotes ?? [])
+      .map((n) => toPlainText(n).trim())
+      .filter(Boolean),
+  };
 }
 
 /**
@@ -187,7 +261,36 @@ export async function generateInsight(clientId: string): Promise<void> {
     });
     const businessName = agency?.legalName ?? agency?.name ?? "Torerone";
 
-    const suggestions = await askForSuggestions(anthropic, client);
+    /*
+     * The accounts this client wants to be like, as of right now.
+     *
+     * Read fresh on every run rather than stored with the plan, so adding an
+     * account and researching it is enough to make the next Generate reflect
+     * it. Only the newest snapshot per account is used: research costs money
+     * and older pulls of the same account describe the same person less well.
+     *
+     * An account with nothing pulled yet contributes nothing rather than a row
+     * of blanks. Researching is a separate press with a price on it, and the
+     * document should never imply a fetch happened when it did not.
+     */
+    const inspirations = await prisma.inspirationAccount.findMany({
+      where: { clientId: client.id },
+      orderBy: { handle: "asc" },
+      include: { snapshots: { orderBy: { fetchedAt: "desc" }, take: 1 } },
+    });
+    const competitors = inspirations
+      .map((a) =>
+        a.snapshots[0]
+          ? digestCompetitor({ platform: a.platform, handle: a.handle, raw: a.snapshots[0].raw })
+          : null,
+      )
+      .filter((d): d is CompetitorDigest => d !== null);
+
+    const { suggestions, competitorNotes } = await askForSuggestions(
+      anthropic,
+      client,
+      competitors,
+    );
 
     const now = new Date();
     // Date only. A timestamp reading "2:25 AM" on a client's document says
@@ -204,6 +307,8 @@ export async function generateInsight(clientId: string): Promise<void> {
       businessName,
       generatedLabel,
       suggestions,
+      competitorNotes,
+      competitors: competitorCards(competitors),
     });
 
     // Its own folder, not `reports/`: this is a document Tyrone hands over
@@ -216,8 +321,20 @@ export async function generateInsight(clientId: string): Promise<void> {
     // is printed on the page itself.
     const storageKey = `${client.id}/insights/what-to-do-next.pdf`;
     const absPath = path.join(env.STORAGE_DIR, storageKey);
-    await fs.mkdir(path.dirname(absPath), { recursive: true });
+    const dir = path.dirname(absPath);
+    await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(absPath, pdf);
+
+    // Writing the same name replaces the previous plan, but an earlier build
+    // dated the file, so a machine that ran that version still has plans
+    // nothing points at. Only this function writes here, and only ever one
+    // PDF, so anything else in the folder is superseded by what was just
+    // written. Scoped to .pdf so a stray file is never swept up with them.
+    for (const name of await fs.readdir(dir)) {
+      if (name !== path.basename(absPath) && name.toLowerCase().endsWith(".pdf")) {
+        await fs.rm(path.join(dir, name), { force: true });
+      }
+    }
 
     await prisma.clientInsight.updateMany({
       where: { clientId },
