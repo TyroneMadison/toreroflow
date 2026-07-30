@@ -183,12 +183,15 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
           } catch (err) {
             app.log.error({ err }, "could not revoke the duplicate bank link");
           }
+          // Both lines name the bank: the detail is what the operator reads,
+          // and it has to stand on its own.
+          const named = already.institutionName ?? "That bank";
           return reply.status(409).send({
-            error: `${already.institutionName ?? "That bank"} is already connected`,
+            error: `${named} is already connected`,
             detail:
               already.status === "needs_reconnect"
-                ? "Press Reconnect on it instead. Connecting again would add a second copy of every account and double the figures."
-                : "Connecting it again would add a second copy of every account and double the figures. Disconnect it first if you want to start over.",
+                ? `${named} is already connected, so press Reconnect on it instead. Connecting again would add a second copy of every account and double the figures.`
+                : `${named} is already connected. Connecting it again would add a second copy of every account and double the figures, so disconnect it first if you want to start over.`,
           });
         }
       }
