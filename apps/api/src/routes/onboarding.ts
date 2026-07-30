@@ -163,6 +163,8 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
 
     const applied: Array<{ client: string; filled: string[]; handles: number }> = [];
     let unmatched = 0;
+    /** Replies seen before. Counted so a quiet check can say why it was quiet. */
+    let alreadyApplied = 0;
 
     for (const submission of submissions) {
       const parsed = readWelcomeReply(submission);
@@ -176,10 +178,24 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
           agencyId: request.user.agencyId,
           deletedAt: null,
         },
-        select: { id: true, name: true, handles: true },
+        select: { id: true, name: true, handles: true, welcomeRepliesApplied: true },
       });
       if (!client) {
         unmatched += 1;
+        continue;
+      }
+
+      /*
+       * Applied once, ever.
+       *
+       * Every check reads the whole list of replies back from the host, so
+       * without this the same answers would be written again on every press.
+       * That is not harmless now that an answer wins: a detail corrected by
+       * hand afterwards would be silently reverted to what the client typed
+       * weeks earlier.
+       */
+      if (client.welcomeRepliesApplied.includes(submission.id)) {
+        alreadyApplied += 1;
         continue;
       }
 
@@ -204,6 +220,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
           ...fill,
           ...(handles ? { handles } : {}),
           onboardedAt: new Date(),
+          welcomeRepliesApplied: { push: submission.id },
         },
       });
 
@@ -242,6 +259,6 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    return { checked: submissions.length, applied, unmatched };
+    return { checked: submissions.length, applied, unmatched, alreadyApplied };
   });
 }
