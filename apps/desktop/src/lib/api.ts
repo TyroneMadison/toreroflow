@@ -21,11 +21,24 @@ export class ApiError extends Error {
     public status: number,
     public body: unknown,
   ) {
-    super(
-      typeof body === "object" && body !== null && "error" in body
-        ? String((body as { error: unknown }).error)
-        : `request failed (${status})`,
-    );
+    /*
+     * The API answers failures with a short `error` and a fuller `detail`, and
+     * only the short one was ever read, so every explanation the server wrote
+     * was thrown away here. That is how a refused bank connection reached the
+     * operator as "could not start the bank connection: could not start the
+     * bank connection" while the server was saying exactly which setting was
+     * wrong.
+     *
+     * The detail wins where there is one, because callers already pass their
+     * own title to the toast and the short form usually just repeats it.
+     */
+    const fields = (typeof body === "object" && body !== null ? body : {}) as {
+      error?: unknown;
+      detail?: unknown;
+    };
+    const short = typeof fields.error === "string" ? fields.error.trim() : "";
+    const full = typeof fields.detail === "string" ? fields.detail.trim() : "";
+    super(full || short || `request failed (${status})`);
   }
 }
 
