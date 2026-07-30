@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
+import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import {
   api,
@@ -338,46 +339,41 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             <label className="flabel" style={{ marginTop: 12 }}>
               Visibility
             </label>
-            <select
-              className="field-in"
+            <Select
               value={ytVisibility}
-              onChange={(e) => setYtVisibility(e.target.value)}
-            >
-              <option value="">Public (default)</option>
-              <option value="unlisted">Unlisted</option>
-              <option value="private">Private</option>
-            </select>
+              onChange={setYtVisibility}
+              aria-label="Visibility"
+              options={[
+                { value: "", label: "Public (default)" },
+                { value: "unlisted", label: "Unlisted" },
+                { value: "private", label: "Private" },
+              ]}
+            />
             <label className="flabel" style={{ marginTop: 12 }}>
               Category
             </label>
-            <select
-              className="field-in"
+            <Select
               value={ytCategoryId}
-              onChange={(e) => setYtCategoryId(e.target.value)}
-            >
-              <option value="">Default (People &amp; Blogs)</option>
-              {YT_CATEGORIES.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              onChange={setYtCategoryId}
+              aria-label="Category"
+              options={[
+                { value: "", label: "Default (People & Blogs)" },
+                ...YT_CATEGORIES.map(([id, label]) => ({ value: id, label })),
+              ]}
+            />
             <label className="flabel" style={{ marginTop: 12 }}>
               Playlist
             </label>
             {ytPlaylists && ytPlaylists.length > 0 ? (
-              <select
-                className="field-in"
+              <Select
                 value={ytPlaylistId}
-                onChange={(e) => setYtPlaylistId(e.target.value)}
-              >
-                <option value="">None</option>
-                {ytPlaylists.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
+                onChange={setYtPlaylistId}
+                aria-label="Playlist"
+                options={[
+                  { value: "", label: "None" },
+                  ...ytPlaylists.map((p) => ({ value: p.id, label: p.title })),
+                ]}
+              />
             ) : (
               <p style={{ fontSize: 12.5, color: "var(--txt-3)", marginTop: 4 }}>
                 {ytPlaylists === null ? "Loading playlists…" : "No public playlists found."}

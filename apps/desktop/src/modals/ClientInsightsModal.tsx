@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isReady, isRunning } from "@toreroflow/core";
 import Modal from "./Modal";
+import Select from "../components/Select";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
@@ -338,17 +339,17 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
               if (e.key === "Enter") void addInspiration();
             }}
           />
-          <select
-            className="field-in"
+          <Select
             style={{ width: 130 }}
             value={newPlatform}
-            onChange={(e) => setNewPlatform(e.target.value)}
+            onChange={setNewPlatform}
             aria-label="Which app this account is on"
-          >
-            <option value="both">Both</option>
-            <option value="instagram">Instagram</option>
-            <option value="tiktok">TikTok</option>
-          </select>
+            options={[
+              { value: "both", label: "Both" },
+              { value: "instagram", label: "Instagram" },
+              { value: "tiktok", label: "TikTok" },
+            ]}
+          />
           <button className="cbtn" onClick={() => void addInspiration()}>
             Add
           </button>

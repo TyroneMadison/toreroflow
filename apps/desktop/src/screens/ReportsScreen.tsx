@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import {
   api,
@@ -302,17 +303,13 @@ export default function ReportsScreen({
                 client actually sees.
               </div>
             </div>
-            <select
-              className="field-in repmonth"
+            <Select
+              className="repmonth"
               value={month}
-              onChange={(e) => setMonth(e.target.value)}
-            >
-              {months.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+              onChange={setMonth}
+              aria-label="Month"
+              options={months.map((m) => ({ value: m.value, label: m.label }))}
+            />
           </div>
 
           {clients.length === 0 ? (
@@ -333,7 +330,7 @@ export default function ReportsScreen({
                 const working = busy === c.id;
                 return (
                   <div className="repclient" key={c.id}>
-                    <div className="avatar" style={{ width: 32, height: 32, borderRadius: 10, overflow: "hidden", background: avatar ? "var(--glass-2)" : "linear-gradient(135deg,#8b7bff,#4ea8ff)" }}>
+                    <div className="avatar" style={{ width: 32, height: 32, borderRadius: 10, overflow: "hidden", background: avatar ? "var(--glass-2)" : "linear-gradient(135deg,#FF6F61,#FF9A73)" }}>
                       {avatar ? (
                         <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       ) : (

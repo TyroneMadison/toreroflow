@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatCents, FILING_STATUS_LABELS, STATE_TAX, type FilingStatus } from "@toreroflow/core";
+import Select from "../Select";
 import { useToast } from "../Toasts";
 import { api, type AgencyBusiness, type TaxEstimateView } from "../../lib/api";
 
@@ -130,33 +131,31 @@ export default function TaxCard({ year }: { year: number }) {
       <div className="pcontact" style={{ marginTop: 14, maxWidth: 560 }}>
         <label className="cfield">
           <span className="lab">State</span>
-          <select
-            className="field-in"
+          <Select
             value={agency.taxState ?? ""}
-            onChange={(e) => void save({ taxState: e.target.value })}
-          >
-            <option value="">Pick a state</option>
-            {STATES.map((code) => (
-              <option key={code} value={code}>
-                {code} · {STATE_TAX[code]!.rate}%
-              </option>
-            ))}
-          </select>
+            onChange={(v) => void save({ taxState: v })}
+            placeholder="Pick a state"
+            options={[
+              { value: "", label: "Pick a state" },
+              ...STATES.map((code) => ({
+                value: code,
+                label: code,
+                hint: `${STATE_TAX[code]!.rate}%`,
+              })),
+            ]}
+          />
         </label>
 
         <label className="cfield">
           <span className="lab">Filing status</span>
-          <select
-            className="field-in"
+          <Select
             value={agency.filingStatus ?? "single"}
-            onChange={(e) => void save({ filingStatus: e.target.value })}
-          >
-            {(Object.keys(FILING_STATUS_LABELS) as FilingStatus[]).map((k) => (
-              <option key={k} value={k}>
-                {FILING_STATUS_LABELS[k]}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => void save({ filingStatus: v })}
+            options={(Object.keys(FILING_STATUS_LABELS) as FilingStatus[]).map((k) => ({
+              value: k,
+              label: FILING_STATUS_LABELS[k],
+            }))}
+          />
         </label>
 
         <label className="cfield">

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { deductibleCents, formatCents, type ExpenseCategory } from "@toreroflow/core";
+import Select from "../Select";
 import { useToast } from "../Toasts";
 import { api } from "../../lib/api";
 import { colorFor, type ExpenseRow } from "../../lib/financials";
@@ -171,18 +172,13 @@ export default function ExpenseSection({
             <b>{row.name}</b>
             <span>{subLine(row)}</span>
           </div>
-          <select
-            className="field-in catpick"
+          <Select
+            className="catpick"
             value={row.categoryLine}
-            onChange={(e) => void setCategory(row, e.target.value)}
+            onChange={(v) => void setCategory(row, v)}
             title="Schedule C category"
-          >
-            {categories.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+            options={categories.map((c) => ({ value: c.key, label: c.label }))}
+          />
           {row.amountCents === null && editingId !== row.id && <span className="tag miss">Missing</span>}
           {editingId === row.id ? (
             <div className="pricein">
@@ -244,17 +240,12 @@ export default function ExpenseSection({
             value={draft.name}
             onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
           />
-          <select
-            className="field-in catpick"
+          <Select
+            className="catpick"
             value={draft.categoryLine}
-            onChange={(e) => setDraft((d) => ({ ...d, categoryLine: e.target.value }))}
-          >
-            {categories.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setDraft((d) => ({ ...d, categoryLine: v }))}
+            options={categories.map((c) => ({ value: c.key, label: c.label }))}
+          />
           <div className="pricein">
             <span>$</span>
             <input
