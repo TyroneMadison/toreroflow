@@ -116,6 +116,13 @@ function monthLabel(d: Date): string {
 
 export interface BuildReportInput {
   clientName: string;
+  /**
+   * Who prepared this, on paper.
+   *
+   * The registered company where there is one, so the document a client keeps
+   * names the entity they are actually paying, and the brand otherwise.
+   */
+  businessName: string;
   accounts: ReportAccount[];
   /** Every post available, any period; this function does the windowing. */
   posts: ReportPost[];
@@ -127,7 +134,7 @@ export interface BuildReportInput {
 }
 
 export function buildReportData(input: BuildReportInput): Record<string, unknown> {
-  const { clientName, accounts, posts, periodStart, periodEnd } = input;
+  const { clientName, businessName, accounts, posts, periodStart, periodEnd } = input;
   const generatedAt = input.generatedAt ?? new Date();
 
   const periodMs = periodEnd.getTime() - periodStart.getTime();
@@ -340,7 +347,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
     meta: [
       { k: "Client", v: clientName },
       { k: "Reporting Period", v: periodLabel },
-      { k: "Prepared By", v: "Torerone" },
+      { k: "Prepared By", v: businessName },
       {
         k: "Platforms",
         v: `${accounts.length} account${accounts.length === 1 ? "" : "s"} managed`,
@@ -372,7 +379,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
     topContent: { eyebrow: "What worked", title: "Top Content", items: topContent },
     plan: { eyebrow: "Next", title: "The Plan", items: planItems },
     footer: {
-      contactHtml: `<b>Torerone</b><br>toreronee@gmail.com · torerone.com<br>Report generated ${generatedAt.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
+      contactHtml: `<b>${businessName}</b><br>hello@example.com · torerone.com<br>Report generated ${generatedAt.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
       note: "Short form content that performs",
     },
   };

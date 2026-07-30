@@ -86,6 +86,7 @@ export interface TaxExportData {
   business: {
     legalName: string;
     ein: string | null;
+    address: string | null;
     businessCode: string | null;
     accountingMethod: string;
   };
@@ -182,6 +183,7 @@ export function buildTaxExportHtml(data: TaxExportData): string {
 <h1>Schedule C summary, ${data.year}</h1>
 <div class="muted">
   ${esc(data.business.legalName)}<br>
+  ${data.business.address ? `${esc(data.business.address).replace(/\n/g, "<br>")}<br>` : ""}
   ${data.business.ein ? `EIN ${esc(data.business.ein)}<br>` : "EIN not recorded<br>"}
   ${data.business.businessCode ? `Business code ${esc(data.business.businessCode)}<br>` : "Business code not recorded<br>"}
   Accounting method: ${esc(data.business.accountingMethod)}
