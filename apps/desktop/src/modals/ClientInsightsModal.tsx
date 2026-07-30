@@ -99,6 +99,7 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
   const [insp, setInsp] = useState<InspirationsView | null>(null);
   const [newHandle, setNewHandle] = useState("");
   const [newPlatform, setNewPlatform] = useState("both");
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
   const loadInspirations = useCallback(async () => {
     try {
@@ -134,6 +135,20 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
       await loadInspirations();
     } catch (err) {
       toast.fail("Could not add that account", err);
+    }
+  };
+
+  /**
+   * Removing an account takes its research with it: the snapshot rows hang off
+   * it and go when it goes. That is a paid fetch thrown away, which is why the
+   * button arms first rather than deleting on a single click.
+   */
+  const removeInspiration = async (id: string) => {
+    try {
+      await api.del(`/inspirations/${id}`);
+      await loadInspirations();
+    } catch (err) {
+      toast.fail("Could not remove that account", err);
     }
   };
 
@@ -277,6 +292,31 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
                       : "Not looked up yet"}
               </p>
             </div>
+            <span
+              className={`qdel${confirmRemove === a.id ? " armed" : ""}`}
+              title={
+                confirmRemove === a.id
+                  ? "Click again to remove this account and anything pulled for it"
+                  : `Remove @${a.handle}`
+              }
+              onClick={() => {
+                if (confirmRemove === a.id) {
+                  setConfirmRemove(null);
+                  void removeInspiration(a.id);
+                } else {
+                  setConfirmRemove(a.id);
+                  setTimeout(() => setConfirmRemove((c) => (c === a.id ? null : c)), 4000);
+                }
+              }}
+            >
+              {confirmRemove === a.id ? (
+                "remove?"
+              ) : (
+                <svg>
+                  <use href="#i-x" />
+                </svg>
+              )}
+            </span>
           </div>
         ))}
 
