@@ -103,13 +103,25 @@ export async function runResearch(runId: string): Promise<void> {
 
         const posts = await provider.fetchPosts(p.platform, externalId, POSTS_PER_ACCOUNT);
         spent += posts.costCents || Math.ceil(CENTS_PER_CALL);
-        await prisma.competitorSnapshot.create({
+        const snapshot = await prisma.competitorSnapshot.create({
           data: {
             accountId: account.id,
             runId,
             raw: posts.raw as Prisma.InputJsonValue,
             costCents: posts.costCents,
           },
+        });
+        /*
+         * The new pull replaces the old one for this account.
+         *
+         * A payload is the provider's answer stored verbatim, which runs about
+         * 160KB for a single Instagram account, and every reader takes the
+         * newest one only. Keeping every past pull grows the database by that
+         * much per account per press and buys nothing: an older pull describes
+         * the same person, less well.
+         */
+        await prisma.competitorSnapshot.deleteMany({
+          where: { accountId: account.id, id: { not: snapshot.id } },
         });
         stored += 1;
       } catch (err) {
