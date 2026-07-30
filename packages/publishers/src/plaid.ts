@@ -61,6 +61,27 @@ export interface SyncPage {
   has_more: boolean;
 }
 
+/**
+ * The body for a link token request.
+ *
+ * Two modes, and they are mutually exclusive at the provider: a **new** link
+ * asks for products, while **update** mode passes the existing access token to
+ * re-authenticate a link the bank has expired. Sending both is a 400, and
+ * sending products in update mode would create a second item for a bank that is
+ * already connected, which doubles every figure in the app.
+ */
+export function linkTokenBody(userId: string, accessToken?: string | null): Record<string, unknown> {
+  const base = {
+    user: { client_user_id: userId },
+    client_name: "Toreroflow",
+    country_codes: ["US"],
+    language: "en",
+  };
+  return accessToken
+    ? { ...base, access_token: accessToken }
+    : { ...base, products: ["transactions"] };
+}
+
 export class PlaidClient {
   private readonly host: string;
 
@@ -103,15 +124,17 @@ export class PlaidClient {
    * never needs one, which is what makes this work without a hosted HTTPS
    * endpoint. `transactions` only, so the token cannot be widened later into
    * something that moves money.
+   *
+   * Pass `accessToken` to repair an existing link instead of making a new one.
+   * That is the only correct answer to a bank asking for a fresh login: the
+   * item, its accounts and its stored history all survive, where connecting
+   * again from scratch would create a duplicate of every account.
    */
-  async createLinkToken(userId: string): Promise<string> {
-    const r = await this.call<{ link_token: string }>("/link/token/create", {
-      user: { client_user_id: userId },
-      client_name: "Toreroflow",
-      products: ["transactions"],
-      country_codes: ["US"],
-      language: "en",
-    });
+  async createLinkToken(userId: string, accessToken?: string | null): Promise<string> {
+    const r = await this.call<{ link_token: string }>(
+      "/link/token/create",
+      linkTokenBody(userId, accessToken),
+    );
     return r.link_token;
   }
 
@@ -133,23 +156,41 @@ export class PlaidClient {
     return r.accounts;
   }
 
-  /** Which bank this is, for showing something other than an opaque id. */
-  async institutionName(accessToken: string): Promise<string | null> {
+  /**
+   * Which bank this is: the id, and the name to show instead of an opaque id.
+   *
+   * The id is what tells a reconnection of the same bank apart from a genuinely
+   * different one, so it is worth storing even though only the name is shown.
+   */
+  async institution(accessToken: string): Promise<{ id: string | null; name: string | null }> {
     try {
       const item = await this.call<{ item: { institution_id?: string | null } }>("/item/get", {
         access_token: accessToken,
       });
-      const id = item.item?.institution_id;
-      if (!id) return null;
+      const id = item.item?.institution_id ?? null;
+      if (!id) return { id: null, name: null };
       const inst = await this.call<{ institution: { name: string } }>("/institutions/get_by_id", {
         institution_id: id,
         country_codes: ["US"],
       });
-      return inst.institution.name;
+      return { id, name: inst.institution.name };
     } catch {
       // Cosmetic only: a missing name must not fail a connection.
-      return null;
+      return { id: null, name: null };
     }
+  }
+
+  /**
+   * Revokes a link.
+   *
+   * The one endpoint here that is not a read, and it is still not a mover of
+   * money: it throws away an access token so the provider stops reaching the
+   * bank. Without it, pressing Disconnect only forgets the link locally while
+   * it stays live at the provider, which is both a standing bill and a live
+   * key to a bank nobody is watching any more.
+   */
+  async removeItem(accessToken: string): Promise<void> {
+    await this.call<{ request_id: string }>("/item/remove", { access_token: accessToken });
   }
 
   /** One page of the incremental transaction feed. */

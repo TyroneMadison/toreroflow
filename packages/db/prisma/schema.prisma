@@ -701,6 +701,12 @@ model BankConnection {
   /// The provider's identifier for this link. Unique so reconnecting the same
   /// bank updates the row rather than stacking a second copy of every account.
   itemId          String    @unique
+  /// The provider's id for the bank itself, which survives a relink where
+  /// itemId does not. Stored so a second link to a bank that is already
+  /// connected can be refused: both items' accounts would default into cash
+  /// flow and every figure would double. Null when the lookup failed, and a
+  /// null never matches another null.
+  institutionId   String?
   institutionName String?
   /// The access token, encrypted with packages/db/src/secrets.ts. Never
   /// written in plaintext: this is a long-lived key to a real bank's
