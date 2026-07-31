@@ -523,10 +523,7 @@ export interface InspirationsView {
 export interface BankAccountInfo {
   id: string;
   name: string;
-  officialName: string | null;
   mask: string | null;
-  type: string | null;
-  subtype: string | null;
   currentCents: number | null;
   availableCents: number | null;
   currency: string;
@@ -545,9 +542,6 @@ export interface BankConnectionInfo {
 }
 
 export interface BankConnectionsView {
-  configured: boolean;
-  environment: string;
-  reason: string | null;
   connections: BankConnectionInfo[];
 }
 

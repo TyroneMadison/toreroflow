@@ -759,9 +759,13 @@ model BankConnection {
   /// written in plaintext: this is a long-lived key to a real bank's
   /// transaction history.
   accessTokenEnc  String
-  /// Where the incremental transaction sync left off. Null means never synced,
-  /// which is different from synced and finding nothing.
-  cursor          String?
+  /// The last date the feed was read through, ISO "2026-07-31". Null means
+  /// never synced, which is different from synced and finding nothing.
+  ///
+  /// A date rather than a cursor because SimpleFIN is queried by date range,
+  /// not by change token: each sync asks for everything since this day, and
+  /// re-reading a day is harmless because every row is keyed by its own id.
+  syncedThrough   String?
   /// active | needs_reconnect | error. A bank that wants re-authentication is
   /// not broken, and reads differently to a failure.
   status          String    @default("active")
@@ -781,14 +785,11 @@ model BankConnection {
 model BankAccount {
   id              String  @id @default(cuid())
   connectionId    String
-  plaidAccountId  String  @unique
+  providerAccountId String @unique
   name            String
   officialName    String?
   /// Last four digits, for telling two accounts apart on screen.
   mask            String?
-  /// depository | credit | loan | investment | other.
-  type            String?
-  subtype         String?
   /// Integer cents, like every other figure in this app. Null when the
   /// provider has no figure, which is not the same as zero.
   currentCents    Int?
@@ -796,11 +797,11 @@ model BankAccount {
   currency        String  @default("USD")
   /// Whether this account counts towards money in and money out.
   ///
-  /// Defaults from the account type: a single link returns a mortgage, a 401k
-  /// and student loans alongside the checking account, and folding those into
-  /// cash flow would make the number meaningless. Still an operator decision,
-  /// because only they know which account the business actually runs on.
-  includeInCashFlow Boolean @default(false)
+  /// Starts true: the provider reports no account type, so there is nothing to
+  /// decide from, and a default that is visibly too generous beats one that
+  /// silently drops the account the business actually runs on. The operator
+  /// unticks the rest.
+  includeInCashFlow Boolean @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -814,7 +815,7 @@ model BankAccount {
 model BankTransaction {
   id                 String  @id @default(cuid())
   accountId          String
-  plaidTransactionId String  @unique
+  providerTransactionId String @unique
   /// ISO "2026-07-26", stored as text on purpose.
   ///
   /// This is a date, not an instant. Putting it in a timestamp column invites
@@ -826,13 +827,11 @@ model BankTransaction {
   merchantName       String?
   /// Integer cents in OUR convention: positive means money arrived.
   ///
-  /// Deliberately not the provider's sign, which is inverted (positive means
-  /// money left the account). The flip happens once, in
-  /// packages/core/src/banking.ts, so nothing downstream has to remember it.
+  /// Converted in exactly one place, packages/core/src/banking.ts, so a future
+  /// provider that signs the other way round is one line rather than a hunt.
   amountCents        Int
   /// Pending rows can change amount or vanish, so totals exclude them.
   pending            Boolean @default(false)
-  category           String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

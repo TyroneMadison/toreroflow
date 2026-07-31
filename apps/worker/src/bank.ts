@@ -1,32 +1,38 @@
 import { signedCents, toCents } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
-import { decryptSecret, isEncrypted } from "@toreroflow/db";
-import { needsReconnect, PlaidClient, PlaidError } from "@toreroflow/publishers";
-import { env } from "./env";
+import { decryptSecret, getPrisma, isEncrypted } from "@toreroflow/db";
+import { BankError, fetchAccounts } from "@toreroflow/publishers";
 
 /**
  * Pulls the bank feed for one linked connection.
  *
- * Incremental: the provider hands back everything that changed since a stored
- * cursor, in three buckets. All three matter. A transaction can be added,
- * then have its amount or merchant corrected once the bank settles it, then
- * be removed entirely if it was reversed. Applying only the additions is how
- * a total drifts away from the real balance and never comes back.
+ * SimpleFIN is queried by date range, not by change cursor, and the protocol
+ * caps a range at 90 days. So a sync walks forward in windows from where it
+ * last finished and records the day it reached. Re-reading a day is harmless:
+ * every row is keyed by the provider's own transaction id, so a repeat is an
+ * update rather than a duplicate.
  *
- * The cursor is saved only after a page is written, so a crash mid-sync
- * repeats a page rather than skipping one. Repeating is harmless because every
- * row is keyed by the provider's own transaction id.
+ * The first sync of a new connection has nowhere to start from and takes a
+ * year, which is five windows. Later syncs start a week before the last day
+ * read, because a card transaction can post several days after it happened and
+ * a window starting exactly where the last one ended would miss it for good.
  */
 
 const prisma = getPrisma();
 
-/** Pages before giving up, so a broken feed cannot loop forever. */
-const MAX_PAGES = 60;
+/** The protocol's own limit on a single request. */
+const WINDOW_DAYS = 90;
+/** How far back a first sync reaches. */
+const FIRST_SYNC_DAYS = 365;
+/** Days re-read on every sync, so late-posting rows are not lost. */
+const OVERLAP_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const iso = (d: Date): string => d.toISOString().slice(0, 10);
 
 export async function syncBankConnection(connectionId: string): Promise<void> {
   const connection = await prisma.bankConnection.findUnique({
     where: { id: connectionId },
-    include: { accounts: { select: { id: true, plaidAccountId: true } } },
+    include: { accounts: { select: { id: true, providerAccountId: true } } },
   });
   if (!connection) return;
 
@@ -38,117 +44,130 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
     console.error(`[worker] bank sync failed for ${connection.id}: ${message}`);
   };
 
-  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
-    await fail("Bank oversight needs PLAID_CLIENT_ID and PLAID_SECRET in the repo .env.");
-    return;
-  }
   if (!isEncrypted(connection.accessTokenEnc)) {
     // Refusing rather than guessing: a value that is not one of our blobs is
-    // not something to send to a bank API.
-    await fail("This connection's stored token is unreadable. Reconnect the bank.");
+    // not something to send anywhere.
+    await fail("This connection's stored address is unreadable. Connect the bank again.");
     return;
   }
 
-  let accessToken: string;
+  let accessUrl: string;
   try {
-    accessToken = decryptSecret(connection.accessTokenEnc);
+    accessUrl = decryptSecret(connection.accessTokenEnc);
   } catch {
     await fail(
-      "This connection's token could not be decrypted, which usually means TOKEN_ENCRYPTION_KEY changed. Reconnect the bank.",
+      "This connection could not be decrypted, which usually means TOKEN_ENCRYPTION_KEY changed. Connect the bank again.",
     );
     return;
   }
 
-  const accountIdByPlaidId = new Map(connection.accounts.map((a) => [a.plaidAccountId, a.id]));
+  const now = new Date();
+  const startFrom = connection.syncedThrough
+    ? new Date(new Date(`${connection.syncedThrough}T00:00:00Z`).getTime() - OVERLAP_DAYS * DAY_MS)
+    : new Date(now.getTime() - FIRST_SYNC_DAYS * DAY_MS);
 
-  let cursor = connection.cursor;
-  let added = 0;
-  let modified = 0;
-  let removed = 0;
+  let written = 0;
+  let accountsSeen = 0;
+  const problems: string[] = [];
 
   try {
-    // Built inside the try on purpose: a misconfigured PLAID_ENV throws here,
-    // and out here it would end the job with nothing written to the connection,
-    // so the screen would show a stale figure and no reason for it.
-    const plaid = new PlaidClient(env.PLAID_CLIENT_ID, env.PLAID_SECRET, env.PLAID_ENV);
+    const accountRowId = new Map(connection.accounts.map((a) => [a.providerAccountId, a.id]));
 
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const res = await plaid.syncTransactions(accessToken, cursor);
+    // Oldest window first, so an interruption leaves syncedThrough pointing at
+    // real coverage rather than at a gap.
+    for (
+      let windowStart = startFrom;
+      windowStart < now;
+      windowStart = new Date(windowStart.getTime() + WINDOW_DAYS * DAY_MS)
+    ) {
+      const windowEnd = new Date(
+        Math.min(now.getTime(), windowStart.getTime() + WINDOW_DAYS * DAY_MS),
+      );
+      const { accounts, errors } = await fetchAccounts(accessUrl, windowStart, windowEnd);
+      problems.push(...errors);
+      accountsSeen = Math.max(accountsSeen, accounts.length);
 
-      for (const t of [...res.added, ...res.modified]) {
-        const accountId = accountIdByPlaidId.get(t.account_id);
-        // A transaction on an account we have never stored: skip rather than
-        // invent a parent row, and let the next reconnect pick the account up.
-        if (!accountId) continue;
+      for (const a of accounts) {
+        // An account discovered mid-sync gets a row rather than having its
+        // transactions dropped. New accounts start counted, because the feed
+        // reports no type to decide from.
+        let rowId = accountRowId.get(a.id);
+        if (!rowId) {
+          const created = await prisma.bankAccount.upsert({
+            where: { providerAccountId: a.id },
+            create: {
+              connectionId: connection.id,
+              providerAccountId: a.id,
+              name: a.name,
+              currency: a.currency,
+            },
+            update: { name: a.name },
+            select: { id: true },
+          });
+          rowId = created.id;
+          accountRowId.set(a.id, rowId);
+        }
 
-        const data = {
-          accountId,
-          date: t.date,
-          name: t.name,
-          merchantName: t.merchant_name,
-          // Stored in our convention, positive means money arrived. The
-          // provider's sign is inverted; the flip lives in core/banking.ts.
-          amountCents: signedCents(t.amount),
-          pending: t.pending,
-          category: t.personal_finance_category?.primary ?? null,
-        };
-        await prisma.bankTransaction.upsert({
-          where: { plaidTransactionId: t.transaction_id },
-          create: { plaidTransactionId: t.transaction_id, ...data },
-          update: data,
+        for (const t of a.transactions) {
+          // `posted` is 0 while a row is pending, so there is no day to file it
+          // under. Today is the honest placeholder, and pending rows are
+          // excluded from every total anyway.
+          const date = t.posted ? iso(new Date(t.posted * 1000)) : iso(now);
+          const data = {
+            accountId: rowId,
+            date,
+            name: t.description || "Transaction",
+            merchantName: null,
+            // Our convention, positive means money arrived. The conversion
+            // lives in packages/core/src/banking.ts.
+            amountCents: signedCents(t.amount),
+            pending: t.pending,
+          };
+          await prisma.bankTransaction.upsert({
+            where: { providerTransactionId: t.id },
+            create: { providerTransactionId: t.id, ...data },
+            update: data,
+          });
+          written += 1;
+        }
+
+        // Balances move independently of transactions, so take the latest.
+        await prisma.bankAccount.updateMany({
+          where: { providerAccountId: a.id },
+          data: {
+            currentCents: a.balance == null ? null : toCents(a.balance),
+            availableCents: a.availableBalance == null ? null : toCents(a.availableBalance),
+          },
         });
       }
-      added += res.added.length;
-      modified += res.modified.length;
 
-      if (res.removed.length) {
-        const ids = res.removed.map((r) => r.transaction_id);
-        const gone = await prisma.bankTransaction.deleteMany({
-          where: { plaidTransactionId: { in: ids } },
-        });
-        removed += gone.count;
-      }
-
-      // Written per page, after the rows: a crash repeats a page instead of
-      // losing one, and repeats are idempotent.
-      cursor = res.next_cursor;
+      // Written per window, after its rows: an interruption repeats a window
+      // rather than skipping one, and repeats are idempotent.
       await prisma.bankConnection.update({
         where: { id: connection.id },
-        data: { cursor },
-      });
-
-      if (!res.has_more) break;
-    }
-
-    // Balances move independently of transactions, so refresh them too.
-    const accounts = await plaid.accounts(accessToken);
-    for (const a of accounts) {
-      const current = a.balances.current;
-      const available = a.balances.available;
-      await prisma.bankAccount.updateMany({
-        where: { plaidAccountId: a.account_id },
-        data: {
-          currentCents: current == null ? null : toCents(current),
-          availableCents: available == null ? null : toCents(available),
-        },
+        data: { syncedThrough: iso(windowEnd) },
       });
     }
 
     await prisma.bankConnection.update({
       where: { id: connection.id },
-      data: { status: "active", error: null, lastSyncedAt: new Date() },
+      data: {
+        status: "active",
+        // The provider's own complaints are kept. An account it could not read
+        // comes back as an empty list, and without this the screen would show
+        // a confident zero with nothing to explain it.
+        error: problems.length ? [...new Set(problems)].join(" ") : null,
+        lastSyncedAt: new Date(),
+      },
     });
     console.log(
-      `[worker] bank sync ${connection.institutionName ?? connection.id}: +${added} ~${modified} -${removed}`,
+      `[worker] bank sync ${connection.institutionName ?? connection.id}: ${written} rows across ${accountsSeen} account(s)`,
     );
   } catch (err) {
-    const code = err instanceof PlaidError ? err.code : null;
-    if (needsReconnect(code)) {
-      // Not a failure of ours: the bank wants the operator to log in again.
-      // Said in those terms rather than as an error, so it reads as an action
-      // rather than something broken.
+    if (err instanceof BankError && err.needsReconnect) {
+      // Not a failure of ours: SimpleFIN wants the operator to reconnect.
       await fail(
-        "Your bank needs you to log in again. Reconnect it to keep the figures up to date.",
+        "SimpleFIN needs you to connect this bank again. Generate a new setup token and paste it in.",
         "needs_reconnect",
       );
       return;

@@ -59,7 +59,7 @@ open on their phone.
 |---|---|
 | **Financials** | What came in, what went out, what is left, per month and per brand. Invoices as PDFs. Nothing in here can move money. |
 | **Tax** | What to set aside on this year's profit, federal and state, with every state rate editable because a built-in table goes stale each January. |
-| **Bank** | A read-only feed of the business account through Plaid, so money in and money out sit beside the figures entered by hand. |
+| **Bank** | A read-only feed of the business account through SimpleFIN, so money in and money out sit beside the figures entered by hand. The provider has one endpoint and it is a GET, so nothing here can move money. |
 | **Client onboarding** | One link a new client opens on their phone. It collects their details and connects their accounts, and the app pulls the reply when asked. |
 
 ---
@@ -101,7 +101,7 @@ flowchart LR
     subgraph ext["External"]
         PUB["Publishing provider<br/>IG, TikTok, YT, FB, Snap"]
         CAP["Captions<br/>faster-whisper"]
-        BANK["Plaid, read only"]
+        BANK["SimpleFIN, read only"]
         NET["Netlify<br/>report pages"]
     end
     UI <--> API

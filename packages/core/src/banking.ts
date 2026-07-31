@@ -3,17 +3,16 @@
  *
  * Two things here are worth more than the code around them.
  *
- * First, the sign convention is inverted from intuition: Plaid reports a
- * **positive** amount when money leaves the account and a **negative** one
- * when it arrives. Verified against a live sandbox feed, where Uber and
- * McDonald's came back positive and a refund and an interest payment came
- * back negative. Reading it the intuitive way would report spending as
- * income, which is the kind of mistake that looks plausible on a screen and
- * ends up on a tax return.
+ * First, the sign convention. SimpleFIN signs amounts the intuitive way:
+ * **positive is money arriving**, negative is money leaving. That is the
+ * opposite of the provider this replaced, which reported a positive amount
+ * when money left, so the flip that used to live here is gone. It is written
+ * down rather than assumed because getting it backwards reports spending as
+ * income, which looks plausible on a screen and ends up on a tax return.
  *
- * Second, the feed is floating point dollars (`23631.9805`) while every
- * other figure in this app is integer cents. Mixing the two is how totals
- * drift by a penny and then by more.
+ * Second, the feed is decimal dollars (`-33.24`) while every other figure in
+ * this app is integer cents. Mixing the two is how totals drift by a penny
+ * and then by more.
  */
 
 /** Our own convention, kept explicit so nobody has to remember the provider's. */
@@ -25,8 +24,8 @@ export type MoneyDirection = "in" | "out";
  * Zero counts as "out": a zero-amount row is not income, and treating it as
  * such would put it in a revenue total.
  */
-export function directionOf(plaidAmount: number): MoneyDirection {
-  return plaidAmount < 0 ? "in" : "out";
+export function directionOf(feedAmount: number): MoneyDirection {
+  return feedAmount > 0 ? "in" : "out";
 }
 
 /**
@@ -45,12 +44,15 @@ export function toCents(dollars: number): number {
 /**
  * Cents in **our** convention: positive means money arrived.
  *
- * The single place the provider's inversion is undone. Everything downstream
- * reads this rather than the raw amount, so the flip exists once.
+ * The single place the feed's amount becomes our number. It happens to be a
+ * straight conversion now that the provider signs the same way we do, and it
+ * stays a named function anyway: everything downstream reads this rather than
+ * the raw amount, so a future provider that inverts again is one line here
+ * instead of a hunt through the app.
  */
-export function signedCents(plaidAmount: number): number {
-  const cents = -toCents(plaidAmount);
-  // Negating zero yields -0, which sums fine but fails identity checks and
+export function signedCents(feedAmount: number): number {
+  const cents = toCents(feedAmount);
+  // Guard against -0, which sums fine but fails identity checks and
   // serialises as "-0". Not worth leaving for someone to trip over.
   return cents === 0 ? 0 : cents;
 }
@@ -130,13 +132,18 @@ export function totalsByMonth(
 }
 
 /**
- * Account types worth counting as business cash flow.
+ * Whether a newly discovered account should count as business cash flow by
+ * default.
  *
- * Loans, investments and credit lines all report balances and transactions,
- * and folding a mortgage or a 401k into "money coming in" would make the
- * numbers meaningless. A sandbox item alone returns twelve accounts across
- * every type, so this filter is not hypothetical.
+ * SimpleFIN does not report an account type, so there is nothing to decide
+ * from: a checking account and a credit card arrive looking the same. Every
+ * account therefore starts counted, and the operator unticks the ones that
+ * should not be, which the per-account toggle already does.
+ *
+ * The alternative, guessing from the account's name, would be wrong quietly.
+ * A default that is visibly too generous beats one that silently drops the
+ * account the business actually runs on.
  */
-export function isCashAccount(type: string | null | undefined): boolean {
-  return (type ?? "").toLowerCase() === "depository";
+export function defaultsToCashFlow(): boolean {
+  return true;
 }

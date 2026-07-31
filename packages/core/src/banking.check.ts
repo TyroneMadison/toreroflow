@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {
+  defaultsToCashFlow,
   directionOf,
-  isCashAccount,
   monthKeyOf,
   monthWindowStart,
   signedCents,
@@ -13,23 +13,23 @@ import {
 /**
  * Runnable check: `pnpm --filter @toreroflow/core test`.
  *
- * The rows below are real amounts from a live Plaid sandbox feed, kept
- * verbatim. The property being defended is that spending never counts as
- * income: Plaid reports a positive amount when money LEAVES the account, so
- * reading it the intuitive way inverts every figure while still looking
- * entirely plausible on screen.
+ * The property being defended is that spending never counts as income. It is
+ * worth a check even though SimpleFIN signs amounts the obvious way, because
+ * the provider this replaced signed them the other way round: a card payment
+ * came through positive. Anyone porting an old snippet, or swapping providers
+ * again, inverts every figure on the screen while it still looks plausible.
  */
 
-/* ---- the inversion, which is the whole point of this module ---- */
+/* ---- the sign convention, which is the whole point of this module ---- */
 
-// Real outgoings from the sandbox feed, all reported positive.
-for (const spend of [6.33, 5.4, 12, 4.33, 89.4, 25]) {
+// Money leaving: card payments and bills, reported negative.
+for (const spend of [-6.33, -5.4, -12, -4.33, -89.4, -25]) {
   assert.equal(directionOf(spend), "out", `${spend} is money leaving the account`);
   assert.equal(signedCents(spend) < 0, true, `${spend} must be negative in our convention`);
 }
 
-// Real money arriving, reported negative: a refund and an interest payment.
-for (const income of [-500, -4.22]) {
+// Money arriving: a client payment and an interest credit, reported positive.
+for (const income of [500, 4.22]) {
   assert.equal(directionOf(income), "in", `${income} is money arriving`);
   assert.equal(signedCents(income) > 0, true, `${income} must be positive in our convention`);
 }
@@ -73,18 +73,18 @@ assert.equal(toCents(Number.POSITIVE_INFINITY), 0);
 /* ---- totals ---- */
 
 const feed = [
-  { amount: 6.33, date: "2026-07-26" },
-  { amount: 5.4, date: "2026-07-13" },
-  { amount: -500, date: "2026-07-11" },
-  { amount: 12, date: "2026-07-10" },
-  { amount: 4.33, date: "2026-07-10" },
-  { amount: 89.4, date: "2026-07-09" },
-  { amount: -4.22, date: "2026-07-08" },
+  { amount: -6.33, date: "2026-07-26" },
+  { amount: -5.4, date: "2026-07-13" },
+  { amount: 500, date: "2026-07-11" },
+  { amount: -12, date: "2026-07-10" },
+  { amount: -4.33, date: "2026-07-10" },
+  { amount: -89.4, date: "2026-07-09" },
+  { amount: 4.22, date: "2026-07-08" },
 ];
 
 {
   const t = totalsFor(feed);
-  assert.equal(t.inCents, 50422, "500.00 refund plus 4.22 interest");
+  assert.equal(t.inCents, 50422, "500.00 payment in plus 4.22 interest");
   assert.equal(t.outCents, 11746, "6.33 + 5.40 + 12.00 + 4.33 + 89.40");
   assert.equal(t.netCents, 50422 - 11746);
   assert.equal(t.counted, 7);
@@ -94,7 +94,7 @@ const feed = [
 
 /* Pending rows are excluded unless asked for, because they can restate. */
 {
-  const withPending = [...feed, { amount: 999, date: "2026-07-27", pending: true }];
+  const withPending = [...feed, { amount: -999, date: "2026-07-27", pending: true }];
   assert.equal(totalsFor(withPending).outCents, 11746, "pending must not be counted");
   assert.equal(totalsFor(withPending).counted, 7);
   assert.equal(totalsFor(withPending, true).outCents, 11746 + 99900);
@@ -118,9 +118,9 @@ for (const rows of [feed, [{ amount: -1, date: "2026-01-01" }], [{ amount: 1, da
 assert.equal(monthKeyOf("2026-07-26"), "2026-07");
 {
   const spread = [
-    { amount: 10, date: "2026-06-30" },
-    { amount: 20, date: "2026-07-01" },
-    { amount: -50, date: "2026-07-31" },
+    { amount: -10, date: "2026-06-30" },
+    { amount: -20, date: "2026-07-01" },
+    { amount: 50, date: "2026-07-31" },
   ];
   const byMonth = totalsByMonth(spread);
   assert.equal(byMonth.size, 2);
@@ -162,11 +162,9 @@ assert.equal(monthKeyOf("2026-07-26"), "2026-07");
 
 /* ---- which accounts count ---- */
 
-// A sandbox item returns twelve accounts; only cash belongs in cash flow.
-assert.equal(isCashAccount("depository"), true);
-assert.equal(isCashAccount("Depository"), true);
-for (const t of ["credit", "loan", "investment", "brokerage", "other", null, undefined, ""]) {
-  assert.equal(isCashAccount(t), false, `${String(t)} must not count as cash`);
-}
+// SimpleFIN reports no account type, so a new account starts counted and the
+// operator unticks what should not be. Pinned so nobody "fixes" it into a
+// guess based on the account name, which would drop accounts silently.
+assert.equal(defaultsToCashFlow(), true);
 
 console.log("banking: all checks passed");

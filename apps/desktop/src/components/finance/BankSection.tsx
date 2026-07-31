@@ -1,60 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../Toasts";
-import {
-  api,
-  type BankCashflowView,
-  type BankConnectionsView,
-} from "../../lib/api";
+import { openExternal } from "../../lib/external";
+import { api, type BankCashflowView, type BankConnectionsView } from "../../lib/api";
 
 /**
  * Read-only oversight of the agency's own bank.
  *
- * The bank login never happens here. Pressing Connect loads the provider's
- * widget, which opens the bank's own page in a popup; this app only ever
- * receives a one-time token to hand back to the API. No banking credential
- * passes through Toreroflow, and nothing on this screen can move money.
+ * The bank login never happens here, and it never happens in this app at all.
+ * The operator connects their bank on SimpleFIN's own site and pastes back a
+ * one-time setup token. Nothing on this screen can move money, and with this
+ * provider that is a property of the protocol rather than a rule this file
+ * keeps: it has one endpoint and it is a GET.
  */
 
-const LINK_SRC = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
-
-interface PlaidHandler {
-  open(): void;
-  destroy(): void;
-}
-interface PlaidGlobal {
-  create(opts: {
-    token: string;
-    onSuccess(publicToken: string): void;
-    onExit(err: unknown): void;
-  }): PlaidHandler;
-}
-
-/** Loads the widget script once, on first use rather than at app start. */
-function loadLink(): Promise<PlaidGlobal> {
-  const existing = (window as unknown as { Plaid?: PlaidGlobal }).Plaid;
-  if (existing) return Promise.resolve(existing);
-  return new Promise((resolve, reject) => {
-    const tag = document.createElement("script");
-    tag.src = LINK_SRC;
-    tag.onload = () => {
-      const g = (window as unknown as { Plaid?: PlaidGlobal }).Plaid;
-      if (g) resolve(g);
-      else reject(new Error("the bank connector loaded but did not start"));
-    };
-    tag.onerror = () => reject(new Error("could not reach the bank connector"));
-    document.head.appendChild(tag);
-  });
-}
+const SIMPLEFIN_URL = "https://bridge.simplefin.org/";
 
 const money = (cents: number | null | undefined): string =>
-  cents == null ? "-" : `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  cents == null
+    ? "-"
+    : `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function BankSection() {
   const toast = useToast();
   const [view, setView] = useState<BankConnectionsView | null>(null);
   const [flow, setFlow] = useState<BankCashflowView | null>(null);
   const [busy, setBusy] = useState(false);
-  const handler = useRef<PlaidHandler | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [token, setToken] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -72,74 +44,22 @@ export default function BankSection() {
 
   useEffect(() => {
     void load();
-    return () => handler.current?.destroy();
   }, [load]);
 
   const connect = async () => {
+    const setupToken = token.trim();
+    if (!setupToken) return;
     setBusy(true);
     try {
-      const { linkToken } = await api.post<{ linkToken: string }>("/bank/link-token");
-      const Plaid = await loadLink();
-      handler.current?.destroy();
-      handler.current = Plaid.create({
-        token: linkToken,
-        onSuccess: (publicToken) => {
-          void (async () => {
-            try {
-              await api.post("/bank/exchange", { publicToken });
-              await load();
-              toast.success("Bank connected. Pull transactions to see the figures.");
-            } catch (err) {
-              toast.fail("Could not finish connecting the bank", err);
-            }
-          })();
-        },
-        onExit: () => undefined,
-      });
-      handler.current.open();
+      await api.post("/bank/connect", { setupToken });
+      setToken("");
+      setAdding(false);
+      await load();
+      toast.success("Bank connected. Pulling your history now, this updates when it lands.");
+      // The first pull walks a year in 90 day windows, so give it a moment.
+      setTimeout(() => void load(), 8000);
     } catch (err) {
-      toast.fail("Could not start the bank connection", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /**
-   * Repairs a link the bank has expired, rather than making a new one.
-   *
-   * Connecting again from scratch would leave two links to the same bank and
-   * double every figure, so this is the only route out of "needs you to log in
-   * again". The stored history and the counted/ignored choices survive.
-   */
-  const reconnect = async (id: string) => {
-    setBusy(true);
-    try {
-      const { linkToken } = await api.post<{ linkToken: string }>(
-        `/bank/connections/${id}/relink`,
-      );
-      const Plaid = await loadLink();
-      handler.current?.destroy();
-      handler.current = Plaid.create({
-        token: linkToken,
-        onSuccess: () => {
-          // Update mode keeps the existing token working, so there is nothing to
-          // exchange. Pulling is what proves the repair took and clears the
-          // warning, so it is started here rather than left as another button.
-          void (async () => {
-            try {
-              await api.post(`/bank/connections/${id}/sync`);
-              toast.success("Bank reconnected. Pulling transactions.");
-              setTimeout(() => void load(), 6000);
-            } catch (err) {
-              toast.fail("Reconnected, but could not pull transactions", err);
-            }
-          })();
-        },
-        onExit: () => undefined,
-      });
-      handler.current.open();
-    } catch (err) {
-      toast.fail("Could not start the reconnection", err);
+      toast.fail("Could not connect the bank", err);
     } finally {
       setBusy(false);
     }
@@ -150,7 +70,6 @@ export default function BankSection() {
     try {
       await api.post(`/bank/connections/${id}/sync`);
       toast.success("Pulling transactions. This section updates when it lands.");
-      // The pull runs on the worker, so give it a moment then refresh.
       setTimeout(() => void load(), 6000);
     } catch (err) {
       toast.fail("Could not pull transactions", err);
@@ -186,27 +105,57 @@ export default function BankSection() {
         <div>
           <h3>Bank</h3>
           <div className="sub">
-            {view.configured
-              ? "Read-only. Balances and transactions only, nothing here can move money."
-              : view.reason}
+            Read-only. Balances and transactions only, nothing here can move money.
           </div>
         </div>
-        {view.configured && (
-          <button className="cbtn" disabled={busy} onClick={() => void connect()}>
-            {view.connections.length ? "Connect another" : "Connect a bank"}
-          </button>
-        )}
+        <button className="cbtn" disabled={busy} onClick={() => setAdding((a) => !a)}>
+          {adding ? "Cancel" : view.connections.length ? "Connect another" : "Connect a bank"}
+        </button>
       </div>
 
-      {view.environment !== "production" && view.configured && (
-        <p className="insworking" style={{ marginTop: 10 }}>
-          Running against the provider's {view.environment} environment, so these are test
-          banks rather than your real one.
-        </p>
+      {adding && (
+        <div className="glass-sm" style={{ marginTop: 12, padding: 14, borderRadius: 14 }}>
+          <p style={{ fontSize: 12.5, color: "var(--txt-2)", lineHeight: 1.6 }}>
+            Connect your bank at SimpleFIN, then paste the setup token it gives you. You log in
+            at your bank on their site, never here, and the token can only read.
+          </p>
+          <button
+            className="cbtn"
+            style={{ marginTop: 8 }}
+            onClick={() => void openExternal(SIMPLEFIN_URL)}
+          >
+            Open SimpleFIN
+          </button>
+          <label className="flabel" style={{ marginTop: 14 }}>
+            Setup token
+          </label>
+          <textarea
+            className="field-in"
+            rows={3}
+            placeholder="Paste the long token from SimpleFIN here"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+          />
+          <button
+            className="cbtn"
+            style={{ marginTop: 10 }}
+            disabled={busy || !token.trim()}
+            onClick={() => void connect()}
+          >
+            {busy ? "Connecting…" : "Connect"}
+          </button>
+          <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
+            A setup token works once. If it fails, generate a new one.
+          </p>
+        </div>
       )}
 
       {flow && flow.totals.counted > 0 && (
-        <div className="kpis stagger" style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 14 }}>
+        <div
+          className="kpis stagger"
+          style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 14 }}
+        >
           <div className="kpi glass-sm">
             <div className="lab">Money in</div>
             <div className="val">{money(flow.totals.inCents)}</div>
@@ -229,7 +178,7 @@ export default function BankSection() {
               <b style={{ fontSize: 13.5 }}>{c.institutionName ?? "Linked bank"}</b>
               <div className="sub">
                 {c.status === "needs_reconnect"
-                  ? "Needs you to log in again"
+                  ? "Needs connecting again at SimpleFIN"
                   : c.lastSyncedAt
                     ? `Last pulled ${new Date(c.lastSyncedAt).toLocaleString()}`
                     : "Not pulled yet"}
@@ -237,11 +186,11 @@ export default function BankSection() {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               {/*
-                One action, not two. While a bank wants a fresh login, pulling
+                One action, not two. While a connection needs remaking, pulling
                 can only fail with the same message, so offering it is a trap.
               */}
               {c.status === "needs_reconnect" ? (
-                <button className="cbtn" disabled={busy} onClick={() => void reconnect(c.id)}>
+                <button className="cbtn" disabled={busy} onClick={() => setAdding(true)}>
                   Reconnect
                 </button>
               ) : (
@@ -269,7 +218,6 @@ export default function BankSection() {
                 </span>{" "}
                 {a.name}
                 {a.mask && <span style={{ color: "var(--txt-3)" }}> ····{a.mask}</span>}
-                <span style={{ color: "var(--txt-3)" }}> · {a.subtype ?? a.type}</span>
               </div>
               <b>{money(a.currentCents)}</b>
             </div>
@@ -277,10 +225,11 @@ export default function BankSection() {
         </div>
       ))}
 
-      {view.configured && view.connections.length === 0 && (
+      {view.connections.length === 0 && !adding && (
         <p className="insworking" style={{ marginTop: 12 }}>
           Connect your business account and the app can show money in and money out beside the
-          figures you enter by hand. You log in at your bank, never here.
+          figures you enter by hand. Every account starts counted, and you can ignore the ones
+          that should not be in the total.
         </p>
       )}
     </div>
