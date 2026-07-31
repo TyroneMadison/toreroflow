@@ -23,7 +23,11 @@ set -eu
 STACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="${TOREROFLOW_BACKUP_DIR:-/var/backups/toreroflow}"
 KEEP_DAYS="${TOREROFLOW_BACKUP_KEEP_DAYS:-14}"
-COMPOSE="docker compose -f ${STACK_DIR}/docker-compose.prod.yml"
+# A function, not a string. Building the command in a variable and letting it
+# word-split breaks the moment the path contains a space, and it fails in a
+# way that looks like Docker is broken rather than like a quoting bug:
+#   unknown docker command: "compose Stuff/Toreroflow/infra/..."
+compose() { docker compose -f "${STACK_DIR}/docker-compose.prod.yml" "$@"; }
 STAMP="$(date +%Y-%m-%d_%H%M)"
 
 mkdir -p "$BACKUP_DIR"
@@ -35,7 +39,7 @@ DUMP="${BACKUP_DIR}/toreroflow_${STAMP}.sql.gz"
 TMP="${DUMP}.partial"
 
 echo "[backup] dumping database"
-$COMPOSE exec -T postgres pg_dump -U toreroflow -d toreroflow --clean --if-exists \
+compose exec -T postgres pg_dump -U toreroflow -d toreroflow --clean --if-exists \
   | gzip -9 > "$TMP"
 
 # A dump of an empty or broken database still gzips to something. This is the

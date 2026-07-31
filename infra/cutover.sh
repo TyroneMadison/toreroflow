@@ -20,7 +20,11 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 STAMP="$(date +%Y-%m-%d_%H%M)"
 DUMP="/tmp/toreroflow_cutover_${STAMP}.sql.gz"
 
-LOCAL_COMPOSE="docker compose -f ${HERE}/infra/docker-compose.yml"
+# Local one is a function for the same reason backup.sh's is: a repo path with
+# a space in it word-splits and reports itself as an unknown docker command.
+# The remote one stays a string because it is sent through ssh as text, and the
+# server path is ours to choose and has no spaces in it.
+local_compose() { docker compose -f "${HERE}/infra/docker-compose.yml" "$@"; }
 REMOTE_COMPOSE="docker compose -f ${REMOTE_DIR}/infra/docker-compose.prod.yml"
 
 echo "==> checking the server is up before touching anything"
@@ -28,7 +32,7 @@ ssh "$SERVER" "${REMOTE_COMPOSE} ps --status running --services" | grep -q '^api
   || { echo "the server's api service is not running; bring the stack up first"; exit 1; }
 
 echo "==> dumping the local database"
-$LOCAL_COMPOSE exec -T postgres pg_dump -U toreroflow -d toreroflow --clean --if-exists \
+local_compose exec -T postgres pg_dump -U toreroflow -d toreroflow --clean --if-exists \
   | gzip -9 > "$DUMP"
 echo "    $(wc -c < "$DUMP") bytes"
 
