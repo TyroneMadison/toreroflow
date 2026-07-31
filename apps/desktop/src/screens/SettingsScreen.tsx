@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import DeployCard from "../components/DeployCard";
 import BusinessCard from "../components/BusinessCard";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
@@ -646,6 +647,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         </div>
 
         <BusinessCard />
+
+        <DeployCard />
 
         <div className="card glass setsec">
           <h3>Operator</h3>

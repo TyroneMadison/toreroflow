@@ -108,6 +108,8 @@ export interface Env {
   ALLOWED_ORIGINS: string[];
   /** True when this process is answering to the internet. */
   IS_PRODUCTION: boolean;
+  /** The commit this server is running, for the deploy card. Empty off a server. */
+  GIT_COMMIT: string;
 }
 
 export const env: Env = {
@@ -130,4 +132,5 @@ export const env: Env = {
     .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean),
   IS_PRODUCTION: isProduction,
+  GIT_COMMIT: process.env.GIT_COMMIT ?? "",
 };

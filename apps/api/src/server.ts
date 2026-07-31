@@ -21,6 +21,7 @@ import { postRoutes } from "./routes/posts";
 import { reportRoutes } from "./routes/reports";
 import { overviewRoutes } from "./routes/overview";
 import { financialsRoutes } from "./routes/financials";
+import { deployRoutes } from "./routes/deploy";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -150,6 +151,7 @@ export async function buildServer(
   await app.register(reportRoutes);
   await app.register(overviewRoutes);
   await app.register(financialsRoutes);
+  await app.register(deployRoutes);
 
   return app;
 }

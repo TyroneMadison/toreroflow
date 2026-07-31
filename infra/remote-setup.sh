@@ -56,6 +56,8 @@ echo "present, $(grep -c '^[A-Z]' "${APP_DIR}/infra/.env") values, permissions $
 
 say "5/7  Build and start"
 # Up to ten minutes the first time: Chromium and ffmpeg are most of it.
+GIT_COMMIT="$(git -C "${APP_DIR}" rev-parse --short HEAD)"
+export GIT_COMMIT
 $COMPOSE up -d --build
 
 say "6/7  Waiting for the stack to come up"
