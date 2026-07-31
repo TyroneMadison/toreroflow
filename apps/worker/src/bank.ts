@@ -1,4 +1,5 @@
-import { signedCents, toCents } from "@toreroflow/core";
+import { businessDay, signedCents, toCents } from "@toreroflow/core";
+import { env } from "./env";
 import { decryptSecret, getPrisma, isEncrypted } from "@toreroflow/db";
 import { BankError, fetchAccounts, redactCredentials } from "@toreroflow/publishers";
 
@@ -34,7 +35,9 @@ const FIRST_SYNC_DAYS = 365;
 const OVERLAP_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const iso = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** The calendar day the business had, not UTC's. See packages/core/src/banking.ts. */
+const iso = (d: Date): string => businessDay(d, env.BUSINESS_TIMEZONE);
 
 export async function syncBankConnection(connectionId: string): Promise<void> {
   const connection = await prisma.bankConnection.findUnique({
@@ -43,14 +46,34 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
   });
   if (!connection) return;
 
+  /**
+   * Writes to the connection row, and reports whether it is still there.
+   *
+   * updateMany rather than update because a pull takes minutes and the operator
+   * can press Disconnect during one. update() throws when the row has gone,
+   * which killed the job with a Prisma stack trace instead of letting a
+   * cancelled pull just stop. Nothing here is worth an error: they asked for
+   * the bank to be forgotten and it was.
+   */
+  const mark = async (data: Record<string, unknown>): Promise<boolean> => {
+    const { count } = await prisma.bankConnection.updateMany({
+      where: { id: connection.id },
+      data,
+    });
+    return count > 0;
+  };
+
   const fail = async (message: string, status = "error") => {
     // Redacted here rather than at each call site: this column is rendered on
     // screen, and an access URL reaching it puts a live bank credential there.
     const safe = redactCredentials(message);
-    await prisma.bankConnection.update({
-      where: { id: connection.id },
-      data: { status, error: safe },
-    });
+    if (!(await mark({ status, error: safe }))) {
+      // The row went while the pull was mid-flight, which means Disconnect was
+      // pressed. Whatever the pull then tripped over on its way out is a
+      // consequence of that, not a failure worth a stack trace in the log.
+      console.log(`[worker] bank sync stopped: ${connection.id} was disconnected mid-pull`);
+      return;
+    }
     console.error(`[worker] bank sync failed for ${connection.id}: ${safe}`);
   };
 
@@ -93,8 +116,8 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
       const windowEnd = new Date(
         Math.min(now.getTime(), windowStart.getTime() + WINDOW_DAYS * DAY_MS),
       );
-      const { accounts, errors } = await fetchAccounts(accessUrl, windowStart, windowEnd);
-      problems.push(...errors);
+      const { accounts, notes } = await fetchAccounts(accessUrl, windowStart, windowEnd);
+      problems.push(...notes);
       accountsSeen = Math.max(accountsSeen, accounts.length);
 
       for (const a of accounts) {
@@ -104,7 +127,12 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
         let rowId = accountRowId.get(a.id);
         if (!rowId) {
           const created = await prisma.bankAccount.upsert({
-            where: { providerAccountId: a.id },
+            where: {
+              connectionId_providerAccountId: {
+                connectionId: connection.id,
+                providerAccountId: a.id,
+              },
+            },
             create: {
               connectionId: connection.id,
               providerAccountId: a.id,
@@ -134,7 +162,12 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
             pending: t.pending,
           };
           await prisma.bankTransaction.upsert({
-            where: { providerTransactionId: t.id },
+            where: {
+              accountId_providerTransactionId: {
+                accountId: rowId,
+                providerTransactionId: t.id,
+              },
+            },
             create: { providerTransactionId: t.id, ...data },
             update: data,
           });
@@ -142,8 +175,11 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
         }
 
         // Balances move independently of transactions, so take the latest.
-        await prisma.bankAccount.updateMany({
-          where: { providerAccountId: a.id },
+        // Keyed on our own row id: an account id is only unique inside its
+        // connection, so matching on it alone would write another bank's
+        // balance onto this one.
+        await prisma.bankAccount.update({
+          where: { id: rowId },
           data: {
             currentCents: a.balance == null ? null : toCents(a.balance),
             availableCents: a.availableBalance == null ? null : toCents(a.availableBalance),
@@ -152,23 +188,24 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
       }
 
       // Written per window, after its rows: an interruption repeats a window
-      // rather than skipping one, and repeats are idempotent.
-      await prisma.bankConnection.update({
-        where: { id: connection.id },
-        data: { syncedThrough: iso(windowEnd) },
-      });
+      // rather than skipping one, and repeats are idempotent. A row that has
+      // gone means the operator disconnected mid-pull, so stop rather than
+      // spend more of their daily request allowance on a bank they unlinked.
+      if (!(await mark({ syncedThrough: iso(windowEnd) }))) {
+        console.log(`[worker] bank sync stopped: ${connection.id} was disconnected mid-pull`);
+        return;
+      }
     }
 
-    await prisma.bankConnection.update({
-      where: { id: connection.id },
-      data: {
-        status: "active",
-        // The provider's own complaints are kept. An account it could not read
-        // comes back as an empty list, and without this the screen would show
-        // a confident zero with nothing to explain it.
-        error: problems.length ? [...new Set(problems)].join(" ") : null,
-        lastSyncedAt: new Date(),
-      },
+    await mark({
+      status: "active",
+      // The provider's own advisories are kept. An account it could not read
+      // comes back as an empty list, and without this the screen would show a
+      // confident zero with nothing to explain it. Status stays "active", and
+      // that is how the screen knows to show these as a note rather than as a
+      // failure: a pull that said something is not a pull that broke.
+      error: problems.length ? [...new Set(problems)].join(" ") : null,
+      lastSyncedAt: new Date(),
     });
     console.log(
       `[worker] bank sync ${connection.institutionName ?? connection.id}: ${written} rows across ${accountsSeen} account(s)`,

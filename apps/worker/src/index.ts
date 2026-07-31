@@ -678,6 +678,21 @@ new Worker<{ connectionId?: string }>(
   },
   { connection, concurrency: 1 },
 );
+/*
+ * Once a day, unprompted.
+ *
+ * Without this the balance on the Financials screen only moved when somebody
+ * pressed a button, so a figure last pulled a fortnight ago sat there looking
+ * exactly like a figure pulled this morning. SimpleFIN refreshes the
+ * underlying data once every 24 hours and allows roughly 24 reads in that
+ * time, so daily is both as fresh as the data gets and nowhere near the limit.
+ */
+const bankQueue = new Queue<{ connectionId?: string }>("bank", { connection });
+void bankQueue.upsertJobScheduler(
+  "daily-bank",
+  { every: 24 * 60 * 60 * 1000 },
+  { name: "sync", data: {} },
+);
 
 new Worker<{ runId: string }>(
   "research",

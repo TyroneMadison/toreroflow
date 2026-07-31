@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  businessDay,
   defaultsToCashFlow,
   directionOf,
   monthKeyOf,
@@ -166,5 +167,28 @@ assert.equal(monthKeyOf("2026-07-26"), "2026-07");
 // operator unticks what should not be. Pinned so nobody "fixes" it into a
 // guess based on the account name, which would drop accounts silently.
 assert.equal(defaultsToCashFlow(), true);
+
+/*
+ * The day a transaction is filed under.
+ *
+ * The case that matters is an evening payment west of Greenwich: 8pm on 31
+ * July in New York is already 1 August in UTC, so filing by UTC moves it into
+ * the next month and out of July's total. This is the check that fails if
+ * anyone reaches for toISOString again.
+ */
+const evening = new Date("2026-08-01T00:30:00Z"); // 20:30 on 31 July in New York
+assert.equal(businessDay(evening, "America/New_York"), "2026-07-31", "an evening payment stays in its own month");
+assert.equal(businessDay(evening, "UTC"), "2026-08-01", "UTC really is the next day, which is the bug");
+assert.equal(businessDay(evening, "America/Los_Angeles"), "2026-07-31", "and further west too");
+
+// Just after midnight local is the same day, not the previous one.
+const justAfterMidnight = new Date("2026-07-31T04:10:00Z"); // 00:10 on 31 July in New York
+assert.equal(businessDay(justAfterMidnight, "America/New_York"), "2026-07-31");
+
+// Shape, because the column is compared as text and sorted as text.
+assert.match(businessDay(new Date("2026-01-05T12:00:00Z"), "America/New_York"), /^\d{4}-\d{2}-\d{2}$/);
+
+// A zone the platform does not know must not take a bank sync down with it.
+assert.equal(businessDay(evening, "Mars/Olympus_Mons"), "2026-08-01", "an unknown zone falls back to UTC");
 
 console.log("banking: all checks passed");

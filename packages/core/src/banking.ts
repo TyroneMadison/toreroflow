@@ -94,6 +94,29 @@ export function totalsFor(rows: BankFlowRow[], includePending = false): BankFlow
   return { inCents, outCents, netCents: inCents - outCents, counted };
 }
 
+/**
+ * The calendar day an instant fell on, in the business's own timezone.
+ *
+ * Deliberately not `toISOString().slice(0, 10)`, which is UTC. The date column
+ * is text precisely so a transaction cannot slide into the wrong month
+ * depending on who is reading it, and filing a Thursday-evening payment under
+ * Friday because the writer was on a UTC clock is that same off-by-one coming
+ * in the other door. For anyone west of Greenwich it is every transaction after
+ * early evening, and at a month boundary it moves money between months.
+ *
+ * en-CA is the locale that formats as YYYY-MM-DD, which is what the column
+ * holds and what its range queries assume.
+ */
+export function businessDay(instant: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone }).format(instant);
+  } catch {
+    // An unrecognised zone should not stop a bank sync. UTC is the same
+    // behaviour as before this function existed.
+    return instant.toISOString().slice(0, 10);
+  }
+}
+
 /** "2026-07" for a row, for bucketing a feed by month. */
 export function monthKeyOf(isoDate: string): string {
   return isoDate.slice(0, 7);

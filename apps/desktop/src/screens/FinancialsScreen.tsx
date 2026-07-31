@@ -9,6 +9,7 @@ import DonutCard from "../components/finance/DonutCard";
 import GlanceCard from "../components/finance/GlanceCard";
 import MonthBars from "../components/finance/MonthBars";
 import { api, fileUrl } from "../lib/api";
+import { syncComplaint, waitForBankSync } from "../lib/bankSync";
 import { openExternal } from "../lib/external";
 import Select from "../components/Select";
 import type { FinancialsMonth } from "../lib/financials";
@@ -38,6 +39,9 @@ export default function FinancialsScreen() {
   const [data, setData] = useState<FinancialsMonth | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [exportYear, setExportYear] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  /** Bumped to make the bank card re-read once a pull has landed. */
+  const [bankKey, setBankKey] = useState(0);
   // Guards the race where a slow response for one month lands after a faster
   // response for another and silently overwrites it.
   const seq = useRef(0);
@@ -77,6 +81,34 @@ export default function FinancialsScreen() {
     }
   }, [month, toast]);
 
+  /**
+   * Everything on this screen, brought up to date.
+   *
+   * The month figures come out of our own database and are current the moment
+   * they are read. The bank is the part that is not: it has to be pulled from
+   * SimpleFIN first, which takes as long as it takes. So this queues the pull,
+   * waits for it to actually finish, and only then re-reads. Waiting is the
+   * point: a button that returns before the money has moved is the same button
+   * that looked like it did nothing.
+   */
+  const refreshAll = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    let complaint: string | null = null;
+    try {
+      const { queued } = await api.post<{ queued: number }>("/bank/sync", {});
+      if (queued > 0) complaint = syncComplaint(await waitForBankSync());
+    } catch (err) {
+      // The month still refreshes below: a bank that would not pull is no
+      // reason to leave the rest of the screen stale.
+      toast.fail("The bank did not finish pulling", err);
+    }
+    await refresh();
+    setBankKey((k) => k + 1);
+    setRefreshing(false);
+    if (complaint) toast.fail("The bank pull finished with a problem", complaint);
+  }, [refresh, refreshing, toast]);
+
   // The RevenueSection's unpriced list already tracks the client context;
   // this keeps the totals, donut, and charts in step with it when a client
   // is added or priced mid-session. Skipped before first load so the mount
@@ -102,6 +134,18 @@ export default function FinancialsScreen() {
           aria-label="Month"
           options={months.map((m) => ({ value: m.value, label: m.label }))}
         />
+        <button
+          className="btn ghost"
+          style={{ marginLeft: "auto" }}
+          disabled={refreshing || phase === "loading"}
+          title="Pull the bank again and re-read every figure on this screen"
+          onClick={() => void refreshAll()}
+        >
+          <svg className={refreshing ? "spin" : undefined}>
+            <use href="#i-refresh" />
+          </svg>{" "}
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       <div className="stage">
@@ -144,7 +188,7 @@ export default function FinancialsScreen() {
               </div>
             )}
 
-            <BankSection />
+            <BankSection reloadKey={bankKey} />
             <TaxCard year={year} />
 
             <RevenueSection

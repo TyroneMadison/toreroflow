@@ -52,8 +52,15 @@ export interface BankTransactionRow {
 
 export interface AccountsResult {
   accounts: BankAccountRow[];
-  /** Per-account or per-connection problems the provider reported. */
-  errors: string[];
+  /**
+   * What the provider said alongside a successful answer.
+   *
+   * Not failures: a request that failed throws. These are advisories, like a
+   * date range it would rather we did not use, or an account it could not read
+   * this time. Worth keeping, because an account that came back empty with no
+   * explanation looks like an account with no money in it.
+   */
+  notes: string[];
 }
 
 /**
@@ -155,8 +162,11 @@ export async function claimSetupToken(setupToken: string): Promise<string> {
     // A token that was already used is the common case and is worth saying
     // plainly: the fix is a new token, not a retry.
     if (res.status === 403 || res.status === 409) {
+      // The spec requires saying the second half of this out loud: a token can
+      // only fail this way because it was claimed, and if it was not the
+      // operator who claimed it then somebody else has a key to their bank.
       throw new BankError(
-        "That setup token has already been used. Generate a new one at SimpleFIN and paste it again.",
+        "That setup token has already been claimed. If you did not just use it yourself, someone else may have: disable it at SimpleFIN before generating a new one.",
       );
     }
     throw new BankError(`SimpleFIN refused the setup token (${res.status}).`);
@@ -200,8 +210,19 @@ export async function fetchAccounts(
       true,
     );
   }
+  if (res.status === 429) {
+    // The bridge allows about 24 reads a day and only refreshes the underlying
+    // data once every 24 hours, so pressing again is the one thing that cannot
+    // help. Said plainly, because the alternative is an operator retrying into
+    // a limit that only clears with time.
+    throw new BankError(
+      "SimpleFIN is rate limiting us. It only refreshes bank data once a day and allows about 24 reads in that time, so the figures on screen are as fresh as they get until tomorrow.",
+    );
+  }
   if (!res.ok) {
-    throw new BankError(redactCredentials(`The bank feed answered ${res.status}. ${text.slice(0, 200)}`.trim()));
+    throw new BankError(
+      redactCredentials(`The bank feed answered ${res.status}. ${text.slice(0, 200)}`.trim()),
+    );
   }
 
   let data: Record<string, unknown>;
@@ -217,7 +238,7 @@ export async function fetchAccounts(
     ...(Array.isArray(data.errlist) ? data.errlist : []),
     ...(Array.isArray(data.errors) ? data.errors : []),
   ];
-  const errors = rawErrors
+  const notes = rawErrors
     .map((e) => (typeof e === "string" ? e : str((e as Record<string, unknown>)?.msg)))
     .filter((e): e is string => Boolean(e));
 
@@ -252,5 +273,5 @@ export async function fetchAccounts(
     })
     .filter((a) => a.id);
 
-  return { accounts, errors };
+  return { accounts, notes };
 }

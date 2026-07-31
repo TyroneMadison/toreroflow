@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
@@ -29,6 +30,30 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
   const bankQueue = new Queue<{ connectionId?: string }>("bank", { connection });
+
+  /**
+   * Queues a pull and says so on the row before returning.
+   *
+   * The status is written here rather than in the worker on purpose. If the
+   * worker set it, the screen could poll in the gap between the press and the
+   * job being picked up, see "active", and conclude the pull had already
+   * finished. Marking it before the response means that by the time the button
+   * knows the request succeeded, the row already says a pull is running, and
+   * "nothing happened" stops being a thing the operator can see.
+   */
+  const queueSync = async (connectionId: string): Promise<void> => {
+    await prisma.bankConnection.update({
+      where: { id: connectionId },
+      data: { status: "syncing", error: null },
+    });
+    await bankQueue.add(
+      "sync",
+      { connectionId },
+      // No colon in the job id: the queue uses it as a key separator and
+      // rejects custom ids containing one.
+      { jobId: connectionId, removeOnComplete: true, removeOnFail: true },
+    );
+  };
 
   app.addHook("onRequest", requireAuth);
   app.addHook("onClose", async () => {
@@ -85,33 +110,42 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    // Identity for the link. The access URL is itself a credential, so the
-    // stored id is the address with the credentials stripped out: stable per
-    // connection, and enough to stop one token becoming two rows.
-    const itemId = accessUrl.replace(/^https?:\/\/[^@/]*@/, "").slice(0, 190);
-
-    const existing = await prisma.bankConnection.findUnique({ where: { itemId } });
-    if (existing && existing.agencyId !== request.user.agencyId) {
-      return reply.status(409).send({ error: "that connection belongs to another workspace" });
-    }
-
-    const row = await prisma.bankConnection.upsert({
-      where: { itemId },
-      create: {
-        agencyId: request.user.agencyId,
-        itemId,
-        accessTokenEnc: encryptSecret(accessUrl),
-        status: "active",
-      },
-      update: { accessTokenEnc: encryptSecret(accessUrl), status: "active", error: null },
+    /*
+     * One connection per workspace, and a second token replaces it.
+     *
+     * That is what SimpleFIN actually is: every bank is linked at the bridge,
+     * and one credential covers all of them. So a fresh token is a new key to
+     * the same money, not a second bank, and it belongs on the row that is
+     * already there, keeping its accounts and their history rather than
+     * stacking a duplicate of every figure.
+     *
+     * The id is a fingerprint of the credential. It used to be the address with
+     * the credentials stripped off, which for this provider is the constant
+     * "beta-bridge.simplefin.org/simplefin" for every operator alive, so the
+     * first workspace to link a bank locked out every other one.
+     */
+    const itemId = createHash("sha256").update(accessUrl).digest("hex");
+    const linked = { itemId, accessTokenEnc: encryptSecret(accessUrl), status: "active" };
+    const existing = await prisma.bankConnection.findFirst({
+      where: { agencyId: request.user.agencyId },
+      select: { id: true },
     });
+
+    const row = existing
+      ? await prisma.bankConnection.update({
+          where: { id: existing.id },
+          data: { ...linked, error: null },
+        })
+      : await prisma.bankConnection.create({
+          data: { agencyId: request.user.agencyId, ...linked },
+        });
 
     // One read now, so the operator sees their accounts immediately rather
     // than an empty card and a button to press.
     try {
       const end = new Date();
       const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const { accounts, errors } = await fetchAccounts(accessUrl, start, end);
+      const { accounts, notes } = await fetchAccounts(accessUrl, start, end);
 
       for (const a of accounts) {
         const balances = {
@@ -121,7 +155,9 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
           availableCents: a.availableBalance == null ? null : toCents(a.availableBalance),
         };
         await prisma.bankAccount.upsert({
-          where: { providerAccountId: a.id },
+          where: {
+            connectionId_providerAccountId: { connectionId: row.id, providerAccountId: a.id },
+          },
           create: { connectionId: row.id, providerAccountId: a.id, ...balances },
           update: balances,
         });
@@ -131,7 +167,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
         where: { id: row.id },
         data: {
           institutionName: accounts.find((a) => a.orgName)?.orgName ?? null,
-          error: errors.length ? errors.join(" ") : null,
+          error: notes.length ? notes.join(" ") : null,
         },
       });
     } catch (err) {
@@ -146,11 +182,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Queue a full pull so history arrives without another press.
-    await bankQueue.add(
-      "sync",
-      { connectionId: row.id },
-      { jobId: row.id, removeOnComplete: true, removeOnFail: true },
-    );
+    await queueSync(row.id);
 
     return reply.status(201).send({ id: row.id });
   });
@@ -228,9 +260,25 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Pulls every linked bank at once.
+   *
+   * What the Refresh button on Financials calls. Returns how many pulls were
+   * queued so the screen can say "nothing to refresh" rather than spin against
+   * a workspace with no bank in it.
+   */
+  app.post("/bank/sync", async (request) => {
+    const connections = await prisma.bankConnection.findMany({
+      where: { agencyId: request.user.agencyId, status: { not: "needs_reconnect" } },
+      select: { id: true },
+    });
+    for (const c of connections) await queueSync(c.id);
+    return { queued: connections.length };
+  });
+
+  /**
    * Pulls the latest transactions.
    *
-   * Queued rather than done here: a first pull walks a year in 90 day windows
+   * Queued rather than done here: a first pull walks a year in 45 day windows
    * and would time out a request. One job per connection at a time, keyed by
    * its id, so an impatient second press joins the run already going.
    */
@@ -240,13 +288,7 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
       select: { id: true },
     });
     if (!found) return reply.status(404).send({ error: "connection not found" });
-    await bankQueue.add(
-      "sync",
-      { connectionId: found.id },
-      // No colon in the job id: the queue uses it as a key separator and
-      // rejects custom ids containing one.
-      { jobId: found.id, removeOnComplete: true, removeOnFail: true },
-    );
+    await queueSync(found.id);
     return reply.status(202).send({ queued: true });
   });
 

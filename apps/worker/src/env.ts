@@ -29,4 +29,14 @@ export const env = {
    * treated as the default rather than obeyed.
    */
   RETENTION_DAYS: Math.max(1, Number(process.env.RETENTION_DAYS) || DEFAULT_RETENTION_DAYS),
+  /**
+   * The timezone whose calendar day a bank transaction is filed under.
+   *
+   * Defaults to this machine's, which is right while the worker runs on the
+   * operator's own computer and wrong the moment it moves to a server sitting
+   * in UTC. That is exactly the kind of thing nobody notices until a payment
+   * lands in the wrong month, so it is a setting rather than a constant.
+   */
+  BUSINESS_TIMEZONE:
+    process.env.BUSINESS_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
 };

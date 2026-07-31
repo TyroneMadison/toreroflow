@@ -745,9 +745,16 @@ model ResearchRun {
 model BankConnection {
   id              String    @id @default(cuid())
   agencyId        String
-  /// The provider's identifier for this link. Unique so reconnecting the same
-  /// bank updates the row rather than stacking a second copy of every account.
-  itemId          String    @unique
+  /// A fingerprint of the access URL, so two claims of the same credential
+  /// cannot become two rows.
+  ///
+  /// It used to be the access URL with its credentials stripped, which for
+  /// SimpleFIN is the literal string "beta-bridge.simplefin.org/simplefin" for
+  /// every operator on earth: not an identity at all, and globally unique, so
+  /// the first workspace to link a bank locked out every other one. Scoped to
+  /// the agency now, because whether two workspaces hold the same credential
+  /// is not this column's business.
+  itemId          String
   /// The provider's id for the bank itself, which survives a relink where
   /// itemId does not. Stored so a second link to a bank that is already
   /// connected can be refused: both items' accounts would default into cash
@@ -778,6 +785,7 @@ model BankConnection {
   agency   Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
   accounts BankAccount[]
 
+  @@unique([agencyId, itemId])
   @@index([agencyId])
 }
 
@@ -785,7 +793,12 @@ model BankConnection {
 model BankAccount {
   id              String  @id @default(cuid())
   connectionId    String
-  providerAccountId String @unique
+  /// The provider's id for this account. Unique WITHIN a connection only: the
+  /// SimpleFIN spec says an account id "uniquely identifies the account within
+  /// the Connection", and the bridge's own demo feed returns ids as generic as
+  /// "Demo Checking". Global uniqueness would let one bank's account claim
+  /// another's row.
+  providerAccountId String
   name            String
   officialName    String?
   /// Last four digits, for telling two accounts apart on screen.
@@ -808,6 +821,7 @@ model BankAccount {
   connection   BankConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   transactions BankTransaction[]
 
+  @@unique([connectionId, providerAccountId])
   @@index([connectionId])
 }
 
@@ -815,7 +829,12 @@ model BankAccount {
 model BankTransaction {
   id                 String  @id @default(cuid())
   accountId          String
-  providerTransactionId String @unique
+  /// The provider's id for this transaction. Unique WITHIN an account only.
+  /// The SimpleFIN spec is explicit: "An organization may reuse transaction ids
+  /// for different accounts, but may never reuse a transaction id within an
+  /// account." Held globally unique, a savings row numbered the same as a
+  /// checking row would overwrite it and one of the two would cease to exist.
+  providerTransactionId String
   /// ISO "2026-07-26", stored as text on purpose.
   ///
   /// This is a date, not an instant. Putting it in a timestamp column invites
@@ -837,6 +856,7 @@ model BankTransaction {
 
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
+  @@unique([accountId, providerTransactionId])
   @@index([accountId, date])
 }
 
