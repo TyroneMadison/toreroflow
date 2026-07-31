@@ -66,7 +66,7 @@ Two things left, both on the laptop:
 
   1. Point the desktop app at the server. In the repo root .env:
 
-       VITE_API_URL=https://api.torerone.com
+       VITE_API_URL=https://toreroflow-server.tail0aa167.ts.net
 
      then rebuild and reinstall:
 
