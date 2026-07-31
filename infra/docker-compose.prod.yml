@@ -2,11 +2,11 @@
 #
 #   docker compose -f infra/docker-compose.prod.yml up -d
 #
-# Postgres and Redis publish no ports. That is deliberate and it is most of the
-# security of this setup: on a fresh VPS with no firewall, a published 5432 is
-# found and attacked within the hour. They are reachable by the API and the
-# worker over the compose network and by nothing else. Caddy is the only thing
-# holding a public port.
+# Nothing here publishes a port to the internet. Postgres and Redis are
+# reachable only over the compose network; the API is bound to loopback and
+# reached through Tailscale, which terminates TLS and holds the certificate.
+# On a fresh VPS with no firewall a published 5432 is found and attacked within
+# the hour, so the rule is that the open internet gets nothing at all.
 #
 # Every secret comes from infra/.env, which is not in this repository. See
 # infra/.env.example and DEPLOY.md.
@@ -61,6 +61,12 @@ services:
       DATABASE_URL: postgresql://toreroflow:${POSTGRES_PASSWORD}@postgres:5432/toreroflow
       REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/storage
+    # Loopback only. Tailscale proxies to this from the tailnet; binding it to
+    # 0.0.0.0 would put the API on the open internet, which is the entire thing
+    # this arrangement exists to avoid. ufw would also have to allow it, and it
+    # does not.
+    ports:
+      - "127.0.0.1:4700:4700"
     volumes:
       - storage:/app/storage
     depends_on:
@@ -103,26 +109,8 @@ services:
       # fresh deploy is exactly the thing that reads as a broken deploy.
       api: { condition: service_healthy }
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in infra/.env}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # Certificates and the ACME account key. Losing this volume means
-      # re-requesting certificates, and Let's Encrypt rate limits that.
-      - caddydata:/data
-      - caddyconfig:/config
-    depends_on:
-      - api
 
 volumes:
   pgdata:
   redisdata:
   storage:
-  caddydata:
-  caddyconfig:

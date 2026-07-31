@@ -49,9 +49,22 @@ say "Running the build on the server (about ten minutes the first time)"
 # one lump at the end, which on a ten minute build looks like a hang.
 ssh "${SSH_OPTS[@]}" -t "root@${SERVER_IP}" '
   set -e
+  # Clone via a temporary directory, then copy in.
+  #
+  # The obvious order is wrong and fails on the second line: creating
+  # /opt/toreroflow/infra first so the secrets have somewhere to land leaves
+  # git cloning into a directory that already exists and is not empty, which it
+  # refuses to do. Cloning somewhere else and copying works whether the target
+  # exists or not, and never deletes anything that might have been there.
+  if [ ! -d /opt/toreroflow/.git ]; then
+    command -v git >/dev/null || { apt-get update -qq && apt-get install -y -qq git; }
+    rm -rf /tmp/toreroflow-clone
+    git clone --quiet https://github.com/TyroneMadison/toreroflow.git /tmp/toreroflow-clone
+    mkdir -p /opt/toreroflow
+    cp -a /tmp/toreroflow-clone/. /opt/toreroflow/
+    rm -rf /tmp/toreroflow-clone
+  fi
   mkdir -p /opt/toreroflow/infra
-  # Clone first if needed so the .env has somewhere to land.
-  [ -d /opt/toreroflow/.git ] || { command -v git >/dev/null || { apt-get update -qq && apt-get install -y -qq git; }; git clone --quiet https://github.com/TyroneMadison/toreroflow.git /opt/toreroflow; }
   cp /root/toreroflow.env /opt/toreroflow/infra/.env
   chmod 600 /opt/toreroflow/infra/.env
   /root/remote-setup.sh

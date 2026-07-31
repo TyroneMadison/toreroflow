@@ -22,12 +22,12 @@ systemctl enable --now docker
 docker --version
 
 say "2/7  Firewall"
-# The single most important step. Postgres and Redis publish no ports in the
-# compose file; this makes sure nothing else on the box does either. Ordered so
-# SSH is allowed BEFORE the default-deny lands, or this command locks itself out.
+# The single most important step. Nothing in the compose file publishes a port
+# to the internet, and this makes sure nothing else on the box does either.
+# SSH only: the API is reached through Tailscale, which needs no inbound port
+# because it makes an outbound connection and keeps it open. Ordered so SSH is
+# allowed BEFORE the default-deny lands, or this locks itself out.
 ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
 ufw default deny incoming
 ufw default allow outgoing
 ufw --force enable
@@ -95,8 +95,8 @@ say "Done"
 cat <<'DONE'
 The stack is up and the database is backed up.
 
-Still to do, and both need a browser login:
-  - the api.torerone.com DNS record, which is what lets Caddy get its
-    certificate. Until it exists, HTTPS will not work and that is expected.
+Still to do:
+  - tailscale funnel, which gives this box its public HTTPS address. No DNS
+    record and no certificate to manage: Tailscale issues and renews it.
   - the cutover of the laptop's data, when you decide to commit.
 DONE
