@@ -1,4 +1,4 @@
-import { deriveStatus, quotaMetFor, rollForward } from "./month";
+import { deriveStatus, monthlyShareOfAnnual, quotaMetFor, rollForward } from "./month";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -80,5 +80,37 @@ eq(
   false,
   "meeting short but not long does not count as met",
 );
+
+/*
+ * Annual costs.
+ *
+ * The rule that carries the money consequence: a yearly subscription must not
+ * roll forward. It holds a whole year in one row, so twelve copies would tell
+ * the tax export the thing was bought twelve times and inflate the deduction
+ * by eleven twelfths of it.
+ */
+const withAnnual = [
+  { name: "Adobe", categoryLine: "software", amountCents: 6000, kind: "recurring", variable: false, color: null, cadence: "monthly" },
+  { name: "Domain renewal", categoryLine: "software", amountCents: 120_00, kind: "recurring", variable: false, color: null, cadence: "annual" },
+];
+const rolled = rollForward(withAnnual, "2026-08");
+eq(rolled.length, 1, "only the monthly cost carries into the next month");
+eq(rolled[0]!.name, "Adobe", "and it is the monthly one");
+eq(
+  rolled.some((r) => r.cadence === "annual"),
+  false,
+  "nothing that carries is ever marked annual",
+);
+
+// A twelfth of the year, so twelve months add back up to what was actually paid.
+eq(monthlyShareOfAnnual([{ amountCents: 120_00 }]), 10_00, "a $120 year is $10 a month");
+eq(monthlyShareOfAnnual([]), 0, "no annual costs is no share, not a divide by zero");
+eq(
+  monthlyShareOfAnnual([{ amountCents: null }, { amountCents: 240_00 }]),
+  20_00,
+  "an annual bill nobody has entered yet counts as unknown, not as free",
+);
+// Rounded down, so twelve months can never total more than was really spent.
+eq(monthlyShareOfAnnual([{ amountCents: 100 }]), 8, "a rounding remainder is dropped, never invented");
 
 console.log("financials month: all checks passed");

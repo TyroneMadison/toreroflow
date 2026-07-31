@@ -13,6 +13,7 @@ export * from "./research";
 export * from "./competitors";
 export * from "./retention";
 export * from "./banking";
+export * from "./filingReminder";
 export * from "./business";
 export * from "./tax";
 export * from "./carousel";

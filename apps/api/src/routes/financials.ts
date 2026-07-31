@@ -16,7 +16,12 @@ import {
   type FilingStatus,
 } from "@toreroflow/core";
 import { requireAuth } from "../plugins/requireAuth";
-import { deriveStatus, quotaMetFor, rollForward } from "../financials/month";
+import {
+  deriveStatus,
+  monthlyShareOfAnnual,
+  quotaMetFor,
+  rollForward,
+} from "../financials/month";
 import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
 import { renderReportPdf } from "@toreroflow/media";
@@ -137,6 +142,9 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
             kind: e.kind,
             variable: e.variable,
             color: e.color,
+            cadence: e.cadence,
+            dueDay: e.dueDay,
+            note: e.note,
           })),
           month,
         );
@@ -151,6 +159,9 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
               kind: r.kind,
               variable: r.variable,
               color: r.color,
+              cadence: r.cadence ?? "monthly",
+              dueDay: r.dueDay ?? null,
+              note: r.note ?? null,
             })),
           });
         }
@@ -224,25 +235,70 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       };
     });
 
-    const recurring = expenses.filter((e) => e.kind === "recurring");
+    const isAnnual = (e: { cadence: string }) => e.cadence === "annual";
+    const recurring = expenses.filter((e) => e.kind === "recurring" && !isAnnual(e));
     const oneOff = expenses.filter((e) => e.kind === "one_off");
+
+    /*
+     * Annual costs belong to the year, not to the month they were entered in.
+     *
+     * A domain renewal charged in March is money the business spends all year,
+     * so the card lists every yearly cost regardless of which month it sits
+     * in, and the monthly screens carry a twelfth of the total. The row itself
+     * stays where it is, charged once, so the tax export still sees one
+     * payment rather than twelve.
+     */
+    const annual = await prisma.expense.findMany({
+      where: { agencyId, month: { startsWith: `${month.slice(0, 4)}-` }, cadence: "annual" },
+      orderBy: { createdAt: "asc" },
+    });
+    const annualShareCents = monthlyShareOfAnnual(annual);
 
     // Twelve months of history for the bars, sparkline, and delta. The
     // window always contains January-to-now of the requested month's year,
     // so the YTD numbers reuse the same two queries.
     const windowKeys = monthKeysEnding(month, 12);
-    const [windowRevenue, windowExpenses] = await Promise.all([
+    const windowYears = [...new Set(windowKeys.map((k) => k.slice(0, 4)))];
+    const [windowRevenue, windowExpenses, windowAnnual] = await Promise.all([
       prisma.revenueEntry.findMany({
         where: { agencyId, month: { in: windowKeys } },
         select: { month: true, amountCents: true },
       }),
       prisma.expense.findMany({
-        where: { agencyId, month: { in: windowKeys } },
+        where: { agencyId, month: { in: windowKeys }, cadence: { not: "annual" } },
+        select: { month: true, amountCents: true },
+      }),
+      prisma.expense.findMany({
+        where: {
+          agencyId,
+          cadence: "annual",
+          OR: windowYears.map((y) => ({ month: { startsWith: `${y}-` } })),
+        },
         select: { month: true, amountCents: true },
       }),
     ]);
-    const series = buildSeries(month, windowRevenue, windowExpenses);
-    const ytd = ytdTotals(month, windowRevenue, windowExpenses);
+
+    /*
+     * The annual costs, spread.
+     *
+     * One synthetic row per month carrying that year's twelfth, so the bars,
+     * the sparkline and the year-to-date figure all see the same steady cost
+     * the monthly total does. The window can straddle two years, so the share
+     * is worked out per year rather than once.
+     */
+    const shareByYear = new Map(
+      windowYears.map((y) => [
+        y,
+        monthlyShareOfAnnual(windowAnnual.filter((e) => e.month.startsWith(`${y}-`))),
+      ]),
+    );
+    const spreadAnnual = windowKeys
+      .map((key) => ({ month: key, amountCents: shareByYear.get(key.slice(0, 4)) ?? 0 }))
+      .filter((row) => row.amountCents > 0);
+    const outRows = [...windowExpenses, ...spreadAnnual];
+
+    const series = buildSeries(month, windowRevenue, outRows);
+    const ytd = ytdTotals(month, windowRevenue, outRows);
 
     // Years the export selector can offer: from the earliest opened month's
     // year up to the server's current year, newest first.
@@ -275,6 +331,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       revenue: revenueRows,
       recurring,
       oneOff,
+      annual,
       series,
       ytd,
       years,
@@ -282,6 +339,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         inCents: sumCents(revenueRows.map((r) => r.amountCents)),
         recurringOutCents: sumCents(recurring.map((e) => e.amountCents)),
         oneOffOutCents: sumCents(oneOff.map((e) => e.amountCents)),
+        /** A twelfth of the year's annual costs, counted in every month. */
+        annualShareCents,
+        /** The full yearly figure, for the card that lists them. */
+        annualYearCents: sumCents(annual.map((e) => e.amountCents)),
         // Unknown bills are excluded from the total and reported separately so
         // the screen can say the figure is incomplete rather than pretend.
         missingBills: expenses.filter((e) => e.amountCents === null).length,
@@ -306,6 +367,50 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  /**
+   * A year of one-off spending, month by month.
+   *
+   * One-offs never roll forward, which is what makes them one-off, so each
+   * month holds only what actually happened in it. That is correct and it is
+   * also why a year of them was unreadable: seeing March meant moving the
+   * whole screen to March. This serves the lot in one go so the section can
+   * carry its own month picker without dragging the rest of Financials along.
+   */
+  app.get<{ Querystring: { year?: string; kind?: string } }>(
+    "/financials/expenses/by-month",
+    async (request, reply) => {
+      const year = Number.parseInt(request.query.year ?? "", 10);
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        return reply.status(400).send({ error: "year must be a 4 digit year" });
+      }
+      const kind = request.query.kind === "recurring" ? "recurring" : "one_off";
+
+      const rows = await prisma.expense.findMany({
+        where: { agencyId: request.user.agencyId, kind, month: { startsWith: `${year}-` } },
+        orderBy: [{ month: "asc" }, { createdAt: "asc" }],
+      });
+
+      // Every month of the year, including the empty ones. A gap in the list
+      // would read as a month that has not been looked at rather than a month
+      // with nothing in it.
+      const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+      return {
+        year,
+        kind,
+        months: months.map((m) => {
+          const mine = rows.filter((r) => r.month === m);
+          return {
+            month: m,
+            rows: mine,
+            totalCents: sumCents(mine.map((r) => r.amountCents)),
+            missingBills: mine.filter((r) => r.amountCents === null).length,
+          };
+        }),
+        totalCents: sumCents(rows.map((r) => r.amountCents)),
+      };
+    },
+  );
+
   app.post("/financials/expenses", async (request) => {
     const body = expenseSchema.parse(request.body);
     return await prisma.expense.create({
@@ -317,6 +422,8 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         month: body.month,
         kind: body.kind,
         variable: body.variable,
+        cadence: body.cadence,
+        dueDay: body.dueDay ?? null,
         incurredOn: body.incurredOn ? new Date(body.incurredOn) : null,
         color: body.color ?? null,
         note: body.note ?? null,
@@ -337,6 +444,9 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.categoryLine !== undefined ? { categoryLine: body.categoryLine } : {}),
         ...(body.amountCents !== undefined ? { amountCents: body.amountCents } : {}),
+        ...(body.cadence !== undefined ? { cadence: body.cadence } : {}),
+        ...(body.dueDay !== undefined ? { dueDay: body.dueDay } : {}),
+        ...(body.variable !== undefined ? { variable: body.variable } : {}),
         ...(body.color !== undefined ? { color: body.color } : {}),
         ...(body.note !== undefined ? { note: body.note } : {}),
         ...(body.incurredOn !== undefined

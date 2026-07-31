@@ -11,10 +11,22 @@
 
 export interface ExpenseCategory {
   key: string;
-  /** Schedule C Part II line, as printed on the form. */
+  /**
+   * Schedule C Part II line, as printed on the form. Empty when the category
+   * is not a business deduction and therefore belongs on no line at all.
+   */
   scheduleCLine: string;
   label: string;
   emoji: string;
+  /**
+   * Whether money in this category reduces taxable profit.
+   *
+   * False for money that leaves the account without being an expense. Buying
+   * an investment is a transfer of value, not a cost of doing business, and
+   * the IRS does not let you deduct it. Tracking it here is useful; deducting
+   * it is a wrong return, so the flag exists to keep the two apart.
+   */
+  deductible?: false;
 }
 
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -37,6 +49,11 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   // own row to avoid being buried inside a generic Other bucket.
   { key: "software", scheduleCLine: "27a", label: "Subscriptions and software", emoji: "💻" },
   { key: "other", scheduleCLine: "27a", label: "Other", emoji: "📌" },
+  // Deliberately last, and deliberately not on a line. Money put into an
+  // investment is not deductible: it buys an asset rather than paying for
+  // something consumed. Kept as a category so the account still balances
+  // against the bank feed, and excluded from every deductible total.
+  { key: "investments", scheduleCLine: "", label: "Investments", emoji: "📈", deductible: false },
 ];
 
 const BY_KEY = new Map(EXPENSE_CATEGORIES.map((c) => [c.key, c]));

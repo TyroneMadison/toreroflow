@@ -56,4 +56,26 @@ eq(
 eq(labelFor("softwares"), "softwares", "an unknown key has no catalogue label, so it echoes back");
 eq(labelFor("software"), "Subscriptions and software", "a known key resolves to its real label");
 
+/*
+ * Investments are tracked but never deducted.
+ *
+ * The check that matters on a tax document: a category flagged not deductible
+ * has to reach the export as a real group with a real total, and contribute
+ * nothing to what is claimed. Silently dropping it would lose the record;
+ * silently deducting it would file a wrong return.
+ */
+const withInvestment = [
+  ...expenses,
+  { name: "Index fund", categoryLine: "investments", amountCents: 500_00 },
+];
+const invested = groupForScheduleC(withInvestment).find((g) => g.key === "investments");
+eq(Boolean(invested), true, "investments still reach the export as their own group");
+eq(invested!.totalCents, 500_00, "the amount spent is recorded in full");
+eq(invested!.deductibleCents, 0, "and none of it is claimable");
+eq(invested!.scheduleCLine, "", "there is no Schedule C line to put it on");
+
+const claimable = groupForScheduleC(withInvestment).reduce((n, g) => n + g.deductibleCents, 0);
+const claimableBefore = groupForScheduleC(expenses).reduce((n, g) => n + g.deductibleCents, 0);
+eq(claimable, claimableBefore, "adding an investment does not move the deductible total at all");
+
 console.log("taxExport: all checks passed");

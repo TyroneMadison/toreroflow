@@ -402,7 +402,11 @@
   .sel.open .selchev{transform:rotate(180deg);color:var(--v)}
   /* Opaque, like the brand switcher: glass over glass cannot be read. Fixed,
      because it lives on the body and is placed from the trigger's own rect. */
-  .selpanel{position:fixed;z-index:200;padding:6px;border-radius:14px;
+  /* width:max-content so the list is as wide as its longest option. The
+     inline min-width keeps it at least as wide as its trigger and the
+     inline max-width keeps it on screen; between them the panel fits its
+     text instead of inheriting a sixty pixel trigger and rendering "A...". */
+  .selpanel{position:fixed;z-index:200;padding:6px;border-radius:14px;width:max-content;
     background:rgba(10,10,10,.98);border:1px solid var(--brd);box-shadow:0 18px 44px rgba(0,0,0,.6);
     overflow:auto;animation:selin .12s ease-out}
   .selpanel.up{box-shadow:0 -18px 44px rgba(0,0,0,.6)}
@@ -917,7 +921,8 @@
 /* Money coming in: one row per client, a status tag and a colour swatch.
    .lrow/.av/.lmeta/.amt/.tag.paid/.tag.due were assumed done by an earlier
    task that got skipped, so they are added here rather than left missing. */
-.lrow{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--brd-soft)}
+.lrow{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--brd-soft);flex-wrap:wrap}
+.lrow>.lmeta{flex:1 1 160px}
 .lrow:last-child{border-bottom:none}
 .av{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:0 0 auto;display:grid;place-items:center;
   background:var(--grad);color:#000;font-weight:700;font-size:12px}
@@ -925,7 +930,7 @@
 .lmeta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .lmeta b{font-size:13.5px;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lmeta span{font-size:11px;color:var(--txt-3)}
-.amt{font-size:13.5px;font-weight:650;flex:0 0 auto}
+.amt{font-size:13.5px;font-weight:650;flex:0 0 auto;white-space:nowrap;text-align:right}
 .amt.i{color:var(--green)}
 .tag.paid{background:rgba(87,214,160,.15);color:#9cf0cb;border:1px solid rgba(87,214,160,.32)}
 .tag.due{background:rgba(78,168,255,.15);color:#bcdcff;border:1px solid rgba(78,168,255,.32)}
@@ -935,7 +940,7 @@
    screen instead of requiring a curl to /clients/:id/billing. */
 .priceset .lmeta span{color:var(--amber)}
 .pricein{display:flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--txt-3);font-size:12.5px}
-.pricein .field-in{width:80px;padding:8px 10px;font-size:12.5px}
+.pricein .field-in{width:96px;padding:8px 10px;font-size:12.5px}
 .modepick{display:flex;gap:4px;flex:0 0 auto}
 .modepick button{padding:7px 12px;border-radius:10px;font-size:11px;font-weight:600;
   border:1px solid var(--brd-soft);background:var(--glass);color:var(--txt-3);cursor:pointer;
@@ -1020,6 +1025,25 @@
   border:1px solid var(--brd-soft);background:var(--glass);flex:0 0 auto;cursor:pointer;font-size:11px;font-weight:650;
   font-family:var(--font)}
 .del.arm{color:#fff;background:rgba(255,45,85,.25);border-color:rgba(255,45,85,.5)}
+.del:disabled{opacity:.35;cursor:default}
+/* The pencil is the same chip as the delete, so the two read as one pair of
+   row actions rather than a button and a decoration. Armed means open. */
+.del.pencil svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.9;fill:none}
+.del.pencil:hover:not(:disabled){color:var(--txt);border-color:var(--brd)}
+.del.pencil.arm{color:#000;background:var(--grad);border-color:transparent}
+
+/* What the pencil opens. Indented to the depth of the row's text so it reads
+   as belonging to the row above it rather than as a new row. */
+.editpanel{display:flex;flex-direction:column;gap:10px;margin:2px 0 12px 46px;padding:14px;
+  border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+.editpanel textarea.field-in{font-size:12.5px;line-height:1.5;min-height:64px}
+.editrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* The note as written, under its row. Wraps: 250 characters is a sentence or
+   two and truncating it would defeat the point of writing it down. */
+.lnote{margin:-4px 0 10px 46px;font-size:11.5px;line-height:1.55;color:var(--txt-3);
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.addform .addnote{flex:1 1 100%;min-height:48px;font-size:12.5px;resize:vertical}
+.monthbrowse{margin-left:auto}
 /* Expense rows: category emoji chip, missing-bill highlight, add affordance. */
 .lrow .cat{width:34px;height:34px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;font-size:15px;
   background:var(--glass-2);border:1px solid var(--brd-soft)}
@@ -1032,12 +1056,59 @@
 .addrow:hover{color:var(--txt-2);border-color:rgba(255,255,255,.3)}
 [data-theme="light"] .addrow{border-color:rgba(12,12,12,.2)}
 /* Split because a Select is a wrapper plus a trigger: the row sizes the
-   wrapper, the trigger carries the padding and the type. */
-.selwrap.catpick{width:auto;max-width:150px;flex:0 0 auto}
-.sel.catpick{width:auto;padding:7px 9px;font-size:11.5px}
+   wrapper, the trigger carries the padding and the type.
+   The cap belongs on the TRIGGER as well as the wrapper. Capping only the
+   wrapper let a long label like "Subscriptions and software" grow the trigger
+   straight through it and paint over the amount to its right, which is the
+   overlap on screen. Capped here, the label ellipsises instead. */
+.selwrap.catpick{width:auto;max-width:180px;min-width:0;flex:0 1 auto}
+.sel.catpick{width:auto;max-width:180px;min-width:104px;padding:7px 9px;font-size:11.5px}
 .varpick{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt-3);flex:0 0 auto;white-space:nowrap}
 .addform{flex-wrap:wrap}
-.cols2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;align-items:start}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;align-items:start}
+
+/* Alerts, on the side of the window and above everything.
+   Fixed rather than in the layout: the whole point is that it reaches the
+   operator on whichever screen they are on. Width in ch so a long sentence
+   wraps at a readable measure instead of running the height of the window. */
+.alertdock{position:fixed;top:20px;right:20px;z-index:300;width:min(340px,calc(100vw - 40px));
+  display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 40px);overflow:auto}
+.alertdock-head{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:1.2px;
+  text-transform:uppercase;color:var(--txt-3);font-weight:600;padding:0 4px}
+.alertdock-head b{flex:1;font-weight:600}
+.alertdock-hide{background:none;border:none;color:var(--txt-3);cursor:pointer;font-size:12px;
+  font-family:var(--font);padding:2px 4px;border-radius:6px}
+.alertdock-hide:hover{color:var(--txt)}
+.alertcard{padding:14px;border-radius:14px;background:rgba(20,20,20,.97);
+  border:1px solid rgba(255,207,107,.4);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.alertcard.bad{border-color:rgba(255,45,85,.45)}
+.alertcard-msg{font-size:13px;font-weight:600;line-height:1.45;color:var(--amber)}
+.alertcard.bad .alertcard-msg{color:var(--red)}
+.alertcard-detail{font-size:11.5px;line-height:1.55;color:var(--txt-3);margin-top:6px}
+.alertcard-ack{margin-top:10px;padding:6px 14px;font-size:12px}
+/* Collapsed: a tab rather than nothing, so hiding is not the same as
+   dismissing and an unread problem cannot be closed by accident. */
+.alertdock-tab{position:fixed;top:20px;right:20px;z-index:300;display:flex;align-items:center;gap:6px;
+  padding:8px 12px;border-radius:12px;background:rgba(20,20,20,.97);border:1px solid rgba(255,207,107,.4);
+  color:var(--amber);font-family:var(--font);font-size:12px;font-weight:650;cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.alertdock-tab.bad{border-color:rgba(255,45,85,.45);color:var(--red)}
+.alertdock-tab svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.9;fill:none}
+[data-theme="light"] .alertcard,[data-theme="light"] .alertdock-tab{background:rgba(255,255,255,.98)}
+
+/* Every card on Financials, one gap between them.
+   The spacing used to live as a marginTop on each card, which meant it was
+   remembered on some and forgotten on others: Money coming in had none and sat
+   flush against the tax card while everything around it had room. A single
+   gap on the column cannot be forgotten. 16 rather than 14 to keep every size
+   in the app on a multiple of four. */
+.fincards{display:flex;flex-direction:column;gap:16px}
+.fincards>*{margin-top:0}
+.fincards .band{margin-bottom:0}
+.fincards .cols2{margin-top:0}
+/* Export card: label and control on one line until there is no room for it. */
+.exportcard{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.exportcard>:first-child{flex:1 1 260px;min-width:0}
 
 /* The missing-bills warning also renders standalone above the lists. */
 .warnline{font-size:11px;color:var(--amber);line-height:1.4}

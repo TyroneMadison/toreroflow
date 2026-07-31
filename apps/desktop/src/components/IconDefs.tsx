@@ -103,6 +103,10 @@ export default function IconDefs() {
         <path d="M12 3.5L2.8 19.5a1.4 1.4 0 0 0 1.2 2h16a1.4 1.4 0 0 0 1.2-2z" />
         <path d="M12 9.5v4.5M12 17.6v.01" />
       </symbol>
+      <symbol id="i-pencil" viewBox="0 0 24 24">
+        <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+        <path d="M14.5 6.5l3 3" />
+      </symbol>
       {/* platform logos */}
       <symbol id="p-ig" viewBox="0 0 24 24">
         <rect x="3" y="3" width="18" height="18" rx="5.2" fill="none" stroke="currentColor" strokeWidth="2.1" />

@@ -129,7 +129,7 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
   if (!view) {
     if (!unreadable) return null;
     return (
-      <div className="card glass" style={{ marginTop: 16 }}>
+      <div className="card glass">
         <div className="rowhead">
           <div>
             <h3>Bank</h3>
@@ -144,7 +144,7 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
   }
 
   return (
-    <div className="card glass" style={{ marginTop: 16 }}>
+    <div className="card glass">
       <div className="rowhead">
         <div>
           <h3>Bank</h3>

@@ -11,6 +11,7 @@ import { generateInsight } from "./insights";
 import { runResearch } from "./research";
 import { sweepPostedSources } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
+import { checkFilingReminders } from "./filing";
 
 const prisma = getPrisma();
 const anthropic = env.ANTHROPIC_API_KEY
@@ -692,6 +693,24 @@ void bankQueue.upsertJobScheduler(
   "daily-bank",
   { every: 24 * 60 * 60 * 1000 },
   { name: "sync", data: {} },
+);
+
+/*
+ * The State filing deadline, checked once a day.
+ *
+ * On its own timer rather than inside the bank job because it has nothing to
+ * do with banks: it must keep running for an operator whose bank is
+ * disconnected, and a bank sync failing must not take the year's only
+ * statutory deadline down with it. It says nothing on 360 days of the year.
+ */
+void (async () => {
+  await checkFilingReminders();
+})();
+setInterval(
+  () => {
+    void checkFilingReminders();
+  },
+  6 * 60 * 60 * 1000,
 );
 
 new Worker<{ runId: string }>(

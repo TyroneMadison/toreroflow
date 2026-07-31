@@ -50,10 +50,26 @@ interface SelectProps {
 
 const PANEL_MAX = 300;
 const GAP = 6;
+/** Kept clear of the window edge so the panel never looks welded to it. */
+const EDGE = 8;
+/** Wide enough for the longest label in the app, narrow enough not to sprawl. */
+const PANEL_MAX_WIDTH = 340;
 
 interface PanelBox {
-  left: number;
-  width: number;
+  /** Set when the panel grows rightwards from the trigger's left edge. */
+  left?: number;
+  /** Set instead when it grows leftwards from the trigger's right edge. */
+  right?: number;
+  /**
+   * The trigger's width, as a floor rather than a fixed size.
+   *
+   * A category picker in a packed row can be sixty pixels wide. Sizing the
+   * list to match turned every option into "A...", "C...", "E...", which is a
+   * menu you cannot read and therefore cannot use. The list is as wide as it
+   * needs to be, and never narrower than the thing it belongs to.
+   */
+  minWidth: number;
+  maxWidth: number;
   /** Set when the panel hangs below the trigger. */
   top?: number;
   /** Set instead when it has to open upwards. */
@@ -73,9 +89,18 @@ function measure(trigger: HTMLElement): PanelBox {
   const below = window.innerHeight - r.bottom - GAP;
   const above = r.top - GAP;
   const flip = below < Math.min(PANEL_MAX, 160) && above > below;
+
+  // Which way the list grows. Anchored left by default; anchored to the
+  // trigger's right edge when there is more room that way, so a picker near
+  // the window edge opens inwards instead of off the screen.
+  const roomRight = window.innerWidth - r.left - EDGE;
+  const roomLeft = r.right - EDGE;
+  const anchorRight = roomRight < Math.min(PANEL_MAX_WIDTH, r.width + 40) && roomLeft > roomRight;
+
   return {
-    left: r.left,
-    width: r.width,
+    ...(anchorRight ? { right: window.innerWidth - r.right } : { left: r.left }),
+    minWidth: r.width,
+    maxWidth: Math.max(r.width, Math.min(PANEL_MAX_WIDTH, anchorRight ? roomLeft : roomRight)),
     ...(flip ? { bottom: window.innerHeight - r.top + GAP } : { top: r.bottom + GAP }),
     maxHeight: Math.max(120, Math.min(PANEL_MAX, flip ? above : below)),
   };
@@ -264,7 +289,9 @@ export default function Select({
             tabIndex={-1}
             style={{
               left: box.left,
-              width: box.width,
+              right: box.right,
+              minWidth: box.minWidth,
+              maxWidth: box.maxWidth,
               top: box.top,
               bottom: box.bottom,
               maxHeight: box.maxHeight,

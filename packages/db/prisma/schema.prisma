@@ -602,9 +602,19 @@ model Expense {
   kind         String    @default("recurring")
   /// A recurring cost whose amount changes monthly, so it rolls forward null.
   variable     Boolean   @default(false)
+  /// monthly | annual. An annual cost holds its whole yearly figure here and
+  /// is charged once, so it does not roll forward. The monthly screens spread
+  /// a twelfth of it across the year instead, because a subscription billed
+  /// once in March is still money the business spends every month.
+  cadence      String    @default("monthly")
+  /// Day of the month a recurring bill lands, 1 to 31. Null when unknown,
+  /// which is different from the 1st.
+  dueDay       Int?
   /// one_off only: the date it actually happened, for the tax record.
   incurredOn   DateTime?
   color        String?
+  /// The operator's own reminder of what this is. Capped at 250 characters by
+  /// the API, because it is a note and not a document.
   note         String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

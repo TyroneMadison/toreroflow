@@ -40,6 +40,9 @@ export interface RollForwardRow {
   kind: string;
   variable: boolean;
   color: string | null;
+  cadence?: string;
+  dueDay?: number | null;
+  note?: string | null;
   month?: string;
 }
 
@@ -49,10 +52,15 @@ export interface RollForwardRow {
  * A fixed cost brings its amount. A variable one arrives with no amount, so
  * an unentered bill is visibly missing rather than silently counted as zero.
  * One-off rows are never carried, which is what makes them one-off.
+ *
+ * Annual costs are not carried either, for a different reason: the row holds a
+ * whole year's figure and the money leaves once. Copying it into all twelve
+ * months would tell the tax export the subscription was bought twelve times.
+ * The monthly share is worked out separately, by monthlyShareOfAnnual.
  */
 export function rollForward(previous: RollForwardRow[], month: string): RollForwardRow[] {
   return previous
-    .filter((r) => r.kind === "recurring")
+    .filter((r) => r.kind === "recurring" && (r.cadence ?? "monthly") !== "annual")
     .map((r) => ({
       name: r.name,
       categoryLine: r.categoryLine,
@@ -60,8 +68,29 @@ export function rollForward(previous: RollForwardRow[], month: string): RollForw
       kind: "recurring",
       variable: r.variable,
       color: r.color,
+      cadence: "monthly",
+      dueDay: r.dueDay ?? null,
+      note: r.note ?? null,
       month,
     }));
+}
+
+/**
+ * What a year's annual costs work out to per month.
+ *
+ * A subscription billed once in March is still money the business spends every
+ * month; seeing it only in March makes eleven months look cheaper than they
+ * are and March look like a disaster. So the yearly figures are added up and
+ * divided by twelve.
+ *
+ * Rounded down, and only for rows that actually have an amount: an annual bill
+ * nobody has entered yet must not quietly count as free, which is the same
+ * rule the monthly costs follow.
+ */
+export function monthlyShareOfAnnual(annual: Array<{ amountCents: number | null }>): number {
+  let year = 0;
+  for (const row of annual) if (row.amountCents !== null) year += row.amountCents;
+  return Math.floor(year / 12);
 }
 
 export interface QuotaMetInput {

@@ -19,6 +19,19 @@ export const billingSchema = z.object({
   billingMode: z.enum(["calendar", "on_fulfilment"]).optional(),
 });
 
+/**
+ * The operator's own note on a cost.
+ *
+ * 250 characters, which is the length asked for. Long enough for "renews on
+ * the business card, cancel before renewal if we drop the retainer" and
+ * short enough that it stays a reminder rather than a document.
+ */
+export const NOTE_MAX = 250;
+const noteSchema = z.string().max(NOTE_MAX).nullish();
+
+/** 1 to 31. Not every month has a 31st, which the screens say rather than hide. */
+const dueDaySchema = z.number().int().min(1).max(31).nullish();
+
 export const expenseSchema = z.object({
   name: z.string().min(1).max(120),
   categoryLine: z.enum(CATEGORY_KEYS),
@@ -26,9 +39,12 @@ export const expenseSchema = z.object({
   month: monthKeySchema,
   kind: z.enum(["recurring", "one_off"]).default("recurring"),
   variable: z.boolean().default(false),
+  /** An annual cost holds its whole yearly figure and is charged once. */
+  cadence: z.enum(["monthly", "annual"]).default("monthly"),
+  dueDay: dueDaySchema,
   incurredOn: z.string().datetime().nullish(),
   color: z.string().regex(HEX).nullish(),
-  note: z.string().max(500).nullish(),
+  note: noteSchema,
 });
 
 /**
@@ -43,9 +59,13 @@ export const expenseUpdateSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   categoryLine: z.enum(CATEGORY_KEYS).optional(),
   amountCents: z.number().int().min(0).max(100_000_000).nullish(),
+  /** Editable: whether a cost is billed monthly or yearly is a correction. */
+  cadence: z.enum(["monthly", "annual"]).optional(),
+  dueDay: dueDaySchema,
+  variable: z.boolean().optional(),
   incurredOn: z.string().datetime().nullish(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
-  note: z.string().max(500).nullish(),
+  note: noteSchema,
 });
 
 export const revenueUpdateSchema = z.object({

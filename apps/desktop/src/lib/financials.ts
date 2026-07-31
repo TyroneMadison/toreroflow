@@ -27,9 +27,28 @@ export interface ExpenseRow {
   month: string;
   kind: "recurring" | "one_off";
   variable: boolean;
+  /** monthly | annual. An annual cost holds its whole yearly figure. */
+  cadence: "monthly" | "annual";
+  /** Day of the month a recurring bill lands. Null when unknown. */
+  dueDay: number | null;
   incurredOn: string | null;
   color: string | null;
   note: string | null;
+}
+
+/** One month of a year's worth of expenses, from /financials/expenses/by-month. */
+export interface ExpenseMonth {
+  month: string;
+  rows: ExpenseRow[];
+  totalCents: number;
+  missingBills: number;
+}
+
+export interface ExpenseYear {
+  year: number;
+  kind: "recurring" | "one_off";
+  months: ExpenseMonth[];
+  totalCents: number;
 }
 
 export interface SeriesPoint {
@@ -44,6 +63,8 @@ export interface FinancialsMonth {
   revenue: RevenueRow[];
   recurring: ExpenseRow[];
   oneOff: ExpenseRow[];
+  /** Every yearly cost in this month's year, wherever in the year it is charged. */
+  annual: ExpenseRow[];
   /** Twelve months ending at `month`, oldest first. */
   series: SeriesPoint[];
   ytd: { inCents: number; netCents: number };
@@ -53,8 +74,34 @@ export interface FinancialsMonth {
     inCents: number;
     recurringOutCents: number;
     oneOffOutCents: number;
+    /** A twelfth of the year's annual costs, counted in every month. */
+    annualShareCents: number;
+    /** The full yearly figure those annual costs add up to. */
+    annualYearCents: number;
     missingBills: number;
   };
+}
+
+/** Months of a year as pickable options, oldest first. */
+export function monthsOfYear(year: number): Array<{ value: string; label: string }> {
+  return Array.from({ length: 12 }, (_, i) => {
+    const value = `${year}-${String(i + 1).padStart(2, "0")}`;
+    return {
+      value,
+      label: new Date(year, i, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    };
+  });
+}
+
+/**
+ * "the 3rd", "the 21st". Written out because "3" alone beside a category
+ * reads as a quantity rather than a date.
+ */
+export function ordinalDay(day: number): string {
+  const tens = day % 100;
+  if (tens >= 11 && tens <= 13) return `the ${day}th`;
+  const suffix = { 1: "st", 2: "nd", 3: "rd" }[day % 10] ?? "th";
+  return `the ${day}${suffix}`;
 }
 
 /** The five colours a row may take. Matches the design tokens. */

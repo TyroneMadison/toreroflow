@@ -59,7 +59,7 @@ export default function TaxCard({ year }: { year: number }) {
 
   if (failed) {
     return (
-      <div className="card glass" style={{ marginTop: 16 }}>
+      <div className="card glass">
         <h3>Set aside for taxes</h3>
         <p className="insfailed">Could not work out the tax estimate just now.</p>
       </div>
@@ -70,7 +70,7 @@ export default function TaxCard({ year }: { year: number }) {
   const table = STATE_TAX[estimate.state];
 
   return (
-    <div className="card glass" style={{ marginTop: 16 }}>
+    <div className="card glass">
       <div className="rowhead">
         <div>
           <h3>Set aside for taxes</h3>

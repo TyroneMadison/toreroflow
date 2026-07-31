@@ -6,19 +6,19 @@ function eq(actual: unknown, expected: unknown, message: string) {
   }
 }
 
-const EXPECTED_CATEGORIES_COUNT = 15;
+const EXPECTED_CATEGORIES_COUNT = 16;
 
-eq(EXPENSE_CATEGORIES.length, EXPECTED_CATEGORIES_COUNT, "fifteen categories");
+eq(EXPENSE_CATEGORIES.length, EXPECTED_CATEGORIES_COUNT, "sixteen categories");
 
 // Keys are stored in the database, so a rename is a migration, not a tweak.
 const keys = EXPENSE_CATEGORIES.map((c) => c.key).join(",");
 eq(
   keys,
-  "advertising,car,contract_labor,depreciation,insurance,legal_professional,office,rent_other,repairs,supplies,travel,meals,utilities,software,other",
+  "advertising,car,contract_labor,depreciation,insurance,legal_professional,office,rent_other,repairs,supplies,travel,meals,utilities,software,other,investments",
   "category keys and their order are fixed",
 );
 
-eq(new Set(EXPENSE_CATEGORIES.map((c) => c.key)).size, 15, "keys are unique");
+eq(new Set(EXPENSE_CATEGORIES.map((c) => c.key)).size, EXPECTED_CATEGORIES_COUNT, "keys are unique");
 
 /**
  * Every line number, pinned. A wrong number here does not fail loudly, it puts
@@ -41,6 +41,10 @@ const EXPECTED_LINES: Array<[string, string]> = [
   ["utilities", "25"],
   ["software", "27a"],
   ["other", "27a"],
+  // Empty on purpose. Investments buy an asset rather than pay for anything
+  // consumed, so there is no Schedule C line for them and deducting one would
+  // be a wrong return. deductibleCents returns 0 for it; see money.check.ts.
+  ["investments", ""],
 ];
 eq(EXPECTED_LINES.length, EXPECTED_CATEGORIES_COUNT, "line table covers every category");
 for (const [key, line] of EXPECTED_LINES) {

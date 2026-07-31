@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../components/Toasts";
+import AnnualSection from "../components/finance/AnnualSection";
 import BankSection from "../components/finance/BankSection";
 import TaxCard from "../components/finance/TaxCard";
 import RevenueSection from "../components/finance/RevenueSection";
@@ -172,7 +173,7 @@ export default function FinancialsScreen() {
         )}
 
         {phase === "ready" && data && (
-          <>
+          <div className="fincards">
             <div className="band">
               <NetCard series={data.series} />
               <DonutCard rows={data.revenue} totalCents={data.totals.inCents} />
@@ -223,7 +224,15 @@ export default function FinancialsScreen() {
               />
             </div>
 
-            <div className="card glass" style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 14 }}>
+            <AnnualSection
+              rows={data.annual}
+              categories={data.categories}
+              year={data.month.slice(0, 4)}
+              shareCents={data.totals.annualShareCents}
+              yearCents={data.totals.annualYearCents}
+            />
+
+            <div className="card glass exportcard">
               <div style={{ flex: 1 }}>
                 <b style={{ fontSize: 14.5 }}>Export for taxes</b>
                 <div className="sub">
@@ -250,7 +259,7 @@ export default function FinancialsScreen() {
                 Export {year}
               </button>
             </div>
-          </>
+          </div>
         )}
       </div>
     </section>

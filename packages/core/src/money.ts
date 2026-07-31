@@ -1,3 +1,5 @@
+import { categoryByKey } from "./expenseCategories";
+
 /**
  * Money arithmetic for the Financials module.
  *
@@ -39,6 +41,11 @@ export function sumCents(values: Array<number | null>): number {
  * direction to be wrong in.
  */
 export function deductibleCents(categoryKey: string, cents: number): number {
+  // Some categories are not deductions at all. Investments is the one today:
+  // the money left the account, but it bought an asset rather than paying for
+  // anything, so claiming it would overstate the deduction and understate the
+  // tax owed.
+  if (categoryByKey(categoryKey)?.deductible === false) return 0;
   if (categoryKey !== "meals") return cents;
   return Math.floor(cents * MEALS_DEDUCTIBLE_RATE);
 }
