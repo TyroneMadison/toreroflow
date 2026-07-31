@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { formatCents } from "@toreroflow/core";
 import { useToast } from "../Toasts";
 import { openExternal } from "../../lib/external";
 import { api, type BankCashflowView, type BankConnectionsView } from "../../lib/api";
@@ -16,10 +17,7 @@ import { syncComplaint, waitForBankSync } from "../../lib/bankSync";
 
 const SIMPLEFIN_URL = "https://bridge.simplefin.org/";
 
-const money = (cents: number | null | undefined): string =>
-  cents == null
-    ? "-"
-    : `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (cents: number | null | undefined): string => formatCents(cents ?? null);
 
 export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
   const toast = useToast();
@@ -30,6 +28,7 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
   const [token, setToken] = useState("");
   /** What the pull is doing, or null when nothing is running. */
   const [pulling, setPulling] = useState<string | null>(null);
+  const [unreadable, setUnreadable] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -39,9 +38,12 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
       ]);
       setView(v);
       setFlow(f);
+      setUnreadable(false);
     } catch {
       // Additive section: a failure here must not take the rest of Financials
-      // down with it.
+      // down with it. It must not disappear either, which is what happened
+      // while this was silent: no card, no Connect button, no reason given.
+      setUnreadable(true);
     }
   }, []);
 
@@ -124,7 +126,22 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
     }
   };
 
-  if (!view) return null;
+  if (!view) {
+    if (!unreadable) return null;
+    return (
+      <div className="card glass" style={{ marginTop: 16 }}>
+        <div className="rowhead">
+          <div>
+            <h3>Bank</h3>
+            <div className="sub">Could not read the bank just now. Nothing has been lost.</div>
+          </div>
+          <button className="cbtn" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="card glass" style={{ marginTop: 16 }}>
