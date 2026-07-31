@@ -3,6 +3,12 @@
     The app icon, and the source every other icon size is generated from.
     Regenerate with the tauri icon command, pointed at this file.
 
+    Then delete src-tauri/target/release/build/toreroflow-* before rebuilding.
+    The resource compiler turns icons/icon.ico into resource.lib once and never
+    declares the .ico as a dependency, so cargo happily relinks a compiled
+    resource from days ago and ships the old icon inside a brand new binary.
+    A plain rebuild, and even cargo clean -p, both leave it in place.
+
     The tile is the same coral gradient as var(-)(-grad) in the app's
     stylesheet and as torerone.com: 135 degrees, #FF6F61 to #FF9A73. The glyph
     is the same thumbs up path the sidebar draws, so the icon in the taskbar
