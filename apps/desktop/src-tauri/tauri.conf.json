@@ -33,6 +33,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQyMzkwMEYyQjQ4NTIyOTQKUldTVUlvVzA4Z0E1MGdqeEQrUUovRkVtbGZteXI1MVZaTUVuV21pUGhENVRSRVJIVGJZdkxzajQK",
+      "endpoints": [
+        "https://github.com/TyroneMadison/toreroflow/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -1,0 +1,104 @@
+name: Release the desktop app
+
+# Tag a version and this builds the installer, signs it, and publishes both the
+# installer and the manifest the running app checks:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Or run it by hand from the Actions tab, which is what the Ship button in the
+# app's Settings triggers.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, without the v (e.g. 0.2.0)"
+        required: true
+
+permissions:
+  contents: write # to create the release and upload the installer to it
+
+jobs:
+  build:
+    # Windows, because that is what the operator runs and the NSIS installer
+    # can only be produced on it. Add macos-latest here when a Mac needs one.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Rust builds are slow from cold and almost entirely cacheable.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      # The client is generated, not committed, and the desktop typecheck
+      # imports types from it.
+      - run: pnpm --filter @toreroflow/db exec prisma generate
+
+      - name: Work out the version
+        id: v
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # tauri.conf.json is the source of truth for the version the updater
+      # compares against, so a dispatch that names a different one has to write
+      # it in rather than build a binary that disagrees with its own release.
+      - name: Stamp the version
+        shell: bash
+        run: |
+          node -e "
+            const fs=require('fs'), p='apps/desktop/src-tauri/tauri.conf.json';
+            const d=JSON.parse(fs.readFileSync(p,'utf8'));
+            d.version='${{ steps.v.outputs.version }}';
+            fs.writeFileSync(p, JSON.stringify(d,null,2)+'\n');
+          "
+          node -e "
+            const fs=require('fs'), p='apps/desktop/package.json';
+            const d=JSON.parse(fs.readFileSync(p,'utf8'));
+            d.version='${{ steps.v.outputs.version }}';
+            fs.writeFileSync(p, JSON.stringify(d,null,2)+'\n');
+          "
+
+      - name: Build, sign and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Without these the build succeeds and produces an installer nothing
+          # will accept as an update, which is a failure that only shows up on
+          # the operator's machine days later.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Baked in at build time. A release built without it would ship an
+          # app pointing at localhost.
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        with:
+          projectPath: apps/desktop
+          tagName: v${{ steps.v.outputs.version }}
+          releaseName: Toreroflow v${{ steps.v.outputs.version }}
+          releaseBody: "Open the app and it will offer this update, or download the installer below."
+          releaseDraft: false
+          prerelease: false
+          # Writes latest.json alongside the installer. This is the file the
+          # running app polls, and the reason the endpoint in tauri.conf.json
+          # points at releases/latest/download/latest.json.
+          includeUpdaterJson: true

@@ -1452,3 +1452,21 @@
   .ev .t1 { flex-wrap: wrap; }
   .ev .evwhen { flex: 1 0 100%; order: 3; }
 }
+
+/* The "a new version is ready" bar.
+   Bottom left, opposite the alert dock, so a filing deadline and an update
+   offer never sit on top of each other. */
+.updatebar{position:fixed;left:20px;bottom:20px;z-index:300;display:flex;align-items:center;gap:12px;
+  max-width:min(460px,calc(100vw - 40px));padding:14px 16px;border-radius:16px;
+  background:rgba(20,20,20,.97);border:1px solid rgba(255,111,97,.45);
+  box-shadow:0 16px 44px rgba(0,0,0,.55)}
+.updatebar-body{flex:1;min-width:0}
+.updatebar-body b{font-size:13px;font-weight:650;display:block}
+.updatebar-notes{font-size:11.5px;line-height:1.5;color:var(--txt-3);margin-top:4px;
+  max-height:64px;overflow:auto;white-space:pre-wrap}
+.updatebar-notes.bad{color:var(--red)}
+.updatebar .btn{padding:8px 14px;font-size:12.5px;flex:0 0 auto}
+[data-theme="light"] .updatebar{background:rgba(255,255,255,.98)}
+@media (max-width:640px){
+  .updatebar{left:8px;right:8px;bottom:8px;max-width:none;flex-wrap:wrap}
+}

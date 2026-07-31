@@ -18,6 +18,7 @@ import PreviewModal from "./modals/PreviewModal";
 import { ToastProvider } from "./components/Toasts";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import AlertDock from "./components/AlertDock";
+import UpdateBanner from "./components/UpdateBanner";
 import { api, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
@@ -127,6 +128,7 @@ function Shell() {
 
   return (
     <>
+      <UpdateBanner />
       <AlertDock alerts={alerts} onChanged={refreshAlerts} />
       <div className="app">
         <Sidebar
