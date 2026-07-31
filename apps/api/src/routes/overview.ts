@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { fileLinkVersioned } from "../files/link";
 import { getPrisma } from "@toreroflow/db";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -162,7 +163,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
                 status: c.insight.status,
                 // Stamped so a regenerated plan is never served from cache.
                 url: c.insight.storageKey
-                  ? `/files/${c.insight.storageKey}?v=${c.insight.completedAt?.getTime() ?? 0}`
+                  ? fileLinkVersioned(c.insight.storageKey, c.insight.completedAt?.getTime() ?? 0)
                   : null,
                 completedAt: c.insight.completedAt,
               }

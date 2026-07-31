@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fileLink } from "../files/link";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -104,16 +105,16 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       // its own thumbnail. Pointing at thumb.jpg would render a blank card.
       thumbUrl: ready
         ? a.kind === "carousel"
-          ? `/files/${a.storageKey}`
+          ? fileLink(a.storageKey)
           : a.coverKey
-            ? `/files/${a.coverKey}`
-            : `/files/${a.clientId}/${a.id}/thumb.jpg`
+            ? fileLink(a.coverKey)
+            : fileLink(`${a.clientId}/${a.id}/thumb.jpg`)
         : null,
       // The original upload: nothing is re-encoded, so preview and publish
       // both use the file exactly as it was exported. Null once the file has
       // been cleared, a week after the post went live, so the app can say the
       // video is gone rather than hand the player a URL that 404s.
-      videoUrl: a.sourceDeletedAt ? null : `/files/${a.storageKey}`,
+      videoUrl: a.sourceDeletedAt ? null : fileLink(a.storageKey),
       sourceDeletedAt: a.sourceDeletedAt ?? null,
     };
   };

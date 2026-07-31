@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
 import { MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
 import { env } from "./env";
+import { verifyFileLink } from "./files/signing";
 import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
 import { clientRoutes } from "./routes/clients";
@@ -42,19 +43,69 @@ export async function buildServer(
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? true });
 
-  // origin: true - desktop webview origins vary between dev
-  // (http://localhost:1420) and prod (tauri.localhost); tighten in M6.
-  await app.register(cors, { origin: true });
+  /*
+   * Who may make a cross-site request.
+   *
+   * This used to reflect whatever origin asked, which on 127.0.0.1 is a
+   * shrug and on a public domain means any website a browser visits can call
+   * this API with the operator's cookies and credentials attached.
+   *
+   * The desktop's own origin is not a fixed string: Tauri serves the webview
+   * from tauri.localhost on Windows and from localhost:1420 in dev, and a
+   * request from the webview may carry no Origin header at all. A request with
+   * no origin is not a cross-site request, so it is allowed; a request that
+   * names an origin has to be on the list.
+   */
+  await app.register(cors, {
+    origin(origin, cb) {
+      if (!origin) return cb(null, true);
+      if (!env.IS_PRODUCTION) return cb(null, true);
+      cb(null, env.ALLOWED_ORIGINS.includes(origin.replace(/\/+$/, "")));
+    },
+    credentials: true,
+  });
   await app.register(jwt, { secret: env.JWT_SECRET });
   await app.register(multipart, {
     // Ten files, because that is how many images Instagram takes in one
     // carousel. Video upload still reads a single file and is unaffected.
     limits: { fileSize: 4 * 1024 * 1024 * 1024, files: MAX_CAROUSEL_SLIDES },
   });
-  // Local media serving for the desktop webview (dev storage; R2/S3 later).
+  /*
+   * Media for the desktop webview.
+   *
+   * Behind a signature, because this directory holds invoices carrying the
+   * agency's EIN, tax exports carrying a year of revenue, every client's
+   * videos and every game plan written for them. It used to be served with no
+   * check in front of it at all, which was survivable while the only route to
+   * it was 127.0.0.1 and is a data leak the moment the API answers on a public
+   * domain.
+   *
+   * A hook rather than an auth plugin: the things that fetch these files are
+   * <img>, <video> and the operating system's own browser, and not one of them
+   * can be made to send an Authorization header. The signature travels in the
+   * URL, which all three carry. See files/signing.ts.
+   */
   await app.register(fastifyStatic, {
     root: env.STORAGE_DIR,
     prefix: "/files/",
+  });
+  app.addHook("onRequest", async (request, reply) => {
+    if (!request.url.startsWith("/files/")) return;
+    const key = decodeURIComponent(request.url.slice("/files/".length).split("?")[0] ?? "");
+    const verdict = verifyFileLink(
+      key,
+      request.query as { e?: unknown; s?: unknown },
+      env.JWT_SECRET,
+    );
+    if (verdict === "ok") return;
+    // 404 rather than 403 for a bad or missing signature: answering "forbidden"
+    // confirms the file exists, which is the one thing a guessed path should
+    // never learn. An expired link is different, because whoever holds it was
+    // given it legitimately and needs to know to go back and reopen it.
+    if (verdict === "expired") {
+      return reply.status(410).send({ error: "this link has expired, open it from the app again" });
+    }
+    return reply.status(404).send({ error: "not found" });
   });
 
   app.setErrorHandler((error, _request, reply) => {

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { fileLink } from "../files/link";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import {
@@ -296,8 +297,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           "post",
         thumbUrl: t.post.mediaAsset
           ? t.post.mediaAsset.coverKey
-            ? `/files/${t.post.mediaAsset.coverKey}`
-            : `/files/${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`
+            ? fileLink(t.post.mediaAsset.coverKey)
+            : fileLink(`${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`)
           : null,
       }));
     },

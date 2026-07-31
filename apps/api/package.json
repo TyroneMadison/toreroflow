@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/financials/month.check.ts && tsx src/financials/taxExport.check.ts && tsx src/financials/summary.check.ts && tsx src/analytics/mergedPosts.check.ts"
+    "test": "tsx src/files/signing.check.ts && tsx src/financials/month.check.ts && tsx src/financials/taxExport.check.ts && tsx src/financials/summary.check.ts && tsx src/analytics/mergedPosts.check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

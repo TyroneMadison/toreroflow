@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
 import nodePath from "node:path";
 import { Queue } from "bullmq";
@@ -242,7 +243,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     return {
       html,
       storageKey,
-      url: `/files/${storageKey}`,
+      url: fileLink(storageKey),
       periods: periods.map((p) => p.label),
     };
   };
@@ -593,7 +594,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     periodStart: r.periodStart,
     periodEnd: r.periodEnd,
     label: r.periodStart.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-    url: `/files/${r.storageKey}`,
+    url: fileLink(r.storageKey),
     generatedAt: r.generatedAt,
     seen: r.seenAt !== null,
   });

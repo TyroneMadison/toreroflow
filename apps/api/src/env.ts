@@ -10,7 +10,51 @@ dotenv.config({ path: path.join(repoRoot, ".env") });
 
 const DEFAULT_JWT_SECRET = "dev-only-change-me";
 
-if (!process.env.JWT_SECRET) {
+/**
+ * Whether this process is answering to the internet.
+ *
+ * NODE_ENV rather than a flag of our own, because that is what the container
+ * sets and what every other tool in the stack already reads.
+ */
+const isProduction = process.env.NODE_ENV === "production";
+
+/*
+ * Secrets that are fine to fudge on a laptop and must never be fudged on a
+ * server.
+ *
+ * A warning was enough while the API only ever listened on 127.0.0.1. It is
+ * not enough now: the dev JWT secret is a published string in this repository,
+ * so a deploy that kept it would let anyone mint a token for the workspace,
+ * and the same secret signs the file links. Refusing to start is the only
+ * failure mode that cannot be scrolled past.
+ */
+function requireInProduction(name: string, value: string, why: string): void {
+  if (!isProduction || value) return;
+  throw new Error(`[api] ${name} must be set in production. ${why}`);
+}
+
+if (isProduction && (process.env.JWT_SECRET ?? "") === DEFAULT_JWT_SECRET) {
+  throw new Error(
+    "[api] JWT_SECRET is still the dev default, which is a published string in this repository. Generate one with: openssl rand -base64 48",
+  );
+}
+requireInProduction(
+  "JWT_SECRET",
+  process.env.JWT_SECRET ?? "",
+  "It signs operator sessions and every file link. Generate one with: openssl rand -base64 48",
+);
+requireInProduction(
+  "TOKEN_ENCRYPTION_KEY",
+  process.env.TOKEN_ENCRYPTION_KEY ?? "",
+  "It encrypts the bank credential at rest. Generate one with: openssl rand -base64 32",
+);
+requireInProduction(
+  "ALLOWED_ORIGINS",
+  process.env.ALLOWED_ORIGINS ?? "",
+  "Without it the API would accept cross-site requests from anywhere.",
+);
+
+if (!isProduction && !process.env.JWT_SECRET) {
   console.warn(
     "[api] JWT_SECRET is not set; using the insecure dev default. Set JWT_SECRET in the repo root .env before any real deployment.",
   );
@@ -55,6 +99,15 @@ export interface Env {
    * what happens before that proxy exists.
    */
   REPORTS_PUBLIC_BASE: string;
+  /**
+   * Origins allowed to make cross-site requests, comma separated.
+   *
+   * Empty means "reflect whatever asked", which is only tolerable on a laptop.
+   * In production this is required, checked above.
+   */
+  ALLOWED_ORIGINS: string[];
+  /** True when this process is answering to the internet. */
+  IS_PRODUCTION: boolean;
 }
 
 export const env: Env = {
@@ -72,4 +125,9 @@ export const env: Env = {
   NETLIFY_AUTH_TOKEN: process.env.NETLIFY_AUTH_TOKEN ?? "",
   NETLIFY_SITE_ID: process.env.NETLIFY_SITE_ID ?? "",
   REPORTS_PUBLIC_BASE: (process.env.REPORTS_PUBLIC_BASE ?? "").replace(/\/+$/, ""),
+  ALLOWED_ORIGINS: (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
+  IS_PRODUCTION: isProduction,
 };

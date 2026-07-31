@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
 import nodePath from "node:path";
 import { getPrisma } from "@toreroflow/db";
@@ -610,7 +611,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       await fsp.writeFile(abs, pdf);
       await prisma.invoice.update({ where: { id: invoice.id }, data: { storageKey } });
 
-      return reply.status(201).send({ id: invoice.id, number, url: `/files/${storageKey}` });
+      return reply.status(201).send({ id: invoice.id, number, url: fileLink(storageKey) });
     },
   );
 
@@ -772,7 +773,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       const abs = nodePath.join(env.STORAGE_DIR, storageKey);
       await fsp.mkdir(nodePath.dirname(abs), { recursive: true });
       await fsp.writeFile(abs, pdf);
-      return reply.status(201).send({ url: `/files/${storageKey}`, year });
+      return reply.status(201).send({ url: fileLink(storageKey), year });
     },
   );
 }

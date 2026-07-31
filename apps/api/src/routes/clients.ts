@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { fileLink, fileLinkVersioned } from "../files/link";
 import nodePath from "node:path";
 import { promises as fsp, createWriteStream } from "node:fs";
 import PDFDocument from "pdfkit";
@@ -1008,7 +1009,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       doc.end();
     });
 
-    return reply.status(201).send({ url: `/files/${relPath}` });
+    return reply.status(201).send({ url: fileLink(relPath) });
   });
 
   /** The stored row in the shape the app reads. */
@@ -1028,7 +1029,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     // a viewer would happily show the previous plan from cache. The stamp
     // changes every run, so it never can.
     url: row.storageKey
-      ? `/files/${row.storageKey}?v=${row.completedAt?.getTime() ?? row.requestedAt.getTime()}`
+      ? fileLinkVersioned(row.storageKey, row.completedAt?.getTime() ?? row.requestedAt.getTime())
       : null,
     error: row.error,
     requestedAt: row.requestedAt,
