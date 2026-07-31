@@ -139,9 +139,15 @@ It dumps the local database, restores it on the server, copies the storage
 directory and prints what landed. It does not delete anything locally, so if
 the server turns out to be wrong you put the old `VITE_API_URL` back.
 
-**You will have to reconnect the bank afterwards.** The stored credential is
-encrypted with the laptop's `TOKEN_ENCRYPTION_KEY` and the server has its own,
-so the row arrives unreadable. Generate a fresh setup token at SimpleFIN.
+**Copy `TOKEN_ENCRYPTION_KEY` from the laptop's `.env` rather than generating a
+new one**, and the bank connection survives the move. It is what the stored
+credential is encrypted with; a fresh key means the row arrives unreadable and
+you reconnect at SimpleFIN. Either is fine, but reusing it is one less thing to
+do on the day.
+
+`JWT_SECRET` is the opposite: generate a new one. It only costs you a fresh
+login, and if the laptop's is still the dev default the server will refuse to
+start with it anyway.
 
 ---
 

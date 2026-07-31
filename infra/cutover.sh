@@ -68,10 +68,11 @@ Two things left, both on the laptop:
 
        pnpm --filter @toreroflow/desktop tauri build
 
-  2. Reconnect the bank. The access credential is encrypted with
-     TOKEN_ENCRYPTION_KEY, and the server has a different one, so the row came
-     across but cannot be read. Generate a fresh setup token at SimpleFIN and
-     paste it in.
+  2. The bank. If you copied TOKEN_ENCRYPTION_KEY across from the laptop's
+     .env, the connection already works and there is nothing to do. If you
+     generated a new key for the server, the credential came across encrypted
+     with the old one and cannot be read: generate a fresh setup token at
+     SimpleFIN and paste it in.
 
 The local stack is untouched. If the server turns out to be wrong, put the old
 VITE_API_URL back and nothing was lost.
