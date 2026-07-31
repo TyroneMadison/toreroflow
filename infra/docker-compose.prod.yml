@@ -72,6 +72,9 @@ services:
       - "127.0.0.1:4700:4700"
     volumes:
       - storage:/app/storage
+      # The only thing this container can do to the host: drop a deploy request
+      # here for the watcher to pick up. Not the docker socket, deliberately.
+      - ./../deploy:/app/deploy
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

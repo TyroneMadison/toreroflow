@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { promises as fsp } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { env } from "../env";
@@ -12,16 +11,22 @@ import { requireAuth } from "../plugins/requireAuth";
  * this ships what is committed and pushed, not what is sitting unsaved on a
  * laptop. The API has no access to anyone's working tree and should not.
  *
- * The work happens in a detached script rather than in the request, because
- * rebuilding restarts this very process. A handler that waited for the result
- * would be killed by the thing it was waiting for, and the operator would see
- * a network error from a deploy that actually succeeded.
+ * This process cannot do the work itself and deliberately cannot be given the
+ * ability to. It runs in a container with no git, no docker and no checkout.
+ * The shortcut is to mount the docker socket in here, which also hands this
+ * container root on the host, and this container holds a bank credential and
+ * answers the internet. So instead it drops a file in a directory shared with
+ * the host, and a watcher there does the work. See infra/deploy-watcher.sh.
+ *
+ * That also solves a second problem for free: rebuilding restarts this very
+ * process, so a handler that waited for the result would be killed by the
+ * thing it was waiting for.
  */
 
-/** Where the checkout lives on the server. */
-const APP_DIR = "/opt/toreroflow";
-/** Written by the deploy script, read by the status endpoint. */
-const STATE_FILE = "/tmp/toreroflow-deploy.json";
+/** Shared with the host. The API may write a request and read the state. */
+const SHARED = "/app/deploy";
+const REQUEST_FILE = `${SHARED}/request`;
+const STATE_FILE = `${SHARED}/state.json`;
 
 interface DeployState {
   status: "running" | "success" | "failed";
@@ -30,6 +35,16 @@ interface DeployState {
   fromCommit?: string;
   toCommit?: string;
   message?: string;
+}
+
+/** Whether the host-side watcher has ever set the shared directory up. */
+async function watcherPresent(): Promise<boolean> {
+  try {
+    await fsp.access(SHARED);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readState(): Promise<DeployState | null> {
@@ -48,7 +63,10 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     const state = await readState();
     return {
       /** False on a laptop, where there is nothing to deploy to. */
-      available: env.IS_PRODUCTION,
+      // False on a laptop, and false on a server where the watcher is not
+      // installed, because a button that silently does nothing is worse than a
+      // button that is not there.
+      available: env.IS_PRODUCTION && (await watcherPresent()),
       current: env.GIT_COMMIT || null,
       last: state,
     };
@@ -71,7 +89,10 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const running = await readState();
-    if (running?.status === "running") {
+    const stale =
+      running?.status === "running" &&
+      Date.now() - new Date(running.startedAt).getTime() > 15 * 60 * 1000;
+    if (running?.status === "running" && !stale) {
       // A second press while the first is still going would have two builds
       // fighting over the same containers.
       return reply.status(409).send({
@@ -86,15 +107,8 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
       "utf8",
     );
 
-    // Detached and fully disowned. The script outlives this process, which is
-    // the point: restarting the API is part of what it does.
-    // spawn, not execFile: execFile buffers output for a callback that will
-    // never run, because this process is replaced partway through the script.
-    const child = spawn("/bin/sh", [`${APP_DIR}/infra/self-update.sh`], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
+    // The entire privilege this endpoint has: writing one file.
+    await fsp.writeFile(REQUEST_FILE, new Date().toISOString(), "utf8");
 
     return reply.status(202).send({ started: true });
   });

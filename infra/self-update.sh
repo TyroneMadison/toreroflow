@@ -6,7 +6,8 @@
 set -eu
 
 APP_DIR=/opt/toreroflow
-STATE=/tmp/toreroflow-deploy.json
+# Overridable so the watcher can put it in the directory shared with the API.
+STATE="${STATE_FILE:-/opt/toreroflow/deploy/state.json}"
 COMPOSE="$APP_DIR/infra/docker-compose.prod.yml"
 
 FROM="$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"

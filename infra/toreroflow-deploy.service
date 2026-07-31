@@ -1,0 +1,15 @@
+[Unit]
+Description=Toreroflow deploy watcher
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /opt/toreroflow/infra/deploy-watcher.sh
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/toreroflow-deploy.log
+StandardError=append:/var/log/toreroflow-deploy.log
+
+[Install]
+WantedBy=multi-user.target

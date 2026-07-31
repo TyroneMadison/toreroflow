@@ -13,7 +13,7 @@ COMPOSE="docker compose -f ${APP_DIR}/infra/docker-compose.prod.yml"
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 
-say "1/7  System packages"
+say "1/8  System packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get upgrade -y -qq
@@ -21,7 +21,7 @@ apt-get install -y -qq docker.io docker-compose-v2 git ufw curl
 systemctl enable --now docker
 docker --version
 
-say "2/7  Firewall"
+say "2/8  Firewall"
 # The single most important step. Nothing in the compose file publishes a port
 # to the internet, and this makes sure nothing else on the box does either.
 # SSH only: the API is reached through Tailscale, which needs no inbound port
@@ -33,7 +33,7 @@ ufw default allow outgoing
 ufw --force enable
 ufw status verbose | head -12
 
-say "3/7  Code"
+say "3/8  Code"
 if [ -d "${APP_DIR}/.git" ]; then
   git -C "$APP_DIR" fetch --quiet origin
   git -C "$APP_DIR" reset --hard --quiet origin/main
@@ -43,7 +43,7 @@ else
   echo "cloned at $(git -C "$APP_DIR" rev-parse --short HEAD)"
 fi
 
-say "4/7  Secrets"
+say "4/8  Secrets"
 # deploy.sh copied this up before running us. Refuse rather than start a stack
 # that would come up with no database password and no encryption key.
 if [ ! -s "${APP_DIR}/infra/.env" ]; then
@@ -54,13 +54,13 @@ fi
 chmod 600 "${APP_DIR}/infra/.env"
 echo "present, $(grep -c '^[A-Z]' "${APP_DIR}/infra/.env") values, permissions $(stat -c '%a' "${APP_DIR}/infra/.env")"
 
-say "5/7  Build and start"
+say "5/8  Build and start"
 # Up to ten minutes the first time: Chromium and ffmpeg are most of it.
 GIT_COMMIT="$(git -C "${APP_DIR}" rev-parse --short HEAD)"
 export GIT_COMMIT
 $COMPOSE up -d --build
 
-say "6/7  Waiting for the stack to come up"
+say "6/8  Waiting for the stack to come up"
 # The API applies migrations before it reports healthy, so this waits for the
 # schema too. Two minutes is generous; a first boot is usually under thirty
 # seconds once the images are built.
@@ -81,7 +81,19 @@ echo ""
 echo "health, from inside the network:"
 $COMPOSE exec -T api node -e "fetch('http://127.0.0.1:4700/health').then(r=>r.text()).then(t=>console.log('  '+t))"
 
-say "7/7  Nightly backups"
+say "7/8  Deploy watcher"
+# The host side of the Ship button. The API cannot rebuild the stack itself,
+# by design: it is a container with no docker and no checkout, and giving it
+# the docker socket would give it the host.
+mkdir -p "${APP_DIR}/deploy"
+chmod 777 "${APP_DIR}/deploy"   # the API container runs as a different uid
+chmod +x "${APP_DIR}/infra/deploy-watcher.sh"
+cp "${APP_DIR}/infra/toreroflow-deploy.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now toreroflow-deploy.service
+systemctl is-active toreroflow-deploy.service | sed 's/^/  watcher: /'
+
+say "8/8  Nightly backups"
 chmod +x "${APP_DIR}/infra/backup.sh"
 CRON_LINE="17 3 * * * ${APP_DIR}/infra/backup.sh >> /var/log/toreroflow-backup.log 2>&1"
 # Replace any previous entry rather than stacking a second one on a re-run.
