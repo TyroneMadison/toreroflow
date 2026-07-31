@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    The app icon, and the source every other icon size is generated from.
+    Regenerate with the tauri icon command, pointed at this file.
+
+    The tile is the same coral gradient as var(-)(-grad) in the app's
+    stylesheet and as torerone.com: 135 degrees, #FF6F61 to #FF9A73. The glyph
+    is the same thumbs up path the sidebar draws, so the icon in the taskbar
+    and the mark inside the window are one drawing rather than two that drift.
+
+    It used to be a blue and purple gradient left over from the template, the
+    only surface in the product still wearing a colour the brand does not use.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF6F61"/>
+      <stop offset="1" stop-color="#FF9A73"/>
+    </linearGradient>
+    <!--
+      The same lift the sidebar's logo tile has, so the glyph sits on the
+      coral rather than being cut out of it.
+
+      userSpaceOnUse matters here. The default is objectBoundingBox, which
+      makes dy and stdDeviation relative to the glyph's own box and therefore
+      multiplied by the scale below: an 8 unit blur became 176 and clipped
+      against the filter region as a visible grey rectangle around the thumb.
+      In user space these are the pixels they look like.
+    -->
+    <filter id="lift" filterUnits="userSpaceOnUse" x="128" y="128" width="768" height="768">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#8A2E20" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="230" ry="230" fill="url(#tile)"/>
+
+  <!-- Path taken verbatim from apps/desktop/src/components/Sidebar.tsx. -->
+  <g filter="url(#lift)">
+    <g transform="translate(248 270) scale(22)">
+      <path
+        fill="#ffffff"
+        d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"
+      />
+    </g>
+  </g>
+</svg>
