@@ -427,6 +427,8 @@ export interface MediaAssetInfo {
   coverOffsetMs: number | null;
   /** The original upload; videos are published exactly as exported. */
   videoUrl: string | null;
+  /** Set once the source file was cleared, a week after the post went live. */
+  sourceDeletedAt?: string | null;
 }
 
 /** What to call a video on screen: the typed name, else the file name. */

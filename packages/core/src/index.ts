@@ -11,6 +11,7 @@ export * from "./insightStatus";
 export * from "./plainText";
 export * from "./research";
 export * from "./competitors";
+export * from "./retention";
 export * from "./banking";
 export * from "./business";
 export * from "./tax";

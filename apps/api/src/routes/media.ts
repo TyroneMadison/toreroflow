@@ -78,6 +78,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     revisionOfId: string | null;
     coverOffsetMs: number | null;
     coverKey: string | null;
+    sourceDeletedAt?: Date | null;
     kind?: string;
     slideKeys?: unknown;
     createdAt: Date;
@@ -109,8 +110,11 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
             : `/files/${a.clientId}/${a.id}/thumb.jpg`
         : null,
       // The original upload: nothing is re-encoded, so preview and publish
-      // both use the file exactly as it was exported.
-      videoUrl: `/files/${a.storageKey}`,
+      // both use the file exactly as it was exported. Null once the file has
+      // been cleared, a week after the post went live, so the app can say the
+      // video is gone rather than hand the player a URL that 404s.
+      videoUrl: a.sourceDeletedAt ? null : `/files/${a.storageKey}`,
+      sourceDeletedAt: a.sourceDeletedAt ?? null,
     };
   };
 

@@ -326,6 +326,13 @@ model MediaAsset {
   coverOffsetMs Int?
   /// Storage key of the chosen cover image (frame-extracted or uploaded).
   coverKey      String?
+  /// When the original video file was removed after the post went live.
+  ///
+  /// The row, the thumbnail and the cover all stay: only the source goes, and
+  /// only once every platform has posted and the grace period has passed. Set
+  /// so the app can say the video was cleared rather than show a dead player,
+  /// and so the sweep never looks at the same asset twice.
+  sourceDeletedAt DateTime?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 

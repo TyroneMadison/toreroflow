@@ -9,6 +9,7 @@ import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/med
 import { env } from "./env";
 import { generateInsight } from "./insights";
 import { runResearch } from "./research";
+import { sweepPostedSources } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
 
 const prisma = getPrisma();
@@ -703,6 +704,10 @@ new Worker(
     await ingestAnalytics();
     // Lifetime view counts keep climbing, so refresh them on the same beat.
     await refreshYouTubeCatalogues();
+    // Checked daily, deletes on the week: a video posted the day after a
+    // weekly sweep would otherwise sit for a fortnight, and "a week" should
+    // mean a week rather than somewhere between one and two.
+    await sweepPostedSources();
   },
   { connection, concurrency: 1 },
 );

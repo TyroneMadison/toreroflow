@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import { DEFAULT_RETENTION_DAYS } from "@toreroflow/core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
@@ -24,4 +25,12 @@ export const env = {
   MONID_API_KEY: process.env.MONID_API_KEY ?? "",
   /** Empty means lifetime YouTube refresh is skipped, not failed. */
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
+  /**
+   * Days a posted video keeps its source file before the sweep clears it.
+   *
+   * A number, not a switch: 0 would mean deleting the moment a post goes
+   * live, which is the one setting nobody wants, so anything under 1 is
+   * treated as the default rather than obeyed.
+   */
+  RETENTION_DAYS: Math.max(1, Number(process.env.RETENTION_DAYS) || DEFAULT_RETENTION_DAYS),
 };
