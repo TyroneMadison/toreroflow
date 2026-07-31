@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { claimSetupToken } from "./simplefin";
+import { accountsRequest, claimSetupToken, redactCredentials } from "./simplefin";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/publishers test`.
@@ -39,6 +39,49 @@ await rejects(
   Buffer.from("https://bridge.simplefin.invalid/claim/x").toString("base64"),
   /Copy the whole token again/,
   "an unreachable address reads as a copy problem, not a stack trace",
+);
+
+/*
+ * The access URL carries its credentials in it, and fetch refuses any URL that
+ * does. Worse than the refusal: a URL turns up in error text, logs and query
+ * strings, so the credential must be out of it and in a header. Both halves are
+ * checked because getting the first right and the second wrong reads as working
+ * software right up until a screenshot leaks a bank key.
+ */
+const ACCESS = "https://USERKEY:PASSKEY@beta-bridge.simplefin.org/simplefin";
+const built = accountsRequest(ACCESS, new Date("2026-01-01T00:00:00Z"), new Date("2026-03-01T00:00:00Z"));
+
+assert.ok(!built.url.includes("USERKEY"), "the user half of the credential must not be in the URL");
+assert.ok(!built.url.includes("PASSKEY"), "the password half must not be in the URL");
+assert.ok(!built.url.includes("@"), "no credential separator survives into the URL");
+assert.doesNotThrow(() => new Request(built.url), "fetch must accept the URL this builds");
+assert.equal(
+  built.headers.Authorization,
+  `Basic ${Buffer.from("USERKEY:PASSKEY").toString("base64")}`,
+  "the credential moves to the header rather than being dropped",
+);
+assert.equal(
+  built.url,
+  "https://beta-bridge.simplefin.org/simplefin/accounts?start-date=1767225600&end-date=1772323200&pending=1",
+  "the range is sent in seconds, pending included, trailing slash normalised",
+);
+assert.equal(
+  accountsRequest(`${ACCESS}/`, new Date(0), new Date(0)).url.includes("//accounts"),
+  false,
+  "a trailing slash does not double up",
+);
+
+// The one that already happened: an access URL reached the error column, was
+// rendered on screen, and ended up in a screenshot.
+assert.equal(
+  redactCredentials(`Request cannot be constructed from a URL that includes credentials: ${ACCESS}/accounts`),
+  "Request cannot be constructed from a URL that includes credentials: https://<redacted>@beta-bridge.simplefin.org/simplefin/accounts",
+  "a credential in error text is redacted before it can be stored or shown",
+);
+assert.equal(
+  redactCredentials("The bank feed answered 500."),
+  "The bank feed answered 500.",
+  "ordinary messages are left alone",
 );
 
 console.log("simplefin: all checks passed");

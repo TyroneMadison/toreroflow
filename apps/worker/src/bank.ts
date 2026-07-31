@@ -1,6 +1,6 @@
 import { signedCents, toCents } from "@toreroflow/core";
 import { decryptSecret, getPrisma, isEncrypted } from "@toreroflow/db";
-import { BankError, fetchAccounts } from "@toreroflow/publishers";
+import { BankError, fetchAccounts, redactCredentials } from "@toreroflow/publishers";
 
 /**
  * Pulls the bank feed for one linked connection.
@@ -19,8 +19,15 @@ import { BankError, fetchAccounts } from "@toreroflow/publishers";
 
 const prisma = getPrisma();
 
-/** The protocol's own limit on a single request. */
-const WINDOW_DAYS = 90;
+/**
+ * Days per request.
+ *
+ * The protocol allows 90, but the server answers anything over 45 with a
+ * warning that it may start capping. That warning arrives in the same list as
+ * real problems and lands on the operator's screen in red, so the window sits
+ * at the number the server is happy with rather than the number it permits.
+ */
+const WINDOW_DAYS = 45;
 /** How far back a first sync reaches. */
 const FIRST_SYNC_DAYS = 365;
 /** Days re-read on every sync, so late-posting rows are not lost. */
@@ -37,11 +44,14 @@ export async function syncBankConnection(connectionId: string): Promise<void> {
   if (!connection) return;
 
   const fail = async (message: string, status = "error") => {
+    // Redacted here rather than at each call site: this column is rendered on
+    // screen, and an access URL reaching it puts a live bank credential there.
+    const safe = redactCredentials(message);
     await prisma.bankConnection.update({
       where: { id: connection.id },
-      data: { status, error: message },
+      data: { status, error: safe },
     });
-    console.error(`[worker] bank sync failed for ${connection.id}: ${message}`);
+    console.error(`[worker] bank sync failed for ${connection.id}: ${safe}`);
   };
 
   if (!isEncrypted(connection.accessTokenEnc)) {

@@ -3,7 +3,12 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { monthWindowStart, toCents, totalsFor, totalsByMonth } from "@toreroflow/core";
 import { encryptSecret, getPrisma } from "@toreroflow/db";
-import { BankError, claimSetupToken, fetchAccounts } from "@toreroflow/publishers";
+import {
+  BankError,
+  claimSetupToken,
+  fetchAccounts,
+  redactCredentials,
+} from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -131,10 +136,12 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
       });
     } catch (err) {
       // The claim succeeded, so the connection stays. Saying why beats
-      // discarding a token that cannot be claimed twice.
+      // discarding a token that cannot be claimed twice. Redacted on the way
+      // in: this column is rendered on screen, and the access URL is a live
+      // key to the bank feed.
       await prisma.bankConnection.update({
         where: { id: row.id },
-        data: { error: err instanceof Error ? err.message : String(err) },
+        data: { error: redactCredentials(err instanceof Error ? err.message : String(err)) },
       });
     }
 

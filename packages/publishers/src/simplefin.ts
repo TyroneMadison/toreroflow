@@ -56,6 +56,51 @@ export interface AccountsResult {
   errors: string[];
 }
 
+/**
+ * The access URL split into a request that fetch will actually accept.
+ *
+ * SimpleFIN hands back an address with the credentials embedded
+ * (`https://user:pass@host/simplefin`), and `fetch` refuses any URL that
+ * carries them: "Request cannot be constructed from a URL that includes
+ * credentials". So they are moved into an Authorization header and the URL is
+ * rebuilt without them.
+ *
+ * Exported and pure so the check can prove the credentials never survive into
+ * the URL. They must not: a URL ends up in error messages, logs and query
+ * strings, and this one is a live key to a bank feed.
+ */
+export function accountsRequest(
+  accessUrl: string,
+  startDate: Date,
+  endDate: Date,
+): { url: string; headers: Record<string, string> } {
+  const parsed = new URL(`${accessUrl.replace(/\/+$/, "")}/accounts`);
+  const user = decodeURIComponent(parsed.username);
+  const pass = decodeURIComponent(parsed.password);
+  parsed.username = "";
+  parsed.password = "";
+  parsed.searchParams.set("start-date", String(Math.floor(startDate.getTime() / 1000)));
+  parsed.searchParams.set("end-date", String(Math.floor(endDate.getTime() / 1000)));
+  parsed.searchParams.set("pending", "1");
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (user || pass) {
+    headers.Authorization = `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`;
+  }
+  return { url: parsed.toString(), headers };
+}
+
+/**
+ * Anything that looks like a credential, taken out of text bound for a screen.
+ *
+ * An access URL reaching an error message is how a bank credential ends up
+ * rendered in the app and stored in a database column, which is exactly what
+ * happened the first time this ran.
+ */
+export function redactCredentials(text: string): string {
+  return text.replace(/(https?:\/\/)[^/\s@]*@/gi, "$1<redacted>@");
+}
+
 /** A numeric string like "-33.24" to a number, or null if it is not one. */
 function money(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -135,12 +180,18 @@ export async function fetchAccounts(
   startDate: Date,
   endDate: Date,
 ): Promise<AccountsResult> {
-  const url = new URL(`${accessUrl.replace(/\/+$/, "")}/accounts`);
-  url.searchParams.set("start-date", String(Math.floor(startDate.getTime() / 1000)));
-  url.searchParams.set("end-date", String(Math.floor(endDate.getTime() / 1000)));
-  url.searchParams.set("pending", "1");
+  const { url, headers } = accountsRequest(accessUrl, startDate, endDate);
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(120_000) });
+  } catch (err) {
+    // Redacted, because a failure here can quote the address it was given and
+    // that address is a credential.
+    throw new BankError(
+      redactCredentials(`Could not reach the bank feed. ${err instanceof Error ? err.message : ""}`.trim()),
+    );
+  }
   const text = await res.text();
 
   if (res.status === 401 || res.status === 403) {
@@ -150,7 +201,7 @@ export async function fetchAccounts(
     );
   }
   if (!res.ok) {
-    throw new BankError(`The bank feed answered ${res.status}. ${text.slice(0, 200)}`.trim());
+    throw new BankError(redactCredentials(`The bank feed answered ${res.status}. ${text.slice(0, 200)}`.trim()));
   }
 
   let data: Record<string, unknown>;
