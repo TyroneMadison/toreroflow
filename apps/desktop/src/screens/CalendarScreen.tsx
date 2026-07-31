@@ -319,7 +319,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <span className="litem" key={s}>
               <StatusDot status={s} decorative />
               <StatusIcon status={s} />
-              {POST_STATUS[s].label}, {POST_STATUS[s].hint}
+              {POST_STATUS[s].label}<span className="lhint">, {POST_STATUS[s].hint}</span>
             </span>
           ))}
         </div>

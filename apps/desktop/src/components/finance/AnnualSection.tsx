@@ -54,7 +54,7 @@ export default function AnnualSection({
         </div>
       </div>
 
-      <div className="kpis" style={{ gridTemplateColumns: "repeat(2,1fr)", marginTop: 14 }}>
+      <div className="kpis k2" style={{ marginTop: 16 }}>
         <div className="kpi glass-sm">
           <div className="lab">Per year</div>
           <div className="val">{formatCents(yearCents)}</div>

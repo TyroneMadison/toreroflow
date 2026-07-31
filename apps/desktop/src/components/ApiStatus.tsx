@@ -60,10 +60,12 @@ export default function ApiStatus() {
   return (
     <div
       className="glass-sm"
+      // Always set, because on a narrow window the label is hidden and this
+      // becomes the only way to read what the dot means.
       title={
         online && !workerUp
           ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
-          : undefined
+          : label
       }
       style={{
         display: "flex",
@@ -85,7 +87,7 @@ export default function ApiStatus() {
           flex: "0 0 auto",
         }}
       />
-      {label}
+      <span className="navtext">{label}</span>
     </div>
   );
 }

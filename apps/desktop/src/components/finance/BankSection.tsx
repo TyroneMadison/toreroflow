@@ -208,10 +208,7 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
             From the bank, last 6 months, posted transactions only. The figures above this card are
             for the month you picked.
           </div>
-          <div
-            className="kpis stagger"
-            style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 8 }}
-          >
+          <div className="kpis k3 stagger" style={{ marginTop: 8 }}>
             <div className="kpi glass-sm">
               <div className="lab">Money in</div>
               <div className="val">{money(flow.totals.inCents)}</div>

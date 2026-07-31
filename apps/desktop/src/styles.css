@@ -72,11 +72,17 @@
   .glass{background:var(--glass);backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%);border:1px solid var(--brd);box-shadow:inset 0 1px 1px rgba(255,255,255,.10), var(--shadow);border-radius:var(--radius)}
   .glass-sm{background:var(--glass);backdrop-filter:blur(6px) saturate(140%);-webkit-backdrop-filter:blur(6px) saturate(140%);border:1px solid var(--brd-soft);box-shadow:inset 0 1px 1px rgba(255,255,255,.08);border-radius:var(--radius-sm)}
 
-  .app{position:relative;z-index:2;height:100vh;padding:18px;display:grid;grid-template-columns:248px 1fr;gap:18px}
-  @media(max-width:1200px){.app{grid-template-columns:220px 1fr}}
+  .app{position:relative;z-index:2;height:100vh;padding:16px;display:grid;grid-template-columns:240px 1fr;gap:16px}
 
   /* sidebar */
-  .side{display:flex;flex-direction:column;padding:20px 16px;gap:8px}
+  /* Scrolls. The sidebar's height is decided by its own content, ten nav rows
+     plus four headings plus a footer, which comes to about 990px. A 1366x768
+     laptop gives it 720. Without this the last three rows are simply below the
+     window and there is no way to reach them: body is overflow:hidden and .app
+     is height:100vh, so nothing offers a scrollbar. */
+  .side{display:flex;flex-direction:column;padding:20px 16px;gap:8px;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+  .side::-webkit-scrollbar{width:8px}
+  .side::-webkit-scrollbar-thumb{background:var(--glass-3);border-radius:8px}
   .brand{display:flex;align-items:center;gap:12px;padding:4px 8px 18px}
   .brandpic{width:44px;height:44px;border-radius:14px;overflow:hidden;flex:0 0 auto;position:relative;border:1px solid rgba(255,255,255,.22);box-shadow:0 8px 22px rgba(255,111,97,.4), inset 0 1px 0 rgba(255,255,255,.4)}
   .brandpic::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,111,97,.25),transparent 60%);mix-blend-mode:screen}
@@ -92,7 +98,7 @@
   .nav svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.9;fill:none;flex:0 0 auto}
   .nav:hover{background:var(--glass-2);color:var(--txt)}
   .nav.active{background:var(--glass-2);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
-  .nav.active::before{content:"";position:absolute;left:-16px;top:50%;transform:translateY(-50%);width:4px;height:22px;border-radius:4px;background:var(--grad);box-shadow:0 0 12px rgba(255,111,97,.8)}
+  .nav.active::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:4px;height:24px;border-radius:4px;background:var(--grad);box-shadow:0 0 12px rgba(255,111,97,.8)}
   .nav .badge{margin-left:auto;font-size:11px;font-weight:600;background:var(--grad);color:#000;padding:1px 7px;border-radius:20px}
 
   .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px}
@@ -106,8 +112,8 @@
   .chev svg{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none}
 
   .main{overflow:hidden;display:flex;flex-direction:column;min-width:0}
-  .topbar{display:flex;align-items:center;gap:16px;padding:18px 24px}
-  .topbar .h{min-width:0}
+  .topbar{display:flex;align-items:center;gap:16px;padding:16px 24px;flex-wrap:wrap}
+  .topbar .h{min-width:0;flex:1 1 240px}
   .topbar h2{font-size:22px;font-weight:650;letter-spacing:.2px}
   .topbar p{font-size:13px;color:var(--txt-2);margin-top:2px}
   .search{margin-left:auto;display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft);min-width:200px;color:var(--txt-3);font-size:13px}
@@ -127,7 +133,7 @@
   .spin{animation:spin 1s linear infinite;transform-origin:50% 50%}
   @keyframes spin{to{transform:rotate(360deg)}}
 
-  .stage{flex:1;overflow:auto;padding:2px 24px 24px}
+  .stage{flex:1;overflow:auto;padding:4px 24px 24px}
   .stage::-webkit-scrollbar{width:8px}
   .stage::-webkit-scrollbar-thumb{background:var(--glass-3);border-radius:8px}
 
@@ -136,13 +142,18 @@
   .screen.active{display:flex;flex-direction:column;flex:1;min-height:0}
   @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
-  .split{display:grid;grid-template-columns:1fr 336px;gap:18px}
-  @media(max-width:1150px){.split{grid-template-columns:1fr}}
+  .split{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:16px}
+  @media(max-width:1150px){.split{grid-template-columns:minmax(0,1fr)}}
 
   .card{padding:20px}
   .card h3{font-size:15px;font-weight:620;display:flex;align-items:center;gap:9px}
   .card .sub{font-size:12.5px;color:var(--txt-3);margin-top:2px}
-  .rowhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  /* A card heading holds a title, sometimes a control, and a total. With no
+     gap and no wrap the three fought for the same pixels and the total ran off
+     the card. Wrapping is the reflow: on a narrow card the total drops under
+     the title rather than off the edge of it. */
+  .rowhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .rowhead>:first-child{min-width:0;flex:1 1 180px}
   .link{font-size:12.5px;color:var(--b);cursor:pointer;font-weight:500}
 
   /* liquid glass platform tiles with real logos */
@@ -217,8 +228,15 @@
   .queue-item .qmeta b{font-size:12.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .queue-item .qmeta span{font-size:11px;color:var(--txt-3);display:flex;align-items:center;gap:6px;margin-top:5px}
 
-  .best{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border-radius:13px;background:rgba(0,0,0,.2);margin-top:8px;border:1px solid var(--brd-soft)}
-  .best .l{display:flex;align-items:center;gap:10px;font-size:12.5px}
+  .best{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px;border-radius:12px;background:rgba(0,0,0,.2);margin-top:8px;border:1px solid var(--brd-soft)}
+  .best .l{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  /* Carousels reuses this row for a title over a body, which the one-line
+     version laid out side by side and squeezed to a column of single words.
+     :has(.sub) isolates that shape; the bank, tax and workflow rows have none. */
+  .best:has(.sub){align-items:flex-start}
+  .best .l:has(.sub){flex-direction:column;align-items:flex-start;gap:4px;min-width:0;flex:1 1 auto}
+  .best .sub{overflow-wrap:anywhere}
+  .best>.dangerbtn{flex:0 0 auto}
   .best b{font-size:12.5px;color:var(--b)}
 
   /* calendar */
@@ -229,7 +247,7 @@
   .filterchip{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2);padding:7px 12px;border-radius:20px;background:var(--glass);border:1px solid var(--brd-soft);cursor:pointer}
   .filterchip .d{width:8px;height:8px;border-radius:50%}
 
-  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;padding:16px}
+  .cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:16px}
   .col{min-height:430px}
   .colhead{text-align:center;padding:8px 0 12px}
   .colhead .dow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--txt-3)}
@@ -263,7 +281,12 @@
   .callegend .sticon{margin-left:0}
 
   /* analytics */
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+  /* Column counts as classes rather than inline styles, because an inline
+     grid-template-columns wins against every media query in this file and the
+     tiles simply never collapsed. */
+  .kpis.k2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis.k3{grid-template-columns:repeat(3,minmax(0,1fr))}
   @media(max-width:1150px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{padding:16px 16px 14px}
   .kpi .lab{font-size:11.5px;color:var(--txt-3)}
@@ -282,17 +305,17 @@
   .chart{width:100%;height:230px;margin-top:6px}
   .gridline{stroke:rgba(255,255,255,.06);stroke-width:1}
 
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
-  @media(max-width:1150px){.two{grid-template-columns:1fr}}
-  .donutwrap{display:flex;align-items:center;gap:18px}
-  .dleg{display:flex;flex-direction:column;gap:9px;flex:1}
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:16px}
+  @media(max-width:1150px){.two{grid-template-columns:minmax(0,1fr)}}
+  .donutwrap{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:16px}
+  .dleg{display:flex;flex-direction:column;gap:8px;flex:1 1 200px;min-width:0}
   .dleg .row{display:flex;align-items:center;gap:9px;font-size:12.5px}
   .dleg .row b{margin-left:auto;font-weight:600}
   .dleg .d{width:10px;height:10px;border-radius:3px}
   .bars{display:flex;align-items:flex-end;gap:16px;height:150px;padding:8px 6px 0}
   .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end;height:100%}
   .bar .fill{width:100%;border-radius:9px 9px 4px 4px;box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
-  .bar .bl{font-size:11px;color:var(--txt-3)}
+  .bar .bl{font-size:11px;color:var(--txt-3);white-space:nowrap;overflow:visible;text-align:center}
   .bar .bv{font-size:11.5px;font-weight:600}
 
   .toppost{display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;transition:.18s;cursor:pointer}
@@ -306,7 +329,7 @@
   .toppost .v span{font-size:10.5px;color:var(--green)}
 
   /* accounts */
-  .clients{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .clients{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
   @media(max-width:1150px){.clients{grid-template-columns:repeat(2,1fr)}}
   .cc{padding:18px;transition:.2s;cursor:pointer}
   .cc:hover{transform:translateY(-3px)}
@@ -458,8 +481,8 @@
   .cbtn.done{background:rgba(87,214,160,.16);color:#57d6a0;display:flex;align-items:center;gap:6px}
   .cbtn.done svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.6;fill:none}
 
-  .composer{display:grid;grid-template-columns:270px 1fr;gap:22px}
-  @media(max-width:800px){.composer{grid-template-columns:1fr}}
+  .composer{display:grid;grid-template-columns:272px minmax(0,1fr);gap:24px}
+  @media(max-width:800px){.composer{grid-template-columns:minmax(0,1fr)}}
   .cpreview{border-radius:18px;aspect-ratio:9/16;position:relative;overflow:hidden;background:linear-gradient(160deg,#241f45,#101a30 60%,#0c1428);box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
   .cpreview::after{content:"";position:absolute;inset:0;background:radial-gradient(150px 150px at 60% 30%,rgba(255,111,97,.4),transparent 60%),radial-gradient(170px 170px at 30% 80%,rgba(255,154,115,.32),transparent 60%)}
   .cpreview .cap{position:absolute;left:12px;right:12px;bottom:58px;z-index:2;text-align:center;font-size:15px;font-weight:800;line-height:1.45}
@@ -574,7 +597,11 @@
 .srctag{font-size:8.5px;font-weight:800;letter-spacing:.6px;color:var(--green);background:rgba(87,214,160,.16);padding:2px 6px;border-radius:8px;margin-left:2px}
 
 /* ---- profile cards (Connected Accounts) ---- */
-.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-top:14px}
+/* min(290px,100%) rather than a bare 290px: a hard floor is a floor the track
+   cannot go under even when the container is narrower than it, so the card
+   simply ran out past the edge. This asks for 290 and settles for the width
+   that exists. */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(290px,100%),1fr));gap:16px;margin-top:16px}
 /* analytics: platform tabs + range selector */
 .anbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .antabs{display:flex;gap:7px;flex-wrap:wrap}
@@ -585,10 +612,10 @@
 .anrange{margin-left:auto;flex:0 0 auto}
 
 /* detailed views chart */
-.vchart{margin-top:12px}
-.vchart-svg{width:100%;height:auto;display:block;overflow:visible}
+.vchart{margin-top:12px;overflow-x:auto}
+.vchart-svg{width:100%;min-width:760px;height:auto;display:block;overflow:visible}
 .vc-grid{stroke:var(--brd-soft);stroke-width:1}
-.vc-ylab,.vc-xlab{fill:var(--txt-3);font-size:9.5px;font-family:var(--font)}
+.vc-ylab,.vc-xlab{fill:var(--txt-3);font-size:12px;font-family:var(--font)}
 .vc-cursor{stroke:rgba(255,111,97,.65);stroke-width:1;stroke-dasharray:3 3}
 .vc-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--brd-soft);font-size:11px;color:var(--txt-2)}
 .vc-foot b{font-size:12px}
@@ -598,9 +625,12 @@
 .vc-hint{margin-left:auto;color:var(--txt-3);font-size:10px}
 
 /* analytics redesign: three column stacks like the mockup, glass styling */
-.anwrap{display:grid;grid-template-columns:300px minmax(0,1fr) 300px;gap:18px;align-items:start}
+.anwrap{display:grid;grid-template-columns:300px minmax(0,1fr) 300px;gap:16px;align-items:start}
 @media(max-width:1550px){.anwrap{grid-template-columns:240px minmax(0,1fr) 240px}}
-@media(max-width:1300px){.anwrap{grid-template-columns:1fr}.ancol.mid{order:-1}}
+@media(max-width:1300px){.anwrap{grid-template-columns:minmax(0,1fr)}.ancol.mid{order:-1}
+  /* The photo has no width cap, so once the column becomes the full stage it
+     renders as a 712x640 slab of face. */
+  .anprofile .pic{max-width:160px;margin-left:auto;margin-right:auto}}
 .ancol{display:flex;flex-direction:column;gap:18px;min-width:0}
 .ankpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 @media(max-width:1350px){.ankpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -769,7 +799,9 @@
 .antable .t span{font-size:11px;color:var(--txt-3);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .antable .m{font-size:12.5px;font-weight:600;text-align:right}
 .anmost{display:flex;flex-direction:column;gap:8px;margin-top:12px}
-.anmost .arow{display:flex;align-items:center;gap:10px;padding:8px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+.anmost .arow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+.anmost .arow>*{min-width:0}
+.antable .arow>*{min-width:0}
 .anmost .t{min-width:0;flex:1}
 .anmost .t b{font-size:12px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .anmost .t span{font-size:10.5px;color:var(--txt-3)}
@@ -778,14 +810,17 @@
 .angain .arow{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:13px;background:var(--glass);border:1px solid var(--brd-soft)}
 .angain .who{min-width:0;flex:1}
 .angain .who b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.angain .who span{font-size:10.5px;color:var(--txt-3)}
+/* The handle gets the same treatment as the name above it. A long one like
+   a twenty character handle is 106px in a 67px column, and without this it
+   ran out past the card's edge. */
+.angain .who span{display:block;font-size:10.5px;color:var(--txt-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .angain .cur{font-size:12.5px;font-weight:700}
 .angain .delta{font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px}
 .angain .delta.up{color:#34d399;background:rgba(52,211,153,.12)}
 .angain .delta.down{color:#ff6b6b;background:rgba(255,107,107,.12)}
 .angain .delta.flat{color:var(--txt-3);background:var(--glass-2)}
-.anranks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:18px}
-@media(max-width:1150px){.anranks{grid-template-columns:1fr}}
+.anranks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
+@media(max-width:1150px){.anranks{grid-template-columns:minmax(0,1fr)}}
 .rrow{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:12px;background:var(--glass);border:1px solid var(--brd-soft);margin-top:8px}
 .rrow .n{width:20px;font-size:11px;font-weight:700;color:var(--txt-3);flex:0 0 auto}
 .rrow .t{flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -899,11 +934,13 @@
 .ovav img{width:100%;height:100%;object-fit:cover;display:block}
 .ovname{flex:1;min-width:0}
 .ovname b{font-size:15px;font-weight:620;display:block}
-.ovplats{display:flex;gap:6px;margin-top:6px}
-.ovactions{display:flex;gap:8px;flex:0 0 auto}
+/* Wraps, because a client with five connected platforms in a narrow window
+   had the last two hanging off the card. */
+.ovplats{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.ovactions{display:flex;gap:8px;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end}
 .ovactions .btn{padding:8px 14px;font-size:12px}
-.ovsignals{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.signal{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:12px;font-size:12px;
+.ovsignals{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.signal{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;font-size:12px;
   background:var(--glass);border:1px solid var(--brd-soft)}
 .signal .sdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
 .signal b{font-weight:600}
@@ -962,7 +999,8 @@
 [data-theme="light"] .cwrap .sw.on{border-color:#1b1c33}
 
 /* Financials top band: net + donut + at a glance, per the signed-off mockup. */
-.band{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:14px;margin-bottom:14px}
+.band{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+@media(max-width:1200px){.band{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.band>:first-child{grid-column:1/-1}}
 .netcard{padding:22px;display:flex;flex-direction:column}
 .netcard .lbl{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
 .netcard .big{font-size:36px;font-weight:700;letter-spacing:-1px;margin-top:10px;
@@ -973,15 +1011,22 @@
 .chip.flat{color:var(--txt-3);background:var(--glass-2)}
 .chipnote{font-size:11.5px;color:var(--txt-3)}
 .netspark{margin-top:auto;padding-top:14px}
-.donutcard{padding:22px;display:flex;gap:22px;align-items:center}
+/* Wraps. The donut is a fixed size and the breakdown beside it is not, so in
+   the middle column of a three-card band at 1008px the breakdown was crushed
+   to 56px and its figures ran out past the card. Given a basis it drops under
+   the donut instead. */
+.donutcard{padding:20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
 .dwrap{position:relative;flex:0 0 auto}
 .dctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .dctr small{font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt-3);font-weight:600}
 .dctr b{font-size:19px;font-weight:700;letter-spacing:-.5px}
-.dbars{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
-.db .dtop{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt-2);margin-bottom:6px}
-.db .dtop i{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
-.db .dtop b{margin-left:auto;color:var(--txt);font-size:12.5px;font-weight:650}
+.dbars{flex:1 1 180px;min-width:0;display:flex;flex-direction:column;gap:12px}
+.db .dtop{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt-2);margin-bottom:8px;min-width:0}
+.db .dtop i{width:8px;height:8px;border-radius:3px;flex:0 0 auto}
+/* The name gives way, the figure does not: a truncated client name is
+   readable, a truncated dollar amount is a different number. */
+.db .dtop span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db .dtop b{margin-left:auto;color:var(--txt);font-size:12.5px;font-weight:650;flex:0 0 auto;white-space:nowrap}
 .track{height:7px;border-radius:20px;background:rgba(255,255,255,.07);overflow:hidden}
 .track i{display:block;height:100%;border-radius:20px}
 .actcard{padding:14px 22px;display:flex;flex-direction:column}
@@ -995,10 +1040,10 @@
 /* Twelve-month bars. Everything scoped under .finchart: .col and .cap are
    already taken by the calendar's CSS. */
 .finchart{padding:22px;margin-bottom:14px}
-.finchart .chartwrap{display:flex;gap:14px;margin-top:4px}
+.finchart .chartwrap{display:flex;gap:12px;margin-top:4px;min-width:0}
 .finchart .yaxis{display:flex;flex-direction:column;justify-content:space-between;height:196px;padding-bottom:24px;flex:0 0 auto}
 .finchart .yaxis span{font-size:10px;color:var(--txt-3)}
-.finchart .chart{flex:1;display:flex;align-items:flex-end;gap:12px;height:196px}
+.finchart .chart{flex:1;min-width:0;display:flex;align-items:flex-end;gap:12px;height:196px}
 .finchart .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;height:100%;min-height:0;position:relative}
 .finchart .tk{flex:1;width:100%;max-width:46px;border-radius:14px;background:rgba(255,255,255,.055);
   display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding:4px;gap:3px}
@@ -1008,6 +1053,8 @@
 .finchart .cap{font-size:10.5px;color:var(--txt-3)}
 .finchart .col.on .cap{color:var(--txt);font-weight:600}
 .finchart .col.on .tk{background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.13)}
+.finchart .col:first-child .tip{left:0;transform:none}
+.finchart .col:last-child .tip{left:auto;right:0;transform:none}
 .finchart .tip{position:absolute;top:-6px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;font-weight:650;
   padding:5px 11px;border-radius:10px;background:rgba(12,12,12,.96);border:1px solid var(--brd);box-shadow:0 10px 26px rgba(0,0,0,.55);z-index:5}
 [data-theme="light"] .finchart .tip{background:rgba(248,249,255,.98);box-shadow:0 10px 26px rgba(50,55,110,.25)}
@@ -1043,7 +1090,7 @@
 .lnote{margin:-4px 0 10px 46px;font-size:11.5px;line-height:1.55;color:var(--txt-3);
   white-space:pre-wrap;overflow-wrap:anywhere}
 .addform .addnote{flex:1 1 100%;min-height:48px;font-size:12.5px;resize:vertical}
-.monthbrowse{margin-left:auto}
+.monthbrowse{margin-left:auto;flex:0 1 auto;min-width:0}
 /* Expense rows: category emoji chip, missing-bill highlight, add affordance. */
 .lrow .cat{width:34px;height:34px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;font-size:15px;
   background:var(--glass-2);border:1px solid var(--brd-soft)}
@@ -1065,7 +1112,7 @@
 .sel.catpick{width:auto;max-width:180px;min-width:104px;padding:7px 9px;font-size:11.5px}
 .varpick{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt-3);flex:0 0 auto;white-space:nowrap}
 .addform{flex-wrap:wrap}
-.cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;align-items:start}
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:16px;align-items:start}
 
 /* Alerts, on the side of the window and above everything.
    Fixed rather than in the layout: the whole point is that it reaches the
@@ -1245,4 +1292,163 @@
     scroll-behavior:auto !important;
   }
   .stagger>*{animation-delay:0ms !important;opacity:1;transform:none}
+}
+
+/* ============================================================
+   Responsive layout
+   ============================================================
+
+   Windows size classes, from Microsoft's own guidance:
+     Small   up to 640px
+     Medium  641px to 1007px
+     Large   1008px and up
+
+   Measured against the app window, not the screen. Everything here is a
+   multiple of four, which is the other half of that guidance: 4 scales to
+   every plateau (125%, 150%, 175% and up) as a whole number, so edges stay
+   sharp instead of landing on a half pixel.
+
+   This block lives at the END of the stylesheet on purpose. It was written
+   next to .app first and quietly did nothing, because the rules it overrides
+   are declared further down at the same specificity and later wins. A
+   responsive rule that loses the cascade is worse than no rule: the layout
+   looks handled and is not.
+
+   The techniques, in the order the guidance prefers them: reflow first (drop
+   columns), then resize (tighten margins), then show/hide (the sidebar's
+   labels), and re-architect only where nothing else fits (the calendar's week
+   grid cannot be seven columns in a 450px window at any margin).
+   ============================================================ */
+
+/* ---- Medium and below: the sidebar becomes an icon rail ---- */
+@media (max-width: 1007px) {
+  .app { grid-template-columns: 64px minmax(0, 1fr); }
+
+  /* Show/hide. A nav item reading "Upload & Sched…" is worse than one reading
+     nothing at all: the icon is already the thing being recognised, and the
+     width the labels give back is the width the content actually needs. Every
+     item carries a title, so the label is a hover away. */
+  .side { padding: 16px 8px; align-items: stretch; }
+  .navtext,
+  .navlabel,
+  .side .navbell,
+  .side .badge,
+  .client-pill .meta,
+  .client-pill .chev,
+  .themetoggle .knob { display: none; }
+
+  /* 44px of logo does not fit a 46px content box once the tile's own border
+     and shadow are counted. 40 is the next multiple of four down and clears it. */
+  .brand { padding: 4px 0 12px; justify-content: center; }
+  .brand .logo,
+  .brand .brandpic { width: 40px; height: 40px; border-radius: 12px; }
+  .brand .logo svg { width: 22px; height: 22px; }
+  .nav { justify-content: center; padding: 12px 0; gap: 0; }
+  .nav.active::before { left: -8px; height: 20px; }
+  .themetoggle,
+  .client-pill,
+  .sidealert { justify-content: center; padding: 8px 0; }
+  /* The footer's cards are full-bleed in a rail, so they cannot carry their
+     own horizontal padding without spilling past 64px. */
+  .side-foot { align-items: stretch; }
+  .side-foot > * { min-width: 0; }
+  /* The API status pill. Its padding and font are inline styles, so no media
+     query can shrink them; centring what is left puts the 7px dot in the
+     middle of the rail with its label a hover away. */
+  .side-foot > .glass-sm { justify-content: center; }
+
+  /* The brand menu is 48px wide here, so it shows what every other rail row
+     shows: the picture. Scoped to .brandwrap because the Analytics topbar
+     reuses .brandmenu at 230px and has room for names. */
+  .brandwrap .brandmenu { padding: 8px 4px; scrollbar-width: none; }
+  .brandwrap .brandmenu::-webkit-scrollbar { width: 0 }
+  .brandwrap .bm-item { justify-content: center; gap: 0; padding: 8px 0; font-size: 0 }
+  .brandwrap .bm-add { padding-top: 12px }
+  .brandwrap .bm-add::before { content: "+"; font-size: 18px; line-height: 1 }
+
+  /* Reflow: three columns of money do not fit beside a chart. */
+  .band { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clients { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split,
+  .two,
+  .anranks,
+  .anwrap { grid-template-columns: minmax(0, 1fr); }
+  .composer { grid-template-columns: minmax(0, 1fr); }
+  .ankpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .donutcard { flex-wrap: wrap; }
+}
+
+/* ---- Small: one column of everything, and the margins come in ---- */
+@media (max-width: 640px) {
+  .app { padding: 8px; gap: 8px; }
+  .topbar { padding: 12px; gap: 8px; }
+  .topbar h2 { font-size: 19px; }
+  .stage { padding: 4px 12px 16px; }
+
+  .cols2,
+  .kpis,
+  .kpis.k2,
+  .kpis.k3,
+  .clients,
+  .ankpis { grid-template-columns: minmax(0, 1fr); }
+
+  /* Re-architect. Seven columns in a 450px window gives each day 60px, which
+     is narrower than the text inside it, so the week stops being a grid and
+     becomes a list of days. */
+  .cal { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; }
+  .cal .col { min-height: 0; }
+
+  /* Show/hide. The legend's four hint sentences are ~215px each and ate three
+     rows of a 600px window to explain colours the dots already carry. */
+  .callegend { gap: 8px 12px; padding: 0 4px 8px; }
+  .callegend .lhint { display: none; }
+
+  /* 46+72+78+64 of fixed tracks plus 48 of gaps is 308px, and the row has 424
+     to give, so every video title collapsed to two words. Views is the column
+     that gets read; the rest are a wider window away. */
+  .antable .hd,
+  .antable .arow { grid-template-columns: 48px minmax(0, 1fr) 72px; }
+  .antable .hd > span:nth-child(n + 4),
+  .antable .arow > div:nth-child(n + 4) { display: none; }
+  .anthumb { width: 48px; height: 60px; }
+
+  /* Twelve month columns plus eleven 12px gaps needs 360px; a 480px window
+     leaves the chart 324. The gap is the part that can give. */
+  .finchart .chart { gap: 4px; }
+  .finchart { padding: 16px; }
+
+  /* Cards give back their inner padding before their content gives up. */
+  .card { padding: 16px; }
+  .netcard,
+  .donutcard { padding: 16px; }
+  .donutcard { flex-direction: column; align-items: flex-start; gap: 16px; }
+
+  /* The alert dock is an overlay, so on a small window it takes the width it
+     needs and sits at the bottom rather than covering the header it is trying
+     to tell the operator about. */
+  /* Clear of the icon rail: 8px window padding + 64px rail + 8px gap. Spanning
+     the full width put the dock's heading behind a nav icon. */
+  .alertdock { top: auto; bottom: 8px; right: 8px; left: 80px; width: auto; max-height: 50vh; }
+  .alertdock-tab { top: auto; bottom: 8px; right: 8px; }
+}
+
+/* Below the small breakpoint the row controls stack under the name rather than
+   being squeezed into each other. .lrow already wraps; this stops the wrapped
+   controls sitting under the emoji chip with a ragged left edge. */
+@media (max-width: 520px) {
+  .lrow { padding-left: 0; padding-right: 0; }
+  .lrow > .lmeta { flex: 1 1 100%; }
+  .editpanel,
+  .lnote { margin-left: 0; }
+}
+
+/* ---- Medium only: the week grid still exists here, and it is tight ---- */
+@media (min-width: 641px) and (max-width: 1007px) {
+  /* A week column is about 94px, so a card has ~70px of content box while the
+     dot, platform tile, padlock and gaps alone need 59. The time takes its own
+     line rather than being clipped to nothing, and wrapping lets the padlock
+     move down instead of being cut off by .ev{overflow:hidden}. */
+  .ev .t1 { flex-wrap: wrap; }
+  .ev .evwhen { flex: 1 0 100%; order: 3; }
 }

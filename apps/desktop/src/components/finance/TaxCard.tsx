@@ -82,7 +82,7 @@ export default function TaxCard({ year }: { year: number }) {
         </div>
       </div>
 
-      <div className="kpis stagger" style={{ gridTemplateColumns: "repeat(3,1fr)", marginTop: 14 }}>
+      <div className="kpis k3 stagger" style={{ marginTop: 16 }}>
         <div className="kpi glass-sm">
           <div className="lab">Set aside</div>
           <div className="val">{formatCents(estimate.totalCents)}</div>

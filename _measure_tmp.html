@@ -1,0 +1,38 @@
+<style>
+:root{--font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;}
+body{font-family:var(--font);letter-spacing:.1px;margin:0}
+.wrap{width:250px;outline:2px solid red}
+.pactions{display:flex;gap:8px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:13px;border:none;font-family:var(--font);font-size:13.5px;font-weight:600}
+.pexp{padding:8px 18px;font-size:12.5px}
+.iconbtn{width:40px;height:40px;border:1px solid #000;display:grid;place-items:center}
+.iconbtn svg{width:18px;height:18px}
+.pstyle{width:34px;height:34px}
+</style>
+<div class="wrap"><div class="pactions" id="pa">
+<button class="btn pexp" id="e">Expand</button>
+<div class="iconbtn pstyle"><svg></svg></div><div class="iconbtn pstyle"><svg></svg></div>
+<div class="iconbtn pstyle"><svg></svg></div><div class="iconbtn pstyle"><svg></svg></div>
+</div></div>
+<pre id="out"></pre>
+<script>
+function rep(label){
+  const pa=document.getElementById('pa');const kids=[...pa.children];
+  return label+" | btn="+kids[0].getBoundingClientRect().width.toFixed(1)+
+   " icons="+kids.slice(1).map(k=>k.getBoundingClientRect().width.toFixed(1)).join(",");
+}
+let o=[];
+o.push(rep("Expand@250"));
+document.getElementById('e').textContent="Collapse";
+o.push(rep("Collapse@250"));
+document.querySelector('.wrap').style.width="355px";
+o.push(rep("Collapse@355"));
+document.querySelector('.wrap').style.width="186px";
+o.push(rep("Collapse@186"));
+// natural widths
+document.querySelector('.wrap').style.width="2000px";
+o.push(rep("Collapse@natural"));
+document.getElementById('e').textContent="Expand";
+o.push(rep("Expand@natural"));
+document.getElementById('out').textContent=o.join("\n");
+</script>

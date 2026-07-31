@@ -506,7 +506,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                     Share of views per platform
                   </div>
                   {pieSegs.length ? (
-                    <div className="donutwrap" style={{ flexDirection: "column" }}>
+                    <div className="donutwrap">
                       <svg width="150" height="150" viewBox="0 0 130 130">
                         <g transform="rotate(-90 65 65)" fill="none" strokeWidth="17">
                           <circle cx="65" cy="65" r="54" stroke="rgba(255,255,255,.06)" />

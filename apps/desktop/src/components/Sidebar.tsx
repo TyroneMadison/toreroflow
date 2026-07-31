@@ -66,11 +66,13 @@ function NavItem({
     <div
       className={`nav${active ? " active" : ""}`}
       onClick={() => onNavigate(item.target)}
+      // The only label there is once the sidebar collapses to icons.
+      title={item.label}
     >
       <svg>
         <use href={item.icon} />
       </svg>{" "}
-      {item.label}
+      <span className="navtext">{item.label}</span>
       {notice && (
         // title gives the hover message without needing custom tooltip logic.
         <span className="navbell" title={notice}>
@@ -127,7 +129,7 @@ export default function Sidebar({
             <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
           </svg>
         </div>
-        <div>
+        <div className="navtext">
           <h1>
             <span>Toreroflow</span>
           </h1>
@@ -155,7 +157,9 @@ export default function Sidebar({
             title="Open the Reports screen to see what failed"
           >
             <span className="sadot" />
-            {alertCount === 1 ? "1 problem" : `${alertCount} problems`}
+            <span className="navtext">
+              {alertCount === 1 ? "1 problem" : `${alertCount} problems`}
+            </span>
           </div>
         )}
         <ApiStatus />
@@ -163,7 +167,7 @@ export default function Sidebar({
           <svg>
             <use href={theme === "light" ? "#i-sun" : "#i-moon"} />
           </svg>
-          <span className="lbl">{theme === "light" ? "Light mode" : "Dark mode"}</span>
+          <span className="lbl navtext">{theme === "light" ? "Light mode" : "Dark mode"}</span>
           <span className="knob" />
         </div>
 
