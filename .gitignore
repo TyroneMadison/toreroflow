@@ -41,3 +41,6 @@ List of improvments for the app.md
 BluePrintUploadUI.png
 photo_*.jpg
 Torerone_Portfolio_Canva.pptx.pdf
+
+# The server stack keeps its secrets here, and they never belong in git.
+infra/.env

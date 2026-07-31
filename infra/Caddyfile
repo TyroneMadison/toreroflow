@@ -1,0 +1,54 @@
+# HTTPS for the API, and nothing else.
+#
+# Caddy requests and renews the Let's Encrypt certificate on its own; there is
+# no certbot, no cron entry and no renewal to forget. The only requirement is
+# that {$API_DOMAIN} resolves to this box before the container starts, because
+# the ACME challenge is answered on port 80.
+
+{$API_DOMAIN} {
+	# A video upload is the largest thing that crosses this proxy, and the API
+	# already caps a file at 4GB. Caddy's own default would refuse it long
+	# before the API had an opinion.
+	request_body {
+		max_size 4GB
+	}
+
+	# Uploads and PDF renders both outlast a default timeout. Generous rather
+	# than unlimited, so a genuinely stuck request still lets go.
+	reverse_proxy api:4700 {
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+
+	encode zstd gzip
+
+	header {
+		# The API answers a desktop app, never a browsing session, so there is
+		# nothing here that should ever be framed, sniffed or referred onward.
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		# Two years, which is the floor for preload lists. Only add the domain
+		# to a preload list once you are sure it will never need plain HTTP.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		# Caddy announces itself by default. It does not need to.
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+		# The signature on a file link is a credential for that file. Logging
+		# full query strings would write a working link to every invoice and
+		# tax export into a file that outlives the link's expiry.
+		format filter {
+			request>uri query {
+				delete s
+			}
+		}
+	}
+}

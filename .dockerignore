@@ -1,0 +1,24 @@
+# Everything the image does not need, kept out of the build context.
+# Without this the context includes node_modules, the Rust target directory and
+# every uploaded video, which is gigabytes shipped to the daemon on every build.
+
+node_modules
+**/node_modules
+.git
+.gitignore
+
+# The desktop app is not part of the server images.
+apps/desktop/src-tauri/target
+apps/desktop/dist
+
+# Runtime data, not build input.
+storage
+*.log
+
+# Local only.
+.env
+.env.*
+!.env.example
+.claude
+.claude-session-history.md
+docs/screens
