@@ -15,4 +15,9 @@ export default defineConfig({
     },
   },
   envPrefix: ["VITE_", "TAURI_ENV_"],
+  // The repo root, not this directory. Every other part of the stack reads the
+  // one .env at the root, and having the desktop be the exception is a trap:
+  // setting VITE_API_URL there would look right, change nothing, and the app
+  // would quietly keep talking to localhost after a cutover to the server.
+  envDir: "../..",
 });
