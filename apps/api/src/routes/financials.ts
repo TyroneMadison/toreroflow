@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
+import { randomUUID } from "node:crypto";
 import nodePath from "node:path";
 import { getPrisma } from "@toreroflow/db";
 import {
@@ -20,8 +21,9 @@ import { requireAuth } from "../plugins/requireAuth";
 import {
   deriveStatus,
   monthlyShareOfAnnual,
+  projectRecurring,
   quotaMetFor,
-  rollForward,
+  reconcilePrice,
 } from "../financials/month";
 import { buildSeries, exportYears, monthKeysEnding, ytdTotals } from "../financials/summary";
 import { env } from "../env";
@@ -45,13 +47,6 @@ const MAX_INVOICE_NUMBER_ATTEMPTS = 10;
 function monthStart(key: string): Date {
   const [y, m] = key.split("-").map(Number);
   return new Date(y!, m! - 1, 1);
-}
-
-/** The month before a "2026-06" key, as a key. */
-function previousMonth(key: string): string {
-  const d = monthStart(key);
-  d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /** The server clock's own month, in the same "YYYY-MM" shape as everything else here. */
@@ -107,20 +102,37 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       // have one: a client with no price is not an error, it is just not billed.
       for (const c of clients) {
         if (c.monthlyPriceCents == null) continue;
-        await prisma.revenueEntry.upsert({
+        const existing = await prisma.revenueEntry.findUnique({
           where: { clientId_month: { clientId: c.id, month } },
-          create: { agencyId, clientId: c.id, month, amountCents: c.monthlyPriceCents },
-          update: {},
+          select: { id: true, amountCents: true, receivedAt: true, priceOverridden: true },
         });
+        if (!existing) {
+          await prisma.revenueEntry.create({
+            data: { agencyId, clientId: c.id, month, amountCents: c.monthlyPriceCents },
+          });
+          continue;
+        }
+        // An existing row is a copy of the price made whenever this month was
+        // first opened, which may have been long before the price was last
+        // corrected. Reconcile it, unless it is the operator's own amount or
+        // a month that has already been paid. See reconcilePrice.
+        const corrected = reconcilePrice({
+          amountCents: existing.amountCents,
+          standingPriceCents: c.monthlyPriceCents,
+          receivedAt: existing.receivedAt,
+          priceOverridden: existing.priceOverridden,
+        });
+        if (corrected !== null) {
+          await prisma.revenueEntry.update({
+            where: { id: existing.id },
+            data: { amountCents: corrected },
+          });
+        }
       }
 
-      // Roll recurring costs forward the first time a month is opened. Counting
-      // existing expenses cannot tell "never opened" from "every cost deleted on
-      // purpose", so open-ness is recorded explicitly instead. The insert is the
-      // claim: a unique-constraint violation means another request (or an
-      // earlier visit) already opened this month, so skip silently rather than
-      // erroring or rolling forward twice.
-      let justOpened = true;
+      // Mark the month opened. Nothing keys off this any more; it only dates
+      // the start of the record for the tax export's year list. A unique
+      // violation just means it was already opened.
       try {
         await prisma.financialMonth.create({ data: { agencyId, month } });
       } catch (error) {
@@ -129,43 +141,60 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
             ? (error as { code: unknown }).code
             : null;
         if (code !== UNIQUE_VIOLATION) throw error;
-        justOpened = false;
       }
-      if (justOpened) {
-        const prev = await prisma.expense.findMany({
-          where: { agencyId, month: previousMonth(month) },
-        });
-        const carried = rollForward(
-          prev.map((e) => ({
-            name: e.name,
-            categoryLine: e.categoryLine,
-            amountCents: e.amountCents,
-            kind: e.kind,
-            variable: e.variable,
-            color: e.color,
-            cadence: e.cadence,
-            dueDay: e.dueDay,
-            note: e.note,
+
+      /*
+       * Project the standing recurring costs into this month.
+       *
+       * Every read, not just the first: a subscription is a standing thing,
+       * and the old once-only copy meant a month glanced at before its costs
+       * existed stayed empty forever. projectRecurring skips any series
+       * already present, so re-running it is free, and skips any series the
+       * operator ended, so a deleted cost stays deleted.
+       */
+      const history = await prisma.expense.findMany({
+        where: { agencyId, kind: "recurring", month: { lt: month } },
+        select: {
+          seriesId: true,
+          month: true,
+          name: true,
+          categoryLine: true,
+          amountCents: true,
+          kind: true,
+          variable: true,
+          color: true,
+          cadence: true,
+          dueDay: true,
+          note: true,
+          endedMonth: true,
+        },
+      });
+      const alreadyHere = await prisma.expense.findMany({
+        where: { agencyId, month, seriesId: { not: null } },
+        select: { seriesId: true },
+      });
+      const missing = projectRecurring(
+        history,
+        month,
+        alreadyHere.map((e) => e.seriesId!),
+      );
+      if (missing.length) {
+        await prisma.expense.createMany({
+          data: missing.map((r) => ({
+            agencyId,
+            seriesId: r.seriesId,
+            name: r.name,
+            categoryLine: r.categoryLine,
+            amountCents: r.amountCents,
+            month,
+            kind: r.kind,
+            variable: r.variable,
+            color: r.color,
+            cadence: r.cadence ?? "monthly",
+            dueDay: r.dueDay ?? null,
+            note: r.note ?? null,
           })),
-          month,
-        );
-        if (carried.length) {
-          await prisma.expense.createMany({
-            data: carried.map((r) => ({
-              agencyId,
-              name: r.name,
-              categoryLine: r.categoryLine,
-              amountCents: r.amountCents,
-              month,
-              kind: r.kind,
-              variable: r.variable,
-              color: r.color,
-              cadence: r.cadence ?? "monthly",
-              dueDay: r.dueDay ?? null,
-              note: r.note ?? null,
-            })),
-          });
-        }
+        });
       }
     }
 
@@ -426,6 +455,10 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         cadence: body.cadence,
         dueDay: body.dueDay ?? null,
         incurredOn: body.incurredOn ? new Date(body.incurredOn) : null,
+        // A recurring cost starts a series here and keeps that identity in
+        // every month it goes on to appear in. One-off rows get none: they
+        // never repeat, so there is nothing for a series to identify.
+        seriesId: body.kind === "recurring" ? randomUUID() : null,
         color: body.color ?? null,
         note: body.note ?? null,
       },
@@ -458,11 +491,36 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<{ Params: { id: string } }>("/financials/expenses/:id", async (request, reply) => {
+    const agencyId = request.user.agencyId;
     const found = await prisma.expense.findFirst({
-      where: { id: request.params.id, agencyId: request.user.agencyId },
-      select: { id: true },
+      where: { id: request.params.id, agencyId },
+      select: { id: true, seriesId: true, month: true, kind: true },
     });
     if (!found) return reply.status(404).send(NOT_FOUND);
+
+    /*
+     * Removing a recurring cost stops it, rather than clearing one month of it.
+     *
+     * "It stays there until I remove it myself" only holds if removing it
+     * sticks. Projection reads the most recent surviving occurrence, so
+     * deleting the row alone would have last month's copy put it straight
+     * back on the next read. Marking the series ended at this month is what
+     * makes the removal permanent, while every earlier month keeps its row
+     * because that money really did go out.
+     */
+    if (found.kind === "recurring" && found.seriesId) {
+      await prisma.expense.updateMany({
+        where: { agencyId, seriesId: found.seriesId },
+        data: { endedMonth: found.month },
+      });
+      // Nothing from this month on should survive: a later month may already
+      // hold a projection made before the cost was stopped.
+      await prisma.expense.deleteMany({
+        where: { agencyId, seriesId: found.seriesId, month: { gte: found.month } },
+      });
+      return { ok: true };
+    }
+
     await prisma.expense.delete({ where: { id: found.id } });
     return { ok: true };
   });
@@ -477,7 +535,11 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     return await prisma.revenueEntry.update({
       where: { id: found.id },
       data: {
-        ...(body.amountCents !== undefined ? { amountCents: body.amountCents } : {}),
+        // Typing an amount claims the month: from here on it is the operator's
+        // figure and the standing price in Settings stops reconciling it.
+        ...(body.amountCents !== undefined
+          ? { amountCents: body.amountCents, priceOverridden: true }
+          : {}),
         ...(body.color !== undefined ? { color: body.color } : {}),
         ...(body.note !== undefined ? { note: body.note } : {}),
         ...(body.receivedAt !== undefined

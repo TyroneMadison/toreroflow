@@ -575,6 +575,10 @@ model RevenueEntry {
   /// Set means paid. The only stored state: pending and due are derived, since
   /// a stored "not due" goes stale the moment a video is delivered.
   receivedAt  DateTime?
+  /// Set once the operator types an amount over the top for this month. Until
+  /// then the row tracks the client's standing price, so correcting the price
+  /// in Settings fixes the open month instead of leaving a stale copy behind.
+  priceOverridden Boolean @default(false)
   note        String?
   color       String?
   createdAt   DateTime  @default(now())
@@ -598,9 +602,10 @@ model Expense {
   /// unknown cost as free overstates profit every month.
   amountCents  Int?
   month        String
-  /// recurring rolls forward into the next month. one_off never does.
+  /// recurring projects into every later month. one_off never does.
   kind         String    @default("recurring")
-  /// A recurring cost whose amount changes monthly, so it rolls forward null.
+  /// A recurring cost whose amount changes monthly, so it projects with no
+  /// amount and the unentered bill stays visible.
   variable     Boolean   @default(false)
   /// monthly | annual. An annual cost holds its whole yearly figure here and
   /// is charged once, so it does not roll forward. The monthly screens spread
@@ -612,6 +617,16 @@ model Expense {
   dueDay       Int?
   /// one_off only: the date it actually happened, for the tax record.
   incurredOn   DateTime?
+  /// Stable identity of one recurring cost across every month it appears in.
+  /// A subscription is a standing thing, so each month's row is a projection
+  /// of the series rather than a one-time copy of last month. Null on one-off
+  /// rows, which by definition never repeat.
+  seriesId     String?
+  /// Set on a series when the operator removes the cost. From this month on it
+  /// stops being projected; earlier months keep theirs, because they were
+  /// really paid. Without this an unwanted cost would be resurrected from last
+  /// month's surviving row on the next read.
+  endedMonth   String?
   color        String?
   /// The operator's own reminder of what this is. Capped at 250 characters by
   /// the API, because it is a note and not a document.
@@ -622,9 +637,12 @@ model Expense {
   agency Agency @relation(fields: [agencyId], references: [id])
 
   @@index([agencyId, month])
+  @@index([agencyId, seriesId])
 }
 
-/// Marks a financial month as opened, so roll-forward runs exactly once.
+/// Marks a financial month as opened. Recurring costs no longer key off this
+/// (they project from the series on every read), so it survives only to date
+/// the start of the record for the tax export's year list.
 ///
 /// Counting existing expenses cannot tell "never opened" from "emptied on
 /// purpose", so a user who deleted every cost had them silently restored by

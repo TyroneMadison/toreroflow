@@ -1,4 +1,10 @@
-import { deriveStatus, monthlyShareOfAnnual, quotaMetFor, rollForward } from "./month";
+import {
+  deriveStatus,
+  monthlyShareOfAnnual,
+  projectRecurring,
+  quotaMetFor,
+  reconcilePrice,
+} from "./month";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -42,20 +48,84 @@ eq(
   "delivery does not change a calendar client either way",
 );
 
-/* Roll-forward. */
+/* Recurring cost projection. */
 const previous = [
-  { name: "Adobe", categoryLine: "software", amountCents: 5999, kind: "recurring", variable: false, color: "#ff6b7a" },
-  { name: "Anthropic API", categoryLine: "software", amountCents: 14820, kind: "recurring", variable: true, color: "#ffcf6b" },
-  { name: "Client dinner", categoryLine: "meals", amountCents: 8460, kind: "one_off", variable: false, color: null },
+  { seriesId: "s-adobe", month: "2026-06", name: "Adobe", categoryLine: "software", amountCents: 5999, kind: "recurring", variable: false, color: "#ff6b7a" },
+  { seriesId: "s-api", month: "2026-06", name: "Anthropic API", categoryLine: "software", amountCents: 14820, kind: "recurring", variable: true, color: "#ffcf6b" },
+  { seriesId: null, month: "2026-06", name: "Client dinner", categoryLine: "meals", amountCents: 8460, kind: "one_off", variable: false, color: null },
 ];
-const next = rollForward(previous, "2026-07");
+const next = projectRecurring(previous, "2026-07");
 
-eq(next.length, 2, "one-off costs do not roll forward");
-eq(next[0]!.amountCents, 5999, "a fixed cost carries its amount");
-eq(next[1]!.amountCents, null, "a variable cost rolls forward with no amount, so the missing bill shows");
-eq(next[0]!.month, "2026-07", "rolled rows belong to the new month");
-eq(next[1]!.color, "#ffcf6b", "colour is carried so a category stays the same colour");
-eq(rollForward([], "2026-07").length, 0, "an empty previous month rolls nothing");
+eq(next.length, 2, "one-off costs never project");
+eq(next.find((r) => r.seriesId === "s-adobe")!.amountCents, 5999, "a fixed cost carries its amount");
+eq(
+  next.find((r) => r.seriesId === "s-api")!.amountCents,
+  null,
+  "a variable cost projects with no amount, so the missing bill shows",
+);
+eq(next[0]!.month, "2026-07", "projected rows belong to the target month");
+eq(next.find((r) => r.seriesId === "s-api")!.color, "#ffcf6b", "colour carries so a category stays the same colour");
+eq(projectRecurring([], "2026-07").length, 0, "no history projects nothing");
+
+/*
+ * The bug this function exists to kill.
+ *
+ * The old roll-forward ran exactly once per month, the first time the month
+ * was opened. Opening August before July had any costs entered spent that one
+ * chance against an empty July and left August permanently empty. Projection
+ * is computed fresh every read, so a cost entered late still lands.
+ */
+eq(
+  projectRecurring(previous, "2026-08").length,
+  2,
+  "a month opened early still fills in once the costs exist",
+);
+
+/* Idempotent: a series already in the month is not added a second time. */
+eq(
+  projectRecurring(previous, "2026-07", ["s-adobe"]).length,
+  1,
+  "a series already present in the month is left alone",
+);
+eq(
+  projectRecurring(previous, "2026-07", ["s-adobe", "s-api"]).length,
+  0,
+  "a fully populated month gains nothing on a re-read",
+);
+
+/*
+ * Removal has to stick. Without an explicit end, projection would read last
+ * month's surviving row and helpfully resurrect a cost the operator deleted,
+ * which is the exact failure the old one-shot flag was protecting against.
+ */
+const ended = [
+  { seriesId: "s-gone", month: "2026-06", name: "Old SaaS", categoryLine: "software", amountCents: 900, kind: "recurring", variable: false, color: null, endedMonth: "2026-07" },
+];
+eq(projectRecurring(ended, "2026-07").length, 0, "a cost removed in July does not come back in July");
+eq(projectRecurring(ended, "2026-09").length, 0, "and does not come back in any later month either");
+eq(
+  projectRecurring(ended, "2026-06").length,
+  0,
+  "the month it was removed from is history and is not re-derived",
+);
+
+/* The latest occurrence wins, so a corrected amount carries rather than an old one. */
+const corrected = [
+  { seriesId: "s-x", month: "2026-05", name: "Hosting", categoryLine: "software", amountCents: 500, kind: "recurring", variable: false, color: null },
+  { seriesId: "s-x", month: "2026-06", name: "Hosting", categoryLine: "software", amountCents: 809, kind: "recurring", variable: false, color: null },
+];
+eq(
+  projectRecurring(corrected, "2026-07")[0]!.amountCents,
+  809,
+  "the most recent amount carries, not the oldest",
+);
+
+/* A future month must not be treated as history for an earlier one. */
+eq(
+  projectRecurring(corrected, "2026-06")[0]!.amountCents,
+  500,
+  "projecting June reads May, never June itself or July",
+);
 
 // A fulfilment client with no targets has nothing countable delivered, so
 // the cycle is not met and no invoice is offered. Calendar clients are
@@ -90,16 +160,16 @@ eq(
  * by eleven twelfths of it.
  */
 const withAnnual = [
-  { name: "Adobe", categoryLine: "software", amountCents: 6000, kind: "recurring", variable: false, color: null, cadence: "monthly" },
-  { name: "Domain renewal", categoryLine: "software", amountCents: 120_00, kind: "recurring", variable: false, color: null, cadence: "annual" },
+  { seriesId: "s-adobe", month: "2026-07", name: "Adobe", categoryLine: "software", amountCents: 6000, kind: "recurring", variable: false, color: null, cadence: "monthly" },
+  { seriesId: "s-domain", month: "2026-07", name: "Domain renewal", categoryLine: "software", amountCents: 120_00, kind: "recurring", variable: false, color: null, cadence: "annual" },
 ];
-const rolled = rollForward(withAnnual, "2026-08");
+const rolled = projectRecurring(withAnnual, "2026-08");
 eq(rolled.length, 1, "only the monthly cost carries into the next month");
 eq(rolled[0]!.name, "Adobe", "and it is the monthly one");
 eq(
   rolled.some((r) => r.cadence === "annual"),
   false,
-  "nothing that carries is ever marked annual",
+  "nothing that projects is ever marked annual",
 );
 
 // A twelfth of the year, so twelve months add back up to what was actually paid.
@@ -112,5 +182,65 @@ eq(
 );
 // Rounded down, so twelve months can never total more than was really spent.
 eq(monthlyShareOfAnnual([{ amountCents: 100 }]), 8, "a rounding remainder is dropped, never invented");
+
+/*
+ * Reconciling a month's price against Settings.
+ *
+ * The live failure, pinned: Caleb's standing price is $850 and his August row
+ * said $1,500 because August had been opened a week before the price was
+ * corrected. Nothing in the old code ever looked at that row again.
+ */
+eq(
+  reconcilePrice({
+    amountCents: 150_000,
+    standingPriceCents: 85_000,
+    receivedAt: null,
+    priceOverridden: false,
+  }),
+  85_000,
+  "a stale seeded amount is corrected to the standing price",
+);
+eq(
+  reconcilePrice({
+    amountCents: 85_000,
+    standingPriceCents: 85_000,
+    receivedAt: null,
+    priceOverridden: false,
+  }),
+  null,
+  "a row that already agrees with Settings is left alone",
+);
+
+/* The three things that make a row the operator's, not the seeder's. */
+eq(
+  reconcilePrice({
+    amountCents: 50_000,
+    standingPriceCents: 85_000,
+    receivedAt: null,
+    priceOverridden: true,
+  }),
+  null,
+  "a hand-typed amount overrules Settings for that month",
+);
+eq(
+  reconcilePrice({
+    amountCents: 150_000,
+    standingPriceCents: 85_000,
+    receivedAt: new Date("2026-07-28"),
+    priceOverridden: false,
+  }),
+  null,
+  "a paid month is never rewritten, because an invoice already went out on it",
+);
+eq(
+  reconcilePrice({
+    amountCents: 150_000,
+    standingPriceCents: null,
+    receivedAt: null,
+    priceOverridden: false,
+  }),
+  null,
+  "a client with no standing price is not billed, which is not an error",
+);
 
 console.log("financials month: all checks passed");
