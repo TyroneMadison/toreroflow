@@ -42,6 +42,22 @@ while [ "$i" -lt 90 ]; do
   if docker compose -f "$COMPOSE" ps --format '{{.Service}} {{.Status}}' | grep -q '^api .*healthy'; then
     trap - EXIT INT TERM
     finish success "Updated to $(git -C "$APP_DIR" rev-parse --short HEAD)."
+
+    # Take out the rubbish, but only now.
+    #
+    # Every build retags api and worker, which leaves the previous 2.7GB pair
+    # untagged and on disk forever. Six deploys of that outweigh everything the
+    # app actually stores, and the app's own files are 438MB.
+    #
+    # After the health check, never before: while the new containers are still
+    # proving themselves the old images are the way back.
+    #
+    # Some build cache is kept because dropping all of it makes the next deploy
+    # a ten minute rebuild rather than a one minute one. Failures here are
+    # ignored: a full disk is a problem, a deploy reported as failed because
+    # housekeeping tripped is a worse one.
+    docker image prune -f >/dev/null 2>&1 || true
+    docker builder prune -f --keep-storage 2GB >/dev/null 2>&1 || true
     exit 0
   fi
   i=$((i + 1))
