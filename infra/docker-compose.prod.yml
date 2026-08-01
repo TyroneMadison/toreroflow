@@ -87,6 +87,28 @@ services:
       retries: 5
       start_period: 30s
 
+  # Transcription. Nothing user-facing talks to it; the worker calls it while
+  # processing an upload, and a video without a transcript still publishes, so
+  # this being down costs AI drafts and nothing else.
+  captions:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.captions
+    restart: unless-stopped
+    volumes:
+      # Read-only: it is handed an absolute path to a video the API stored and
+      # has no reason to write anything back.
+      - storage:/app/storage:ro
+      # The whisper model, kept across rebuilds so it downloads once.
+      - whispermodels:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:4710/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # The first transcribe loads the model, which is slower than a boot.
+      start_period: 60s
+
   worker:
     build:
       context: ..
@@ -99,6 +121,9 @@ services:
       DATABASE_URL: postgresql://toreroflow:${POSTGRES_PASSWORD}@postgres:5432/toreroflow
       REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/storage
+      # Both sides mount the same storage volume at the same path, so the
+      # absolute path the worker sends resolves to the same file here.
+      CAPTIONS_URL: http://captions:4710
     volumes:
       # The same volume the API writes uploads into. The worker transcodes what
       # the API received and the API serves what the worker produced, so this
@@ -120,3 +145,4 @@ volumes:
   pgdata:
   redisdata:
   storage:
+  whispermodels:

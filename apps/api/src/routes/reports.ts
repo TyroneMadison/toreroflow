@@ -15,8 +15,16 @@ import {
   raiseAlert,
 } from "../alerts/alerts";
 import { buildMergedPosts } from "../analytics/mergedPosts";
+import { recentCompletedWeeks, weekKey, weekLabel } from "@toreroflow/core";
 import { syncYouTubeCatalogue } from "../analytics/youtubeSync";
 import { env } from "../env";
+
+/**
+ * Weeks carried on a client's report page. Four covers the month you are in
+ * plus enough of the one before to see a direction, and keeps the switcher to
+ * a row that fits a phone.
+ */
+const WEEKS_ON_REPORT = 4;
 import { requireAuth } from "../plugins/requireAuth";
 import {
   buildReportData,
@@ -204,6 +212,16 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const inputs = await gatherInputs(clientId);
     if (!inputs) return null;
 
+    const build = (start: Date, end: Date) =>
+      buildReportData({
+        clientName: inputs.client.name,
+        businessName: inputs.businessName,
+        accounts: inputs.accounts,
+        posts: inputs.posts,
+        periodStart: start,
+        periodEnd: end,
+      });
+
     const periods: WebReportPeriod[] = [];
     for (let back = 0; back < 3; back++) {
       const start = new Date(upTo.start.getFullYear(), upTo.start.getMonth() - back, 1);
@@ -211,14 +229,27 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       periods.push({
         label: start.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
         key: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`,
-        data: buildReportData({
-          clientName: inputs.client.name,
-          businessName: inputs.businessName,
-          accounts: inputs.accounts,
-          posts: inputs.posts,
-          periodStart: start,
-          periodEnd: end,
-        }),
+        group: "month",
+        data: build(start, end),
+      });
+    }
+
+    /*
+     * The last four completed weeks, on the same page.
+     *
+     * A month-end report says what happened; a weekly one says it while there
+     * is still time to change the next shoot. Same builder and same design, so
+     * a week is not a second kind of report to maintain, it is the same
+     * questions over a shorter period. Only completed weeks: a report covering
+     * three days of a seven day week understates everything in it with no way
+     * for the reader to tell.
+     */
+    for (const week of recentCompletedWeeks(WEEKS_ON_REPORT)) {
+      periods.push({
+        label: weekLabel(week),
+        key: weekKey(week),
+        group: "week",
+        data: build(week.start, week.end),
       });
     }
 

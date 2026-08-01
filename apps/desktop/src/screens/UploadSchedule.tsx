@@ -50,6 +50,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** The asset whose description is being written, so one press at a time. */
+  const [captioning, setCaptioning] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [ytTitles, setYtTitles] = useState<Record<string, string>>({});
   const [ytDescriptions, setYtDescriptions] = useState<Record<string, string>>({});
@@ -226,6 +228,42 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   };
 
   /** Persist whatever was typed. Returns false when the server refused. */
+  /**
+   * Write a description from what is said in the video.
+   *
+   * Fills the box rather than saving, so the operator reads it before it
+   * becomes what posts. Nothing is overwritten silently: an existing
+   * description is confirmed over first, because the button sits next to a
+   * field they may have spent time on.
+   */
+  const writeCaption = async (assetId: string) => {
+    const existing = drafts[assetId];
+    if (
+      existing !== undefined &&
+      existing.trim() !== "" &&
+      !window.confirm("Replace the description you have written?")
+    ) {
+      return;
+    }
+    setCaptioning(assetId);
+    try {
+      const out = await api.post<{ description: string; title: string; hashtags: string[] }>(
+        `/media/${assetId}/caption`,
+        {},
+      );
+      if (!out.description.trim()) {
+        toast.fail("Nothing came back", new Error("the model returned an empty description"));
+        return;
+      }
+      setDrafts((d) => ({ ...d, [assetId]: out.description }));
+      toast.success("Written from the video. Read it, then save.");
+    } catch (err) {
+      toast.fail("Could not write the description", err);
+    } finally {
+      setCaptioning(null);
+    }
+  };
+
   const saveDraft = async (asset: MediaAssetInfo): Promise<boolean> => {
     const description = drafts[asset.id];
     const name = names[asset.id];
@@ -554,10 +592,25 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       <div className="transcript">{STATUS_LABEL[asset.status]}</div>
                     ) : (
                       <>
-                        <label className="flabel" style={{ marginTop: 10 }}>
+                        <label className="flabel withact" style={{ marginTop: 10 }}>
                           Description
                           <span className="hint">
                             Instagram, TikTok, Facebook and Snapchat caption
+                          </span>
+                          <span
+                            className={`revtoggle${captioning === asset.id ? " on" : ""}`}
+                            style={{ marginLeft: "auto" }}
+                            title={
+                              asset.hasTranscript
+                                ? "Write a description from what is said in the video"
+                                : "This video has no transcript yet, so there are no words to write from"
+                            }
+                            onClick={() => {
+                              if (captioning) return;
+                              void writeCaption(asset.id);
+                            }}
+                          >
+                            {captioning === asset.id ? "Writing…" : "Write from video"}
                           </span>
                         </label>
                         <div className="captionbox">

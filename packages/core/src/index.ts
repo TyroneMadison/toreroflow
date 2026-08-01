@@ -18,4 +18,5 @@ export * from "./business";
 export * from "./tax";
 export * from "./carousel";
 export * from "./welcome";
+export * from "./weeks";
 export * as tokens from "./tokens";

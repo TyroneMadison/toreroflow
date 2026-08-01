@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fileLink } from "../files/link";
+import { fileLink, fileLinkVersioned } from "../files/link";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
+import Anthropic from "@anthropic-ai/sdk";
 import { decodeEscapes, looksLikeRevisionOf, MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
@@ -22,6 +23,24 @@ const revisionSchema = z.object({
 const formatSchema = z.object({
   format: z.enum(["short_form", "long_form"]),
 });
+
+/**
+ * The shape a generated caption comes back in. Structured output rather than
+ * parsing prose, so a stray sentence of preamble cannot end up in a client's
+ * caption. Note the model's structured output rejects maxItems and any
+ * minItems above 1, so the hashtag count is asked for in the prompt and
+ * trimmed on the way out instead.
+ */
+const CAPTION_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    title: { type: "string" },
+    hashtags: { type: "array", items: { type: "string" } },
+  },
+  required: ["description", "title", "hashtags"],
+  additionalProperties: false,
+} as const;
 
 const draftSchema = z.object({
   /** The video's label in the app, and the fallback for the fields below. */
@@ -83,6 +102,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     kind?: string;
     slideKeys?: unknown;
     createdAt: Date;
+    updatedAt?: Date;
   }) => {
     const ready = a.status === "ready";
     return {
@@ -103,11 +123,15 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       coverOffsetMs: a.coverOffsetMs,
       // A carousel has no video to take a frame from, so its first slide is
       // its own thumbnail. Pointing at thumb.jpg would render a blank card.
+      // A re-picked cover overwrites the same cover.jpg, so the address alone
+      // never changes and the webview keeps showing the frame it already has.
+      // Versioning by the row's own updatedAt is what makes a new pick appear
+      // without a reload; the parameter sits outside the signature.
       thumbUrl: ready
         ? a.kind === "carousel"
           ? fileLink(a.storageKey)
           : a.coverKey
-            ? fileLink(a.coverKey)
+            ? fileLinkVersioned(a.coverKey, a.updatedAt ? a.updatedAt.getTime() : null)
             : fileLink(`${a.clientId}/${a.id}/thumb.jpg`)
         : null,
       // The original upload: nothing is re-encoded, so preview and publish
@@ -309,6 +333,110 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       data: { draftCopy: { ...current, ...body } },
     });
     return { id: updated.id, draftCopy: updated.draftCopy };
+  });
+
+  /**
+   * Write a description from what is actually said in the video.
+   *
+   * The upload pipeline already drafts copy once, automatically. This is the
+   * button for the far more common case: the first draft was not it, or the
+   * video was uploaded before transcription was running, and the operator
+   * wants another go without re-uploading.
+   *
+   * Returns the text rather than saving it. A generated caption the operator
+   * has not read yet is a suggestion, and overwriting whatever they had typed
+   * with it would make the button dangerous to press.
+   */
+  app.post<{ Params: { id: string } }>("/media/:id/caption", async (request, reply) => {
+    if (!env.ANTHROPIC_API_KEY) {
+      return reply.status(400).send({
+        error: "no writing key",
+        detail: "ANTHROPIC_API_KEY is not set on the server, so nothing can write the caption.",
+      });
+    }
+
+    const asset = await prisma.mediaAsset.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      include: { client: { select: { name: true } } },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+
+    const segments = Array.isArray(asset.transcript)
+      ? (asset.transcript as Array<{ text?: unknown }>)
+      : [];
+    const transcriptText = segments
+      .map((s) => (typeof s.text === "string" ? s.text : ""))
+      .join(" ")
+      .trim();
+
+    if (!transcriptText) {
+      // Said plainly, because the cause is almost always the same and the
+      // operator can act on it: the video has not been transcribed.
+      return reply.status(400).send({
+        error: "nothing was said",
+        detail:
+          "This video has no transcript, so there are no words to write from. Transcription runs while a video is processing; a video uploaded before that was switched on will not have one.",
+      });
+    }
+
+    try {
+      const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: env.SUGGESTIONS_MODEL,
+        max_tokens: 1024,
+        thinking: { type: "adaptive" },
+        output_config: {
+          effort: "low",
+          format: { type: "json_schema", schema: CAPTION_SCHEMA },
+        },
+        system:
+          "You write short-form video captions for a social media agency whose clients are car " +
+          "dealerships and automotive personalities. Given what is said in the video, write a " +
+          "description that makes someone stop and watch, and that can be found by search.\n\n" +
+          "The description is 2 to 4 sentences, posted as the caption on Instagram, TikTok, " +
+          "Facebook and Snapchat and as the YouTube description. Open on the most interesting " +
+          "thing in the video, not a summary of it. Name the specific cars, models, years, " +
+          "prices and places that are actually mentioned, because those are the words people " +
+          "search for. End with a question or a reason to comment. No hashtags inside the " +
+          "description, no emoji spam, and never invent a fact that is not in the transcript.\n\n" +
+          "Also give a title under 100 characters for YouTube, and 5 to 8 hashtags without the " +
+          "# sign, ordered from most specific to broadest.",
+        messages: [
+          {
+            role: "user",
+            content: `Brand: ${asset.client.name}\nWhat is said in the video:\n${transcriptText.slice(0, 6000)}`,
+          },
+        ],
+      });
+      if (response.stop_reason === "refusal") {
+        return reply.status(502).send({
+          error: "the model declined",
+          detail: "The model refused to write this one. Try again, or write it yourself.",
+        });
+      }
+      const text = response.content.find((b) => b.type === "text");
+      if (!text || text.type !== "text") {
+        return reply.status(502).send({ error: "no caption came back" });
+      }
+      const parsed = JSON.parse(text.text) as {
+        description?: unknown;
+        title?: unknown;
+        hashtags?: unknown;
+      };
+      return {
+        description: typeof parsed.description === "string" ? parsed.description : "",
+        title: typeof parsed.title === "string" ? parsed.title : "",
+        hashtags: Array.isArray(parsed.hashtags)
+          ? parsed.hashtags.filter((h): h is string => typeof h === "string")
+          : [],
+      };
+    } catch (error) {
+      request.log.error({ err: error }, "caption generation failed");
+      return reply.status(502).send({
+        error: "could not write the caption",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   const coverSchema = z.object({

@@ -267,8 +267,10 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             </div>
             {igAlsoStory && (
               <p className="insworking" style={{ marginTop: 8 }}>
-                Goes up as its own post alongside the reel. Stories disappear after 24 hours,
-                do not show a caption, and Instagram refuses anything over 60 seconds.
+                Posts the video to the story as its own post alongside the reel. Instagram's
+                "add post to your story", the one that shows a card linking back to the reel,
+                cannot be done by any API, so this uploads the video itself. Stories disappear
+                after 24 hours, show no caption, and Instagram refuses anything over 60 seconds.
               </p>
             )}
             <label className="flabel" style={{ marginTop: 12 }}>
@@ -398,7 +400,8 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             <label className="flabel" style={{ marginTop: 12 }}>
               Related video
               <span className="hint">
-                links it at the end of the description; the Studio pin stays manual
+                adds a "Watch next" link at the end of the description. YouTube's own Related video
+                pin has no API, so that one is still a manual step in Studio.
               </span>
             </label>
             {ytRelated ? (

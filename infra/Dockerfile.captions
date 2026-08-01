@@ -1,0 +1,32 @@
+# Transcription, so a video arrives with words attached.
+#
+# Separate from infra/Dockerfile because this is the only Python in the stack
+# and faster-whisper drags in torch-sized wheels. Keeping it out of the Node
+# image means the API and worker do not carry a machine learning runtime they
+# never call.
+#
+# CPU int8 on the "base" model, which is the accuracy that fits a VPS without a
+# GPU. A 60 second clip takes a few seconds; nothing here is on a request path,
+# the worker calls it while processing an upload.
+FROM python:3.11-slim
+
+# ffmpeg is how faster-whisper reads an mp4. Without it every transcribe call
+# fails on a file it can see perfectly well.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY apps/captions/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY apps/captions/main.py ./main.py
+
+# The model downloads on first use and is cached here. Mounted as a volume in
+# compose so a rebuild does not re-download it.
+ENV HF_HOME=/app/models
+ENV XDG_CACHE_HOME=/app/models
+
+EXPOSE 4710
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4710"]

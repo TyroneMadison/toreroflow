@@ -504,7 +504,10 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 ))}
               </div>
               <div className="seg anrange">
-                {[30, 60, 90].map((d) => (
+                {/* 7d matches the weekly period on the client report, so a
+                    number quoted on a call is the same number the client is
+                    looking at. */}
+                {[7, 30, 60, 90].map((d) => (
                   <span
                     key={d}
                     className={rangeDays === d ? "on" : ""}
