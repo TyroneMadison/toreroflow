@@ -99,6 +99,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     coverOffsetMs: number | null;
     coverKey: string | null;
     sourceDeletedAt?: Date | null;
+    thumbDeletedAt?: Date | null;
     kind?: string;
     slideKeys?: unknown;
     createdAt: Date;
@@ -127,13 +128,19 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       // never changes and the webview keeps showing the frame it already has.
       // Versioning by the row's own updatedAt is what makes a new pick appear
       // without a reload; the parameter sits outside the signature.
-      thumbUrl: ready
-        ? a.kind === "carousel"
-          ? fileLink(a.storageKey)
-          : a.coverKey
-            ? fileLinkVersioned(a.coverKey, a.updatedAt ? a.updatedAt.getTime() : null)
-            : fileLink(`${a.clientId}/${a.id}/thumb.jpg`)
-        : null,
+      //
+      // Null once the images have been swept, a month after posting. Handing
+      // out a link to a file that is no longer there would render a broken
+      // image on every card; every consumer already treats null as "draw the
+      // placeholder", so saying nothing is what degrades cleanly.
+      thumbUrl:
+        ready && !a.thumbDeletedAt
+          ? a.kind === "carousel"
+            ? fileLink(a.storageKey)
+            : a.coverKey
+              ? fileLinkVersioned(a.coverKey, a.updatedAt ? a.updatedAt.getTime() : null)
+              : fileLink(`${a.clientId}/${a.id}/thumb.jpg`)
+          : null,
       // The original upload: nothing is re-encoded, so preview and publish
       // both use the file exactly as it was exported. Null once the file has
       // been cleared, a week after the post went live, so the app can say the

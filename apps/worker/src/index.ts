@@ -9,7 +9,7 @@ import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/med
 import { env } from "./env";
 import { generateInsight } from "./insights";
 import { runResearch } from "./research";
-import { sweepPostedSources } from "./retention";
+import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 
@@ -742,6 +742,10 @@ new Worker(
     // weekly sweep would otherwise sit for a fortnight, and "a week" should
     // mean a week rather than somewhere between one and two.
     await sweepPostedSources();
+    // The same daily beat on a longer clock. Runs second because it is the
+    // smaller job by far, and a failure here must not stop the source sweep
+    // that actually keeps the disk down.
+    await sweepPostedThumbnails();
   },
   { connection, concurrency: 1 },
 );

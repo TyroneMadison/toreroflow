@@ -333,6 +333,17 @@ model MediaAsset {
   /// so the app can say the video was cleared rather than show a dead player,
   /// and so the sweep never looks at the same asset twice.
   sourceDeletedAt DateTime?
+  /// Set when the thumbnail and cover were swept, a month after posting.
+  ///
+  /// A separate clock from sourceDeletedAt on purpose: the source is 95% of
+  /// what is stored and goes at a week, while the images are a five-hundredth
+  /// of it and are what every card draws, so they stay far longer.
+  ///
+  /// Unlike the source this cannot be undone. The frame comes out of the
+  /// video, and the video is already gone, so nothing anywhere can rebuild it.
+  /// Set so the app hands the webview nothing instead of a link to a file that
+  /// is no longer there.
+  thumbDeletedAt DateTime?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 

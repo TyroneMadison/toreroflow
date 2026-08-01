@@ -14,6 +14,22 @@
 /** How long a posted video keeps its source, unless configured otherwise. */
 export const DEFAULT_RETENTION_DAYS = 7;
 
+/**
+ * How long a posted video keeps its thumbnail and cover.
+ *
+ * Much longer than the source, and deliberately so. The image is roughly a
+ * five-hundredth of the video's size, so it is not what fills a disk, and it
+ * is what every card in the calendar, the queue and the upload list draws.
+ * Once it goes the card keeps its title, platform, status and time and loses
+ * only the picture.
+ *
+ * It cannot be rebuilt. The frame is extracted from the source, and the source
+ * is gone at DEFAULT_RETENTION_DAYS, so this deletion is permanent in a way
+ * the source deletion is not: the platform still holds the video, but nothing
+ * anywhere holds the thumbnail.
+ */
+export const DEFAULT_THUMB_RETENTION_DAYS = 30;
+
 export interface RetentionTarget {
   status: "scheduled" | "publishing" | "posted" | "failed";
   publishedAt: Date | null;

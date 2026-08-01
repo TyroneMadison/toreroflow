@@ -4,6 +4,9 @@ import { sourceRetention } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "./env";
 
+/** The images a video accumulates: the auto thumbnail and either cover. */
+const IMAGE_NAMES = ["thumb.jpg", "cover.jpg", "cover.png"] as const;
+
 /**
  * Clear the source file of videos that went live a week ago.
  *
@@ -88,6 +91,87 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
   if (deleted || skipped) {
     console.log(
       `[worker] retention: ${deleted} source file(s) cleared, ${(freedBytes / 1024 / 1024).toFixed(1)}MB freed, ${skipped} still inside the ${env.RETENTION_DAYS} day window`,
+    );
+  }
+  return { deleted, freedBytes, skipped };
+}
+
+/**
+ * Clear the thumbnail and cover of videos that went live a month ago.
+ *
+ * Same rule as the source, on a longer clock, so it reuses the same verdict
+ * rather than growing a second opinion about when a post is finished.
+ *
+ * Worth being clear about what this costs, because it is not free and it is
+ * not reversible. The images are tiny next to the video, roughly a
+ * five-hundredth of it, so this is not what keeps a disk small. What it does
+ * is stop them accumulating forever. The price is that a calendar card older
+ * than the window loses its picture: it keeps its title, platform, status and
+ * time, and the queue falls back to its gradient. Nothing 404s, because the
+ * row is marked and the API then hands out no link at all.
+ *
+ * It cannot be undone. The frame is cut from the source, and the source went
+ * three weeks earlier, so there is nothing left to cut it from again.
+ */
+export async function sweepPostedThumbnails(now = new Date()): Promise<SweepResult> {
+  const assets = await prisma.mediaAsset.findMany({
+    where: {
+      kind: "video",
+      thumbDeletedAt: null,
+      posts: { some: { targets: { some: { status: "posted" } } } },
+    },
+    select: {
+      id: true,
+      clientId: true,
+      originalName: true,
+      posts: { select: { targets: { select: { status: true, publishedAt: true } } } },
+    },
+  });
+
+  let deleted = 0;
+  let freedBytes = 0;
+  let skipped = 0;
+
+  for (const asset of assets) {
+    const targets = asset.posts.flatMap((p) => p.targets);
+    const verdict = sourceRetention(targets, now, env.THUMB_RETENTION_DAYS);
+    if (!verdict.deletable) {
+      skipped += 1;
+      continue;
+    }
+
+    // Every image the asset may have. A video has a thumbnail and at most one
+    // cover, so most of these are already absent and that is not a failure.
+    let removedAny = false;
+    for (const name of IMAGE_NAMES) {
+      const abs = path.join(env.STORAGE_DIR, asset.clientId, asset.id, name);
+      try {
+        const stat = await fs.stat(abs);
+        await fs.rm(abs, { force: true });
+        freedBytes += stat.size;
+        removedAny = true;
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code !== "ENOENT") {
+          console.error(`[worker] retention could not clear ${abs}:`, err);
+        }
+      }
+    }
+
+    // Marked either way. A row whose files were already gone is finished with,
+    // and leaving it unmarked would have the sweep reconsider it every day
+    // forever.
+    await prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: { thumbDeletedAt: now },
+    });
+    deleted += 1;
+    if (removedAny) console.log(`[worker] retention cleared images for ${asset.originalName}`);
+  }
+
+  if (deleted || skipped) {
+    console.log(
+      `[worker] retention: images cleared for ${deleted} video(s), ${(freedBytes / 1024).toFixed(0)}KB freed, ${skipped} still inside the ${env.THUMB_RETENTION_DAYS} day window`,
     );
   }
   return { deleted, freedBytes, skipped };

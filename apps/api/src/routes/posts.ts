@@ -295,11 +295,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           draftName(t.post.mediaAsset?.draftCopy) ||
           t.post.mediaAsset?.originalName ||
           "post",
-        thumbUrl: t.post.mediaAsset
-          ? t.post.mediaAsset.coverKey
-            ? fileLink(t.post.mediaAsset.coverKey)
-            : fileLink(`${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`)
-          : null,
+        // Null once the images were swept a month after posting, the same as
+        // the upload list. This is the calendar and the queue, so it is where
+        // a link to a deleted file would be most visible: every past card
+        // would draw a broken image instead of quietly losing its picture.
+        thumbUrl:
+          t.post.mediaAsset && !t.post.mediaAsset.thumbDeletedAt
+            ? t.post.mediaAsset.coverKey
+              ? fileLink(t.post.mediaAsset.coverKey)
+              : fileLink(`${t.post.clientId}/${t.post.mediaAsset.id}/thumb.jpg`)
+            : null,
       }));
     },
   );
