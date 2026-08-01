@@ -27,6 +27,16 @@ export interface ExternalVideoRow {
   views: number;
   likes: number;
   comments: number;
+  /**
+   * Optional because YouTube reports none of them. The Data API has no save
+   * button, no per-video reach and no follows-from-this-video, so a YouTube
+   * row genuinely holds zero rather than an unknown. Zernio's entries always
+   * set them explicitly.
+   */
+  shares?: number;
+  saves?: number;
+  reach?: number;
+  follows?: number;
   durationSec: number | null;
 }
 
@@ -73,12 +83,19 @@ export function mapProviderEntry(
 
   const em = (entry.analytics ?? {}) as Record<string, unknown>;
   const pm = (post.analytics ?? {}) as Record<string, unknown>;
-  const entryViews = num(em, "views", "impressions", "plays");
-  const postViews = num(pm, "views", "impressions", "plays") ?? 0;
-  const entryLikes = num(em, "likes", "likeCount");
-  const postLikes = num(pm, "likes", "likeCount") ?? 0;
-  const entryComments = num(em, "comments", "commentCount");
-  const postComments = num(pm, "comments", "commentCount") ?? 0;
+
+  /**
+   * One metric for this platform entry: its own figure when it reports one,
+   * otherwise the post total shared evenly across the entries attributed to
+   * the post. Every metric follows the same rule, so a cross-post's sibling
+   * rows always add back up to the post's own numbers.
+   */
+  const metric = (...names: string[]): number => {
+    const own = num(em, ...names);
+    if (own !== null) return own;
+    const whole = num(pm, ...names) ?? 0;
+    return entryCount <= 1 ? whole : Math.round(whole / entryCount);
+  };
 
   return {
     socialAccountId: account.socialAccountId,
@@ -91,10 +108,13 @@ export function mapProviderEntry(
     thumbnailUrl: typeof post.thumbnailUrl === "string" ? post.thumbnailUrl : null,
     url: typeof post.platformPostUrl === "string" ? post.platformPostUrl : null,
     publishedAt,
-    views: entryViews ?? (entryCount <= 1 ? postViews : Math.round(postViews / entryCount)),
-    likes: entryLikes ?? (entryCount <= 1 ? postLikes : Math.round(postLikes / entryCount)),
-    comments:
-      entryComments ?? (entryCount <= 1 ? postComments : Math.round(postComments / entryCount)),
+    views: metric("views", "impressions", "plays"),
+    likes: metric("likes", "likeCount"),
+    comments: metric("comments", "commentCount"),
+    shares: metric("shares", "shareCount"),
+    saves: metric("saves", "saved", "savedCount"),
+    reach: metric("reach"),
+    follows: metric("follows", "followsCount", "followers_gained"),
     durationSec: num(pm, "duration", "videoDuration", "durationSec", "mediaDuration"),
   };
 }
@@ -111,7 +131,14 @@ export async function upsertExternalVideo(
   now = new Date(),
 ): Promise<void> {
   const { socialAccountId, platformVideoId, ...rest } = row;
-  const data = { ...rest, fetchedAt: now };
+  const data = {
+    ...rest,
+    shares: row.shares ?? 0,
+    saves: row.saves ?? 0,
+    reach: row.reach ?? 0,
+    follows: row.follows ?? 0,
+    fetchedAt: now,
+  };
   const video = await prisma.externalVideo.upsert({
     where: { socialAccountId_platformVideoId: { socialAccountId, platformVideoId } },
     create: { socialAccountId, platformVideoId, ...data },
@@ -119,7 +146,15 @@ export async function upsertExternalVideo(
   });
 
   const capturedOn = utcDay(now);
-  const metrics = { views: row.views, likes: row.likes, comments: row.comments };
+  const metrics = {
+    views: data.views,
+    likes: data.likes,
+    comments: data.comments,
+    shares: data.shares,
+    saves: data.saves,
+    reach: data.reach,
+    follows: data.follows,
+  };
   await prisma.externalVideoMetric.upsert({
     where: { externalVideoId_capturedOn: { externalVideoId: video.id, capturedOn } },
     create: { externalVideoId: video.id, capturedOn, ...metrics },

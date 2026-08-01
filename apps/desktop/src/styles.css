@@ -792,12 +792,25 @@
 .anthumb{width:46px;height:58px;border-radius:10px;overflow:hidden;background:var(--glass-2);flex:0 0 auto}
 .anthumb img{width:100%;height:100%;object-fit:cover;display:block}
 .antable{display:flex;flex-direction:column;gap:8px;margin-top:12px}
-.antable .hd{display:grid;grid-template-columns:46px minmax(0,1fr) 72px 78px 64px;gap:12px;padding:0 10px;font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-3)}
-.antable .arow{display:grid;grid-template-columns:46px minmax(0,1fr) 72px 78px 64px;gap:12px;align-items:center;padding:8px 10px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
+/* Thumb, title, then views, saves, comments, shares, avg view, length. The
+   engagement columns sit next to views because they are what the title is
+   being judged on; avg view and length are reference and drop off first. */
+.antable .hd{display:grid;grid-template-columns:46px minmax(0,1fr) 72px 62px 76px 62px 78px 64px;gap:10px;padding:0 10px;font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-3)}
+.antable .arow{display:grid;grid-template-columns:46px minmax(0,1fr) 72px 62px 76px 62px 78px 64px;gap:10px;align-items:center;padding:8px 10px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
 .antable .t{min-width:0}
 .antable .t b{font-size:12.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .antable .t span{font-size:11px;color:var(--txt-3);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .antable .m{font-size:12.5px;font-weight:600;text-align:right}
+/* Eight columns need ~530px of fixed track before the title gets a pixel, and
+   the middle column does not have it much below a maximised window. Avg view
+   and length go first: they describe the video, where saves, comments and
+   shares describe how it did. Below 640px a separate rule keeps views only. */
+@media(max-width:1400px){
+  .antable .hd,
+  .antable .arow{grid-template-columns:46px minmax(0,1fr) 72px 62px 76px 62px}
+  .antable .hd>span:nth-child(n+7),
+  .antable .arow>div:nth-child(n+7){display:none}
+}
 .anmost{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .anmost .arow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft)}
 .anmost .arow>*{min-width:0}

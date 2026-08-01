@@ -290,6 +290,36 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     { label: "Followers", value: otherAccounts.length ? fmt(followers) : "-" },
   ];
 
+  /*
+   * Engagement over the selected range.
+   *
+   * Saves are counted only on the platforms that have the button. Instagram
+   * and TikTok do; YouTube, Facebook and Snapchat report a flat zero because
+   * there is nothing to report, and folding those into one total would make a
+   * real number look like a poor one.
+   */
+  const SAVE_PLATFORMS = new Set(["instagram", "tiktok"]);
+  const savablePosts = all.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
+  const totalSaves = savablePosts.reduce((s, p) => s + p.saves, 0);
+  const totalComments = all.reduce((s, p) => s + p.comments, 0);
+  const totalShares = all.reduce((s, p) => s + p.shares, 0);
+  const totalReach = all.reduce((s, p) => s + p.reach, 0);
+  /*
+   * Followers gained is reported by nobody today. The provider carries the
+   * field and has only ever sent zero, on every post of every platform, so a
+   * row of zeros would read as "this video won you nobody" when the truth is
+   * that it was never measured. Shown only once a real number arrives.
+   */
+  const followsReported = all.some((p) => p.follows > 0);
+  const totalFollows = all.reduce((s, p) => s + p.follows, 0);
+
+  const engagement = [
+    { label: "Saves", value: savablePosts.length ? fmt(totalSaves) : "-" },
+    { label: "Comments", value: fmt(totalComments) },
+    { label: "Shares", value: fmt(totalShares) },
+    { label: "Reach", value: totalReach > 0 ? fmt(totalReach) : "-" },
+  ];
+
   // Upload counts per trailing window, across every connected platform.
   const uploadsSince = (days: number) => {
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -589,6 +619,44 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 <div className="card glass anuploads">
                   <div className="rowhead">
                     <div>
+                      <h3>Engagement</h3>
+                      <div className="sub">
+                        What people did beyond watching, over {rangeLabel === "all time" ? "all time" : `the last ${rangeLabel}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="ucounts">
+                    {engagement.map((e) => (
+                      <div className="ucount" key={e.label}>
+                        <div className="n">{loading ? "…" : e.value}</div>
+                        <div className="l">{e.label}</div>
+                      </div>
+                    ))}
+                    {followsReported && (
+                      <div className="ucount">
+                        <div className="n">{loading ? "…" : fmt(totalFollows)}</div>
+                        <div className="l">Followed</div>
+                      </div>
+                    )}
+                  </div>
+                  {!followsReported && !loading && (
+                    <p className="lnote" style={{ marginLeft: 0, marginTop: 10 }}>
+                      Followers gained per video is not being reported yet. The field arrives empty
+                      on every post of every platform, so showing a zero here would read as a result
+                      rather than a gap.
+                    </p>
+                  )}
+                  {savablePosts.length === 0 && !loading && (
+                    <p className="lnote" style={{ marginLeft: 0, marginTop: 6 }}>
+                      Saves are counted on Instagram and TikTok only. No other platform has the
+                      button.
+                    </p>
+                  )}
+                </div>
+
+                <div className="card glass anuploads">
+                  <div className="rowhead">
+                    <div>
                       <h3>Videos uploaded</h3>
                       <div className="sub">Across every connected platform</div>
                     </div>
@@ -668,6 +736,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                         <span />
                         <span>Video</span>
                         <span style={{ textAlign: "right" }}>Views</span>
+                        <span style={{ textAlign: "right" }}>Saves</span>
+                        <span style={{ textAlign: "right" }}>Comments</span>
+                        <span style={{ textAlign: "right" }}>Shares</span>
                         <span style={{ textAlign: "right" }}>Avg view</span>
                         <span style={{ textAlign: "right" }}>Length</span>
                       </div>
@@ -685,6 +756,14 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                             </span>
                           </div>
                           <div className="m">{fmt(p.views)}</div>
+                          {/* A dash, not a zero, where the platform has no save
+                              button: nobody saved it is a different fact from
+                              nobody could. */}
+                          <div className="m">
+                            {p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)) ? fmt(p.saves) : "-"}
+                          </div>
+                          <div className="m">{fmt(p.comments)}</div>
+                          <div className="m">{fmt(p.shares)}</div>
                           <div className="m">{p.avgWatchSec != null ? fmtDur(p.avgWatchSec) : "-"}</div>
                           <div className="m">{fmtDur(p.durationSec)}</div>
                         </div>

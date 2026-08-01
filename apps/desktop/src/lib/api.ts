@@ -369,6 +369,15 @@ export interface ClientPost {
   likes: number;
   comments: number;
   shares: number;
+  /** Instagram and TikTok only; every other platform has no save button. */
+  saves: number;
+  reach: number;
+  /**
+   * Followers gained from this video. The provider carries the field but has
+   * only ever sent zero, so check that something is non-zero before showing
+   * it: a column of zeros reads as a result rather than a missing measurement.
+   */
+  follows: number;
   avgWatchSec: number | null;
   durationSec: number | null;
   byPlatform: Array<{ platform: Platform; views: number }>;

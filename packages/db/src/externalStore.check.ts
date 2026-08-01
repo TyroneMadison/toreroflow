@@ -147,4 +147,77 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.title, "(untitled)");
 }
 
+/*
+ * Engagement metrics.
+ *
+ * These were measured on the live account before being added: across 499
+ * posts, saves are non-zero on 113, shares on 141, reach on 205, and follows
+ * on none at all. The point of pinning them here is that they all follow the
+ * same entry-then-split rule as views, so a cross-post cannot report a
+ * platform's saves as the whole post's saves.
+ */
+{
+  const row = mapProviderEntry(
+    {
+      content: "reel",
+      publishedAt: "2026-06-01T00:00:00.000Z",
+      analytics: { views: 100, likes: 10, comments: 4, shares: 8, saves: 33, reach: 90, follows: 0 },
+    },
+    { accountId: "za1", platformPostId: "pp10" },
+    { socialAccountId: "sa1", platform: "instagram" },
+  );
+  assert.ok(row);
+  assert.equal(row.saves, 33, "a save count is carried, not dropped");
+  assert.equal(row.shares, 8);
+  assert.equal(row.reach, 90);
+  assert.equal(row.follows, 0, "a genuine zero is stored as zero, not as missing");
+}
+
+/* The entry's own numbers win over the post's when it reports them. */
+{
+  const row = mapProviderEntry(
+    {
+      publishedAt: "2026-06-01T00:00:00.000Z",
+      analytics: { saves: 100, shares: 100 },
+    },
+    { accountId: "za1", platformPostId: "pp11", analytics: { saves: 7, shares: 3 } },
+    { socialAccountId: "sa1", platform: "instagram" },
+    2,
+  );
+  assert.ok(row);
+  assert.equal(row.saves, 7, "the platform's own save count beats a split of the post total");
+  assert.equal(row.shares, 3);
+}
+
+/* With no per-entry figures, a two-platform post splits evenly, so the
+   sibling rows add back up to what the post reported. */
+{
+  const row = mapProviderEntry(
+    {
+      publishedAt: "2026-06-01T00:00:00.000Z",
+      analytics: { saves: 10, shares: 6, reach: 50 },
+    },
+    { accountId: "za1", platformPostId: "pp12" },
+    { socialAccountId: "sa1", platform: "instagram" },
+    2,
+  );
+  assert.ok(row);
+  assert.equal(row.saves, 5, "a cross-post splits saves rather than double counting them");
+  assert.equal(row.shares, 3);
+  assert.equal(row.reach, 25);
+}
+
+/* A post reporting nothing is zero, never NaN or undefined into the column. */
+{
+  const row = mapProviderEntry(
+    { publishedAt: "2026-06-01T00:00:00.000Z" },
+    { accountId: "za1", platformPostId: "pp13" },
+    { socialAccountId: "sa1", platform: "instagram" },
+  );
+  assert.ok(row);
+  assert.equal(row.saves, 0);
+  assert.equal(row.reach, 0);
+  assert.equal(row.follows, 0);
+}
+
 console.log("externalStore.check: all checks passed");

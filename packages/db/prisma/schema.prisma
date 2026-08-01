@@ -485,6 +485,17 @@ model ExternalVideo {
   views           Int      @default(0)
   likes           Int      @default(0)
   comments        Int      @default(0)
+  shares          Int      @default(0)
+  /// Instagram and TikTok only. Every other platform reports 0 because it has
+  /// no such button, which is why the screen shows saves per platform rather
+  /// than as one total.
+  saves           Int      @default(0)
+  reach           Int      @default(0)
+  /// Followers gained from this video. The provider carries the field but has
+  /// only ever sent 0, on every post of every platform, so nothing displays it
+  /// until a non-zero value turns up. Stored from now so the history exists
+  /// the day it starts working.
+  follows         Int      @default(0)
   durationSec     Float?
   fetchedAt       DateTime @default(now())
   createdAt       DateTime @default(now())
@@ -509,6 +520,10 @@ model ExternalVideoMetric {
   views           Int      @default(0)
   likes           Int      @default(0)
   comments        Int      @default(0)
+  shares          Int      @default(0)
+  saves           Int      @default(0)
+  reach           Int      @default(0)
+  follows         Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

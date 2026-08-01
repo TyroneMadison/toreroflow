@@ -133,6 +133,8 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       likes: p.likes,
       comments: p.comments,
       shares: p.shares,
+      saves: p.saves,
+      reach: p.reach,
       avgWatchSec: p.avgWatchSec,
       platforms: p.platforms,
       byPlatform: p.byPlatform,

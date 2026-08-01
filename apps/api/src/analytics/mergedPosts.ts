@@ -29,6 +29,15 @@ export interface MergedPost {
   likes: number;
   comments: number;
   shares: number;
+  /** Instagram and TikTok only; every other platform has no save button. */
+  saves: number;
+  reach: number;
+  /**
+   * Followers gained from this video. The provider carries the field but has
+   * only ever sent zero, so a screen must check whether anything is non-zero
+   * before presenting it as a measurement.
+   */
+  follows: number;
   avgWatchSec: number | null;
   durationSec: number | null;
   byPlatform: Array<{ platform: string; views: number }>;
@@ -194,6 +203,9 @@ export async function buildMergedPosts(
       likes: num(m, "likes", "likeCount") ?? 0,
       comments: num(m, "comments", "commentCount") ?? 0,
       shares: num(m, "shares", "shareCount") ?? 0,
+      saves: num(m, "saves", "saved", "savedCount") ?? 0,
+      reach: num(m, "reach") ?? 0,
+      follows: num(m, "follows", "followsCount", "followers_gained") ?? 0,
       avgWatchSec: avgWatchSec && avgWatchSec > 0 ? avgWatchSec : null,
       durationSec:
         num(m, "duration", "videoDuration", "durationSec", "mediaDuration") ??
@@ -218,6 +230,10 @@ export async function buildMergedPosts(
     views: number;
     likes: number;
     comments: number;
+    shares: number;
+    saves: number;
+    reach: number;
+    follows: number;
     durationSec: number | null;
   }>;
 
@@ -241,7 +257,10 @@ export async function buildMergedPosts(
         views: v.views,
         likes: v.likes,
         comments: v.comments,
-        shares: 0,
+        shares: v.shares,
+        saves: v.saves,
+        reach: v.reach,
+        follows: v.follows,
         avgWatchSec: null,
         durationSec: v.durationSec,
         byPlatform: [{ platform: v.platform, views: v.views }],

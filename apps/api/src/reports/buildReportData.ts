@@ -24,6 +24,9 @@ export interface ReportPost {
   likes: number;
   comments: number;
   shares: number;
+  /** Instagram and TikTok only; every other platform has no save button. */
+  saves: number;
+  reach: number;
   avgWatchSec: number | null;
   platforms: string[];
   byPlatform: Array<{ platform: string; views: number }>;
@@ -297,10 +300,28 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
     b.pct = Math.round((monthTotals[i]! / maxMonth) * 100);
   });
 
+  /*
+   * Saves are counted on the platforms that have the button. Instagram and
+   * TikTok do; the rest report a flat zero because there is nothing to
+   * report, and a client seeing "Saves 0" beside real likes would read it as
+   * a bad month rather than a metric their platform does not keep. So the row
+   * appears only when a save-capable platform is in the period.
+   */
+  const SAVE_PLATFORMS = new Set(["instagram", "tiktok"]);
+  const savable = current.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
   const engRows = [
     { name: "Likes", value: sum(current, (p) => p.likes), color: "linear-gradient(90deg,#FF8A78,#E5473C)" },
     { name: "Comments", value: sum(current, (p) => p.comments), color: "linear-gradient(90deg,#8b7bff,#4ea8ff)" },
     { name: "Shares", value: sum(current, (p) => p.shares), color: "linear-gradient(90deg,#25f4ee,#1c9c98)" },
+    ...(savable.length
+      ? [
+          {
+            name: "Saves",
+            value: sum(savable, (p) => p.saves),
+            color: "linear-gradient(90deg,#57d6a0,#2f9c73)",
+          },
+        ]
+      : []),
   ];
   const maxEng = Math.max(1, ...engRows.map((r) => r.value));
 
