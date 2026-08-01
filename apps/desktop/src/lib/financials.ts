@@ -82,6 +82,21 @@ export interface FinancialsMonth {
   };
 }
 
+/**
+ * A typed dollar amount as cents.
+ *
+ * Three outcomes, and the caller has to tell them apart: a number is the
+ * amount, null is a deliberately blank bill (which is not zero, because an
+ * unentered cost counted as free overstates profit), and undefined is
+ * nonsense the caller should refuse rather than store.
+ */
+export function dollarsToCents(raw: string): number | null | undefined {
+  if (raw.trim() === "") return null;
+  const dollars = Number.parseFloat(raw);
+  if (!Number.isFinite(dollars) || dollars < 0) return undefined;
+  return Math.round(dollars * 100);
+}
+
 /** Months of a year as pickable options, oldest first. */
 export function monthsOfYear(year: number): Array<{ value: string; label: string }> {
   return Array.from({ length: 12 }, (_, i) => {

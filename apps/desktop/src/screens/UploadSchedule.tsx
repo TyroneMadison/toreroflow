@@ -564,9 +564,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           <textarea
                             value={description}
                             placeholder={
-                              asset.draftCopy
-                                ? "Edit the AI description…"
-                                : "Write a description. Add ANTHROPIC_API_KEY to get AI drafts."
+                              asset.draftCopy ? "Edit the AI description…" : "Write a description."
                             }
                             onChange={(e) =>
                               setDrafts((d) => ({ ...d, [asset.id]: e.target.value }))

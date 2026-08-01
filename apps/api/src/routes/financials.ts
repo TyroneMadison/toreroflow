@@ -494,7 +494,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     const agencyId = request.user.agencyId;
     const found = await prisma.expense.findFirst({
       where: { id: request.params.id, agencyId },
-      select: { id: true, seriesId: true, month: true, kind: true },
+      select: { id: true, seriesId: true, month: true, kind: true, cadence: true },
     });
     if (!found) return reply.status(404).send(NOT_FOUND);
 
@@ -507,8 +507,12 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
      * back on the next read. Marking the series ended at this month is what
      * makes the removal permanent, while every earlier month keeps its row
      * because that money really did go out.
+     *
+     * Annual costs are excluded. They never project, so nothing would
+     * resurrect them, and they hold one row per year: ending the series would
+     * take next year's charge out with this year's.
      */
-    if (found.kind === "recurring" && found.seriesId) {
+    if (found.kind === "recurring" && found.cadence !== "annual" && found.seriesId) {
       await prisma.expense.updateMany({
         where: { agencyId, seriesId: found.seriesId },
         data: { endedMonth: found.month },

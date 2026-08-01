@@ -1044,7 +1044,9 @@
 .finchart .yaxis{display:flex;flex-direction:column;justify-content:space-between;height:196px;padding-bottom:24px;flex:0 0 auto}
 .finchart .yaxis span{font-size:10px;color:var(--txt-3)}
 .finchart .chart{flex:1;min-width:0;display:flex;align-items:flex-end;gap:12px;height:196px}
-.finchart .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;height:100%;min-height:0;position:relative}
+.finchart .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;height:100%;min-height:0;position:relative;cursor:pointer}
+.finchart .col:focus{outline:none}
+.finchart .col:focus-visible .tk{outline:2px solid var(--info);outline-offset:2px}
 .finchart .tk{flex:1;width:100%;max-width:46px;border-radius:14px;background:rgba(255,255,255,.055);
   display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;padding:4px;gap:3px}
 .finchart .fill{width:100%;border-radius:11px}

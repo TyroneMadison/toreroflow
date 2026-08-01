@@ -5,6 +5,7 @@ import { useToast } from "../Toasts";
 import { api } from "../../lib/api";
 import {
   colorFor,
+  dollarsToCents,
   monthsOfYear,
   ordinalDay,
   type ExpenseRow,
@@ -132,13 +133,6 @@ export default function ExpenseSection({
   const refresh = () => {
     if (browsing && browseMonth) void loadYear(browseMonth);
     onChanged();
-  };
-
-  const dollarsToCents = (raw: string): number | null | undefined => {
-    if (raw.trim() === "") return null;
-    const dollars = Number.parseFloat(raw);
-    if (!Number.isFinite(dollars) || dollars < 0) return undefined;
-    return Math.round(dollars * 100);
   };
 
   const add = async () => {

@@ -28,8 +28,20 @@ function axisLabel(cents: number): string {
  * is cost, the green slice is what was kept. The hovered or current month
  * shows the exact figures. Cost above income still draws inside the income
  * bar; the callout carries the real numbers.
+ *
+ * Clicking a bar opens that month. The whole screen already reads whichever
+ * month it is pointed at, so this needs no history view of its own: the same
+ * money in, money out, one-off costs, yearly share, tax and net cards simply
+ * fill with that month. Past months come back read-only from the API, which
+ * is what stops a look back turning into an edit.
  */
-export default function MonthBars({ series }: { series: SeriesPoint[] }) {
+export default function MonthBars({
+  series,
+  onPick,
+}: {
+  series: SeriesPoint[];
+  onPick(month: string): void;
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const max = niceCeil(Math.max(...series.map((p) => p.inCents)));
   const active = hover ?? series.length - 1;
@@ -40,7 +52,10 @@ export default function MonthBars({ series }: { series: SeriesPoint[] }) {
       <div className="rowhead">
         <div>
           <h3>Last 12 months</h3>
-          <div className="sub">Each bar is what came in. Red is what it cost you, green is what you kept.</div>
+          <div className="sub">
+            Each bar is what came in. Red is what it cost you, green is what you kept. Click a month
+            to open it.
+          </div>
         </div>
       </div>
       <div className="chartwrap">
@@ -58,8 +73,20 @@ export default function MonthBars({ series }: { series: SeriesPoint[] }) {
               <div
                 className={`col${i === active ? " on" : ""}`}
                 key={p.month}
+                role="button"
+                tabIndex={0}
+                title={`Open ${shortMonth(p.month)} ${p.month.slice(0, 4)}`}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover(i)}
+                onBlur={() => setHover(null)}
+                onClick={() => onPick(p.month)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onPick(p.month);
+                  }
+                }}
               >
                 {i === active && (
                   <div className="tip">

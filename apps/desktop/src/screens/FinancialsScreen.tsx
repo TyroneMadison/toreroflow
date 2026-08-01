@@ -16,16 +16,22 @@ import Select from "../components/Select";
 import type { FinancialsMonth } from "../lib/financials";
 import { useAppState } from "../state/AppState";
 
+/** "2026-03" as "March 2026". */
+function monthLabel(key: string): string {
+  return new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1).toLocaleDateString(
+    "en-US",
+    { month: "long", year: "numeric" },
+  );
+}
+
 /** Months to offer, newest first, starting from the current one. */
 function monthOptions(count = 12): Array<{ value: string; label: string }> {
   const out: Array<{ value: string; label: string }> = [];
   const now = new Date();
   for (let i = 0; i < count; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    out.push({
-      value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-      label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-    });
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    out.push({ value, label: monthLabel(value) });
   }
   return out;
 }
@@ -35,8 +41,17 @@ type Phase = "loading" | "ready" | "error";
 export default function FinancialsScreen() {
   const toast = useToast();
   const { clients: knownClients } = useAppState();
-  const months = monthOptions();
-  const [month, setMonth] = useState(months[0]!.value);
+  const recentMonths = monthOptions();
+  const [month, setMonth] = useState(recentMonths[0]!.value);
+  // Clicking the oldest bar reaches eleven months before whatever is on
+  // screen, which walks off the end of the twelve the picker offers. Keeping
+  // the open month in the list stops the picker reading blank on a month the
+  // screen is plainly showing.
+  const months = recentMonths.some((m) => m.value === month)
+    ? recentMonths
+    : [...recentMonths, { value: month, label: monthLabel(month) }].sort((a, b) =>
+        b.value.localeCompare(a.value),
+      );
   const [data, setData] = useState<FinancialsMonth | null>(null);
   const [phase, setPhase] = useState<Phase>("loading");
   const [exportYear, setExportYear] = useState<number | null>(null);
@@ -180,7 +195,7 @@ export default function FinancialsScreen() {
               <GlanceCard totals={data.totals} ytd={data.ytd} />
             </div>
 
-            <MonthBars series={data.series} />
+            <MonthBars series={data.series} onPick={setMonth} />
 
             {data.totals.missingBills > 0 && (
               <div className="warnline" style={{ marginBottom: 10 }}>
@@ -227,9 +242,9 @@ export default function FinancialsScreen() {
             <AnnualSection
               rows={data.annual}
               categories={data.categories}
-              year={data.month.slice(0, 4)}
               shareCents={data.totals.annualShareCents}
               yearCents={data.totals.annualYearCents}
+              onChanged={() => void refresh()}
             />
 
             <div className="card glass exportcard">
