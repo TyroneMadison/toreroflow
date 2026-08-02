@@ -17,6 +17,53 @@ const MONTHS = [
 /** Approximate rendered panel height, used only to choose a drop direction. */
 const PANEL_HEIGHT = 330;
 
+/** Breathing room between the panel and the edge of the window. */
+const EDGE_GAP = 12;
+
+/**
+ * Below this the panel is not worth opening in that direction at all, so the
+ * roomier side wins even if neither can show the whole thing.
+ */
+const MIN_USABLE_HEIGHT = 220;
+
+export interface Placement {
+  /** True to open above the trigger rather than below it. */
+  up: boolean;
+  /** How tall the panel may be before it has to scroll inside itself. */
+  maxHeight: number;
+}
+
+/**
+ * Which way the panel opens, and how much room it gets.
+ *
+ * The version this replaced only flipped upward when the whole panel fit
+ * above. That is fine on a desktop and wrong on a laptop: when neither side
+ * fits, it left the panel dropping downward past the bottom of the window,
+ * clipped, with the last two weeks of the month unreachable. The window was
+ * short, not the panel.
+ *
+ * So downward is still preferred, because that is what a picker normally
+ * does, but when it does not fit the roomier side wins and the panel is told
+ * how tall it may be. It scrolls inside itself from there.
+ *
+ * Pure so the three branches can be checked without a browser, since getting
+ * this wrong reproduces the original bug exactly.
+ */
+export function choosePlacement(
+  triggerTop: number,
+  triggerBottom: number,
+  windowHeight: number,
+): Placement {
+  const below = windowHeight - triggerBottom - EDGE_GAP;
+  const above = triggerTop - EDGE_GAP;
+
+  const up = below >= PANEL_HEIGHT ? false : above >= PANEL_HEIGHT ? true : above > below;
+  const room = up ? above : below;
+  // Floored, so a trigger jammed against an edge still opens something usable
+  // and scrollable rather than a sliver nobody can read.
+  return { up, maxHeight: Math.max(MIN_USABLE_HEIGHT, room) };
+}
+
 const pad = (n: number) => n.toString().padStart(2, "0");
 
 function toValue(d: Date): string {
@@ -48,6 +95,19 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hourColRef = useRef<HTMLDivElement | null>(null);
   const minuteColRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * How tall the panel may be, given where the trigger sits in the window.
+   * Null until it has been measured, which is also the "no clamp yet" state.
+   */
+  const [maxHeight, setMaxHeight] = useState<number | null>(null);
+
+  const place = () => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const { up, maxHeight: room } = choosePlacement(r.top, r.bottom, window.innerHeight);
+    setDropUp(up);
+    setMaxHeight(room);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -57,11 +117,17 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // Resizing the window while the panel is open changes how much room it
+    // has, and this app is resized often. Without this the panel keeps the
+    // height it was given when it opened and clips again.
+    const onResize = () => place();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 
@@ -131,10 +197,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
         type="button"
         className="gdt-trigger field-in"
         onClick={() => {
-          // Open upward when the panel would run past the bottom of the
-          // window, so a modal's own overflow never clips it.
-          const r = wrapRef.current?.getBoundingClientRect();
-          if (r) setDropUp(window.innerHeight - r.bottom < PANEL_HEIGHT && r.top > PANEL_HEIGHT);
+          place();
           setOpen((o) => !o);
         }}
       >
@@ -145,7 +208,10 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
       </button>
 
       {open && (
-        <div className={`gdt-pop glass${dropUp ? " up" : ""}`}>
+        <div
+          className={`gdt-pop glass${dropUp ? " up" : ""}`}
+          style={maxHeight !== null ? { maxHeight } : undefined}
+        >
           <div className="gdt-cols">
             <div className="gdt-cal-side">
               <div className="gdt-head">

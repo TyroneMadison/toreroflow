@@ -659,7 +659,12 @@
 .gdt-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;cursor:pointer;font-family:var(--font);color:var(--txt)}
 .gdt-cal{width:16px;height:16px;stroke:var(--txt-3);stroke-width:1.9;fill:none;flex:0 0 auto}
 /* Opaque enough to read against busy content behind, blur keeps the glass feel. */
+/* Scrolls inside itself. On a laptop the window is often too short to show the
+   whole month either above or below the trigger, and without this the panel
+   simply ran off the bottom edge with the last two weeks unreachable. The
+   component measures the room available and sets max-height inline. */
 .gdt-pop{position:absolute;top:calc(100% + 8px);left:0;z-index:80;padding:14px;border-radius:18px;min-width:100%;width:max-content;max-width:min(420px,86vw);
+  overflow-y:auto;overscroll-behavior:contain;
   background:rgba(10,10,10,.94);backdrop-filter:blur(42px) saturate(170%);-webkit-backdrop-filter:blur(42px) saturate(170%);
   border:1px solid var(--brd);box-shadow:0 26px 60px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.22)}
 [data-theme="light"] .gdt-pop{background:rgba(248,249,255,.96);box-shadow:0 26px 60px rgba(50,55,110,.3), inset 0 1px 0 rgba(255,255,255,.85)}
