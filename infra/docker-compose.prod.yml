@@ -61,6 +61,8 @@ services:
       DATABASE_URL: postgresql://toreroflow:${POSTGRES_PASSWORD}@postgres:5432/toreroflow
       REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/storage
+      # The caption button transcribes a transcript-less video on demand.
+      CAPTIONS_URL: http://captions:4710
       # What the Ship card shows as "server is running". Set by the scripts
       # that bring the stack up; empty is honest rather than wrong.
       GIT_COMMIT: ${GIT_COMMIT:-}

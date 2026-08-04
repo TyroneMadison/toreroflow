@@ -220,4 +220,32 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.follows, 0);
 }
 
+/*
+ * mediaType decides whether a post counts on the carousel board or the video
+ * boards, and the live account already holds a native Instagram carousel that
+ * was being counted as a video before this field existed.
+ */
+{
+  const row = mapProviderEntry(
+    {
+      content: "carousel",
+      publishedAt: "2026-06-01T00:00:00.000Z",
+      mediaType: "carousel",
+    },
+    { accountId: "za1", platformPostId: "pp20" },
+    { socialAccountId: "sa1", platform: "instagram" },
+  );
+  assert.ok(row);
+  assert.equal(row.mediaType, "carousel", "a carousel is stored as one");
+}
+{
+  const row = mapProviderEntry(
+    { content: "plain", publishedAt: "2026-06-01T00:00:00.000Z" },
+    { accountId: "za1", platformPostId: "pp21" },
+    { socialAccountId: "sa1", platform: "instagram" },
+  );
+  assert.ok(row);
+  assert.equal(row.mediaType, "video", "a post that says nothing is a video, the overwhelming case");
+}
+
 console.log("externalStore.check: all checks passed");

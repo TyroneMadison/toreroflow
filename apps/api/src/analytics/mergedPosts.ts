@@ -20,6 +20,8 @@ export interface MergedPost {
   id: string;
   /** "platform:platformPostId", used to dedupe across the two sources. */
   platformKey: string | null;
+  /** video | image | carousel. Decides which board a post belongs on. */
+  mediaType: string;
   title: string;
   publishedAt: string;
   thumbnailUrl: string | null;
@@ -194,6 +196,7 @@ export async function buildMergedPosts(
     posts.push({
       id,
       platformKey,
+      mediaType: typeof p.mediaType === "string" && p.mediaType ? p.mediaType : "video",
       title,
       publishedAt: published.toISOString(),
       thumbnailUrl: typeof p.thumbnailUrl === "string" ? p.thumbnailUrl : null,
@@ -223,6 +226,7 @@ export async function buildMergedPosts(
     id: string;
     platform: string;
     platformVideoId: string;
+    mediaType: string;
     title: string;
     thumbnailUrl: string | null;
     url: string | null;
@@ -249,6 +253,7 @@ export async function buildMergedPosts(
       ...keptExternal.map((v) => ({
         id: `ext:${v.id}`,
         platformKey: `${v.platform}:${v.platformVideoId}`,
+        mediaType: v.mediaType,
         title: v.title,
         publishedAt: v.publishedAt.toISOString(),
         thumbnailUrl: v.thumbnailUrl,

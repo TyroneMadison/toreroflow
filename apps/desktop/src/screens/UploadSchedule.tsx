@@ -39,13 +39,15 @@ interface UploadScheduleProps {
 
 const STATUS_LABEL: Record<MediaAssetInfo["status"], string> = {
   uploaded: "Queued for processing…",
-  processing: "Transcribing and drafting copy…",
+  // Transcription still runs here (local, free). AI copy no longer does: it
+  // costs money per call and now runs only from its button.
+  processing: "Transcribing…",
   ready: "Ready",
   failed: "Processing failed",
 };
 
 export default function UploadSchedule({ onPreview, onOpenConnect }: UploadScheduleProps) {
-  const { selectedClient } = useAppState();
+  const { selectedClient, pendingCarouselDraft, setPendingCarouselDraft } = useAppState();
   const toast = useToast();
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
@@ -208,11 +210,19 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
    * carousel missing a slide would publish silently short.
    */
   const addCarousel = async (files: File[]) => {
+    // Consumed once: after this upload the banner and the association are
+    // done, whether it succeeded or not. Retrying re-picks from the tab.
+    const draft = pendingCarouselDraft;
+    setPendingCarouselDraft(null);
+    return addCarouselFiles(files, draft?.id);
+  };
+
+  const addCarouselFiles = async (files: File[], draftId?: string) => {
     if (!selectedClient) return;
     setCarouselBusy(true);
     try {
-      await uploadCarousel(selectedClient.id, files);
-      toast.success(`Carousel added with ${files.length} images. Schedule it to Instagram.`);
+      await uploadCarousel(selectedClient.id, files, draftId);
+      toast.success(`Carousel added with ${files.length} images. Schedule it to Instagram or TikTok.`);
     } catch (err) {
       toast.fail("Could not add that carousel", err);
     } finally {
@@ -229,36 +239,41 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
 
   /** Persist whatever was typed. Returns false when the server refused. */
   /**
-   * Write a description from what is said in the video.
+   * The one button that spends Anthropic money: transcribe if needed, then
+   * write a title and description from what is said in the video. Nothing
+   * runs automatically at upload any more, so nothing bills until this is
+   * pressed.
    *
-   * Fills the box rather than saving, so the operator reads it before it
-   * becomes what posts. Nothing is overwritten silently: an existing
-   * description is confirmed over first, because the button sits next to a
-   * field they may have spent time on.
+   * Fills the boxes rather than saving, so the operator reads the words
+   * before they become what posts. Nothing is overwritten silently: existing
+   * text is confirmed over first, because these are fields they may have
+   * spent time on.
    */
-  const writeCaption = async (assetId: string) => {
-    const existing = drafts[assetId];
-    if (
-      existing !== undefined &&
-      existing.trim() !== "" &&
-      !window.confirm("Replace the description you have written?")
-    ) {
+  const writeCaption = async (asset: MediaAssetInfo) => {
+    const hasTyped =
+      (drafts[asset.id] ?? asset.draftCopy?.description ?? "").trim() !== "" ||
+      (names[asset.id] ?? asset.draftCopy?.name ?? "").trim() !== "";
+    if (hasTyped && !window.confirm("Replace the title and description already written?")) {
       return;
     }
-    setCaptioning(assetId);
+    setCaptioning(asset.id);
     try {
       const out = await api.post<{ description: string; title: string; hashtags: string[] }>(
-        `/media/${assetId}/caption`,
+        `/media/${asset.id}/caption`,
         {},
       );
-      if (!out.description.trim()) {
-        toast.fail("Nothing came back", new Error("the model returned an empty description"));
+      if (!out.description.trim() && !out.title.trim()) {
+        toast.fail("Nothing came back", new Error("the model returned no words"));
         return;
       }
-      setDrafts((d) => ({ ...d, [assetId]: out.description }));
-      toast.success("Written from the video. Read it, then save.");
+      if (out.title.trim()) setNames((n) => ({ ...n, [asset.id]: out.title }));
+      if (out.description.trim()) setDrafts((d) => ({ ...d, [asset.id]: out.description }));
+      toast.success("Caption and title written. Read them, then save.");
+      // The endpoint may have just transcribed the video and saved hashtags;
+      // reload so the card reflects both.
+      void load();
     } catch (err) {
-      toast.fail("Could not write the description", err);
+      toast.fail("Could not write the caption", err);
     } finally {
       setCaptioning(null);
     }
@@ -492,8 +507,22 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 selectedClient ? carouselInput.current?.click() : onOpenConnect()
               }
             >
-              {carouselBusy ? "Uploading images…" : "Add an Instagram carousel"}
+              {carouselBusy ? "Uploading images…" : "Add a carousel"}
             </button>
+
+            {pendingCarouselDraft && (
+              <p className="insworking" style={{ marginTop: 8 }}>
+                Adding the images for "{pendingCarouselDraft.topic}" from the Carousels tab. Its
+                caption and hashtags will be attached to the upload.{" "}
+                <span
+                  className="link"
+                  onClick={() => setPendingCarouselDraft(null)}
+                  title="Upload these images without attaching that carousel's words"
+                >
+                  Not these images? Detach.
+                </span>
+              </p>
+            )}
 
             {uploadingNames.map((name) => (
               <div className="job glass-sm" key={`up-${name}`}>
@@ -600,17 +629,15 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           <span
                             className={`revtoggle${captioning === asset.id ? " on" : ""}`}
                             style={{ marginLeft: "auto" }}
-                            title={
-                              asset.hasTranscript
-                                ? "Write a description from what is said in the video"
-                                : "This video has no transcript yet, so there are no words to write from"
-                            }
+                            title="Transcribes the video if needed, then writes a title, description and hashtags from what is said in it. This is the only thing that spends AI credit, and only when pressed."
                             onClick={() => {
                               if (captioning) return;
-                              void writeCaption(asset.id);
+                              void writeCaption(asset);
                             }}
                           >
-                            {captioning === asset.id ? "Writing…" : "Write from video"}
+                            {captioning === asset.id
+                              ? "Writing…"
+                              : "Generate caption and title"}
                           </span>
                         </label>
                         <div className="captionbox">

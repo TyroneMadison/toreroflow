@@ -20,6 +20,8 @@ export interface ExternalVideoRow {
   socialAccountId: string;
   platform: Platform;
   platformVideoId: string;
+  /** video | image | carousel, as the provider reports it. */
+  mediaType?: string;
   title: string;
   thumbnailUrl: string | null;
   url: string | null;
@@ -101,6 +103,7 @@ export function mapProviderEntry(
     socialAccountId: account.socialAccountId,
     platform: account.platform,
     platformVideoId,
+    mediaType: typeof post.mediaType === "string" && post.mediaType ? post.mediaType : "video",
     title:
       typeof post.content === "string" && post.content.trim()
         ? decodeEscapes(post.content.trim())
@@ -133,6 +136,7 @@ export async function upsertExternalVideo(
   const { socialAccountId, platformVideoId, ...rest } = row;
   const data = {
     ...rest,
+    mediaType: row.mediaType ?? "video",
     shares: row.shares ?? 0,
     saves: row.saves ?? 0,
     reach: row.reach ?? 0,

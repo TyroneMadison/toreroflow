@@ -2,8 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
-import Anthropic from "@anthropic-ai/sdk";
-import { decodeEscapes, formatFromDuration } from "@toreroflow/core";
+import { formatFromDuration } from "@toreroflow/core";
 import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
 import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
@@ -14,32 +13,6 @@ import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 
 const prisma = getPrisma();
-const anthropic = env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
-  : null;
-
-const DRAFT_SCHEMA = {
-  type: "object",
-  properties: {
-    name: { type: "string" },
-    description: { type: "string" },
-    hashtags: { type: "array", items: { type: "string" } },
-  },
-  required: ["name", "description", "hashtags"],
-  additionalProperties: false,
-} as const;
-
-function cleanDraft(draft: unknown): unknown {
-  if (!draft || typeof draft !== "object") return draft;
-  const d = draft as Record<string, unknown>;
-  const str = (v: unknown) => (typeof v === "string" ? decodeEscapes(v) : v);
-  return {
-    ...d,
-    name: str(d.name),
-    description: str(d.description),
-    hashtags: Array.isArray(d.hashtags) ? d.hashtags.map((h) => str(h)) : d.hashtags,
-  };
-}
 
 async function transcribe(sourcePath: string): Promise<{
   segments: TranscriptSegment[];
@@ -54,45 +27,6 @@ async function transcribe(sourcePath: string): Promise<{
     return (await res.json()) as { segments: TranscriptSegment[] };
   } catch {
     return null; // captions service down: pipeline continues without captions
-  }
-}
-
-async function draftCopy(
-  clientName: string,
-  transcriptText: string,
-): Promise<unknown | null> {
-  if (!anthropic || !transcriptText.trim()) return null;
-  try {
-    const response = await anthropic.messages.create({
-      model: env.COPY_MODEL,
-      max_tokens: 1024,
-      thinking: { type: "adaptive" },
-      output_config: {
-        effort: "low",
-        format: { type: "json_schema", schema: DRAFT_SCHEMA },
-      },
-      system:
-        "You write short-form video post copy for a social media agency. " +
-        "Given a video transcript, produce: a name (a short label for the " +
-        "video, under 100 characters, no hashtags inside, which also serves " +
-        "as the YouTube title when the operator writes nothing more " +
-        "specific), a description (2-4 sentences, posted as the caption on " +
-        "Instagram, TikTok, Facebook and Snapchat and as the YouTube " +
-        "description, no hashtags inside), and 5-8 relevant hashtags without " +
-        "the # sign. Write emoji as real characters, never as escape " +
-        "sequences.",
-      messages: [
-        {
-          role: "user",
-          content: `Brand: ${clientName}\nTranscript:\n${transcriptText.slice(0, 4000)}`,
-        },
-      ],
-    });
-    if (response.stop_reason === "refusal") return null;
-    const text = response.content.find((b) => b.type === "text");
-    return text && text.type === "text" ? cleanDraft(JSON.parse(text.text)) : null;
-  } catch {
-    return null; // draft is a nice-to-have; never fail the pipeline for it
   }
 }
 
@@ -126,7 +60,12 @@ async function processAsset(assetId: string): Promise<void> {
       },
     });
 
-    // 2. Transcribe (local faster-whisper service)
+    // 2. Transcribe (local faster-whisper service). Free and local, so it
+    // still runs on every upload; what no longer runs here is the AI copy
+    // draft. That call costs real money per upload and was being spent on
+    // videos whose caption the operator was going to write or rewrite anyway.
+    // Words are now written only when the "Generate caption and title" button
+    // asks for them.
     const transcript = await transcribe(sourcePath);
     const segments = transcript?.segments ?? [];
     if (transcript) {
@@ -136,17 +75,7 @@ async function processAsset(assetId: string): Promise<void> {
       });
     }
 
-    // 3. AI post copy draft (needs ANTHROPIC_API_KEY; skipped gracefully)
-    const transcriptText = segments.map((s) => s.text).join(" ");
-    const draft = await draftCopy(asset.client.name, transcriptText);
-    if (draft) {
-      await prisma.mediaAsset.update({
-        where: { id: asset.id },
-        data: { draftCopy: draft },
-      });
-    }
-
-    // 4. Thumbnail from the source video itself.
+    // 3. Thumbnail from the source video itself.
     // The video is never re-encoded: it publishes exactly as exported, so
     // there is no reframe and no burned-in captions. The transcript above
     // exists to feed the title and description, nothing more.
@@ -292,7 +221,9 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       (target.options as {
         instagram?: import("@toreroflow/publishers").InstagramScheduleOptions;
         youtube?: import("@toreroflow/publishers").YouTubeScheduleOptions;
+        tiktok?: import("@toreroflow/publishers").TikTokScheduleOptions;
         youtubeTitle?: string;
+        tiktokTitle?: string;
       } | null) ?? {};
 
     let remotePostId: string;
@@ -329,12 +260,18 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         platform: target.platform as Platform,
         format: asset?.format ?? null,
         coverUrl,
+        carousel: isCarousel,
+        caption,
         instagram: targetOptions.instagram ?? null,
         youtube: targetOptions.youtube ?? null,
+        tiktok: targetOptions.tiktok ?? null,
         youtubeTitle: targetOptions.youtubeTitle ?? null,
+        tiktokTitle: targetOptions.tiktokTitle ?? null,
       });
       const result = await zernio.createPost({
-        content: caption,
+        // A TikTok photo post reads content as its title; the builder moves
+        // the caption into tiktokSettings.description and says so here.
+        content: extras.contentOverride ?? caption,
         mediaUrl,
         imageUrls,
         mediaThumbnail: extras.mediaThumbnail,
@@ -352,13 +289,18 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
     } else {
       // Dry-run accounts (and dev without a provider key) log instead of post.
       const publisher = new DryRunPublisher(target.platform as Platform);
+      const drySlides = Array.isArray(asset?.slideKeys) ? (asset.slideKeys as string[]) : [];
       const extras = buildPostExtras({
         platform: target.platform as Platform,
         format: asset?.format ?? null,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
+        carousel: asset?.kind === "carousel" && drySlides.length > 0,
+        caption,
         instagram: targetOptions.instagram ?? null,
         youtube: targetOptions.youtube ?? null,
+        tiktok: targetOptions.tiktok ?? null,
         youtubeTitle: targetOptions.youtubeTitle ?? null,
+        tiktokTitle: targetOptions.tiktokTitle ?? null,
       });
       const result = await publisher.publish({
         account: {

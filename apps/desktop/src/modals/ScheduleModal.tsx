@@ -47,8 +47,14 @@ const YT_CATEGORIES: Array<[string, string]> = [
 export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleModalProps) {
   const { selectedClient } = useAppState();
   const toast = useToast();
+  const isCarousel = asset.kind === "carousel";
+  // A carousel can only go where images go: Instagram takes up to 10 as a
+  // media list, TikTok takes them as a photo post. Offering the rest here
+  // would only bounce off the server's refusal at schedule time.
   const connected = (selectedClient?.accounts ?? []).filter(
-    (a) => a.status === "connected",
+    (a) =>
+      a.status === "connected" &&
+      (!isCarousel || a.platform === "instagram" || a.platform === "tiktok"),
   );
   const [platforms, setPlatforms] = useState<Platform[]>(
     connected.map((a) => a.platform),
@@ -85,8 +91,12 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [ytCatalogueFailed, setYtCatalogueFailed] = useState(false);
   const [ytPlaylists, setYtPlaylists] = useState<YouTubePlaylistInfo[] | null>(null);
 
-  const igSelected = platforms.includes("instagram");
-  const ytSelected = platforms.includes("youtube");
+  // The reel options make no sense on a set of images, so a carousel shows
+  // neither the Instagram nor the YouTube section.
+  const igSelected = platforms.includes("instagram") && !isCarousel;
+  const ytSelected = platforms.includes("youtube") && !isCarousel;
+  const tkCarousel = isCarousel && platforms.includes("tiktok");
+  const [tkAutoMusic, setTkAutoMusic] = useState(false);
 
   // Catalogue and playlists load once, the first time the section shows.
   // Quiet failures: the operator can always schedule without either.
@@ -164,6 +174,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
         instagram: instagramBody(),
         youtube: youtubeBody(),
+        ...(tkCarousel && tkAutoMusic ? { tiktok: { autoAddMusic: true } } : {}),
       });
       onScheduled();
       onClose();
@@ -220,6 +231,29 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             );
           })}
         </div>
+
+        {tkCarousel && (
+          <div className="igopts">
+            <label className="flabel" style={{ marginTop: 18 }}>
+              TikTok options
+            </label>
+            <div className="igrow">
+              <span
+                className={`revtoggle${tkAutoMusic ? " on" : ""}`}
+                title="TikTok attaches one of its recommended tracks to the photo post. TikTok chooses the song; picking one from their library is not possible through any API."
+                onClick={() => setTkAutoMusic((v) => !v)}
+              >
+                Let TikTok add music
+              </span>
+            </div>
+            {tkAutoMusic && (
+              <p className="insworking" style={{ marginTop: 8 }}>
+                TikTok picks a recommended track itself. Choosing a specific song from their
+                library is app-only; no API offers it.
+              </p>
+            )}
+          </div>
+        )}
 
         {igSelected && (
           <div className="igopts">

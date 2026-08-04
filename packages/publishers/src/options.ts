@@ -40,15 +40,31 @@ export interface YouTubeScheduleOptions {
   relatedVideoUrl?: string;
 }
 
+/** Options the operator can pick at schedule time for a TikTok target. */
+export interface TikTokScheduleOptions {
+  /**
+   * Let TikTok attach a recommended track to a photo carousel. TikTok picks
+   * the song; no API allows choosing one from their library.
+   */
+  autoAddMusic?: boolean;
+}
+
 export interface TargetOptionsInput {
   platform: Platform;
   /** MediaAsset.format: "short_form" | "long_form" | null. */
   format: string | null;
   /** Public URL of the uploaded cover image, when one was chosen. */
   coverUrl: string | null;
+  /** True when the asset is a set of images rather than a video. */
+  carousel?: boolean;
+  /** The caption, needed only for TikTok photo posts (see below). */
+  caption?: string | null;
   instagram?: InstagramScheduleOptions | null;
   youtube?: YouTubeScheduleOptions | null;
+  tiktok?: TikTokScheduleOptions | null;
   youtubeTitle?: string | null;
+  /** A TikTok photo post's own title, 90 chars, distinct from the caption. */
+  tiktokTitle?: string | null;
 }
 
 export interface BuiltPostExtras {
@@ -58,6 +74,13 @@ export interface BuiltPostExtras {
   tiktokSettings?: Record<string, unknown>;
   /** Goes on the mediaItems[] entry (YouTube long-form only). */
   mediaThumbnail?: string;
+  /**
+   * Replaces the request's top-level content field when set. A TikTok photo
+   * post reads content as its 90-character title and takes the real caption
+   * in tiktokSettings.description, so sending the caption as content would
+   * post a truncated caption as the title and no caption at all.
+   */
+  contentOverride?: string;
 }
 
 /**
@@ -79,6 +102,15 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
       out.platformSpecificData = { contentType: "story" };
       return out;
     }
+
+    /*
+     * A carousel is a plain media list to Instagram: no contentType (the
+     * multiple items are the declaration), no reel options, no thumbnail (the
+     * first image is the cover by definition). Declaring it a reel here was a
+     * latent bug: every Instagram target used to get contentType "reels"
+     * unconditionally, and a carousel publish had never actually run.
+     */
+    if (input.carousel) return out;
 
     const psd: Record<string, unknown> = { contentType: "reels" };
     if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
@@ -102,6 +134,25 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   }
 
   if (input.platform === "tiktok") {
+    /*
+     * A TikTok carousel is a photo post, which is its own shape end to end:
+     * media_type declares it, the two consent flags are required on every
+     * photo post, content becomes the 90-character title, and the caption
+     * moves into description. auto_add_music is the whole music story; TikTok
+     * picks the track and no API allows choosing one.
+     */
+    if (input.carousel) {
+      out.tiktokSettings = {
+        media_type: "photo",
+        content_preview_confirmed: true,
+        express_consent_given: true,
+        ...(input.tiktok?.autoAddMusic ? { auto_add_music: true } : {}),
+        ...(input.caption ? { description: input.caption } : {}),
+      };
+      if (input.tiktokTitle) out.contentOverride = input.tiktokTitle;
+      return out;
+    }
+
     if (input.coverUrl) {
       out.tiktokSettings = { video_cover_image_url: input.coverUrl };
     }

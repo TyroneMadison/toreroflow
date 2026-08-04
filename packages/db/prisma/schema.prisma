@@ -489,6 +489,11 @@ model ExternalVideo {
   platform        Platform
   /// The platform's own video id (e.g. a YouTube videoId).
   platformVideoId String
+  /// What the provider says the post is: video | image | carousel. Decides
+  /// whether a post counts in the carousel section rather than the video
+  /// boards. Named ExternalVideo for historical reasons; it holds every kind
+  /// of post now.
+  mediaType       String   @default("video")
   title           String
   thumbnailUrl    String?
   url             String?

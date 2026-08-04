@@ -9,7 +9,7 @@ import IORedis from "ioredis";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { decodeEscapes, looksLikeRevisionOf, MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, Prisma } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -220,11 +220,45 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
    * The order files arrive in is the order Instagram shows them, and the first
    * one decides the aspect ratio of the whole post.
    */
-  app.post<{ Params: { id: string } }>("/clients/:id/carousel", async (request, reply) => {
+  app.post<{ Params: { id: string }; Querystring: { draftId?: string } }>(
+    "/clients/:id/carousel",
+    async (request, reply) => {
     const client = await prisma.client.findFirst({
       where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
     });
     if (!client) return reply.status(404).send({ error: "client not found" });
+
+    /*
+     * The words written in Create > Carousels ride along with the images.
+     *
+     * The loop is: write the carousel there, let Canva bulk create make the
+     * slides, upload them here. Without this the caption and hashtags written
+     * in the first step had to be retyped in the third, which is the kind of
+     * step people skip, and then a designed carousel posts captionless.
+     *
+     * Looked up before anything is written so a bad id fails the upload
+     * loudly rather than quietly dropping the words.
+     */
+    let draftWords: { name: string; description: string; hashtags: string[] } | null = null;
+    if (request.query.draftId) {
+      const carouselDraft = await prisma.carouselDraft.findFirst({
+        where: { id: request.query.draftId, clientId: client.id },
+      });
+      if (!carouselDraft) {
+        return reply.status(404).send({
+          error: "that carousel draft is gone",
+          detail:
+            "The carousel this upload was started from no longer exists. Go back to the Carousels tab and pick again, or upload without one.",
+        });
+      }
+      draftWords = {
+        name: carouselDraft.topic,
+        description: carouselDraft.caption,
+        hashtags: Array.isArray(carouselDraft.hashtags)
+          ? (carouselDraft.hashtags as string[])
+          : [],
+      };
+    }
 
     const asset = await prisma.mediaAsset.create({
       data: {
@@ -277,11 +311,23 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         // The first image doubles as the asset's file, so every existing
         // screen that shows a thumbnail keeps working unchanged.
         storageKey: slideKeys[0]!,
-        originalName: firstName ?? "carousel",
+        // The draft's topic names the carousel; a file name like
+        // "slide-1.png" names nothing.
+        originalName: draftWords?.name ?? firstName ?? "carousel",
+        ...(draftWords
+          ? {
+              draftCopy: {
+                name: draftWords.name,
+                description: draftWords.description,
+                hashtags: draftWords.hashtags,
+              },
+            }
+          : {}),
       },
     });
     return reply.status(201).send(assetView(updated));
-  });
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/clients/:id/media", async (request, reply) => {
     const client = await prisma.client.findFirst({
@@ -343,16 +389,18 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Write a description from what is actually said in the video.
+   * The "Generate caption and title" button: transcribe if needed, then write.
    *
-   * The upload pipeline already drafts copy once, automatically. This is the
-   * button for the far more common case: the first draft was not it, or the
-   * video was uploaded before transcription was running, and the operator
-   * wants another go without re-uploading.
+   * This is the only place the app spends Anthropic money on copy. The upload
+   * pipeline used to draft automatically on every video, which billed for
+   * captions the operator was going to rewrite anyway; now words are written
+   * when they are asked for, once, on a press.
    *
-   * Returns the text rather than saving it. A generated caption the operator
-   * has not read yet is a suggestion, and overwriting whatever they had typed
-   * with it would make the button dangerous to press.
+   * Returns the text rather than saving the visible fields. A generated
+   * caption the operator has not read yet is a suggestion, and overwriting
+   * whatever they had typed with it would make the button dangerous to press.
+   * Hashtags are the one exception, saved directly: there is no hashtag field
+   * to fill on screen, and they are invisible until scheduling reads them.
    */
   app.post<{ Params: { id: string } }>("/media/:id/caption", async (request, reply) => {
     if (!env.ANTHROPIC_API_KEY) {
@@ -368,21 +416,59 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!asset) return reply.status(404).send({ error: "asset not found" });
 
-    const segments = Array.isArray(asset.transcript)
-      ? (asset.transcript as Array<{ text?: unknown }>)
-      : [];
-    const transcriptText = segments
-      .map((s) => (typeof s.text === "string" ? s.text : ""))
-      .join(" ")
-      .trim();
+    const textOf = (t: unknown): string =>
+      Array.isArray(t)
+        ? (t as Array<{ text?: unknown }>)
+            .map((s) => (typeof s.text === "string" ? s.text : ""))
+            .join(" ")
+            .trim()
+        : "";
+
+    let transcriptText = textOf(asset.transcript);
+
+    /*
+     * No transcript yet: make one now, while the button is held down.
+     *
+     * Normally the worker transcribes during processing, so this path only
+     * runs for a video that slipped through while the captions service was
+     * down. It needs the source file, which retention clears a week after
+     * posting, so an old posted video genuinely cannot be transcribed and the
+     * error below says so.
+     *
+     * Transcription is the local whisper container, not a paid API, so doing
+     * it inline costs seconds rather than money. A 60 second clip is a few
+     * seconds of CPU.
+     */
+    if (!transcriptText && !asset.sourceDeletedAt && asset.kind !== "carousel") {
+      try {
+        const res = await fetch(`${env.CAPTIONS_URL}/transcribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: path.join(env.STORAGE_DIR, asset.storageKey) }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { segments?: unknown };
+          if (Array.isArray(data.segments) && data.segments.length) {
+            await prisma.mediaAsset.update({
+              where: { id: asset.id },
+              data: { transcript: data.segments as Prisma.InputJsonValue },
+            });
+            transcriptText = textOf(data.segments);
+          }
+        }
+      } catch {
+        // The captions service being down falls through to the plain error
+        // below, which is accurate either way: there are no words to write
+        // from.
+      }
+    }
 
     if (!transcriptText) {
-      // Said plainly, because the cause is almost always the same and the
-      // operator can act on it: the video has not been transcribed.
       return reply.status(400).send({
-        error: "nothing was said",
-        detail:
-          "This video has no transcript, so there are no words to write from. Transcription runs while a video is processing; a video uploaded before that was switched on will not have one.",
+        error: "nothing to write from",
+        detail: asset.sourceDeletedAt
+          ? "This video's file was cleared after it posted, and it was never transcribed while the file existed, so there are no words to write from."
+          : "No speech was found to transcribe in this video, so there are no words to write from.",
       });
     }
 
@@ -430,12 +516,24 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         title?: unknown;
         hashtags?: unknown;
       };
+      const hashtags = Array.isArray(parsed.hashtags)
+        ? parsed.hashtags.filter((h): h is string => typeof h === "string").slice(0, 8)
+        : [];
+      // Hashtags save now rather than riding the visible fields: there is no
+      // hashtag box on the card to fill, and scheduling reads them from the
+      // draft. Name and description stay a suggestion until the operator
+      // saves what they have read.
+      if (hashtags.length) {
+        const current = (asset.draftCopy as Record<string, unknown> | null) ?? {};
+        await prisma.mediaAsset.update({
+          where: { id: asset.id },
+          data: { draftCopy: { ...current, hashtags } },
+        });
+      }
       return {
         description: typeof parsed.description === "string" ? parsed.description : "",
         title: typeof parsed.title === "string" ? parsed.title : "",
-        hashtags: Array.isArray(parsed.hashtags)
-          ? parsed.hashtags.filter((h): h is string => typeof h === "string")
-          : [],
+        hashtags,
       };
     } catch (error) {
       request.log.error({ err: error }, "caption generation failed");

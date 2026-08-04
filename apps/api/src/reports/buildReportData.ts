@@ -18,6 +18,8 @@ export interface Delta {
 }
 
 export interface ReportPost {
+  /** video | image | carousel. Carousels get their own card on the report. */
+  mediaType?: string;
   title: string;
   publishedAt: string;
   views: number;
@@ -146,6 +148,8 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
 
   const current = posts.filter((p) => inRange(p.publishedAt, periodStart, periodEnd));
   const previous = posts.filter((p) => inRange(p.publishedAt, prevStart, prevEnd));
+  const carousels = current.filter((p) => p.mediaType === "carousel");
+  const prevCarousels = previous.filter((p) => p.mediaType === "carousel");
 
   const watches = current.map((p) => p.avgWatchSec).filter((x): x is number => x != null && x > 0);
   const avgWatch = watches.length ? watches.reduce((a, b) => a + b, 0) / watches.length : null;
@@ -210,6 +214,24 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       : []),
     ...(ytAccounts.length
       ? [{ label: "Subscribers", value: fmt(subscribers), note: "current total" }]
+      : []),
+    /*
+     * Carousels get their own card only when the period has any. They are a
+     * different kind of work from video (designed slides, not shot footage),
+     * so a client paying for both should see both counted; a client with
+     * none should not see a zero implying work that was never promised.
+     */
+    ...(carousels.length
+      ? [
+          {
+            label: "Carousels",
+            value: fmt(carousels.length),
+            note: `${fmt(sum(carousels, (p) => p.views))} views · ${fmt(sum(carousels, (p) => p.likes + p.comments + p.shares + p.saves))} interactions`,
+            ...(delta(carousels.length, prevCarousels.length)
+              ? { delta: delta(carousels.length, prevCarousels.length) }
+              : {}),
+          },
+        ]
       : []),
   ];
 

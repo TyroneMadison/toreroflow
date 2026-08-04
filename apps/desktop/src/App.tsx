@@ -182,7 +182,10 @@ function Shell() {
           )}
           {activeScreen === "financials" && <FinancialsScreen key="financials" />}
           {activeScreen === "carousels" && (
-            <CarouselsScreen key={`carousels-${selectedClientId ?? "none"}`} />
+            <CarouselsScreen
+              key={`carousels-${selectedClientId ?? "none"}`}
+              onUploadImages={() => setActiveScreen("upload")}
+            />
           )}
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />

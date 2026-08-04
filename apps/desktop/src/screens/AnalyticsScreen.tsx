@@ -351,6 +351,16 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
   const last10 = all.slice(0, 10);
   const mostViewed = [...all].sort((a, b) => b.views - a.views).slice(0, 8);
+  /*
+   * Carousels, most recent first. mediaType comes from the provider, so
+   * carousels posted natively on the platform count too, not just ones made
+   * through the app. Single images stay out: one Facebook photo is not a
+   * carousel and listing it as one would pad the section.
+   */
+  const carousels = all
+    .filter((p) => p.mediaType === "carousel")
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .slice(0, 8);
   const tier1m = buildTier(lifetime, 1_000_000, null, cutoff);
   const tier100k = buildTier(lifetime, 100_000, 1_000_000, cutoff);
   const tier10k = buildTier(lifetime, 10_000, 100_000, cutoff);
@@ -776,6 +786,49 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                     <div className="empty" style={{ padding: "14px 8px" }}>
                       <b>{loading ? "Loading…" : "No uploads found"}</b>
                       <p>Connected accounts' videos appear here automatically.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="card glass">
+                  <div className="rowhead">
+                    <div>
+                      <h3>Carousels</h3>
+                      <div className="sub">
+                        Slide posts and how they did. Shares include TikTok reposts.
+                      </div>
+                    </div>
+                  </div>
+                  {carousels.length ? (
+                    <div className="anmost" style={{ marginTop: 8 }}>
+                      {carousels.map((p) => (
+                        <div className="arow" key={p.id}>
+                          <div className="anthumb" style={{ width: 38, height: 48 }}>
+                            {thumb(p.thumbnailUrl) && <img src={thumb(p.thumbnailUrl)!} alt="" />}
+                          </div>
+                          <div className="t">
+                            <b title={p.title}>{p.title}</b>
+                            <span>
+                              {fmtDate(p.publishedAt)}
+                              {" · "}
+                              {p.platforms.map((pl) => PLATFORM_LABELS[pl] ?? pl).join(", ")}
+                              {" · "}
+                              {fmt(p.likes)} likes · {fmt(p.comments)} comments ·{" "}
+                              {fmt(p.shares)} shares · {fmt(p.saves)} saves
+                            </span>
+                          </div>
+                          <span className="v">{fmt(p.views)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty" style={{ padding: "14px 8px" }}>
+                      <b>{loading ? "Loading…" : "No carousels yet"}</b>
+                      <p>
+                        Add one in Upload and Schedule and it appears here with its views, likes,
+                        comments, shares and saves. Carousels posted straight on the platform
+                        count too.
+                      </p>
                     </div>
                   )}
                 </div>

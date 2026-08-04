@@ -360,6 +360,8 @@ export interface UnseenReports {
 
 export interface ClientPost {
   id: string;
+  /** video | image | carousel. Decides which board a post belongs on. */
+  mediaType: string;
   title: string;
   publishedAt: string;
   thumbnailUrl: string | null;
@@ -577,13 +579,16 @@ export interface BankCashflowView {
 export async function uploadCarousel(
   clientId: string,
   files: File[],
+  /** A Create > Carousels draft whose caption and hashtags ride along. */
+  draftId?: string,
 ): Promise<MediaAssetInfo> {
   const form = new FormData();
   files.forEach((f, i) => form.append(`slide${i + 1}`, f, f.name));
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_URL}/clients/${clientId}/carousel`, {
+  const query = draftId ? `?draftId=${encodeURIComponent(draftId)}` : "";
+  const res = await fetch(`${API_URL}/clients/${clientId}/carousel${query}`, {
     method: "POST",
     headers,
     body: form,

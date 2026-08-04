@@ -37,9 +37,9 @@ interface Draft {
   createdAt: string;
 }
 
-export default function CarouselsScreen() {
+export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): void }) {
   const toast = useToast();
-  const { selectedClient } = useAppState();
+  const { selectedClient, setPendingCarouselDraft } = useAppState();
   const clientId = selectedClient?.id ?? null;
 
   const [notes, setNotes] = useState<KnowledgeNote[] | null>(null);
@@ -294,6 +294,16 @@ export default function CarouselsScreen() {
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="cbtn" onClick={() => void downloadCsv(d)}>
                   Download sheet
+                </button>
+                <button
+                  className="cbtn"
+                  title="Go to Upload and Schedule to add the finished images. The caption and hashtags written here ride along, so nothing is retyped."
+                  onClick={() => {
+                    setPendingCarouselDraft({ id: d.id, topic: d.topic });
+                    onUploadImages();
+                  }}
+                >
+                  Upload the images
                 </button>
                 <button className="dangerbtn" onClick={() => void remove(d)}>
                   Delete

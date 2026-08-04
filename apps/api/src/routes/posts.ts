@@ -127,19 +127,22 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * quietly let someone else caption.
      */
     /*
-     * A carousel is images, and only Instagram is known to take them here.
-     * Refused at schedule time rather than at publish, where it would fail
-     * hours later against a client's account with nobody watching. Only
-     * Instagram is allowed because only Instagram has been verified: the
-     * others may well work, and can be opened up once one has actually gone
-     * out and been looked at.
+     * A carousel is images, and Instagram and TikTok are the platforms that
+     * take them here. Refused at schedule time rather than at publish, where
+     * it would fail hours later against a client's account with nobody
+     * watching. Instagram takes up to 10 items as a plain media list; TikTok
+     * takes them as a photo post (its docs allow 35, but one limit keeps
+     * every message in this app true). YouTube, Facebook and Snapchat stay
+     * out until one has actually gone through them and been looked at.
      */
     if (asset.kind === "carousel") {
-      const wrong = accounts.filter(({ platform }) => platform !== "instagram");
+      const wrong = accounts.filter(
+        ({ platform }) => platform !== "instagram" && platform !== "tiktok",
+      );
       if (wrong.length) {
         return reply.status(400).send({
-          error: "carousels go to Instagram",
-          detail: `A carousel is a set of images and only Instagram takes them here, so ${wrong
+          error: "carousels go to Instagram or TikTok",
+          detail: `A carousel is a set of images and only Instagram and TikTok take them here, so ${wrong
             .map((w) => w.platform)
             .join(" and ")} cannot be part of this one.`,
         });
@@ -199,7 +202,15 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
                       youtubeTitle: youtubeTitleFor(draft),
                       ...(ytOptions ? { youtube: ytOptions } : {}),
                     }
-                  : undefined,
+                  : platform === "tiktok" && asset.kind === "carousel"
+                    ? {
+                        // A TikTok photo post has a title of its own (90
+                        // chars, hashtags stripped by the platform) separate
+                        // from the caption. The video's name is that title.
+                        tiktokTitle: draft.name || null,
+                        ...(body.tiktok ? { tiktok: body.tiktok } : {}),
+                      }
+                    : undefined,
           })),
         },
       },

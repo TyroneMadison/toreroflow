@@ -34,6 +34,15 @@ interface AppStateValue {
   selectedClientId: string | null;
   selectedClient: ClientSummary | null;
   selectClient(id: string | null): void;
+
+  /**
+   * The carousel draft (from Create > Carousels) whose finished images are
+   * about to be uploaded. Set by that screen's "Upload the images" button and
+   * consumed once by Upload and Schedule, which attaches the draft's caption
+   * and hashtags to the uploaded carousel so nothing gets retyped.
+   */
+  pendingCarouselDraft: { id: string; topic: string } | null;
+  setPendingCarouselDraft(draft: { id: string; topic: string } | null): void;
 }
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -154,6 +163,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [clients, selectedClientId],
   );
 
+  const [pendingCarouselDraft, setPendingCarouselDraft] = useState<{
+    id: string;
+    topic: string;
+  } | null>(null);
+
   const value = useMemo<AppStateValue>(
     () => ({
       authReady,
@@ -168,6 +182,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       selectedClientId,
       selectedClient,
       selectClient,
+      pendingCarouselDraft,
+      setPendingCarouselDraft,
     }),
     [
       authReady,
@@ -182,6 +198,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       selectedClientId,
       selectedClient,
       selectClient,
+      pendingCarouselDraft,
     ],
   );
 

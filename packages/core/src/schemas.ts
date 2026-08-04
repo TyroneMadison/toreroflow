@@ -61,6 +61,15 @@ export const instagramOptionsSchema = z.object({
 /** Instagram refuses stories longer than this. */
 export const INSTAGRAM_STORY_MAX_SECONDS = 60;
 
+export const tiktokOptionsSchema = z.object({
+  /**
+   * Let TikTok attach a recommended track to a photo carousel. TikTok picks
+   * the song; no API anywhere allows choosing one from their library, so a
+   * toggle is the whole of what can honestly be offered.
+   */
+  autoAddMusic: z.boolean().optional(),
+});
+
 export const youtubeOptionsSchema = z.object({
   visibility: z.enum(["public", "unlisted", "private"]).optional(),
   madeForKids: z.boolean().optional(),
@@ -89,6 +98,7 @@ export const schedulePostSchema = z.object({
   hashtags: z.array(z.string().max(60)).max(20).optional(),
   instagram: instagramOptionsSchema.optional(),
   youtube: youtubeOptionsSchema.optional(),
+  tiktok: tiktokOptionsSchema.optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 

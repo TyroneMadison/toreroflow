@@ -221,3 +221,71 @@ console.log("options builder: all checks passed");
   assert.deepEqual(mediaItemsFor({}), []);
   assert.deepEqual(mediaItemsFor({ imageUrls: [] }), []);
 }
+
+/*
+ * Carousels on the wire.
+ *
+ * These shapes come straight from the provider's platform docs and each field
+ * is load-bearing: a TikTok photo post without the consent flags is refused,
+ * one without media_type is treated as a video and fails on an image, and an
+ * Instagram carousel declared a reel posts wrongly or not at all. The
+ * Instagram case is also a regression pin: every Instagram target used to get
+ * contentType "reels" unconditionally, and a carousel had never actually been
+ * published when that was caught.
+ */
+{
+  const ig = buildPostExtras({
+    platform: "instagram",
+    format: null,
+    coverUrl: null,
+    carousel: true,
+    caption: "three cars, one budget",
+    instagram: { firstComment: "should not leak", aiLabel: true },
+  });
+  assert.equal(ig.platformSpecificData, undefined, "an instagram carousel is a plain media list");
+  assert.equal(ig.tiktokSettings, undefined);
+  assert.equal(ig.contentOverride, undefined, "instagram keeps the caption as content");
+
+  const tk = buildPostExtras({
+    platform: "tiktok",
+    format: null,
+    coverUrl: null,
+    carousel: true,
+    caption: "three cars, one budget, full breakdown",
+    tiktok: { autoAddMusic: true },
+    tiktokTitle: "Three cars, one budget",
+  });
+  assert.deepEqual(tk.tiktokSettings, {
+    media_type: "photo",
+    content_preview_confirmed: true,
+    express_consent_given: true,
+    auto_add_music: true,
+    description: "three cars, one budget, full breakdown",
+  });
+  assert.equal(tk.contentOverride, "Three cars, one budget", "the name is the photo post's title");
+
+  // Music is opt-in: leaving the toggle off must not send the key at all,
+  // because sending auto_add_music false is a different request than silence.
+  const quiet = buildPostExtras({
+    platform: "tiktok",
+    format: null,
+    coverUrl: null,
+    carousel: true,
+    caption: "c",
+    tiktok: null,
+  });
+  assert.equal("auto_add_music" in (quiet.tiktokSettings ?? {}), false);
+
+  // No title picked: content stays whatever the caller sends (the caption),
+  // and the provider trims it to the 90-char title itself.
+  assert.equal(quiet.contentOverride, undefined);
+
+  // A tiktok VIDEO is untouched by all of this: cover behavior as before.
+  const vid = buildPostExtras({
+    platform: "tiktok",
+    format: "short_form",
+    coverUrl: "https://x/cover.jpg",
+    tiktok: { autoAddMusic: true },
+  });
+  assert.deepEqual(vid.tiktokSettings, { video_cover_image_url: "https://x/cover.jpg" });
+}

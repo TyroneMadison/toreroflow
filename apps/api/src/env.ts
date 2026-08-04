@@ -80,6 +80,12 @@ export interface Env {
   REDIS_URL: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
+  /**
+   * The transcription service. The worker transcribes every upload with it;
+   * the API only calls it from the caption button, for a video that slipped
+   * through with no transcript while its source still exists.
+   */
+  CAPTIONS_URL: string;
   REPO_ROOT: string;
   /**
    * Netlify personal access token used to publish client report pages.
@@ -123,6 +129,7 @@ export const env: Env = {
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
+  CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   REPO_ROOT: repoRoot,
   NETLIFY_AUTH_TOKEN: process.env.NETLIFY_AUTH_TOKEN ?? "",
   NETLIFY_SITE_ID: process.env.NETLIFY_SITE_ID ?? "",

@@ -135,6 +135,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       client.agencyId,
     );
     const posts: ReportPost[] = (merged ?? []).map((p) => ({
+      mediaType: p.mediaType,
       title: p.title,
       publishedAt: p.publishedAt,
       views: p.views,

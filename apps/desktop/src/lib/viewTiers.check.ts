@@ -34,6 +34,7 @@ const post = (
   platforms: ClientPost["platforms"] = ["youtube"],
 ): ClientPost => ({
   id,
+  mediaType: "video",
   title: `video ${id}`,
   publishedAt: new Date(now - daysAgo * DAY).toISOString(),
   thumbnailUrl: null,
