@@ -8,7 +8,7 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
-import { decodeEscapes, looksLikeRevisionOf, MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
+import { CAROUSEL_ABSOLUTE_MAX, decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
@@ -39,6 +39,17 @@ const CAPTION_SCHEMA = {
     hashtags: { type: "array", items: { type: "string" } },
   },
   required: ["description", "title", "hashtags"],
+  additionalProperties: false,
+} as const;
+
+/** Carousels post nowhere that takes a title, so the shape is words and tags. */
+const CAROUSEL_CAPTION_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    hashtags: { type: "array", items: { type: "string" } },
+  },
+  required: ["description", "hashtags"],
   additionalProperties: false,
 } as const;
 
@@ -260,39 +271,85 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       };
     }
 
+    /*
+     * The originals land untouched, plus a crops.json carrying the builder's
+     * pan/zoom rects; the worker then conforms every slide to the first
+     * item's aspect ratio, exactly as videos are probed and thumbnailed off
+     * the request path. Conforming inline was fine when a carousel was a few
+     * JPEGs; a set holding MP4 slides means ffmpeg re-encodes, and an
+     * operator should not sit inside a hanging POST while that happens.
+     *
+     * The first item must be an image. Its ratio governs the whole set, it
+     * doubles as the thumbnail every card draws, and it is what survives the
+     * retention sweeps for the calendar's sake.
+     */
     const asset = await prisma.mediaAsset.create({
       data: {
         clientId: client.id,
         kind: "carousel",
         originalName: "carousel",
         storageKey: "pending",
-        // Ready on arrival: nothing has to happen to an image before it posts.
-        status: "ready",
+        status: "uploaded",
       },
     });
     const dir = path.join(env.STORAGE_DIR, client.id, asset.id);
     await fs.mkdir(dir, { recursive: true });
 
-    const slideKeys: string[] = [];
+    const IMAGE_EXT: Record<string, string> = {
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/webp": ".webp",
+    };
+    const VIDEO_EXT: Record<string, string> = {
+      "video/mp4": ".mp4",
+      "video/quicktime": ".mov",
+    };
+
+    const originals: string[] = [];
+    let cropsRaw = "";
     let firstName: string | null = null;
     try {
       for await (const part of request.parts()) {
-        if (part.type !== "file") continue;
-        const mime = part.mimetype;
-        if (mime !== "image/jpeg" && mime !== "image/png") {
-          throw new Error("a carousel takes JPG or PNG images");
+        if (part.type === "field") {
+          if (part.fieldname === "crops") cropsRaw = String(part.value ?? "");
+          continue;
         }
-        if (slideKeys.length >= MAX_CAROUSEL_SLIDES) {
-          throw new Error(`Instagram takes at most ${MAX_CAROUSEL_SLIDES} images in one carousel`);
+        const ext = IMAGE_EXT[part.mimetype] ?? VIDEO_EXT[part.mimetype];
+        if (!ext) {
+          throw new Error(
+            "a carousel takes JPG, PNG or WebP images, and MP4 or MOV video (Instagram only)",
+          );
         }
-        const ext = mime === "image/png" ? ".png" : ".jpg";
-        const key = `${client.id}/${asset.id}/slide-${slideKeys.length + 1}${ext}`;
-        await pipeline(part.file, createWriteStream(path.join(env.STORAGE_DIR, key)));
-        if (part.file.truncated) throw new Error("that image was too large");
+        if (originals.length >= CAROUSEL_ABSOLUTE_MAX) {
+          throw new Error(`nothing takes more than ${CAROUSEL_ABSOLUTE_MAX} items in one carousel`);
+        }
+        if (originals.length === 0 && VIDEO_EXT[part.mimetype]) {
+          throw new Error(
+            "the first item must be an image: it sets the aspect ratio for the whole carousel and becomes its cover",
+          );
+        }
+        const name = `orig-${originals.length + 1}${ext}`;
+        await pipeline(part.file, createWriteStream(path.join(dir, name)));
+        if (part.file.truncated) throw new Error("one of the files was too large");
         firstName ??= part.filename ?? null;
-        slideKeys.push(key);
+        originals.push(name);
       }
-      if (!slideKeys.length) throw new Error("no images uploaded");
+      if (!originals.length) throw new Error("no images uploaded");
+
+      // The builder's crop rects, aligned with the files by position. Absent
+      // or malformed entries mean center-crop, decided by the worker.
+      let crops: Array<Record<string, number> | null> = [];
+      try {
+        const parsed = JSON.parse(cropsRaw || "[]") as unknown;
+        if (Array.isArray(parsed)) crops = parsed as Array<Record<string, number> | null>;
+      } catch {
+        // A broken crops field is not worth failing the upload over.
+      }
+      await fs.writeFile(
+        path.join(dir, "crops.json"),
+        JSON.stringify({ originals, crops: originals.map((_, i) => crops[i] ?? null) }),
+        "utf8",
+      );
     } catch (err) {
       // Nothing half-made survives: a carousel missing a slide would publish
       // silently short.
@@ -307,10 +364,10 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     const updated = await prisma.mediaAsset.update({
       where: { id: asset.id },
       data: {
-        slideKeys,
-        // The first image doubles as the asset's file, so every existing
-        // screen that shows a thumbnail keeps working unchanged.
-        storageKey: slideKeys[0]!,
+        // The finished first slide, named before it exists so every screen
+        // that reads storageKey points at the right place the moment the
+        // worker sets the asset ready.
+        storageKey: `${client.id}/${asset.id}/slide-1.jpg`,
         // The draft's topic names the carousel; a file name like
         // "slide-1.png" names nothing.
         originalName: draftWords?.name ?? firstName ?? "carousel",
@@ -325,6 +382,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
           : {}),
       },
     });
+    await mediaQueue.add("process", { assetId: asset.id });
     return reply.status(201).send(assetView(updated));
     },
   );
@@ -543,6 +601,114 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       });
     }
   });
+
+  /**
+   * Write a carousel's caption from the slides themselves.
+   *
+   * A carousel has no transcript, so the words come from looking: the builder
+   * sends the first few slides, downscaled client-side so a 4K design does
+   * not ride the wire, and the model describes what is actually on them.
+   * Returns rather than saves, same contract as the video caption button; the
+   * operator reads it before it becomes what posts.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/clients/:id/carousel-caption",
+    async (request, reply) => {
+      if (!env.ANTHROPIC_API_KEY) {
+        return reply.status(400).send({
+          error: "no writing key",
+          detail: "ANTHROPIC_API_KEY is not set on the server, so nothing can write the caption.",
+        });
+      }
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+        select: { name: true },
+      });
+      if (!client) return reply.status(404).send({ error: "client not found" });
+
+      const MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"] as const);
+      type SlideMedia = "image/jpeg" | "image/png" | "image/webp";
+      const images: Array<{ mediaType: SlideMedia; data: string }> = [];
+      for await (const part of request.parts()) {
+        if (part.type !== "file") continue;
+        if (!MEDIA_TYPES.has(part.mimetype as SlideMedia)) continue;
+        // Four slides carry a carousel's story; more is spend, not signal.
+        if (images.length >= 4) {
+          await part.file.resume();
+          continue;
+        }
+        const buf = await part.toBuffer();
+        images.push({ mediaType: part.mimetype as SlideMedia, data: buf.toString("base64") });
+      }
+      if (!images.length) {
+        return reply.status(400).send({ error: "no slides to read" });
+      }
+
+      try {
+        const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+        const response = await anthropic.messages.create({
+          model: env.SUGGESTIONS_MODEL,
+          max_tokens: 1024,
+          thinking: { type: "adaptive" },
+          output_config: {
+            effort: "low",
+            format: { type: "json_schema", schema: CAROUSEL_CAPTION_SCHEMA },
+          },
+          system:
+            "You write Instagram and TikTok captions for a social media agency whose clients " +
+            "are car dealerships and automotive personalities. You are shown the slides of a " +
+            "carousel post. Write a caption of 2 to 4 sentences from what is actually on the " +
+            "slides: name the specific cars, models, years, prices and claims that appear, " +
+            "because those are the words people search for. Open on the most interesting thing, " +
+            "end with a question or a reason to comment, and never invent anything the slides " +
+            "do not say. No hashtags inside the caption. Also give 5 to 8 hashtags without the " +
+            "# sign, most specific first.",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: `Brand: ${client.name}. The carousel's slides, in order:` },
+                ...images.map(
+                  (img) =>
+                    ({
+                      type: "image",
+                      source: {
+                        type: "base64",
+                        media_type: img.mediaType,
+                        data: img.data,
+                      },
+                    }) as const,
+                ),
+              ],
+            },
+          ],
+        });
+        if (response.stop_reason === "refusal") {
+          return reply.status(502).send({
+            error: "the model declined",
+            detail: "The model refused to write this one. Try again, or write it yourself.",
+          });
+        }
+        const text = response.content.find((b) => b.type === "text");
+        if (!text || text.type !== "text") {
+          return reply.status(502).send({ error: "no caption came back" });
+        }
+        const parsed = JSON.parse(text.text) as { description?: unknown; hashtags?: unknown };
+        return {
+          description: typeof parsed.description === "string" ? parsed.description : "",
+          hashtags: Array.isArray(parsed.hashtags)
+            ? parsed.hashtags.filter((h): h is string => typeof h === "string").slice(0, 8)
+            : [],
+        };
+      } catch (error) {
+        request.log.error({ err: error }, "carousel caption generation failed");
+        return reply.status(502).send({
+          error: "could not write the caption",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
 
   const coverSchema = z.object({
     offsetMs: z.number().int().min(0).max(4 * 60 * 60 * 1000),

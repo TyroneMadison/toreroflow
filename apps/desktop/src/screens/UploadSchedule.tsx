@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from "react"
 import {
   api,
   fileUrl,
-  uploadCarousel,
   uploadMedia,
   videoLabel,
   type ClientPost,
@@ -17,6 +16,7 @@ import { useAppState } from "../state/AppState";
 import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
+import CarouselBuilderModal from "../modals/CarouselBuilderModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
 import BestTimes from "../components/BestTimes";
@@ -70,7 +70,9 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
   const carouselInput = useRef<HTMLInputElement>(null);
-  const [carouselBusy, setCarouselBusy] = useState(false);
+  /** Files handed to the carousel builder; non-null opens it. */
+  const [builderFiles, setBuilderFiles] = useState<File[] | null>(null);
+  const [carouselDragOver, setCarouselDragOver] = useState(false);
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -209,28 +211,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
    * Sent in one request so the whole set arrives or none of it does: a
    * carousel missing a slide would publish silently short.
    */
-  const addCarousel = async (files: File[]) => {
-    // Consumed once: after this upload the banner and the association are
-    // done, whether it succeeded or not. Retrying re-picks from the tab.
-    const draft = pendingCarouselDraft;
-    setPendingCarouselDraft(null);
-    return addCarouselFiles(files, draft?.id);
-  };
-
-  const addCarouselFiles = async (files: File[], draftId?: string) => {
-    if (!selectedClient) return;
-    setCarouselBusy(true);
-    try {
-      await uploadCarousel(selectedClient.id, files, draftId);
-      toast.success(`Carousel added with ${files.length} images. Schedule it to Instagram or TikTok.`);
-    } catch (err) {
-      toast.fail("Could not add that carousel", err);
-    } finally {
-      setCarouselBusy(false);
-      void load();
-    }
-  };
-
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragOver(false);
@@ -483,32 +463,57 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             </div>
 
             {/*
-              Its own button rather than the same drop zone: a carousel is a
+              Its own drop zone rather than the video one: a carousel is a
               deliberate choice about a set of images, and inferring it from
               whatever landed on a zone marked "drop videos" would post the
-              wrong thing on a client's account.
+              wrong thing on a client's account. Dropping here opens the
+              builder, where the set is arranged, cropped and captioned
+              before anything uploads.
             */}
             <input
               ref={carouselInput}
               type="file"
-              accept="image/jpeg,image/png"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
               multiple
               style={{ display: "none" }}
               onChange={(e) => {
-                if (e.target.files?.length) void addCarousel(Array.from(e.target.files));
+                if (e.target.files?.length) setBuilderFiles(Array.from(e.target.files));
                 e.target.value = "";
               }}
             />
-            <button
-              className="btn ghost"
-              style={{ width: "100%", marginTop: 8 }}
-              disabled={!selectedClient || carouselBusy}
-              onClick={() =>
-                selectedClient ? carouselInput.current?.click() : onOpenConnect()
-              }
+            <div
+              className={`drop cbld-dropzone${carouselDragOver ? " over" : ""}`}
+              onClick={() => (selectedClient ? carouselInput.current?.click() : onOpenConnect())}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setCarouselDragOver(true);
+              }}
+              onDragLeave={() => setCarouselDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setCarouselDragOver(false);
+                if (!selectedClient) return onOpenConnect();
+                if (e.dataTransfer.files.length) setBuilderFiles(Array.from(e.dataTransfer.files));
+              }}
             >
-              {carouselBusy ? "Uploading images…" : "Add a carousel"}
-            </button>
+              <div className="ring">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+                  <circle cx="9" cy="10" r="1.6" fill="currentColor" />
+                  <path d="M5 17l4.5-4.5 3 3L17 11l2 2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <b>Drop carousel images here</b>
+              <p>
+                or click to browse. JPG, PNG or WebP images; MP4 or MOV video (Instagram only).
+                Up to 35, first item sets the shape.
+              </p>
+              <div className="pills">
+                <span className="mini">Drag to reorder</span>
+                <span className="mini">Crop with a grid</span>
+                <span className="mini">AI caption from the slides</span>
+              </div>
+            </div>
 
             {pendingCarouselDraft && (
               <p className="insworking" style={{ marginTop: 8 }}>
@@ -618,7 +623,11 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                     </div>
 
                     {asset.status !== "ready" ? (
-                      <div className="transcript">{STATUS_LABEL[asset.status]}</div>
+                      <div className="transcript">
+                        {asset.kind === "carousel" && asset.status !== "failed"
+                          ? "Cutting the slides to shape…"
+                          : STATUS_LABEL[asset.status]}
+                      </div>
                     ) : (
                       <>
                         <label className="flabel withact" style={{ marginTop: 10 }}>
@@ -900,7 +909,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         }}
                       />
                       <div className="qmeta">
-                        <b>{p.assetName}</b>
+                        <b>
+                          {p.assetName}
+                          {p.assetKind === "carousel" && (
+                            <span className="qcarousel" title="A carousel of images">
+                              ▤ {p.slideCount || ""}
+                            </span>
+                          )}
+                        </b>
                         <span className={p.status === "failed" ? "qfail" : undefined}>
                           <Pf p={PF_ID[p.platform]} size="sm" />{" "}
                           {p.status === "failed"
@@ -970,6 +986,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
         </div>
       </div>
+
+      {builderFiles && (
+        <CarouselBuilderModal
+          initialFiles={builderFiles}
+          onClose={() => setBuilderFiles(null)}
+          onCreated={() => void load()}
+        />
+      )}
 
       {scheduling && (
         <ScheduleModal

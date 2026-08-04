@@ -50,8 +50,57 @@ export interface TranscriptSegment {
   text: string;
 }
 
-// Videos are published exactly as exported, so there is no reframe and no
-// caption burn-in. ffmpeg is kept only for probing and thumbnails.
+// Uploaded VIDEOS are published exactly as exported: no reframe, no caption
+// burn-in. Carousel slides are the exception, conformed below, because both
+// platforms force every item in a set to one aspect ratio and "the operator
+// crops each slide deliberately" is the entire feature.
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Conform one carousel slide to the set's geometry.
+ *
+ * With a crop rect (from the builder's pan/zoom), that exact region is cut
+ * and scaled. Without one, the slide is center-cropped to fill: scale up to
+ * cover the target, then cut the middle, which needs no knowledge of the
+ * source dimensions.
+ *
+ * The output extension picks the path: .jpg writes one frame (this is also
+ * what turns a WebP into something Instagram accepts), .mp4 re-encodes to
+ * H.264 with its audio kept. Videos in a carousel are short by nature, so a
+ * re-encode is seconds, not minutes.
+ */
+export async function conformSlide(
+  input: string,
+  output: string,
+  target: { width: number; height: number },
+  crop: CropRect | null,
+): Promise<void> {
+  const vf = crop
+    ? `crop=${Math.round(crop.width)}:${Math.round(crop.height)}:${Math.round(crop.x)}:${Math.round(crop.y)},scale=${target.width}:${target.height}`
+    : `scale=${target.width}:${target.height}:force_original_aspect_ratio=increase,crop=${target.width}:${target.height}`;
+  const args = ["-y", "-i", input];
+  if (output.endsWith(".jpg")) {
+    args.push("-vf", vf, "-frames:v", "1", "-q:v", "2", output);
+  } else {
+    args.push(
+      "-vf", vf,
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "20",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-movflags", "+faststart",
+      output,
+    );
+  }
+  await run(ffmpegBin(), args);
+}
 
 export async function extractThumbnail(
   input: string,

@@ -38,6 +38,8 @@ const row = (
   caption: null,
   assetName: `${id}.mp4`,
   thumbUrl: null,
+  assetKind: "video",
+  slideCount: 0,
 });
 
 /* Failures are listed, and sort above everything upcoming. */

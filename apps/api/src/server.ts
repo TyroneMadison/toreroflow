@@ -4,7 +4,7 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
-import { MAX_CAROUSEL_SLIDES } from "@toreroflow/core";
+import { CAROUSEL_ABSOLUTE_MAX } from "@toreroflow/core";
 import { env } from "./env";
 import { verifyFileLink } from "./files/signing";
 import { healthRoutes } from "./routes/health";
@@ -69,7 +69,7 @@ export async function buildServer(
   await app.register(multipart, {
     // Ten files, because that is how many images Instagram takes in one
     // carousel. Video upload still reads a single file and is unaffected.
-    limits: { fileSize: 4 * 1024 * 1024 * 1024, files: MAX_CAROUSEL_SLIDES },
+    limits: { fileSize: 4 * 1024 * 1024 * 1024, files: CAROUSEL_ABSOLUTE_MAX },
   });
   /*
    * Media for the desktop webview.

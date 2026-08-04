@@ -5,6 +5,7 @@ import IORedis from "ioredis";
 import {
   appendWatchNext,
   captionFor,
+  carouselVerdict,
   decodeEscapes,
   INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
@@ -146,6 +147,27 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             .map((w) => w.platform)
             .join(" and ")} cannot be part of this one.`,
         });
+      }
+
+      /*
+       * The composition rules, enforced where the builder already warned.
+       * The builder disables the ineligible platform live, but a request is
+       * not the builder, and a publish failure hours later on a client's
+       * account is the expensive way to learn these.
+       */
+      const slides = Array.isArray(asset.slideKeys) ? (asset.slideKeys as string[]) : [];
+      const verdict = carouselVerdict(
+        slides.map((k) => ({ kind: /\.(mp4|mov)$/i.test(k) ? "video" : "image" })),
+      );
+      if (accounts.some(({ platform }) => platform === "instagram") && !verdict.instagram.eligible) {
+        return reply
+          .status(400)
+          .send({ error: "too many for Instagram", detail: verdict.instagram.reason });
+      }
+      if (accounts.some(({ platform }) => platform === "tiktok") && !verdict.tiktok.eligible) {
+        return reply
+          .status(400)
+          .send({ error: "TikTok cannot take this set", detail: verdict.tiktok.reason });
       }
     }
 
@@ -306,6 +328,13 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           draftName(t.post.mediaAsset?.draftCopy) ||
           t.post.mediaAsset?.originalName ||
           "post",
+        // video | carousel, with the slide count, so the queue and calendar
+        // can mark a set of images as what it is instead of dressing it as a
+        // video.
+        assetKind: t.post.mediaAsset?.kind ?? "video",
+        slideCount: Array.isArray(t.post.mediaAsset?.slideKeys)
+          ? (t.post.mediaAsset.slideKeys as unknown[]).length
+          : 0,
         // Null once the images were swept a month after posting, the same as
         // the upload list. This is the calendar and the queue, so it is where
         // a link to a deleted file would be most visible: every past card

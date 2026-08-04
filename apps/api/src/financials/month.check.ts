@@ -131,24 +131,42 @@ eq(
 // the cycle is not met and no invoice is offered. Calendar clients are
 // unaffected: their money is owed by the month, not by delivery.
 eq(
-  quotaMetFor({ quotaShort: null, quotaLong: null, billingMode: "on_fulfilment" }, { short: 9, long: 9 }),
+  quotaMetFor({ quotaShort: null, quotaLong: null, quotaCarousel: null, billingMode: "on_fulfilment" }, { short: 9, long: 9, carousel: 0 }),
   false,
   "a fulfilment client with no targets is not met even with delivered work",
 );
 eq(
-  quotaMetFor({ quotaShort: null, quotaLong: null, billingMode: "calendar" }, { short: 0, long: 0 }),
+  quotaMetFor({ quotaShort: null, quotaLong: null, quotaCarousel: null, billingMode: "calendar" }, { short: 0, long: 0, carousel: 0 }),
   true,
   "a calendar client with no targets is always met",
 );
 eq(
-  quotaMetFor({ quotaShort: 10, quotaLong: null, billingMode: "on_fulfilment" }, { short: 10, long: 0 }),
+  quotaMetFor({ quotaShort: 10, quotaLong: null, quotaCarousel: null, billingMode: "on_fulfilment" }, { short: 10, long: 0, carousel: 0 }),
   true,
   "meeting the short quota counts as met when long is not tracked",
 );
 eq(
-  quotaMetFor({ quotaShort: 10, quotaLong: 2, billingMode: "on_fulfilment" }, { short: 10, long: 1 }),
+  quotaMetFor({ quotaShort: 10, quotaLong: 2, quotaCarousel: null, billingMode: "on_fulfilment" }, { short: 10, long: 1, carousel: 0 }),
   false,
   "meeting short but not long does not count as met",
+);
+
+/* Carousels gate a cycle exactly as the video formats do. */
+eq(
+  quotaMetFor(
+    { quotaShort: null, quotaLong: null, quotaCarousel: 4, billingMode: "on_fulfilment" },
+    { short: 0, long: 0, carousel: 3 },
+  ),
+  false,
+  "an unmet carousel target holds the cycle open",
+);
+eq(
+  quotaMetFor(
+    { quotaShort: 10, quotaLong: null, quotaCarousel: 4, billingMode: "on_fulfilment" },
+    { short: 10, long: 0, carousel: 4 },
+  ),
+  true,
+  "meeting every tracked format, carousels included, closes it",
 );
 
 /*

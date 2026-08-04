@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { useToast } from "./Toasts";
-import { api, type ClientQuota, type QuotaSection, type VideoFormat } from "../lib/api";
+import { api, type ClientQuota, type QuotaSection } from "../lib/api";
 
-const FORMAT_LABEL: Record<VideoFormat, string> = {
+/** The three countable kinds of work. Carousel is a kind, not a duration. */
+type CounterKey = "short_form" | "long_form" | "carousel";
+
+const FORMAT_LABEL: Record<CounterKey, string> = {
   short_form: "Short-form",
   long_form: "Long-form",
+  carousel: "Carousels",
 };
+const ALL_COUNTERS: CounterKey[] = ["short_form", "long_form", "carousel"];
 
 /**
  * Videos delivered against this pay period's targets, split by format.
@@ -25,10 +30,10 @@ export default function QuotaCard({
 }) {
   const toast = useToast();
   const [quota, setQuota] = useState<ClientQuota | null>(null);
-  const [editing, setEditing] = useState<VideoFormat | null>(null);
+  const [editing, setEditing] = useState<CounterKey | null>(null);
   const [draft, setDraft] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<VideoFormat | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<CounterKey | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -54,17 +59,13 @@ export default function QuotaCard({
 
   if (!quota) return null;
 
-  const tracked: VideoFormat[] = (["short_form", "long_form"] as VideoFormat[]).filter(
-    (f) => (f === "short_form" ? quota.short : quota.long).target != null,
-  );
-  const untracked = (["short_form", "long_form"] as VideoFormat[]).filter(
-    (f) => !tracked.includes(f),
-  );
+  const sectionFor = (f: CounterKey): QuotaSection =>
+    f === "short_form" ? quota.short : f === "long_form" ? quota.long : quota.carousel;
 
-  const sectionFor = (f: VideoFormat): QuotaSection =>
-    f === "short_form" ? quota.short : quota.long;
+  const tracked = ALL_COUNTERS.filter((f) => sectionFor(f).target != null);
+  const untracked = ALL_COUNTERS.filter((f) => !tracked.includes(f));
 
-  const setTarget = (f: VideoFormat, value: number | null) =>
+  const setTarget = (f: CounterKey, value: number | null) =>
     void patch(
       { format: f, target: value },
       value == null
@@ -77,7 +78,7 @@ export default function QuotaCard({
       setDraft("");
     });
 
-  const renderTracked = (f: VideoFormat) => {
+  const renderTracked = (f: CounterKey) => {
     const s = sectionFor(f);
     const target = s.target ?? 0;
     const pct = target > 0 ? Math.min(100, (s.delivered / target) * 100) : 0;
@@ -204,7 +205,7 @@ export default function QuotaCard({
     <div className="card glass quotacard">
       <div className="rowhead">
         <div>
-          <h3>Videos this period</h3>
+          <h3>Work this period</h3>
           <div className="sub">
             {tracked.length === 0
               ? `Set targets for ${clientName}`
@@ -227,7 +228,7 @@ export default function QuotaCard({
               }
             }}
           >
-            {confirmReset ? "Reset both?" : "New period"}
+            {confirmReset ? "Reset all?" : "New period"}
           </span>
         )}
       </div>

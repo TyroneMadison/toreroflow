@@ -59,6 +59,8 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         name: true,
         avatarSeed: true,
         quotaShort: true,
+        quotaCarousel: true,
+        adjustCarousel: true,
         quotaLong: true,
         quotaResetAt: true,
         adjustShort: true,
@@ -83,12 +85,13 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         // Two sources for "when did they last go out": what Toreroflow
         // published, and what the platform reports. A client posting outside
         // the app would otherwise look silent when they are not.
-        const [shortUploads, longUploads, lastPublished, lastExternal, reportForMonth] =
+        const [shortUploads, longUploads, carouselUploads, lastPublished, lastExternal, reportForMonth] =
           await Promise.all([
             prisma.mediaAsset.count({
-              where: { ...inPeriod, format: { in: ["short_form"] } },
+              where: { ...inPeriod, kind: "video", format: { in: ["short_form"] } },
             }),
-            prisma.mediaAsset.count({ where: { ...inPeriod, format: "long_form" } }),
+            prisma.mediaAsset.count({ where: { ...inPeriod, kind: "video", format: "long_form" } }),
+            prisma.mediaAsset.count({ where: { ...inPeriod, kind: "carousel" } }),
             prisma.postTarget.findFirst({
               where: { post: { clientId: c.id }, publishedAt: { not: null } },
               orderBy: { publishedAt: "desc" },
@@ -111,10 +114,14 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
 
         const shortDelivered = Math.max(0, shortUploads + c.adjustShort);
         const longDelivered = Math.max(0, longUploads + c.adjustLong);
+        const carouselDelivered = Math.max(0, carouselUploads + c.adjustCarousel);
         const shortShort = c.quotaShort != null ? Math.max(0, c.quotaShort - shortDelivered) : 0;
         const longShort = c.quotaLong != null ? Math.max(0, c.quotaLong - longDelivered) : 0;
-        const behindBy = shortShort + longShort;
-        const tracked = c.quotaShort != null || c.quotaLong != null;
+        const carouselShort =
+          c.quotaCarousel != null ? Math.max(0, c.quotaCarousel - carouselDelivered) : 0;
+        const behindBy = shortShort + longShort + carouselShort;
+        const tracked =
+          c.quotaShort != null || c.quotaLong != null || c.quotaCarousel != null;
 
         const quiet = daysSince(lastPostAt, now);
 
@@ -133,6 +140,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
             ? {
                 short: { delivered: shortDelivered, target: c.quotaShort },
                 long: { delivered: longDelivered, target: c.quotaLong },
+                carousel: { delivered: carouselDelivered, target: c.quotaCarousel },
                 behindBy,
               }
             : null,

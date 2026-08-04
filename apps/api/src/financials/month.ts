@@ -180,6 +180,7 @@ export function reconcilePrice(input: ReconcileInput): number | null {
 export interface QuotaMetInput {
   quotaShort: number | null;
   quotaLong: number | null;
+  quotaCarousel: number | null;
   billingMode: string;
 }
 
@@ -194,12 +195,14 @@ export interface QuotaMetInput {
  */
 export function quotaMetFor(
   input: QuotaMetInput,
-  delivered: { short: number; long: number },
+  delivered: { short: number; long: number; carousel: number },
 ): boolean {
-  const hasTargets = input.quotaShort != null || input.quotaLong != null;
+  const hasTargets =
+    input.quotaShort != null || input.quotaLong != null || input.quotaCarousel != null;
   if (!hasTargets) return input.billingMode !== "on_fulfilment";
   return (
     (input.quotaShort == null || delivered.short >= input.quotaShort) &&
-    (input.quotaLong == null || delivered.long >= input.quotaLong)
+    (input.quotaLong == null || delivered.long >= input.quotaLong) &&
+    (input.quotaCarousel == null || delivered.carousel >= input.quotaCarousel)
   );
 }

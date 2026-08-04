@@ -46,7 +46,7 @@ function avatarSeed(name: string): string {
 
 const quotaSchema = z.object({
   /** Which format the target/adjustment applies to; ignored when resetting. */
-  format: z.enum(["short_form", "long_form"]).optional(),
+  format: z.enum(["short_form", "long_form", "carousel"]).optional(),
   target: z.number().int().min(0).max(10_000).nullable().optional(),
   adjustment: z.number().int().min(-10_000).max(10_000).optional(),
   adjustBy: z.number().int().min(-1_000).max(1_000).optional(),
@@ -595,9 +595,11 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       select: {
         quotaShort: true,
         quotaLong: true,
+        quotaCarousel: true,
         quotaResetAt: true,
         adjustShort: true,
         adjustLong: true,
+        adjustCarousel: true,
       },
     });
     if (!client) return null;
@@ -609,16 +611,22 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
 
     // Videos still being probed have no format yet. They are counted as
     // short-form, which is the common case, and correct themselves within
-    // seconds once the duration is known.
+    // seconds once the duration is known. Every video count carries
+    // kind: "video", because a carousel also has a null format and was being
+    // quietly counted as an unclassified short before it had its own bucket.
     const [shortUploads, longUploads, shortRevs, longRevs] = await Promise.all([
-      count({ isRevision: false, format: { in: ["short_form"] } }),
-      count({ isRevision: false, format: "long_form" }),
-      count({ isRevision: true, format: { in: ["short_form"] } }),
-      count({ isRevision: true, format: "long_form" }),
+      count({ isRevision: false, kind: "video", format: { in: ["short_form"] } }),
+      count({ isRevision: false, kind: "video", format: "long_form" }),
+      count({ isRevision: true, kind: "video", format: { in: ["short_form"] } }),
+      count({ isRevision: true, kind: "video", format: "long_form" }),
     ]);
     const [unclassifiedUploads, unclassifiedRevs] = await Promise.all([
-      count({ isRevision: false, format: null }),
-      count({ isRevision: true, format: null }),
+      count({ isRevision: false, kind: "video", format: null }),
+      count({ isRevision: true, kind: "video", format: null }),
+    ]);
+    const [carouselUploads, carouselRevs] = await Promise.all([
+      count({ isRevision: false, kind: "carousel" }),
+      count({ isRevision: true, kind: "carousel" }),
     ]);
 
     const section = (
@@ -644,6 +652,12 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         shortRevs + unclassifiedRevs,
       ),
       long: section(client.quotaLong, client.adjustLong, longUploads, longRevs),
+      carousel: section(
+        client.quotaCarousel,
+        client.adjustCarousel,
+        carouselUploads,
+        carouselRevs,
+      ),
     };
   };
 
@@ -663,14 +677,14 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     const body = quotaSchema.parse(request.body ?? {});
     const client = await prisma.client.findFirst({
       where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
-      select: { id: true, adjustShort: true, adjustLong: true },
+      select: { id: true, adjustShort: true, adjustLong: true, adjustCarousel: true },
     });
     if (!client) return reply.status(404).send(NOT_FOUND);
 
-    const long = body.format === "long_form";
-    const targetKey = long ? "quotaLong" : "quotaShort";
-    const adjustKey = long ? "adjustLong" : "adjustShort";
-    const currentAdjust = long ? client.adjustLong : client.adjustShort;
+    const fmt = body.format === "long_form" ? "long" : body.format === "carousel" ? "carousel" : "short";
+    const targetKey = { short: "quotaShort", long: "quotaLong", carousel: "quotaCarousel" }[fmt];
+    const adjustKey = { short: "adjustShort", long: "adjustLong", carousel: "adjustCarousel" }[fmt];
+    const currentAdjust = { short: client.adjustShort, long: client.adjustLong, carousel: client.adjustCarousel }[fmt];
 
     const data: Record<string, number | null | Date> = {};
     // Clearing a target stops tracking that format, so its correction goes
@@ -683,17 +697,18 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     if (body.adjustBy !== undefined) {
       const base = (data[adjustKey] as number | undefined) ?? currentAdjust;
       const before = await quotaView(client.id);
-      const uploads = before ? (long ? before.long.uploads : before.short.uploads) : 0;
+      const uploads = before ? before[fmt].uploads : 0;
       // Never let the correction push the count below zero: without this the
       // adjustment keeps sinking while the displayed total sits at 0, and
       // clicking plus appears to do nothing until the debt is repaid.
       data[adjustKey] = Math.max(-uploads, base + body.adjustBy);
     }
-    // A new period restarts both formats and drops their corrections.
+    // A new period restarts every format and drops their corrections.
     if (body.reset) {
       data.quotaResetAt = new Date();
       data.adjustShort = 0;
       data.adjustLong = 0;
+      data.adjustCarousel = 0;
     }
 
     await prisma.client.update({ where: { id: client.id }, data });

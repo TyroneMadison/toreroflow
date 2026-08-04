@@ -204,7 +204,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   /** Plain words for the hover, since the dot and the padlock are shapes. */
   const evTitle = (t: PostTargetInfo): string => {
     const meta = POST_STATUS[t.status];
-    if (t.status === "failed") return `${t.assetName} - failed: ${t.error ?? "unknown error"}`;
+    const kind = t.assetKind === "carousel" ? `carousel of ${t.slideCount || "several"} - ` : "";
+    if (t.status === "failed") return `${kind}${t.assetName} - failed: ${t.error ?? "unknown error"}`;
     if (meta.movable) return `${t.assetName} - click for details, drag to move`;
     return `${t.assetName} - ${meta.label.toLowerCase()}, cannot be moved`;
   };
@@ -230,7 +231,14 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <span className="evwhen">{when ? `${when} · ${label}` : label}</span>
           <StatusIcon status={t.status} />
         </div>
-        <div className="t2">{t.assetName}</div>
+        <div className="t2">
+          {t.assetKind === "carousel" && (
+            <span className="qcarousel" title="A carousel of images">
+              ▤ {t.slideCount || ""}
+            </span>
+          )}
+          {t.assetName}
+        </div>
         {thumb && <div className="evthumb" style={{ background: `url(${thumb}) center/cover` }} />}
       </div>
     );

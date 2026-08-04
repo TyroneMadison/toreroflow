@@ -13,7 +13,13 @@ export function mediaItemsFor(input: {
   mediaUrl?: string;
   mediaThumbnail?: string;
   imageUrls?: string[];
+  slideItems?: Array<{ url: string; type: "image" | "video" }>;
 }): Array<Record<string, unknown>> {
+  // A mixed carousel names each item's type explicitly, because a video
+  // slide declared an image is refused by the platform at publish time.
+  if (input.slideItems?.length) {
+    return input.slideItems.map((i) => ({ url: i.url, type: i.type }));
+  }
   if (input.imageUrls?.length) {
     return input.imageUrls.map((url) => ({ url, type: "image" }));
   }
@@ -294,6 +300,8 @@ export class ZernioProvider {
      * one video or a set of images.
      */
     imageUrls?: string[];
+    /** Mixed image/video carousel items, in order, each with its type. */
+    slideItems?: Array<{ url: string; type: "image" | "video" }>;
     targets: Array<{
       platform: Platform;
       accountId: string;

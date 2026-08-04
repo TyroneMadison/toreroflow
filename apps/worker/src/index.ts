@@ -2,9 +2,9 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
-import { formatFromDuration } from "@toreroflow/core";
+import { carouselTargetSize, formatFromDuration } from "@toreroflow/core";
 import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
-import { extractThumbnail, probe, type TranscriptSegment } from "@toreroflow/media";
+import { conformSlide, extractThumbnail, probe, type CropRect, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
 import { generateInsight } from "./insights";
 import { runResearch } from "./research";
@@ -30,12 +30,78 @@ async function transcribe(sourcePath: string): Promise<{
   }
 }
 
+/**
+ * Conform a carousel's slides to one geometry and make it ready.
+ *
+ * The route stored the originals untouched plus a crops.json holding the
+ * builder's pan/zoom rects. Both platforms force every item in a set to the
+ * first item's aspect ratio, so that ratio (from its crop when one was made,
+ * from the file itself otherwise) decides the target size, and every slide is
+ * cut to it: images become JPEGs (which also converts WebP into something
+ * Instagram accepts), videos become H.264 at the same frame size.
+ *
+ * Originals and the crops file are deleted on success. They were only ever
+ * inputs, and a carousel's storage story is its finished slides.
+ */
+async function processCarousel(assetId: string, clientId: string): Promise<void> {
+  const dir = path.join(env.STORAGE_DIR, clientId, assetId);
+  await prisma.mediaAsset.update({ where: { id: assetId }, data: { status: "processing" } });
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(dir, "crops.json"), "utf8")) as {
+      originals: string[];
+      crops: Array<CropRect | null>;
+    };
+
+    const firstAbs = path.join(dir, raw.originals[0]!);
+    const firstCrop = raw.crops[0] ?? null;
+    let ratio: number;
+    if (firstCrop) {
+      ratio = firstCrop.width / firstCrop.height;
+    } else {
+      const meta = await probe(firstAbs);
+      ratio = meta.width > 0 && meta.height > 0 ? meta.width / meta.height : 1;
+    }
+    const target = carouselTargetSize(ratio);
+
+    const finalKeys: string[] = [];
+    for (let i = 0; i < raw.originals.length; i++) {
+      const original = raw.originals[i]!;
+      const isVideo = /\.(mp4|mov)$/i.test(original);
+      const outName = `slide-${i + 1}.${isVideo ? "mp4" : "jpg"}`;
+      await conformSlide(
+        path.join(dir, original),
+        path.join(dir, outName),
+        target,
+        raw.crops[i] ?? null,
+      );
+      finalKeys.push(`${clientId}/${assetId}/${outName}`);
+    }
+
+    await prisma.mediaAsset.update({
+      where: { id: assetId },
+      data: { slideKeys: finalKeys, storageKey: finalKeys[0]!, status: "ready" },
+    });
+
+    // Inputs only: the finished slides are the carousel now.
+    for (const original of raw.originals) {
+      await fs.rm(path.join(dir, original), { force: true });
+    }
+    await fs.rm(path.join(dir, "crops.json"), { force: true });
+    console.log(`[worker] carousel ${assetId} ready (${finalKeys.length} slides, ${target.width}x${target.height})`);
+  } catch (error) {
+    console.error(`[worker] carousel ${assetId} failed:`, error);
+    await prisma.mediaAsset.update({ where: { id: assetId }, data: { status: "failed" } });
+    throw error;
+  }
+}
+
 async function processAsset(assetId: string): Promise<void> {
   const asset = await prisma.mediaAsset.findUnique({
     where: { id: assetId },
     include: { client: true },
   });
   if (!asset) return;
+  if (asset.kind === "carousel") return processCarousel(asset.id, asset.clientId);
 
   const assetDir = path.join(env.STORAGE_DIR, asset.clientId, asset.id);
   const sourcePath = path.join(env.STORAGE_DIR, asset.storageKey);
@@ -176,6 +242,20 @@ async function zernioMediaUrl(assetId: string, filePath: string): Promise<string
  * overwrites the same file path, so any cache keyed on the path would
  * silently post the old image.
  */
+/** Presign and upload one carousel slide, image or video, typed by extension. */
+async function zernioSlideUrl(key: string): Promise<string> {
+  const contentType = /\.(mp4|mov)$/i.test(key)
+    ? "video/mp4"
+    : key.endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+  const filePath = path.join(env.STORAGE_DIR, key);
+  const { uploadUrl, publicUrl } = await zernio!.presignMedia(path.basename(key), contentType);
+  const body = await fs.readFile(filePath);
+  await zernio!.uploadMedia(uploadUrl, body, contentType);
+  return publicUrl;
+}
+
 async function zernioImageUrl(coverKey: string): Promise<string> {
   const contentType = coverKey.endsWith(".png") ? "image/png" : "image/jpeg";
   const filePath = path.join(env.STORAGE_DIR, coverKey);
@@ -248,8 +328,15 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
        */
       const slideKeys = Array.isArray(asset?.slideKeys) ? (asset.slideKeys as string[]) : [];
       const isCarousel = asset?.kind === "carousel" && slideKeys.length > 0;
-      const imageUrls = isCarousel
-        ? await Promise.all(slideKeys.map((key) => zernioImageUrl(key)))
+      // Each slide carries its own type: a video slide declared an image is
+      // refused by the platform at publish, hours after the operator left.
+      const slideItems = isCarousel
+        ? await Promise.all(
+            slideKeys.map(async (key) => ({
+              url: await zernioSlideUrl(key),
+              type: /\.(mp4|mov)$/i.test(key) ? ("video" as const) : ("image" as const),
+            })),
+          )
         : undefined;
 
       const mediaUrl = isCarousel
@@ -273,7 +360,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         // the caption into tiktokSettings.description and says so here.
         content: extras.contentOverride ?? caption,
         mediaUrl,
-        imageUrls,
+        slideItems,
         mediaThumbnail: extras.mediaThumbnail,
         targets: [
           {

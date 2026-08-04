@@ -68,6 +68,16 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
+  /** Multipart POST; the browser writes the boundary header itself. */
+  postForm: async <T>(path: string, form: FormData): Promise<T> => {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_URL}${path}`, { method: "POST", headers, body: form });
+    const data: unknown = await res.json();
+    if (!res.ok) throw new ApiError(res.status, data);
+    return data as T;
+  },
 };
 
 /* ---- API response shapes ---- */
@@ -236,6 +246,7 @@ export interface ClientQuota {
   unclassified: number;
   short: QuotaSection;
   long: QuotaSection;
+  carousel: QuotaSection;
 }
 
 export interface ClientReport {
@@ -459,6 +470,10 @@ export interface PostTargetInfo {
   caption: string | null;
   assetName: string;
   thumbUrl: string | null;
+  /** video | carousel, so the queue and calendar can say which is which. */
+  assetKind: string;
+  /** How many slides, when the asset is a carousel. Zero for a video. */
+  slideCount: number;
 }
 
 /** Absolute URL for a server-stored media file. */
@@ -581,8 +596,13 @@ export async function uploadCarousel(
   files: File[],
   /** A Create > Carousels draft whose caption and hashtags ride along. */
   draftId?: string,
+  /** Per-item crop rects from the builder, aligned by position. */
+  crops?: Array<{ x: number; y: number; width: number; height: number } | null>,
 ): Promise<MediaAssetInfo> {
   const form = new FormData();
+  // Fields must precede the files: the route streams parts in order, and a
+  // crops field arriving after 35 files would be read too late to matter.
+  if (crops?.some((c) => c !== null)) form.append("crops", JSON.stringify(crops));
   files.forEach((f, i) => form.append(`slide${i + 1}`, f, f.name));
   const headers: Record<string, string> = {};
   const token = getToken();

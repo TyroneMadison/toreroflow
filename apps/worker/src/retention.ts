@@ -35,7 +35,7 @@ export interface SweepResult {
 export async function sweepPostedSources(now = new Date()): Promise<SweepResult> {
   const assets = await prisma.mediaAsset.findMany({
     where: {
-      kind: "video",
+      kind: { in: ["video", "carousel"] },
       sourceDeletedAt: null,
       // A video nobody has posted anywhere cannot be past its window, so it is
       // not worth loading. Drafts and failures never reach this query.
@@ -43,7 +43,9 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
     },
     select: {
       id: true,
+      kind: true,
       storageKey: true,
+      slideKeys: true,
       originalName: true,
       posts: { select: { targets: { select: { status: true, publishedAt: true } } } },
     },
@@ -64,20 +66,37 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
       continue;
     }
 
-    const abs = path.join(env.STORAGE_DIR, asset.storageKey);
-    try {
-      const stat = await fs.stat(abs);
-      await fs.rm(abs, { force: true });
-      freedBytes += stat.size;
-    } catch (err) {
-      // Already gone is the goal, not a failure: mark it and move on so the
-      // sweep does not keep looking at the same row every day forever.
-      const code = (err as { code?: string }).code;
-      if (code !== "ENOENT") {
-        console.error(`[worker] retention could not clear ${asset.storageKey}:`, err);
-        skipped += 1;
-        continue;
+    /*
+     * What "the source" means depends on what the asset is. A video is one
+     * file. A carousel is its slides, all but the first: the first slide
+     * doubles as the thumbnail every card draws, so it lives on the image
+     * clock and goes with the 30-day sweep below instead.
+     */
+    const slides = Array.isArray(asset.slideKeys) ? (asset.slideKeys as string[]) : [];
+    const keys =
+      asset.kind === "carousel" ? slides.filter((k) => k !== asset.storageKey) : [asset.storageKey];
+
+    let failed = false;
+    for (const key of keys) {
+      const abs = path.join(env.STORAGE_DIR, key);
+      try {
+        const stat = await fs.stat(abs);
+        await fs.rm(abs, { force: true });
+        freedBytes += stat.size;
+      } catch (err) {
+        // Already gone is the goal, not a failure: mark it and move on so the
+        // sweep does not keep looking at the same row every day forever.
+        const code = (err as { code?: string }).code;
+        if (code !== "ENOENT") {
+          console.error(`[worker] retention could not clear ${key}:`, err);
+          failed = true;
+          break;
+        }
       }
+    }
+    if (failed) {
+      skipped += 1;
+      continue;
     }
 
     await prisma.mediaAsset.update({
@@ -116,13 +135,15 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
 export async function sweepPostedThumbnails(now = new Date()): Promise<SweepResult> {
   const assets = await prisma.mediaAsset.findMany({
     where: {
-      kind: "video",
+      kind: { in: ["video", "carousel"] },
       thumbDeletedAt: null,
       posts: { some: { targets: { some: { status: "posted" } } } },
     },
     select: {
       id: true,
+      kind: true,
       clientId: true,
+      storageKey: true,
       originalName: true,
       posts: { select: { targets: { select: { status: true, publishedAt: true } } } },
     },
@@ -141,9 +162,15 @@ export async function sweepPostedThumbnails(now = new Date()): Promise<SweepResu
     }
 
     // Every image the asset may have. A video has a thumbnail and at most one
-    // cover, so most of these are already absent and that is not a failure.
+    // cover; a carousel's one remaining image is its first slide, kept back by
+    // the source sweep because it doubles as the thumbnail. Most of these are
+    // already absent, and that is not a failure.
+    const names: string[] =
+      asset.kind === "carousel"
+        ? [asset.storageKey.split("/").pop() ?? ""]
+        : [...IMAGE_NAMES];
     let removedAny = false;
-    for (const name of IMAGE_NAMES) {
+    for (const name of names) {
       const abs = path.join(env.STORAGE_DIR, asset.clientId, asset.id, name);
       try {
         const stat = await fs.stat(abs);
