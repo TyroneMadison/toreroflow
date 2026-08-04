@@ -205,7 +205,21 @@ export class ZernioProvider {
       const arr = (data.analytics ?? data.posts ?? data.data ?? data) as unknown;
       const items = Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [];
       out.push(...items);
-      if (items.length < pageSize) break;
+
+      /*
+       * A short page is not the end of the data.
+       *
+       * Measured against the live account: page 1 of 13 returned 99 items on
+       * a limit of 100, with 1,244 posts behind it. The old rule stopped at
+       * any page shorter than the limit, so the deep ingest was silently
+       * truncated to one page and the rolling store's older posts stopped
+       * refreshing. The response carries its own pagination object, which is
+       * authoritative when present; an empty page still ends the walk either
+       * way, so a response without one cannot loop forever.
+       */
+      if (!items.length) break;
+      const pg = data.pagination as { pages?: number } | undefined;
+      if (typeof pg?.pages === "number" && page >= pg.pages) break;
     }
     return out;
   }
