@@ -44,3 +44,4 @@ Torerone_Portfolio_Canva.pptx.pdf
 
 # The server stack keeps its secrets here, and they never belong in git.
 infra/.env
+apps/desktop/public/_preview.html
