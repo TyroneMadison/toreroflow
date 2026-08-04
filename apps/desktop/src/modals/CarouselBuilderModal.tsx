@@ -193,7 +193,12 @@ export default function CarouselBuilderModal({
     // Buttons on the card keep their own clicks.
     if ((e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic pointers (tests, automation) have no capturable id; the
+      // drag still works from the move events alone.
+    }
     drag.current = {
       id,
       startX: e.clientX,
@@ -684,7 +689,11 @@ function CropEditor({
         ref={frameRef}
         style={{ aspectRatio: String(ratio) }}
         onPointerDown={(e) => {
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          try {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          } catch {
+            // Synthetic pointers have no capturable id; panning still works.
+          }
           pan.current = { startX: e.clientX, startY: e.clientY, ox: offset.x, oy: offset.y };
         }}
         onPointerMove={(e) => {
