@@ -1553,3 +1553,90 @@
 /* Marks a queue or calendar card as a carousel, with its slide count. */
 .qcarousel{display:inline-block;margin-right:5px;font-size:10px;padding:1px 6px;border-radius:6px;
   background:rgba(139,123,255,.16);color:#a99bff;border:1px solid rgba(139,123,255,.35);vertical-align:1px}
+
+/* ============================== liquid glass ==============================
+   The surface language, upgraded from flat translucency to lensed glass.
+   One recipe, four layers, matching the reference set: a bright specular
+   line along the top edge, faint side and bottom catch-lights, an inner
+   glow that reads as thickness, and a sheen gradient that reads as the
+   curved reflection. Everything is a static shadow or gradient: nothing
+   here animates, so the motion budget is untouched.
+   ========================================================================= */
+:root{
+  --lg-rim:
+    inset 0 1.5px 0 rgba(255,255,255,.30),
+    inset 0 -1.5px 0 rgba(255,255,255,.07),
+    inset 1px 0 0 rgba(255,255,255,.08),
+    inset -1px 0 0 rgba(255,255,255,.08),
+    inset 0 0 22px rgba(255,255,255,.05);
+  --lg-sheen: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 36%, rgba(255,255,255,0) 62%);
+  /* Inputs are troughs, not slabs: light falls in, not off. */
+  --lg-trough:
+    inset 0 2px 7px rgba(0,0,0,.28),
+    inset 0 1px 0 rgba(255,255,255,.14),
+    inset 0 -1px 0 rgba(255,255,255,.05);
+}
+[data-theme="light"]{
+  --lg-rim:
+    inset 0 1.5px 0 rgba(255,255,255,.95),
+    inset 0 -1.5px 0 rgba(255,255,255,.5),
+    inset 1px 0 0 rgba(255,255,255,.6),
+    inset -1px 0 0 rgba(255,255,255,.6),
+    inset 0 0 22px rgba(255,255,255,.4);
+  --lg-sheen: linear-gradient(180deg, rgba(255,255,255,.8), rgba(255,255,255,.3) 36%, rgba(255,255,255,0) 62%);
+  --lg-trough:
+    inset 0 2px 7px rgba(50,55,110,.16),
+    inset 0 1px 0 rgba(255,255,255,.9);
+}
+
+/* The panels. Cards, sidebars, KPIs: everything already speaking .glass. */
+.glass{box-shadow:var(--lg-rim), var(--shadow);background-image:var(--lg-sheen)}
+.glass-sm{box-shadow:var(--lg-rim);background-image:var(--lg-sheen)}
+
+/* The coral action button becomes the glossy pill of the reference sheet:
+   hot fill, white specular bite at the top, a darker meniscus at the bottom. */
+.btn{box-shadow:0 10px 26px rgba(255,111,97,.42),
+  inset 0 1.5px 0 rgba(255,255,255,.7),
+  inset 0 -2px 7px rgba(120,20,10,.35),
+  inset 0 0 14px rgba(255,255,255,.10)}
+.btn.ghost{box-shadow:var(--lg-rim);background-image:var(--lg-sheen)}
+
+/* Small chrome: pills, tags, toggles, icon buttons, platform rows. */
+.mini,.hash,.revtoggle,.iconbtn,.pt,.cbtn,.dangerbtn{box-shadow:var(--lg-rim)}
+.mini,.revtoggle,.pt{background-image:var(--lg-sheen)}
+
+/* Inputs and the caption box: troughs the content sits down into. */
+.field-in,.captionbox textarea{box-shadow:var(--lg-trough)}
+
+/* The toggle switch track, a tiny glass tube. */
+.switch{box-shadow:inset 0 1px 3px rgba(0,0,0,.35), inset 0 -1px 0 rgba(255,255,255,.18)}
+
+/* Floating surfaces: the date picker, brand menu and chart tips sit above
+   everything, so they carry the strongest rim. */
+.gdt-pop,.brandmenu,.finchart .tip{box-shadow:var(--lg-rim), 0 26px 60px rgba(0,0,0,.7)}
+[data-theme="light"] .gdt-pop,[data-theme="light"] .brandmenu,[data-theme="light"] .finchart .tip{
+  box-shadow:var(--lg-rim), 0 26px 60px rgba(50,55,110,.3)}
+
+/* ---- the carousel builder in glass ---- */
+/* A slide is a photo held in a clear panel: the glass is the mount around
+   it, not a colour of its own. Padding turns the card's surface into a
+   visible rim; the image keeps its own smaller radius inside it. */
+.cbld-card{padding:5px;background:var(--glass);backdrop-filter:blur(8px) saturate(140%);
+  -webkit-backdrop-filter:blur(8px) saturate(140%);
+  box-shadow:var(--lg-rim), 0 10px 26px rgba(0,0,0,.35);background-image:var(--lg-sheen)}
+.cbld-card img,.cbld-card video{border-radius:12px}
+.cbld-card.dragging{box-shadow:var(--lg-rim), 0 22px 52px rgba(0,0,0,.6)}
+/* The number is a glass chip riding the photo, not a black sticker. */
+.cbld-num{background:rgba(255,255,255,.16);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.45), 0 2px 8px rgba(0,0,0,.35);
+  top:11px;left:11px}
+.cbld-kind,.cbld-cropped,.cbld-remove{background:rgba(255,255,255,.12);backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.3);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+.cbld-cropped{color:#d9f7e9}
+.cbld-kind{color:#fff}
+.cbld-remove{color:#fff;top:11px;right:11px}
+.cbld-add{box-shadow:var(--lg-rim);background:var(--glass);background-image:var(--lg-sheen);border-style:solid}
+.cbld-arrow{box-shadow:var(--lg-rim);background-image:var(--lg-sheen)}
+.cbld-frame{box-shadow:var(--lg-rim), 0 14px 34px rgba(0,0,0,.45)}
+[data-theme="light"] .cbld-card{box-shadow:var(--lg-rim), 0 10px 26px rgba(50,55,110,.22)}
