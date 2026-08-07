@@ -1,0 +1,19 @@
+/* Studio editor shell. Motion here is transform and opacity only. */
+
+.stu{display:flex;flex-direction:column;gap:16px;min-width:0}
+
+.stu-top{display:flex;align-items:center;gap:12px}
+.stu-save{display:flex;align-items:center;gap:10px;margin-left:auto}
+.stu-savestate.ok{color:var(--green)}
+.stu-copyerr{color:var(--red)}
+
+/* The 4-step pill group, centered between the back arrow and the save area. */
+.stu-steps{display:flex;gap:4px;background:var(--glass);border:1px solid var(--brd-soft);border-radius:14px;padding:4px;margin:0 auto;box-shadow:var(--lg-rim)}
+.stu-step-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:11px;color:var(--txt-2);cursor:pointer;user-select:none;transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.stu-step-pill:active{transform:scale(.97)}
+.stu-step-pill.done{color:var(--txt)}
+.stu-step-pill.on{background:var(--grad);color:#000}
+.stu-step-pill svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;fill:none;flex:0 0 auto}
+
+.stu-body{display:flex;gap:18px;align-items:flex-start;min-width:0}
+.stu-stepbody{flex:1;min-width:0}

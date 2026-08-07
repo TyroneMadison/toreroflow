@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useAppState } from "../state/AppState";
+import StudioHome from "../editor/StudioHome";
+import StudioEditor from "../editor/StudioEditor";
 
 type EditArea = "studio" | "analyze" | "ideas";
 
@@ -27,6 +29,9 @@ const AREAS: { id: EditArea; label: string; title: string; sub: string }[] = [
 export default function EditScreen() {
   const { selectedClient } = useAppState();
   const [area, setArea] = useState<EditArea>("studio");
+  // The Studio project being edited. The screen remounts per brand (keyed in
+  // App.tsx), so a project never survives a brand switch.
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
   if (!selectedClient) {
     return (
@@ -63,10 +68,21 @@ export default function EditScreen() {
             </span>
           ))}
         </div>
-        <div className="card glass" key={active.id}>
-          <h3>{active.title}</h3>
-          <div className="sub">{active.sub}</div>
-        </div>
+        {area === "studio" ? (
+          openProjectId ? (
+            <StudioEditor
+              projectId={openProjectId}
+              onClose={() => setOpenProjectId(null)}
+            />
+          ) : (
+            <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+          )
+        ) : (
+          <div className="card glass" key={active.id}>
+            <h3>{active.title}</h3>
+            <div className="sub">{active.sub}</div>
+          </div>
+        )}
       </div>
     </section>
   );

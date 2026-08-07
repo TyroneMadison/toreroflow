@@ -1,0 +1,32 @@
+/* Word editor. Motion here is transform and opacity only. */
+
+.wed{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+/* Mode pills: Remove words | Restore words | Edit words. */
+.wed-modes{display:inline-flex;align-self:flex-start;gap:4px;padding:4px;border-radius:14px}
+.wed-mode{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:11px;color:var(--txt-2);cursor:pointer;user-select:none;transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.wed-mode:active{transform:scale(.97)}
+.wed-mode.on{background:var(--grad);color:#000}
+
+.wed-helper{font-size:12.5px;color:var(--txt-3);padding-left:2px}
+
+/* Sentence rows. */
+.wed-rows{display:flex;flex-direction:column;gap:10px}
+.wed-row{display:flex;align-items:flex-start;gap:12px;padding:12px 14px}
+
+.wed-play{flex:0 0 auto;width:30px;height:30px;border-radius:10px;background:var(--grad);border:none}
+.wed-play svg{stroke:#000;width:15px;height:15px}
+
+.wed-words{display:flex;flex-wrap:wrap;column-gap:10px;row-gap:8px;align-items:baseline;padding-top:4px;font-size:14px;line-height:1.5;color:var(--txt)}
+.wed-w{user-select:none}
+.wed-w.act{cursor:pointer}
+.wed-w.act:hover{color:var(--v)}
+.wed-w.cut{color:var(--txt-3);text-decoration:line-through;opacity:.55}
+.wed-w.edited{text-decoration:underline dotted;text-underline-offset:3px}
+.wed-w.cut.edited{text-decoration:line-through}
+
+.wed-input{font-family:inherit;font-size:14px;color:var(--txt);background:var(--lg-trough,var(--glass-2));border:1px solid var(--brd-soft);border-radius:8px;padding:1px 6px;outline:none}
+.wed-input:focus{border-color:var(--v)}
+
+.wed-skel{height:14px;flex:1;align-self:center}
+.wed-none{font-size:13px;color:var(--txt-3)}

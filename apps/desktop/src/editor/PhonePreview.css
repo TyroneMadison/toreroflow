@@ -1,0 +1,35 @@
+/* The phone preview. No CSS transitions or keyframes here: playback motion
+   is JS-driven repositioning, and the wrapper's zoom is a transform. */
+
+.pv{flex:0 0 auto;position:sticky;top:0}
+.pv-frame{width:271px;border-radius:36px;padding:14px 14px 10px;display:flex;flex-direction:column}
+
+/* 243 x 432 is exactly 9:16; STAGE_W in PhonePreview.tsx must match. */
+.pv-screen{position:relative;width:243px;height:432px;border-radius:24px;overflow:hidden;background:#000}
+
+.pv-notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:82px;height:17px;border-radius:9px;background:rgba(0,0,0,.88);border:1px solid rgba(255,255,255,.08);z-index:5}
+
+.pv-videowrap{position:absolute;inset:0;transform-origin:center}
+.pv-videowrap video{width:100%;height:100%;object-fit:cover;display:block}
+
+.pv-overlays{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}
+.pv-text{position:absolute;transform:translate(-50%,-50%);max-width:92%;white-space:pre-wrap;font-family:var(--font);line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+
+.pv-safe{position:absolute;inset:0;z-index:4;pointer-events:none}
+.pv-safe>div{position:absolute;background:rgba(255,45,85,.16);border:1px dashed rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center}
+.pv-safe span{font-size:9px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.8)}
+.pv-safe-top{top:0;left:0;right:0;height:12%}
+.pv-safe-bottom{bottom:0;left:0;right:0;height:18%}
+.pv-safe-right{top:12%;bottom:18%;right:0;width:10%}
+.pv-safe-right span{transform:rotate(90deg);white-space:nowrap}
+
+.pv-transport{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px}
+.pv-play{background:var(--grad);border:none}
+.pv-play svg{stroke:#000}
+.pv-eye-on{color:var(--v)}
+
+.pv-scrub{padding:10px 2px 4px;cursor:pointer;touch-action:none}
+.pv-scrub-trough{position:relative;height:4px;border-radius:2px;background:var(--lg-trough,var(--glass-2))}
+.pv-scrub-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--grad);box-shadow:0 2px 8px rgba(255,111,97,.5)}
+
+.pv-time{align-self:flex-start;margin-top:4px}

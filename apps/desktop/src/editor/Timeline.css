@@ -1,0 +1,70 @@
+/* The Studio timeline. Transitions and keyframes here move transform and
+   opacity only; drag frames are JS-driven inline styles, not CSS motion. */
+
+.tl{display:flex;flex-direction:column;gap:12px;padding:16px}
+
+/* track-type buttons */
+.tl-tracks{display:flex;gap:8px}
+.tl-track{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:12px;background:rgba(0,0,0,.4);color:var(--txt-2);font-size:12.5px;font-weight:600;font-family:var(--font);cursor:pointer;transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.tl-track:active{transform:scale(.97)}
+.tl-track:hover{color:var(--txt)}
+.tl-track.on{color:var(--v);border-color:rgba(255,111,97,.5)}
+.tl-track svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.9;fill:none;flex:0 0 auto}
+
+/* the scrolling body, scrollbar hidden */
+.tl-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;border-radius:var(--radius-sm)}
+.tl-scroll::-webkit-scrollbar{display:none}
+.tl-body{position:relative;touch-action:none;user-select:none;cursor:pointer}
+
+/* ruler */
+.tl-ruler{position:relative;height:24px}
+.tl-tick{position:absolute;bottom:0;width:1px;height:6px;background:var(--brd-soft)}
+.tl-tick.big{height:10px;background:var(--brd)}
+.tl-ticklab{position:absolute;bottom:11px;transform:translateX(-50%);font-size:10px;font-style:normal;color:var(--txt-3);white-space:nowrap}
+
+/* lanes */
+.tl-lane{position:relative;border-top:1px solid var(--brd-soft)}
+.tl-lane-text{height:32px}
+.tl-lane-broll{height:36px}
+.tl-lane-clips{height:70px}
+.tl-lane-audio{height:36px;border-bottom:1px solid var(--brd-soft)}
+.tl-hint{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;border:1.5px dashed rgba(255,255,255,.18);border-radius:10px;color:var(--txt-3);font-size:11.5px;pointer-events:none}
+
+/* overlay chips: text, b-roll, graphics, audio */
+.tl-chip{position:absolute;top:4px;bottom:4px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:9px;background:var(--glass-2);border:1px solid var(--brd-soft);box-shadow:var(--lg-rim);font-size:11px;font-weight:600;color:var(--txt-2);white-space:nowrap;overflow:hidden;cursor:grab;user-select:none;touch-action:none}
+.tl-chip.on{border-color:rgba(255,111,97,.65);color:var(--txt);box-shadow:inset 0 0 0 1px rgba(255,111,97,.35)}
+.tl-edge{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
+.tl-edge.l{left:0}
+.tl-edge.r{right:0}
+.tl-chipbtn{border:none;background:rgba(255,111,97,.2);color:var(--v);font-size:10px;font-weight:700;padding:2px 7px;border-radius:7px;cursor:pointer;font-family:var(--font)}
+
+/* clip blocks: filmstrip, name, badge, notches, splits, trim */
+.tl-clip{position:absolute;top:3px;bottom:3px;border-radius:10px;overflow:hidden;background:var(--glass);border:1px solid var(--brd-soft);cursor:pointer;user-select:none;touch-action:none}
+.tl-clip.on{border-color:rgba(255,111,97,.7);box-shadow:inset 0 0 0 1px rgba(255,111,97,.4)}
+.tl-clipname{position:absolute;top:2px;left:8px;right:14px;z-index:2;font-size:10.5px;font-weight:600;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.tl-film{position:absolute;left:0;right:0;top:18px;bottom:0;background-size:auto 100%;background-repeat:repeat-x;background-position:left center;background-color:rgba(255,111,97,.10)}
+.tl-durbadge{position:absolute;right:14px;bottom:4px;z-index:2;font-size:10px;font-weight:700;padding:1px 7px;border-radius:8px;background:rgba(0,0,0,.6);color:var(--txt-2);border:1px solid var(--brd-soft)}
+.tl-notch{position:absolute;top:18px;bottom:0;width:6px;transform:translateX(-50%);background:rgba(0,0,0,.62);z-index:1}
+.tl-splitline{position:absolute;top:18px;bottom:0;width:2px;transform:translateX(-50%);background:rgba(255,255,255,.75);z-index:2}
+.tl-trimshade{position:absolute;top:0;bottom:0;right:10px;background:rgba(0,0,0,.55);z-index:2}
+.tl-trim{position:absolute;top:0;bottom:0;right:0;width:10px;background:var(--grad);border-radius:0 9px 9px 0;cursor:ew-resize;z-index:3;opacity:.85}
+.tl-trim:hover{opacity:1}
+
+/* playhead */
+.tl-ph{position:absolute;top:0;bottom:0;left:0;width:0;z-index:5;pointer-events:none}
+.tl-ph-line{position:absolute;top:16px;bottom:0;left:-1px;width:2px;background:var(--v);box-shadow:0 0 8px rgba(255,111,97,.6)}
+.tl-ph-bubble{position:absolute;top:0;left:0;transform:translateX(-50%);font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:var(--v);color:#000;white-space:nowrap}
+.tl-ph-grab{position:absolute;bottom:-2px;left:0;transform:translateX(-50%);width:12px;height:12px;border-radius:50%;background:var(--v);box-shadow:0 2px 8px rgba(255,111,97,.5)}
+
+/* selection strip */
+.tl-selstrip{display:flex;align-items:center;gap:12px;padding:10px 14px}
+.tl-excerpt{flex:1;min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.45}
+.tl-selbtns{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.tl-smallbtn{padding:8px 14px;font-size:12.5px}
+.tl-smallicon{width:32px;height:32px;border-radius:10px}
+.tl-smallicon svg{width:15px;height:15px}
+
+/* transport */
+.tl-transport{display:flex;align-items:center;gap:10px;align-self:center;padding:8px 14px;border-radius:18px;background:rgba(0,0,0,.55);border:1px solid var(--brd-soft);box-shadow:var(--lg-rim)}
+.tl-play{background:var(--grad);border:none}
+.tl-play svg{stroke:#000}

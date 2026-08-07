@@ -1,6 +1,6 @@
 /*
  * Node's types are deliberately not in this package's tsconfig, which is a
- * browser one. This check has to read a file off disk, so the two functions it
+ * browser one. This check has to read files off disk, so the functions it
  * needs are declared here rather than pulling a whole type package into the
  * app's typecheck. The hand-rolled assert follows the other checks in this
  * folder for the same reason.
@@ -9,7 +9,7 @@ declare const process: { cwd(): string };
 
 // @ts-expect-error node's fs is not in this package's browser tsconfig on
 // purpose. This file never reaches the bundle: it runs under tsx as a check.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 const assert = {
   equal(actual: unknown, expected: unknown, message: string) {
@@ -22,7 +22,7 @@ const assert = {
 /**
  * Runnable check: `pnpm --filter @toreroflow/desktop test`.
  *
- * This one reads the stylesheet rather than any code, because the thing being
+ * This one reads the stylesheets rather than any code, because the thing being
  * defended is a property of the CSS: motion in this app must run on the
  * compositor.
  *
@@ -38,8 +38,21 @@ const assert = {
  * element animating on a deliberate action rather than continuously.
  */
 
-// Run from the package root by its test script, so the path is fixed.
-const CSS = readFileSync(`${process.cwd()}/src/styles.css`, "utf8");
+// Run from the package root by its test script, so the paths are fixed.
+const ROOT = process.cwd();
+const MAIN = `${ROOT}/src/styles.css`;
+
+/** Every .css file under a directory, editor components keep theirs beside them. */
+function cssUnder(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const entries: string[] = readdirSync(dir, { recursive: true }).map(String);
+  return entries
+    .map((f) => f.replace(/\\/g, "/"))
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => `${dir}/${f}`);
+}
+
+const FILES = [MAIN, ...cssUnder(`${ROOT}/src/editor`), ...cssUnder(`${ROOT}/src/screens`)];
 
 /** Properties whose animation costs layout or a repaint on every frame. */
 const EXPENSIVE = [
@@ -82,32 +95,13 @@ const ALLOWED: Record<string, string> = {
     "background-position on a loading placeholder, which only exists while something is loading.",
 };
 
-/* ---- every transition in the stylesheet ---- */
-
-const transitions = [...CSS.matchAll(/([^{}]+)\{[^{}]*transition:([^;}]+)/g)].map((m) => ({
-  selector: m[1]!.trim().split("\n").pop()!.trim(),
-  value: m[2]!.trim(),
-}));
-
-assert.equal(transitions.length > 10, true, "the stylesheet should have transitions to check");
-
-for (const t of transitions) {
-  for (const prop of EXPENSIVE) {
-    // Word boundary: "transition:width" matters, "transition:transform" does
-    // not just because it contains "for".
-    const animatesIt = new RegExp(`(^|[,\\s])${prop}(\\s|$|,)`).test(t.value);
-    if (!animatesIt) continue;
-    const allowed = Object.keys(ALLOWED).some((sel) => t.selector.includes(sel));
-    assert.equal(
-      allowed,
-      true,
-      `${t.selector} animates "${prop}", which costs layout or a repaint every frame.\n` +
-        `        Use transform or opacity, or add the selector to ALLOWED in this file with the reason.`,
-    );
-  }
-}
-
-/* ---- and every keyframe ---- */
+const KEYFRAME_ALLOWED = new Set([
+  // A loading shimmer only runs while something is loading, and there is no
+  // compositor-only way to slide a gradient across text.
+  "sh",
+  // Draws a line by shortening its dash offset. SVG geometry, one small path.
+  "draw",
+]);
 
 /**
  * Keyframe bodies, found by matching braces rather than by regex.
@@ -133,38 +127,70 @@ function keyframeBlocks(css: string): Array<{ name: string; body: string }> {
   return out;
 }
 
-const keyframeBodies = keyframeBlocks(CSS).map((k) => ["", k.name, k.body] as const);
-assert.equal(keyframeBodies.length > 5, true, "the stylesheet should have keyframes to check");
+for (const file of FILES) {
+  const css = readFileSync(file, "utf8");
+  // The message names the file, because "which stylesheet" is the first
+  // question a failure raises now that components carry their own.
+  const short = file.slice(ROOT.length + 1);
 
-const KEYFRAME_ALLOWED = new Set([
-  // A loading shimmer only runs while something is loading, and there is no
-  // compositor-only way to slide a gradient across text.
-  "sh",
-  // Draws a line by shortening its dash offset. SVG geometry, one small path.
-  "draw",
-]);
+  /* ---- every transition in the stylesheet ---- */
 
-for (const [, name, body] of keyframeBodies) {
-  if (KEYFRAME_ALLOWED.has(name!)) continue;
-  for (const prop of EXPENSIVE) {
-    const animatesIt = new RegExp(`[{;\\s]${prop}\\s*:`).test(body!);
-    assert.equal(
-      animatesIt,
-      false,
-      `@keyframes ${name} animates "${prop}". Keyframes should move transform and opacity only.`,
-    );
+  const transitions = [...css.matchAll(/([^{}]+)\{[^{}]*transition:([^;}]+)/g)].map((m) => ({
+    selector: m[1]!.trim().split("\n").pop()!.trim(),
+    value: m[2]!.trim(),
+  }));
+
+  if (file === MAIN) {
+    assert.equal(transitions.length > 10, true, "the main stylesheet should have transitions to check");
+  }
+
+  for (const t of transitions) {
+    for (const prop of EXPENSIVE) {
+      // Word boundary: "transition:width" matters, "transition:transform" does
+      // not just because it contains "for".
+      const animatesIt = new RegExp(`(^|[,\\s])${prop}(\\s|$|,)`).test(t.value);
+      if (!animatesIt) continue;
+      const allowed = Object.keys(ALLOWED).some((sel) => t.selector.includes(sel));
+      assert.equal(
+        allowed,
+        true,
+        `${short}: ${t.selector} animates "${prop}", which costs layout or a repaint every frame.\n` +
+          `        Use transform or opacity, or add the selector to ALLOWED in motion.check.ts with the reason.`,
+      );
+    }
+  }
+
+  /* ---- and every keyframe ---- */
+
+  const keyframes = keyframeBlocks(css);
+  if (file === MAIN) {
+    assert.equal(keyframes.length > 5, true, "the main stylesheet should have keyframes to check");
+  }
+
+  for (const k of keyframes) {
+    if (KEYFRAME_ALLOWED.has(k.name)) continue;
+    for (const prop of EXPENSIVE) {
+      const animatesIt = new RegExp(`[{;\\s]${prop}\\s*:`).test(k.body);
+      assert.equal(
+        animatesIt,
+        false,
+        `${short}: @keyframes ${k.name} animates "${prop}". Keyframes should move transform and opacity only.`,
+      );
+    }
   }
 }
 
 /* ---- the kill switch ---- */
 
 // Anyone who has asked their system to reduce motion gets none of this, and it
-// has to be turned off in one place rather than remembered per animation.
-const reducedBlocks = CSS.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)/g) ?? [];
+// has to be turned off in one place rather than remembered per animation. The
+// global rule lives in the main stylesheet and covers every component sheet.
+const MAIN_CSS = readFileSync(MAIN, "utf8");
+const reducedBlocks = MAIN_CSS.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)/g) ?? [];
 assert.equal(reducedBlocks.length >= 1, true, "reduced motion must be honoured");
 assert.equal(
   /@media\s*\(prefers-reduced-motion:reduce\)\{\s*\*,\*::before,\*::after\{/.test(
-    CSS.replace(/\s*\n\s*/g, ""),
+    MAIN_CSS.replace(/\s*\n\s*/g, ""),
   ),
   true,
   "there must be one global reduced-motion rule, not only per-element ones",
@@ -175,9 +201,9 @@ assert.equal(
 // A list of two hundred rows must never become two hundred animations with
 // two hundred growing delays.
 assert.equal(
-  CSS.includes(".stagger>*:nth-child(n+6)"),
+  MAIN_CSS.includes(".stagger>*:nth-child(n+6)"),
   true,
   "the stagger must collapse to a single delay past a handful of rows",
 );
 
-console.log("motion: all checks passed");
+console.log(`motion: all checks passed (${FILES.length} stylesheets)`);

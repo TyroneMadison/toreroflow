@@ -19,7 +19,6 @@ export type SocialAccountStatus = "connected" | "needs_reconnect" | "error";
 export type MediaAssetStatus = "uploaded" | "processing" | "ready" | "failed";
 export type PostStatus = "draft" | "scheduled" | "publishing" | "posted" | "failed";
 export type PostTargetStatus = "scheduled" | "publishing" | "posted" | "failed";
-export type CaptionStyle = "bold_pop" | "karaoke" | "minimal" | "neon";
 
 export interface HealthResponse {
   status: "ok";

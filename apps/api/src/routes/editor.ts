@@ -8,6 +8,7 @@ import IORedis from "ioredis";
 import { z } from "zod";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { env } from "../env";
+import { fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -28,6 +29,22 @@ const patchSchema = z.object({
   // only insists it is an object, so a stringified blob cannot slip in.
   doc: z.record(z.unknown()).optional(),
 });
+
+/**
+ * An asset row as the desktop sees it: raw storage keys swapped for signed
+ * URLs the webview can actually load. Keys never leave the server.
+ */
+function assetView<
+  T extends { storageKey: string; proxyKey: string | null; stripKey: string | null },
+>(a: T) {
+  const { storageKey, proxyKey, stripKey, ...rest } = a;
+  return {
+    ...rest,
+    sourceUrl: storageKey !== "pending" ? fileLinkVersioned(storageKey, null) : null,
+    proxyUrl: proxyKey ? fileLinkVersioned(proxyKey, null) : null,
+    stripUrl: stripKey ? fileLinkVersioned(stripKey, null) : null,
+  };
+}
 
 const ASSET_KINDS = ["clip", "audio", "graphic"] as const;
 const ASSET_EXT_FALLBACK: Record<string, string> = {
@@ -107,7 +124,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       include: { assets: { orderBy: { createdAt: "asc" } } },
     });
     if (!project) return reply.status(404).send({ error: "project not found" });
-    return project;
+    return { ...project, assets: project.assets.map(assetView) };
   });
 
   /** The autosave target. The doc arrives whole every time; nothing merges. */
@@ -228,7 +245,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
         data: { storageKey },
       });
       await editQueue.add("process", { editAssetId: asset.id });
-      return reply.status(201).send(updated);
+      return reply.status(201).send(assetView(updated));
     },
   );
 

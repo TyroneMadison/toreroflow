@@ -20,4 +20,8 @@ export * from "./carousel";
 export * from "./welcome";
 export * from "./weeks";
 export * from "./carouselLimits";
+export * from "./editDoc";
+export * from "./autoCut";
+export * from "./edl";
+export * from "./captionChunks";
 export * as tokens from "./tokens";

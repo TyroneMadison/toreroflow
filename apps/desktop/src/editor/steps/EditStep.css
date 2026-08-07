@@ -1,0 +1,9 @@
+/* Edit step shell. Motion here is transform and opacity only. */
+
+.edstep{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* The Word editor | Timeline segmented toggle, same recipe as .stu-steps. */
+.edstep-toggle{display:inline-flex;align-self:flex-start;gap:4px;padding:4px;border-radius:14px}
+.edstep-pill{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 16px;border-radius:11px;color:var(--txt-2);cursor:pointer;user-select:none;transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.edstep-pill:active{transform:scale(.97)}
+.edstep-pill.on{background:var(--grad);color:#000}
