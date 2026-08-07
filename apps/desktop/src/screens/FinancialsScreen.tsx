@@ -192,7 +192,7 @@ export default function FinancialsScreen() {
             <div className="band">
               <NetCard series={data.series} />
               <DonutCard rows={data.revenue} totalCents={data.totals.inCents} />
-              <GlanceCard totals={data.totals} ytd={data.ytd} />
+              <GlanceCard totals={data.totals} ytd={data.ytd} bank={data.bank} />
             </div>
 
             <MonthBars series={data.series} onPick={setMonth} />
@@ -204,7 +204,7 @@ export default function FinancialsScreen() {
               </div>
             )}
 
-            <BankSection reloadKey={bankKey} />
+            <BankSection reloadKey={bankKey} onMoneyMoved={() => void refresh()} />
             <TaxCard year={year} />
 
             <RevenueSection

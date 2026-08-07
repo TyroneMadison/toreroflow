@@ -52,12 +52,23 @@ export default function RevenueSection({
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   };
   const deleteSticks = (row: RevenueRow): boolean => {
+    // A hand-entered row is always the operator's to remove: nothing seeds
+    // it back, so the delete genuinely sticks.
+    if (row.manual) return true;
     if (month < currentMonthKey()) return true;
     const client = clients.find((c) => c.id === row.clientId);
     return client?.monthlyPriceCents == null;
   };
 
   const [drafts, setDrafts] = useState<Record<string, PriceDraft>>({});
+  /*
+   * Money in that is not a client's bill: the operator subsidising the
+   * business from a paycheck, a refund, anything that arrived. Recorded as
+   * received the moment it is added, because it describes money that exists.
+   */
+  const [addingIncome, setAddingIncome] = useState(false);
+  const [incomeLabel, setIncomeLabel] = useState("");
+  const [incomeDollars, setIncomeDollars] = useState("");
   // Inline edit of one row's amount for this month only. The standing price
   // in Settings is untouched; future months seed from that, not from this.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -152,6 +163,27 @@ export default function RevenueSection({
     }
   };
 
+  const addIncome = async () => {
+    const dollars = Number.parseFloat(incomeDollars);
+    if (!incomeLabel.trim() || !Number.isFinite(dollars) || dollars <= 0) {
+      toast.fail("Could not add the money", new Error("give it a name and an amount above zero"));
+      return;
+    }
+    try {
+      await api.post("/financials/income", {
+        label: incomeLabel.trim(),
+        amountCents: Math.round(dollars * 100),
+        month,
+      });
+      setAddingIncome(false);
+      setIncomeLabel("");
+      setIncomeDollars("");
+      onChanged();
+    } catch (err) {
+      toast.fail("Could not add the money", err);
+    }
+  };
+
   const removeRow = async (row: RevenueRow) => {
     if (confirmingId !== row.id) {
       setConfirmingId(row.id);
@@ -185,7 +217,9 @@ export default function RevenueSection({
         rows.map((row, i) => (
           <div className="lrow" key={row.id}>
             <div className="av">
-              {row.avatarUrl ? (
+              {row.manual ? (
+                "＋"
+              ) : row.avatarUrl ? (
                 <img src={row.avatarUrl} alt="" />
               ) : (
                 (row.avatarSeed ?? row.clientName.slice(0, 2).toUpperCase())
@@ -194,12 +228,17 @@ export default function RevenueSection({
             <div className="lmeta">
               <b>{row.clientName}</b>
               <span>
-                {row.status === "paid" && row.receivedAt
-                  ? `Paid ${new Date(row.receivedAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
-                  : row.status === "pending"
-                    ? "Cycle opens once delivered"
-                    : "Payable now"}
+                {row.manual
+                  ? row.receivedAt
+                    ? `Added ${new Date(row.receivedAt).toLocaleDateString([], { month: "short", day: "numeric" })} · other income`
+                    : "Other income"
+                  : row.status === "paid" && row.receivedAt
+                    ? `Paid ${new Date(row.receivedAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                    : row.status === "pending"
+                      ? "Cycle opens once delivered"
+                      : "Payable now"}
               </span>
+              {row.note && <div className="rownote">{row.note}</div>}
             </div>
             {row.quotaTarget !== null && (
               <div className={`quota${(row.quotaDelivered ?? 0) >= row.quotaTarget ? " ok" : ""}`}>
@@ -331,6 +370,60 @@ export default function RevenueSection({
           </div>
         );
       })}
+
+      {/*
+        Money that arrived without a client behind it: a paycheck transfer
+        subsidising the business, a refund, anything else. It lands as
+        received, counts into the month's total and the bars like any other
+        row, and deleting it sticks because nothing seeds it back.
+      */}
+      {addingIncome ? (
+        <div className="lrow priceset">
+          <div className="av">＋</div>
+          <input
+            className="field-in"
+            style={{ flex: 1, minWidth: 140 }}
+            placeholder="Where it came from, e.g. Paycheck transfer"
+            maxLength={80}
+            autoFocus
+            value={incomeLabel}
+            onChange={(e) => setIncomeLabel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setAddingIncome(false);
+            }}
+          />
+          <div className="pricein">
+            <span>$</span>
+            <input
+              className="field-in"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={incomeDollars}
+              onChange={(e) => setIncomeDollars(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addIncome();
+                if (e.key === "Escape") setAddingIncome(false);
+              }}
+            />
+          </div>
+          <button
+            className="btn"
+            disabled={!incomeLabel.trim() || incomeDollars === ""}
+            onClick={() => void addIncome()}
+          >
+            Add
+          </button>
+          <button className="btn ghost" onClick={() => setAddingIncome(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="addrow" onClick={() => setAddingIncome(true)}>
+          ＋ Add money coming in
+        </div>
+      )}
     </div>
   );
 }

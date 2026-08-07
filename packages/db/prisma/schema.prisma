@@ -603,7 +603,12 @@ model Job {
 model RevenueEntry {
   id          String    @id @default(cuid())
   agencyId    String
-  clientId    String
+  /// Null for money that is not a client's bill: a paycheck transfer, a
+  /// refund, any other source. Those rows carry `label` instead, are never
+  /// seeded or reconciled, and count into every total the same way.
+  clientId    String?
+  /// What a client-less row is: "Paycheck transfer", "Equipment refund".
+  label       String?
   /// "2026-06"
   month       String
   amountCents Int
@@ -620,7 +625,7 @@ model RevenueEntry {
   updatedAt   DateTime  @updatedAt
 
   agency Agency @relation(fields: [agencyId], references: [id])
-  client Client @relation(fields: [clientId], references: [id])
+  client Client? @relation(fields: [clientId], references: [id])
 
   @@unique([clientId, month])
   @@index([agencyId, month])

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -36,6 +37,13 @@ import {
 } from "../financials/taxExport";
 
 const NOT_FOUND = { error: "not found" } as const;
+
+const incomeSchema = z.object({
+  label: z.string().min(1).max(80),
+  amountCents: z.number().int().min(1).max(100_000_000),
+  month: monthKeySchema,
+  note: z.string().max(250).optional(),
+});
 
 /** Prisma's code for "a unique constraint rejected this write". */
 const UNIQUE_VIOLATION = "P2002";
@@ -232,7 +240,33 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const revenueRows = revenue.map((r) => {
-      const c = byClient.get(r.clientId);
+      const c = r.clientId ? byClient.get(r.clientId) : undefined;
+
+      /*
+       * A row with no client is money entered by hand: a paycheck transfer,
+       * a refund, any other source. It has no quota, no billing mode and no
+       * invoice; it is money that arrived, so it carries whatever received
+       * state it was given and nothing derives anything for it.
+       */
+      if (!r.clientId) {
+        return {
+          id: r.id,
+          clientId: null,
+          clientName: r.label ?? "Other income",
+          avatarUrl: null,
+          avatarSeed: null,
+          amountCents: r.amountCents,
+          color: r.color,
+          note: r.note,
+          receivedAt: r.receivedAt,
+          billingMode: "calendar" as const,
+          quotaMet: true,
+          quotaDelivered: null,
+          quotaTarget: null,
+          manual: true,
+          status: (r.receivedAt ? "paid" : "due") as "paid" | "pending" | "due",
+        };
+      }
       // Met means every tracked format has reached its target. With no
       // targets, the answer depends on billing: calendar owes by the month
       // regardless, but a fulfilment client with no targets has nothing
@@ -266,6 +300,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       return {
         id: r.id,
         clientId: r.clientId,
+        manual: false,
         clientName: c?.name ?? "Unknown",
         avatarUrl: c?.socialAccounts.find((a) => a.avatarUrl)?.avatarUrl ?? null,
         avatarSeed: c?.avatarSeed ?? null,
@@ -375,8 +410,33 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       firstExpense?.month ?? null,
     ]);
 
+    /*
+     * What is actually sitting in the bank, from the last pull.
+     *
+     * Summed over the accounts the operator counts in cash flow, so a
+     * mortgage or a 401k never inflates it. Null when no bank is connected,
+     * which the screen reads as "no card", not "$0.00". Freshness is the
+     * last sync, because that is what the number is: the balance as of the
+     * last time Pull transactions was pressed, not a live feed.
+     */
+    const bankAccounts = await prisma.bankAccount.findMany({
+      where: { connection: { agencyId }, includeInCashFlow: true },
+      select: { currentCents: true, connection: { select: { lastSyncedAt: true } } },
+    });
+    const bank = bankAccounts.length
+      ? {
+          totalCents: bankAccounts.reduce((s, a) => s + (a.currentCents ?? 0), 0),
+          asOf:
+            bankAccounts
+              .map((a) => a.connection.lastSyncedAt)
+              .filter((d): d is Date => d !== null)
+              .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
+        }
+      : null;
+
     return {
       month,
+      bank,
       categories: EXPENSE_CATEGORIES,
       revenue: revenueRows,
       recurring,
@@ -547,6 +607,29 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
 
     await prisma.expense.delete({ where: { id: found.id } });
     return { ok: true };
+  });
+
+  /**
+   * Money in that is not a client's bill: a paycheck transfer topping the
+   * business up, a refund, anything else that arrived. Marked received on
+   * entry, because the operator is recording money that exists, and the
+   * seeder and reconciler never touch it: both iterate clients, and this row
+   * has none.
+   */
+  app.post("/financials/income", async (request) => {
+    const body = incomeSchema.parse(request.body);
+    return await prisma.revenueEntry.create({
+      data: {
+        agencyId: request.user.agencyId,
+        clientId: null,
+        label: body.label,
+        month: body.month,
+        amountCents: body.amountCents,
+        receivedAt: new Date(),
+        priceOverridden: true,
+        note: body.note ?? null,
+      },
+    });
   });
 
   app.patch<{ Params: { id: string } }>("/financials/revenue/:id", async (request, reply) => {
@@ -812,7 +895,20 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       ]);
 
       const cashBasis = (agency.accountingMethod ?? "cash") === "cash";
-      const countedRevenue = cashBasis ? revenue.filter((r) => r.receivedAt !== null) : revenue;
+      /*
+       * Hand-entered income stays out of gross receipts.
+       *
+       * A client-less revenue row is almost always the operator topping the
+       * business up from a personal paycheck, and an owner's contribution is
+       * capital, not income: counting it as receipts would overstate taxable
+       * revenue on a real return. Same shape as the meals rule: the screen
+       * shows the cash picture in full, the export applies the tax rule, and
+       * the difference happens in exactly one place.
+       */
+      const billedRevenue = revenue.filter((r) => r.clientId !== null);
+      const countedRevenue = cashBasis
+        ? billedRevenue.filter((r) => r.receivedAt !== null)
+        : billedRevenue;
 
       const expenseRows = expenses.map((e) => ({
         name: e.name,
@@ -839,7 +935,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         grossReceiptsCents: sumCents(countedRevenue.map((r) => r.amountCents)),
         receiptsByClient: Object.entries(
           countedRevenue.reduce<Record<string, number>>((acc, r) => {
-            acc[r.client.name] = (acc[r.client.name] ?? 0) + r.amountCents;
+            acc[r.client!.name] = (acc[r.client!.name] ?? 0) + r.amountCents;
             return acc;
           }, {}),
         ).map(([name, cents]) => ({ name, cents })),

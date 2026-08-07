@@ -2,7 +2,10 @@ import type { ExpenseCategory } from "@toreroflow/core";
 
 export interface RevenueRow {
   id: string;
-  clientId: string;
+  /** Null for hand-entered income: a paycheck transfer, a refund. */
+  clientId: string | null;
+  /** True when the row was typed in rather than billed to a client. */
+  manual: boolean;
   clientName: string;
   avatarUrl: string | null;
   avatarSeed: string | null;
@@ -59,6 +62,11 @@ export interface SeriesPoint {
 
 export interface FinancialsMonth {
   month: string;
+  /**
+   * What is sitting in the bank as of the last pull, over the accounts
+   * counted in cash flow. Null when no bank is connected, which is not $0.
+   */
+  bank: { totalCents: number; asOf: string | null } | null;
   categories: ExpenseCategory[];
   revenue: RevenueRow[];
   recurring: ExpenseRow[];

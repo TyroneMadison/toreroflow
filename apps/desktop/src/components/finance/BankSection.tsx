@@ -19,7 +19,15 @@ const SIMPLEFIN_URL = "https://bridge.simplefin.org/";
 
 const money = (cents: number | null | undefined): string => formatCents(cents ?? null);
 
-export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
+export default function BankSection({
+  reloadKey = 0,
+  onMoneyMoved,
+}: {
+  reloadKey?: number;
+  /** A pull landed: balances and transactions changed, so the figures the
+      rest of the screen shows (the In-the-bank card above all) are stale. */
+  onMoneyMoved?(): void;
+}) {
   const toast = useToast();
   const [view, setView] = useState<BankConnectionsView | null>(null);
   const [flow, setFlow] = useState<BankCashflowView | null>(null);
@@ -70,6 +78,7 @@ export default function BankSection({ reloadKey = 0 }: { reloadKey?: number }) {
       const complaint = syncComplaint(view);
       if (complaint) toast.fail("The bank pull finished with a problem", complaint);
       else toast.success("Bank up to date.");
+      onMoneyMoved?.();
     } catch (err) {
       toast.fail("The bank pull did not finish", err);
       await load();

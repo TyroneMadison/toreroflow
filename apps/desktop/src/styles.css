@@ -1640,3 +1640,15 @@
 .cbld-arrow{box-shadow:var(--lg-rim);background-image:var(--lg-sheen)}
 .cbld-frame{box-shadow:var(--lg-rim), 0 14px 34px rgba(0,0,0,.45)}
 [data-theme="light"] .cbld-card{box-shadow:var(--lg-rim), 0 10px 26px rgba(50,55,110,.22)}
+
+/* A row's own note: the operator's reminder of what a cost or income line
+   is. It used to render as a bare line of text hanging under the row with
+   nothing anchoring it; now it is a quiet inset chip aligned with the row's
+   text column, visibly belonging to the row above it. */
+.rownote{margin:6px 0 2px 48px;padding:7px 12px;max-width:560px;font-size:11.5px;line-height:1.5;color:var(--txt-3);
+  background:var(--glass);border:1px solid var(--brd-soft);border-left:3px solid rgba(255,255,255,.18);
+  border-radius:4px 12px 12px 4px;box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.lmeta .rownote{margin-left:0}
+[data-theme="light"] .rownote{border-left-color:rgba(30,30,70,.2)}
+/* The bank balance figure on the at-a-glance card. */
+.act b.b{color:var(--info)}

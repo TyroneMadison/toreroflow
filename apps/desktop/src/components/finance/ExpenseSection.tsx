@@ -434,7 +434,7 @@ export default function ExpenseSection({
             </div>
           )}
 
-          {row.note && detailId !== row.id && <div className="lnote">{row.note}</div>}
+          {row.note && detailId !== row.id && <div className="rownote">{row.note}</div>}
         </div>
       ))}
 
