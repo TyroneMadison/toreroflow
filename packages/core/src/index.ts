@@ -24,4 +24,5 @@ export * from "./editDoc";
 export * from "./autoCut";
 export * from "./edl";
 export * from "./captionChunks";
+export * from "./captionsToAss";
 export * as tokens from "./tokens";

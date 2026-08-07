@@ -13,6 +13,8 @@ import { useEditDoc, type SaveState } from "./useEditDoc";
 import PhonePreview from "./PhonePreview";
 import AutoCutStep from "./steps/AutoCutStep";
 import EditStep from "./steps/EditStep";
+import CaptionStep from "./steps/CaptionStep";
+import ExportStep from "./steps/ExportStep";
 import "./StudioEditor.css";
 
 /* ---- API shapes ---- */
@@ -289,8 +291,8 @@ function LoadedEditor({
           <div className="stu-stepbody">
             {step === 1 && <AutoCutStep />}
             {step === 2 && <EditStep />}
-            {step === 3 && <ComingSoon title="Caption style" />}
-            {step === 4 && <ComingSoon title="Export" />}
+            {step === 3 && <CaptionStep />}
+            {step === 4 && <ExportStep />}
           </div>
           {step !== 1 && (
             <PhonePreview seekN={seekN} seekTo={seekTo} onClock={setOutputTime} />
@@ -298,14 +300,5 @@ function LoadedEditor({
         </div>
       </div>
     </EditorContext.Provider>
-  );
-}
-
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="card glass">
-      <h3>{title}</h3>
-      <div className="sub">Coming in the next milestone.</div>
-    </div>
   );
 }

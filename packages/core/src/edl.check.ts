@@ -1,5 +1,5 @@
 import { addCut, emptyDoc } from "./editDoc";
-import { edlFromDoc, locate, outputDuration, toOutputTime } from "./edl";
+import { edlFromDoc, locate, outputDuration, outputWords, toOutputTime } from "./edl";
 
 /** Local assert so the file typechecks with the app and needs no node types. */
 function eq(actual: unknown, expected: unknown, message: string) {
@@ -84,5 +84,33 @@ const loc = locate(edl, 8.5);
 eq(loc && r3(toOutputTime(edl, loc.assetId, loc.srcTime) ?? NaN), 8.5, "locate then toOutputTime round trips");
 const out = toOutputTime(edl, "a", 4);
 eq(out !== null && r3(locate(edl, out)?.srcTime ?? NaN), 4, "toOutputTime then locate round trips");
+
+// outputWords: remap to output time, drop words inside cuts and words that
+// straddle a cut edge, keep a word sitting exactly on a segment boundary.
+const wordsByAsset = {
+  a: [
+    { start: 0.5, end: 1, word: "keep" },
+    { start: 2.2, end: 2.8, word: "gone" },
+    { start: 2.9, end: 3.3, word: "straddle" },
+    { start: 3, end: 3.4, word: "edge" },
+    { start: 7, end: 7.5, word: "late" },
+  ],
+  b: [
+    { start: 0.2, end: 0.8, word: "cutb" },
+    { start: 2, end: 2.4, word: "bee" },
+  ],
+};
+deepEq(
+  outputWords(edl, wordsByAsset).map((w) => ({ start: r3(w.start), end: r3(w.end), word: w.word })),
+  [
+    { start: 0.5, end: 1, word: "keep" },
+    { start: 2, end: 2.4, word: "edge" },
+    { start: 4.5, end: 5, word: "late" },
+    { start: 8.5, end: 8.9, word: "bee" },
+  ],
+  "outputWords remaps kept words and drops words inside cuts",
+);
+deepEq(outputWords([], wordsByAsset), [], "no segments, no words");
+deepEq(outputWords(edl, {}), [], "no transcripts, no words");
 
 console.log("edl.check: all assertions passed");

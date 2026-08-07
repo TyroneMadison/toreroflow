@@ -7,7 +7,7 @@ import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@t
 import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
 import { transcribe } from "./transcribe";
-import { processEditAsset } from "./edit";
+import { processEditAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
@@ -747,11 +747,16 @@ new Worker<{ clientId: string }>(
 );
 
 // One at a time, all three: each is ffmpeg or whisper on the same disk, and
-// two concurrent encodes finish later than two queued ones.
-new Worker<{ editAssetId: string }>(
+// two concurrent encodes finish later than two queued ones. The one queue
+// carries both jobs: asset processing (the default) and full renders.
+new Worker<{ editAssetId?: string; editProjectId?: string; job?: string }>(
   "edit",
   async (job) => {
-    await processEditAsset(job.data.editAssetId);
+    if (job.data.job === "render" && job.data.editProjectId) {
+      await renderProject(job.data.editProjectId);
+    } else if (job.data.editAssetId) {
+      await processEditAsset(job.data.editAssetId);
+    }
   },
   { connection, concurrency: 1 },
 );

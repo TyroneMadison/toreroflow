@@ -8,13 +8,17 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  CAPTION_TEMPLATES,
   ZOOM,
   chunksFor,
+  editedWords,
   edlFromDoc,
   locate,
   outputDuration,
+  outputWords,
   type ColorAdjust,
   type TextStyle,
+  type Word,
 } from "@toreroflow/core";
 import { fileUrl } from "../lib/api";
 import { useEditor, type EditAssetInfo } from "./StudioEditor";
@@ -69,13 +73,48 @@ function colorFilter(u: ColorAdjust, p?: ColorAdjust): string {
   return parts.join(" ");
 }
 
+/**
+ * Outline, shadow, and glow approximated as stacked text-shadows, "none"
+ * when all three are off so the style really turns them off.
+ */
+function textShadowFor(s: TextStyle): string {
+  const parts: string[] = [];
+  if (s.outline.on) {
+    const r = Math.max(1, s.outline.size * TEXT_SCALE);
+    for (const [dx, dy] of [
+      [r, 0],
+      [-r, 0],
+      [0, r],
+      [0, -r],
+      [r, r],
+      [r, -r],
+      [-r, r],
+      [-r, -r],
+    ]) {
+      parts.push(`${dx.toFixed(1)}px ${dy.toFixed(1)}px 0 ${s.outline.color}`);
+    }
+  }
+  if (s.shadow.on) {
+    const d = Math.max(1, s.shadow.distance * TEXT_SCALE * 2);
+    const blur = Math.max(1, s.shadow.intensity * TEXT_SCALE * 0.3);
+    parts.push(`0 ${d.toFixed(1)}px ${blur.toFixed(1)}px ${hexAlpha("#000000", s.shadow.opacity)}`);
+  }
+  if (s.glow.on) {
+    const spread = Math.max(2, s.glow.spread * TEXT_SCALE * 0.5);
+    parts.push(`0 0 ${spread.toFixed(1)}px ${s.glow.color}`);
+  }
+  return parts.length > 0 ? parts.join(", ") : "none";
+}
+
 /** Minimal on-stage styling for a text overlay or the caption line. */
 function overlayCss(x: number, y: number, s: TextStyle): CSSProperties {
   return {
     left: `calc(50% + ${x}%)`,
     top: `calc(50% + ${y}%)`,
+    fontFamily: s.font,
     fontSize: Math.max(8, s.size * TEXT_SCALE),
     color: s.color,
+    textShadow: textShadowFor(s),
     fontWeight: s.bold ? 800 : 500,
     fontStyle: s.italic ? "italic" : "normal",
     textAlign: s.align,
@@ -250,27 +289,84 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     v.muted = false;
   }, [doc, edl, outputTime]);
 
+  // Overlay media (b-roll video, audio items) mount only inside their window
+  // and follow the master clock: reseek on drift, play while playing, pause
+  // otherwise. outputTime ticks every frame during playback, so this effect
+  // is the per-frame sync.
+  const overlayMedia = useRef(new Map<string, HTMLMediaElement>());
+  const regMedia = (id: string) => (el: HTMLMediaElement | null) => {
+    if (el) overlayMedia.current.set(id, el);
+    else overlayMedia.current.delete(id);
+  };
+  const clampT = total > 0 ? Math.min(Math.max(0, outputTime), total - 0.001) : 0;
+  useEffect(() => {
+    for (const item of [...doc.broll, ...doc.audio]) {
+      const el = overlayMedia.current.get(item.id);
+      if (!el) continue;
+      el.volume = Math.max(0, Math.min(1, item.volume / 100));
+      const local = clampT - item.at;
+      const want = el.duration > 0 ? Math.min(local, el.duration) : local;
+      if (Math.abs(el.currentTime - want) > 0.15) el.currentTime = Math.max(0, want);
+      if (playing && !el.ended) {
+        if (el.paused) void el.play().catch(() => {});
+      } else if (!el.paused) {
+        el.pause();
+      }
+    }
+  }, [clampT, playing, doc.broll, doc.audio]);
+
   /* ---- what is on screen right now ---- */
 
-  const clampT = total > 0 ? Math.min(Math.max(0, outputTime), total - 0.001) : 0;
   const loc = total > 0 ? locate(edl, clampT) : null;
 
+  // Captions come from OUTPUT-time words: per-asset word edits applied first,
+  // then the words remapped through the EDL so they stay correct across cuts
+  // and clip hops, then chunked with the doc's layout and break overrides.
+  const wordsByAsset = useMemo(() => {
+    const m: Record<string, Word[]> = {};
+    for (const a of assets) {
+      if (a.words && a.words.length > 0) m[a.id] = editedWords(a.words, doc.wordEdits[a.id] ?? {});
+    }
+    return m;
+  }, [assets, doc.wordEdits]);
+  const outWords = useMemo(() => outputWords(edl, wordsByAsset), [edl, wordsByAsset]);
   const chunks = useMemo(() => {
-    if (!doc.captions.enabled || !loc) return [];
-    const words = byId[loc.assetId]?.words ?? [];
-    if (words.length === 0) return [];
-    return chunksFor(words, doc.captions.style.wordsPerLine, doc.captions.style.lines);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!doc.captions.enabled) return [];
+    const list = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    for (const b of doc.captions.breaks) {
+      const c = list[b.chunkIndex];
+      if (c) list[b.chunkIndex] = { ...c, text: b.text };
+    }
+    return list;
   }, [
     doc.captions.enabled,
     doc.captions.style.wordsPerLine,
     doc.captions.style.lines,
-    loc?.assetId,
-    byId,
+    doc.captions.breaks,
+    outWords,
   ]);
-  const caption = loc
-    ? chunks.find((c) => c.start <= loc.srcTime && loc.srcTime < c.end)
-    : undefined;
+
+  const chunkIndex = chunks.findIndex((c) => c.start <= clampT && clampT < c.end);
+  // An override with empty text removes that caption; the chunk stays in the
+  // list so later break indices keep pointing at the right chunks.
+  const caption =
+    chunkIndex >= 0 && chunks[chunkIndex].text.trim() ? chunks[chunkIndex] : undefined;
+
+  // Karaoke accent: an explicit karaoke animation wins; with no animation
+  // chosen the template decides via its accent color. Any other animation
+  // turns the highlight off, and a break-overridden chunk never highlights.
+  const anim = doc.captions.style.animation;
+  const wantsKaraoke =
+    anim === "karaoke" ||
+    (anim === undefined &&
+      Boolean(CAPTION_TEMPLATES.find((t) => t.id === doc.captions.template)?.style.accentColor));
+  const karaoke =
+    wantsKaraoke &&
+    Boolean(doc.captions.style.accentColor) &&
+    !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex);
+  const perChunk = doc.captions.style.wordsPerLine * doc.captions.style.lines;
+  const captionWords =
+    caption && karaoke ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk) : null;
 
   const visibleTexts = doc.texts.filter((t) => clampT >= t.at && clampT < t.at + t.dur);
 
@@ -335,6 +431,59 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
           <div className="pv-videowrap" style={wrapStyle}>
             <video ref={videoRef} playsInline onLoadedMetadata={onLoadedMetadata} />
           </div>
+          <div className="pv-media">
+            {doc.broll
+              .filter((b) => clampT >= b.at && clampT < b.at + b.dur)
+              .map((b) => {
+                const dt = clampT - b.at;
+                let op = 1;
+                if (b.fadeIn > 0) op = Math.min(op, dt / b.fadeIn);
+                if (b.fadeOut > 0) op = Math.min(op, (b.dur - dt) / b.fadeOut);
+                return (
+                  <video
+                    key={b.id}
+                    ref={regMedia(b.id)}
+                    className={`pv-broll pv-shape-${b.shape}`}
+                    src={srcOf(b.assetId)}
+                    muted={b.volume <= 0}
+                    playsInline
+                    preload="auto"
+                    style={{
+                      left: `calc(50% + ${b.x}%)`,
+                      top: `calc(50% + ${b.y}%)`,
+                      width: `${b.scale * 100}%`,
+                      opacity: Math.max(0, Math.min(1, op)),
+                    }}
+                  />
+                );
+              })}
+            {doc.graphics
+              .filter((g) => clampT >= g.at && clampT < g.at + g.dur)
+              .map((g) => {
+                const src = fileUrl(byId[g.assetId]?.sourceUrl ?? null);
+                if (!src) return null;
+                return (
+                  <img
+                    key={g.id}
+                    className="pv-graphic"
+                    src={src}
+                    alt=""
+                    style={{
+                      left: `calc(50% + ${g.x}%)`,
+                      top: `calc(50% + ${g.y}%)`,
+                      width: `${g.scale * 100}%`,
+                      transform: `translate(-50%,-50%) rotate(${g.rotate}deg)`,
+                      opacity: Math.max(0, Math.min(1, g.opacity / 100)),
+                    }}
+                  />
+                );
+              })}
+            {doc.audio
+              .filter((a) => clampT >= a.at && clampT < a.at + a.dur)
+              .map((a) => (
+                <audio key={a.id} ref={regMedia(a.id)} src={srcOf(a.assetId)} preload="auto" />
+              ))}
+          </div>
           <div className="pv-overlays">
             {visibleTexts.map((t) => (
               <div key={t.id} className="pv-text" style={overlayCss(t.x, t.y, t.style)}>
@@ -346,7 +495,21 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
                 className="pv-text pv-caption"
                 style={overlayCss(doc.captions.style.x, doc.captions.style.y, doc.captions.style)}
               >
-                {caption.text}
+                {captionWords
+                  ? captionWords.map((w, i) => (
+                      <span
+                        key={i}
+                        style={
+                          w.start <= clampT && clampT < w.end
+                            ? { color: doc.captions.style.accentColor }
+                            : undefined
+                        }
+                      >
+                        {(i === 0 ? "" : i % doc.captions.style.wordsPerLine === 0 ? "\n" : " ") +
+                          w.word}
+                      </span>
+                    ))
+                  : caption.text}
               </div>
             )}
           </div>

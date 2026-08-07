@@ -24,6 +24,9 @@
 .pnl-chip:disabled{opacity:.4;cursor:not-allowed}
 .pnl-chip:disabled:hover{border-color:var(--brd-soft)}
 .pnl-chip svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none;display:block}
+/* the Shorten chip while the model works: a quiet opacity pulse */
+.pnl-thinking{display:inline-block;animation:pnl-think 1.1s ease-in-out infinite}
+@keyframes pnl-think{0%,100%{opacity:1}50%{opacity:.45}}
 
 /* sliders */
 .pnl .lab{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-3);font-weight:600;flex:0 0 auto}

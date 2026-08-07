@@ -1,6 +1,7 @@
 import {
   addCut,
   applyTemplate,
+  BITRATE_PRESETS,
   CAPTION_TEMPLATES,
   DEFAULT_CAPTION_STYLE,
   DEFAULT_TEXT_STYLE,
@@ -208,5 +209,16 @@ eq(boxed === c, false, "applyTemplate returns a new doc");
 const off = applyTemplate(c, "none");
 eq(off.captions.enabled, false, "No Captions disables captions");
 eq(applyTemplate(c, "nope"), c, "an unknown template id is a no-op");
+
+// bitrate presets, kbps at 30fps; 60fps multiplies by 1.5 at the call site
+deepEq(
+  BITRATE_PRESETS,
+  {
+    720: { lower: 4000, recommended: 6000, higher: 10000 },
+    1080: { lower: 6000, recommended: 10000, higher: 16000 },
+    1440: { lower: 16000, recommended: 24000, higher: 34000 },
+  },
+  "bitrate presets pin the kbps table",
+);
 
 console.log("editDoc: all checks passed");

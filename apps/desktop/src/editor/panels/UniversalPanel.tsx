@@ -8,6 +8,8 @@ import {
   type CutRange,
   type EditDoc,
 } from "@toreroflow/core";
+import { api } from "../../lib/api";
+import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
 import { Chip, SliderRow, SubPills } from "./index";
 
@@ -18,10 +20,54 @@ const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }>
   { key: "w", title: "Warmth", lab: "TMP" },
 ];
 
+const SHORTEN_WINDOWS = [
+  { label: "10-20s", minSec: 10, maxSec: 20 },
+  { label: "20-30s", minSec: 20, maxSec: 30 },
+  { label: "30-40s", minSec: 30, maxSec: 40 },
+];
+
 /** The panel shown with nothing selected: whole-video actions and colour. */
 export default function UniversalPanel() {
-  const { doc, update, assets, setStep } = useEditor();
+  const { doc, update, assets, setStep, project } = useEditor();
+  const toast = useToast();
   const [tab, setTab] = useState<"quick" | "colour">("quick");
+  /** The window label the model is currently working on, null when idle. */
+  const [thinking, setThinking] = useState<string | null>(null);
+
+  const clipsProcessing = assets.some(
+    (a) => a.kind === "clip" && (a.status === "uploaded" || a.status === "processing"),
+  );
+
+  // Applied through update() so one press is one undo step.
+  const shorten = async (w: (typeof SHORTEN_WINDOWS)[number]) => {
+    if (thinking) return;
+    setThinking(w.label);
+    try {
+      const { cuts } = await api.post<{
+        cuts: Array<{ assetId: string; start: number; end: number }>;
+      }>(`/edit-projects/${project.id}/shorten`, { targetSec: w.minSec });
+      if (cuts.length === 0) {
+        toast.info("Nothing worth cutting was found.");
+        return;
+      }
+      update((d) => {
+        let next = d;
+        for (const c of cuts) {
+          const duration = assets.find((a) => a.id === c.assetId)?.durationSec ?? undefined;
+          next = addCut(next, c.assetId, { start: c.start, end: c.end }, duration);
+        }
+        return next;
+      });
+      const total = Math.round(cuts.reduce((s, c) => s + (c.end - c.start), 0));
+      toast.success(
+        `Cut ${total}s across ${cuts.length} sentence${cuts.length === 1 ? "" : "s"}`,
+      );
+    } catch (e: unknown) {
+      toast.fail("Could not shorten the video", e);
+    } finally {
+      setThinking(null);
+    }
+  };
 
   const tighten = (mode: "spaces" | "fillers") => {
     update((d) => {
@@ -90,13 +136,22 @@ export default function UniversalPanel() {
               <b>Shorten</b>
               <div className="pnl-chiprow">
                 <span className="lab">Cut by:</span>
-                {["10-20s", "20-30s", "30-40s"].map((r) => (
+                {SHORTEN_WINDOWS.map((w) => (
                   <Chip
-                    key={r}
-                    disabled
-                    title="AI shorten lands with the caption milestone"
+                    key={w.label}
+                    disabled={clipsProcessing || (thinking !== null && thinking !== w.label)}
+                    title={
+                      clipsProcessing
+                        ? "Waiting for the clips to finish processing"
+                        : undefined
+                    }
+                    onClick={() => void shorten(w)}
                   >
-                    {r}
+                    {thinking === w.label ? (
+                      <span className="pnl-thinking">Thinking...</span>
+                    ) : (
+                      w.label
+                    )}
                   </Chip>
                 ))}
               </div>

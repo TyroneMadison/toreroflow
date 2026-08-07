@@ -68,6 +68,8 @@ export interface CaptionStyle extends TextStyle {
   wordsPerLine: 1 | 2 | 3 | 4 | 5;
   lines: 1 | 2;
   accentColor: string;
+  /** Caption animation id (pop, karaoke, ...); undefined means none. */
+  animation?: string;
 }
 
 export type TextAnim =
@@ -171,6 +173,16 @@ export interface ExportSettings {
   format: "mp4" | "mov";
   bitrate: "lower" | "recommended" | "higher" | number;
 }
+
+/** Export bitrate presets in kbps at 30fps; multiply by 1.5 at 60fps at the call site. */
+export const BITRATE_PRESETS: Record<
+  720 | 1080 | 1440,
+  { lower: number; recommended: number; higher: number }
+> = {
+  720: { lower: 4000, recommended: 6000, higher: 10000 },
+  1080: { lower: 6000, recommended: 10000, higher: 16000 },
+  1440: { lower: 16000, recommended: 24000, higher: 34000 },
+};
 
 export interface EditDoc {
   v: 1;

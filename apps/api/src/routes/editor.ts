@@ -3,12 +3,20 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
+import Anthropic from "@anthropic-ai/sdk";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
+import {
+  edlFromDoc,
+  outputDuration,
+  sentencesFromWords,
+  toOutputTime,
+  type EditDoc,
+} from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { env } from "../env";
-import { fileLinkVersioned } from "../files/link";
+import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -53,10 +61,53 @@ const ASSET_EXT_FALLBACK: Record<string, string> = {
   graphic: ".png",
 };
 
+const renderSchema = z.object({
+  name: z.string().min(1).max(200),
+  resolution: z.union([z.literal(720), z.literal(1080), z.literal(1440)]),
+  fps: z.union([z.literal(30), z.literal(60)]),
+  format: z.enum(["mp4", "mov"]),
+  /** Video bit rate in kbps, already scaled for the frame rate by the desktop. */
+  bitrateK: z.number().int().min(500).max(200_000),
+});
+
+/** The chip's number is the floor of a 10 second window: 10 means 10 to 20. */
+const shortenSchema = z.object({
+  targetSec: z.union([z.literal(10), z.literal(20), z.literal(30)]),
+});
+
+const SHORTEN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["cuts"],
+  properties: {
+    cuts: {
+      /*
+       * No length bounds on purpose: structured output rejects most array
+       * bounds with a 400 that costs the whole generation. How much to cut
+       * is asked for in the prompt, and the result is validated after.
+       */
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["assetId", "start", "end"],
+        properties: {
+          assetId: { type: "string" },
+          start: { type: "number" },
+          end: { type: "number" },
+        },
+      },
+    },
+  },
+} as const;
+
 export async function editorRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const editQueue = new Queue<{ editAssetId: string }>("edit", { connection });
+  const editQueue = new Queue<
+    { editAssetId: string } | { editProjectId: string; job: "render" }
+  >("edit", { connection });
+  const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -124,7 +175,14 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       include: { assets: { orderBy: { createdAt: "asc" } } },
     });
     if (!project) return reply.status(404).send({ error: "project not found" });
-    return { ...project, assets: project.assets.map(assetView) };
+    return {
+      ...project,
+      // Versioned by updatedAt so a re-render under the same key shows fresh.
+      renderedUrl: project.renderedKey
+        ? fileLinkVersioned(project.renderedKey, project.updatedAt.getTime())
+        : null,
+      assets: project.assets.map(assetView),
+    };
   });
 
   /** The autosave target. The doc arrives whole every time; nothing merges. */
@@ -200,6 +258,283 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!count) return reply.status(404).send({ error: "project not found" });
     return { ok: true };
+  });
+
+  /**
+   * Start a render. The chosen settings are written into doc.export so the
+   * worker reads one source of truth, then the job rides the edit queue and
+   * progress is polled off the project row.
+   */
+  app.post<{ Params: { id: string } }>("/edit-projects/:id/render", async (request, reply) => {
+    const project = await ownedProject(request.params.id, request.user.agencyId);
+    if (!project) return reply.status(404).send({ error: "project not found" });
+    const parsed = renderSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "that export could not start",
+        detail: parsed.error.issues[0]?.message ?? "The export settings are not right.",
+      });
+    }
+    if (project.status === "rendering") {
+      return reply.status(409).send({
+        error: "already rendering",
+        detail: "This project is rendering right now. Wait for it to finish.",
+      });
+    }
+    if (project.doc === null || typeof project.doc !== "object") {
+      return reply.status(400).send({
+        error: "nothing to render",
+        detail: "Add clips and make an edit before exporting.",
+      });
+    }
+
+    const { name, resolution, fps, format, bitrateK } = parsed.data;
+    await prisma.editProject.update({
+      where: { id: project.id },
+      data: {
+        status: "rendering",
+        renderPct: 0,
+        renderError: null,
+        doc: {
+          ...(project.doc as Record<string, unknown>),
+          // A concrete kbps number, so the worker never re-derives presets.
+          export: { name, resolution, fps, format, bitrate: bitrateK },
+        } as Prisma.InputJsonValue,
+      },
+    });
+    await editQueue.add("render", { editProjectId: project.id, job: "render" });
+    return reply.status(202).send({ ok: true });
+  });
+
+  /**
+   * The finished render becomes a normal MediaAsset, so Upload and Schedule,
+   * quota counts and retention sweeps all see it as any other upload.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/edit-projects/:id/send-to-uploads",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      if (project.status !== "rendered" || !project.renderedKey) {
+        return reply.status(409).send({
+          error: "nothing rendered yet",
+          detail: "Export the video first, then send the finished file to uploads.",
+        });
+      }
+
+      const ext = path.extname(project.renderedKey) || ".mp4";
+      const doc = project.doc as { export?: { name?: unknown } } | null;
+      const base =
+        typeof doc?.export?.name === "string" && doc.export.name.trim()
+          ? doc.export.name.trim()
+          : project.name;
+
+      const asset = await prisma.mediaAsset.create({
+        data: {
+          clientId: project.clientId,
+          originalName: `${base}${ext}`,
+          storageKey: "pending",
+          status: "uploaded",
+        },
+      });
+      const storageKey = `${project.clientId}/${asset.id}/source${ext}`;
+      try {
+        await fs.mkdir(path.join(env.STORAGE_DIR, project.clientId, asset.id), {
+          recursive: true,
+        });
+        await fs.copyFile(
+          path.join(env.STORAGE_DIR, project.renderedKey),
+          path.join(env.STORAGE_DIR, storageKey),
+        );
+      } catch (error) {
+        await prisma.mediaAsset.delete({ where: { id: asset.id } });
+        return reply.status(500).send({
+          error: "could not copy the rendered file",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+      const updated = await prisma.mediaAsset.update({
+        where: { id: asset.id },
+        data: { storageKey },
+      });
+      await mediaQueue.add("process", { assetId: asset.id });
+
+      // The media assetView shape, for a just-uploaded video: everything the
+      // pipeline has not made yet is null, same as any fresh upload.
+      return reply.status(201).send({
+        id: updated.id,
+        clientId: updated.clientId,
+        name: updated.originalName,
+        kind: "video",
+        slideCount: 0,
+        durationSec: updated.durationSec,
+        status: updated.status,
+        hasTranscript: false,
+        draftCopy: null,
+        format: updated.format,
+        isRevision: updated.isRevision,
+        revisionOfId: updated.revisionOfId,
+        createdAt: updated.createdAt,
+        coverOffsetMs: updated.coverOffsetMs,
+        thumbUrl: null,
+        videoUrl: fileLink(storageKey),
+        sourceDeletedAt: null,
+      });
+    },
+  );
+
+  /**
+   * Pick whole sentences to cut so the video lands inside a length window.
+   *
+   * Button-gated: one inline model call per press, nothing runs on its own.
+   * The model only ever sees what the operator's own clips say, and only
+   * returns ranges that sit inside real spoken sentences. The cuts are
+   * returned rather than applied, so the desktop can apply them through
+   * update() and the operator can undo them like any other edit.
+   */
+  app.post<{ Params: { id: string } }>("/edit-projects/:id/shorten", async (request, reply) => {
+    const parsed = shortenSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "that window is not one of the choices",
+        detail: parsed.error.issues[0]?.message ?? "Pick 10, 20 or 30 seconds.",
+      });
+    }
+    if (!env.ANTHROPIC_API_KEY) {
+      return reply.status(503).send({
+        error: "shortening needs an Anthropic API key",
+        detail: "Add ANTHROPIC_API_KEY to the repo root .env and restart the API.",
+      });
+    }
+    const project = await prisma.editProject.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      include: { assets: true },
+    });
+    if (!project) return reply.status(404).send({ error: "project not found" });
+    const doc = project.doc as unknown as EditDoc | null;
+    if (!doc) {
+      return reply.status(400).send({
+        error: "nothing to shorten",
+        detail: "Add clips and make an edit before shortening.",
+      });
+    }
+
+    const minSec = parsed.data.targetSec;
+    const maxSec = parsed.data.targetSec + 10;
+
+    const clips = project.assets.filter((a) => a.kind === "clip");
+    const durations: Record<string, number> = {};
+    for (const a of clips) if (a.durationSec) durations[a.id] = a.durationSec;
+    const edl = edlFromDoc(doc, durations);
+    const total = outputDuration(edl);
+    if (total <= minSec) {
+      return reply.status(400).send({
+        error: "already short enough",
+        detail: `The video runs ${Math.round(total)}s, which is not longer than the ${minSec}s window.`,
+      });
+    }
+
+    // The kept sentences with output times, in the order they play. Word
+    // edits are applied by index so the model reads what the captions say.
+    const lines: string[] = [];
+    const spans: { assetId: string; start: number; end: number }[] = [];
+    for (const { assetId } of doc.clips) {
+      const asset = clips.find((a) => a.id === assetId);
+      const raw = Array.isArray(asset?.words)
+        ? (asset.words as { start: number; end: number; word: string }[])
+        : [];
+      if (!raw.length) continue;
+      const edits = doc.wordEdits?.[assetId] ?? {};
+      const words = raw.map((w, i) =>
+        typeof edits[i] === "string" ? { ...w, word: edits[i] } : w,
+      );
+      for (const s of sentencesFromWords(words)) {
+        const kept = s.words.filter((w) => toOutputTime(edl, assetId, w.start) !== null);
+        if (!kept.length) continue;
+        const srcStart = kept[0].start;
+        const srcEnd = kept[kept.length - 1].end;
+        const outStart = toOutputTime(edl, assetId, srcStart) ?? 0;
+        spans.push({ assetId, start: srcStart, end: srcEnd });
+        lines.push(
+          `at ${outStart.toFixed(1)}s (assetId ${assetId}, start ${srcStart.toFixed(2)}, ` +
+            `end ${srcEnd.toFixed(2)}): "${kept.map((w) => w.word).join(" ")}"`,
+        );
+      }
+    }
+    if (!lines.length) {
+      return reply.status(400).send({
+        error: "no spoken sentences to work with",
+        detail: "Shortening cuts whole sentences, and no transcript words were found.",
+      });
+    }
+
+    try {
+      const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: env.SUGGESTIONS_MODEL,
+        max_tokens: 2048,
+        thinking: { type: "adaptive" },
+        output_config: {
+          effort: "low",
+          format: { type: "json_schema", schema: SHORTEN_SCHEMA },
+        },
+        system:
+          "You shorten a short form video by cutting whole spoken sentences.\n\n" +
+          "Rules:\n" +
+          "- Cut whole sentences only. For each sentence you cut, return its " +
+          "assetId, start and end exactly as given in the list.\n" +
+          "- The cuts together must remove between MIN and MAX seconds, the " +
+          "numbers given in the request.\n" +
+          "- Keep the hook and the payoff: the opening that earns attention " +
+          "and the line that pays it off both stay.\n" +
+          "- Prefer cutting asides, repeats and filler over anything that " +
+          "carries the story.",
+        messages: [
+          {
+            role: "user",
+            content:
+              `The video runs ${total.toFixed(1)} seconds. Cut between ${minSec} and ` +
+              `${maxSec} seconds of it.\n\nThe sentences, in the order they play:\n` +
+              lines.join("\n"),
+          },
+        ],
+      });
+      if (response.stop_reason === "refusal") {
+        return reply.status(502).send({
+          error: "the model declined",
+          detail: "The model refused to pick cuts for this one. Try again.",
+        });
+      }
+      const block = response.content.find((c) => c.type === "text");
+      const raw = JSON.parse(block && "text" in block ? block.text : "{}") as {
+        cuts?: unknown[];
+      };
+      // Only ranges inside a real spoken sentence survive; the model cannot
+      // invent a cut over footage nobody spoke in.
+      const cuts = (raw.cuts ?? []).filter(
+        (c): c is { assetId: string; start: number; end: number } => {
+          if (typeof c !== "object" || c === null) return false;
+          const { assetId, start, end } = c as Record<string, unknown>;
+          return (
+            typeof assetId === "string" &&
+            typeof start === "number" &&
+            typeof end === "number" &&
+            start < end &&
+            spans.some(
+              (s) =>
+                s.assetId === assetId && start >= s.start - 0.05 && end <= s.end + 0.05,
+            )
+          );
+        },
+      );
+      return { cuts };
+    } catch (error) {
+      request.log.error({ err: error }, "shorten failed");
+      return reply.status(502).send({
+        error: "could not pick the cuts",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   app.post<{ Params: { id: string }; Querystring: { kind?: string } }>(

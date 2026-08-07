@@ -14,7 +14,7 @@ const FONT_STACKS: Array<{ label: string; value: string }> = [
   { label: "Times", value: "'Times New Roman', Times, serif" },
 ];
 
-const SWATCHES = [
+export const SWATCHES = [
   "#FFFFFF",
   "#000000",
   "#FF6F61",
@@ -41,7 +41,7 @@ const ANIMS: Array<{ id: TextAnim; label: string }> = [
   { id: "none", label: "None" },
 ];
 
-const ALIGN_PATHS: Record<TextStyle["align"], string> = {
+export const ALIGN_PATHS: Record<TextStyle["align"], string> = {
   left: "M4 6h16M4 12h10M4 18h13",
   center: "M4 6h16M7 12h10M6 18h12",
   right: "M4 6h16M10 12h10M7 18h13",

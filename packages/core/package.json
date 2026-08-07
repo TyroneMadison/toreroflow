@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/money.check.ts && tsx src/expenseCategories.check.ts && tsx src/financeSchemas.check.ts && tsx src/text.check.ts && tsx src/postCopy.check.ts && tsx src/insightStatus.check.ts && tsx src/plainText.check.ts && tsx src/reportSlug.check.ts && tsx src/schemas.check.ts && tsx src/research.check.ts && tsx src/competitors.check.ts && tsx src/retention.check.ts && tsx src/banking.check.ts && tsx src/filingReminder.check.ts && tsx src/business.check.ts && tsx src/tax.check.ts && tsx src/carousel.check.ts && tsx src/welcome.check.ts && tsx src/weeks.check.ts && tsx src/carouselLimits.check.ts && tsx src/editDoc.check.ts && tsx src/autoCut.check.ts && tsx src/edl.check.ts && tsx src/captionChunks.check.ts"
+    "test": "tsx src/money.check.ts && tsx src/expenseCategories.check.ts && tsx src/financeSchemas.check.ts && tsx src/text.check.ts && tsx src/postCopy.check.ts && tsx src/insightStatus.check.ts && tsx src/plainText.check.ts && tsx src/reportSlug.check.ts && tsx src/schemas.check.ts && tsx src/research.check.ts && tsx src/competitors.check.ts && tsx src/retention.check.ts && tsx src/banking.check.ts && tsx src/filingReminder.check.ts && tsx src/business.check.ts && tsx src/tax.check.ts && tsx src/carousel.check.ts && tsx src/welcome.check.ts && tsx src/weeks.check.ts && tsx src/carouselLimits.check.ts && tsx src/editDoc.check.ts && tsx src/autoCut.check.ts && tsx src/edl.check.ts && tsx src/captionChunks.check.ts && tsx src/captionsToAss.check.ts"
   },
   "dependencies": {
     "zod": "^3.25.0"

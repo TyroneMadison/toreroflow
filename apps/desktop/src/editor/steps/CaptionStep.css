@@ -1,0 +1,30 @@
+/* Caption Style step. Motion here is transform and opacity only. */
+
+.cst{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* Accordion cards: chevron header, one section open at a time. */
+.cst-sec{padding:0;overflow:hidden}
+.cst-sechead{display:flex;align-items:center;justify-content:space-between;width:100%;padding:16px 20px;background:none;border:none;cursor:pointer;color:var(--txt);font-family:var(--font);text-align:left}
+.cst-sechead h3{margin:0;font-size:15px;font-weight:650}
+.cst-chev{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none;flex:0 0 auto;transition:transform .2s var(--ease-out)}
+.cst-chev.open{transform:rotate(180deg)}
+@keyframes cst-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.cst-secbody{padding:0 20px 20px;animation:cst-reveal .18s var(--ease-out)}
+
+/* Template tiles: dark previews, each name rendered in its own style. */
+.cst-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.cst-tile{position:relative;min-height:74px;border-radius:14px;background:#111116;border:1px solid var(--brd-soft);display:grid;place-items:center;cursor:pointer;overflow:hidden;padding:8px;transition:transform var(--dur-tap) var(--ease-out)}
+.cst-tile:active{transform:scale(.97)}
+.cst-tile.on{outline:2px solid var(--v);outline-offset:-2px}
+.cst-tile-label{font-size:15px;line-height:1.2;text-align:center;max-width:100%;overflow:hidden}
+.cst-tile-none .cst-tile-label{color:var(--txt-3);font-size:12.5px;font-weight:600;font-family:var(--font)}
+.cst-tile-x{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.55);color:var(--txt-2);font-size:11px;font-weight:700;line-height:1;display:grid;place-items:center;font-family:var(--font);cursor:pointer}
+.cst-tile-x:hover{color:var(--txt)}
+.cst-savetpl{margin-top:12px}
+
+/* Caption breaks: one row per chunk, time range + editable text. */
+.cst-breaks{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.cst-break{display:flex;align-items:center;gap:10px}
+.cst-break .field-in{flex:1;font-size:12.5px;padding:9px 11px}
+.cst-breaktime{flex:0 0 auto;min-width:96px;font-variant-numeric:tabular-nums}
+.cst-break .pnl-reset:disabled{opacity:.35;cursor:default}

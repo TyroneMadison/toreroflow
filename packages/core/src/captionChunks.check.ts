@@ -1,4 +1,4 @@
-import { chunksFor, sentencesFromWords } from "./captionChunks";
+import { chunksFor, editedWords, sentencesFromWords } from "./captionChunks";
 
 /** Local assert so the file typechecks with the app and needs no node types. */
 function eq(actual: unknown, expected: unknown, message: string) {
@@ -79,5 +79,19 @@ deepEq(
   "1 line chunks have no newline",
 );
 deepEq(chunksFor([], 3, 2), [], "no words, no chunks");
+
+// editedWords: replacements by index, times kept, input untouched.
+const orig = mk(["a", "b", "c"]);
+deepEq(
+  editedWords(orig, { 1: "B" }),
+  [
+    { start: 0, end: 0.5, word: "a" },
+    { start: 1, end: 1.5, word: "B" },
+    { start: 2, end: 2.5, word: "c" },
+  ],
+  "editedWords swaps text by index and keeps times",
+);
+eq(orig[1].word, "b", "editedWords never mutates its input");
+deepEq(editedWords(orig, {}), orig, "no edits returns the same shape");
 
 console.log("captionChunks.check: all assertions passed");

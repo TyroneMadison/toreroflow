@@ -9,13 +9,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/renderEdit.check.ts"
   },
   "dependencies": {
     "@toreroflow/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
 }

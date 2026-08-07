@@ -36,6 +36,14 @@ export function sentencesFromWords(words: Word[]): Sentence[] {
   return out;
 }
 
+/**
+ * Word text replacements applied by index into the input list. Times keep,
+ * the input is never mutated.
+ */
+export function editedWords(words: Word[], edits: Record<number, string>): Word[] {
+  return words.map((w, i) => (edits[i] === undefined ? w : { ...w, word: edits[i] }));
+}
+
 export interface CaptionChunk {
   start: number;
   end: number;

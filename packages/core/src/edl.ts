@@ -4,6 +4,7 @@
  */
 
 import { normalizeCuts, type EditDoc } from "./editDoc";
+import type { Word } from "./autoCut";
 
 export interface EdlSegment {
   assetId: string;
@@ -60,6 +61,31 @@ export function locate(
     acc += len;
   }
   return null;
+}
+
+/**
+ * Transcript words remapped to OUTPUT time through the EDL, in output order.
+ * A word survives only when it sits fully inside a kept segment, so words
+ * inside cuts (or straddling a cut edge) are dropped.
+ */
+export function outputWords(edl: EdlSegment[], wordsByAsset: Record<string, Word[]>): Word[] {
+  const out: Word[] = [];
+  let acc = 0;
+  // The epsilon forgives float noise on cut boundaries carved from word times.
+  const eps = 1e-6;
+  for (const seg of edl) {
+    for (const w of wordsByAsset[seg.assetId] ?? []) {
+      if (w.start >= seg.srcIn - eps && w.end <= seg.srcOut + eps) {
+        out.push({
+          start: acc + Math.max(0, w.start - seg.srcIn),
+          end: acc + Math.max(0, w.end - seg.srcIn),
+          word: w.word,
+        });
+      }
+    }
+    acc += seg.srcOut - seg.srcIn;
+  }
+  return out;
 }
 
 /** Output time for a source time on an asset, null when it falls inside a cut. */

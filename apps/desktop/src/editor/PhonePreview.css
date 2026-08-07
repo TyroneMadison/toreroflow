@@ -12,8 +12,16 @@
 .pv-videowrap{position:absolute;inset:0;transform-origin:center}
 .pv-videowrap video{width:100%;height:100%;object-fit:cover;display:block}
 
+/* b-roll, graphics, and hidden audio between the main video and the text overlays */
+.pv-media{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.pv-broll{position:absolute;transform:translate(-50%,-50%);object-fit:cover}
+.pv-shape-rounded{border-radius:10px}
+.pv-shape-circle{border-radius:50%;aspect-ratio:1/1}
+.pv-graphic{position:absolute;max-width:none}
+
 .pv-overlays{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}
-.pv-text{position:absolute;transform:translate(-50%,-50%);max-width:92%;white-space:pre-wrap;font-family:var(--font);line-height:1.25;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+/* text-shadow comes inline from the style's outline/shadow/glow */
+.pv-text{position:absolute;transform:translate(-50%,-50%);max-width:92%;white-space:pre-wrap;font-family:var(--font);line-height:1.25}
 
 .pv-safe{position:absolute;inset:0;z-index:4;pointer-events:none}
 .pv-safe>div{position:absolute;background:rgba(255,45,85,.16);border:1px dashed rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center}

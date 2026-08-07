@@ -1,0 +1,45 @@
+/* Export step. Motion here is transform and opacity only; the progress ring
+   is driven by SVG attribute updates (stroke-dashoffset costs no layout). */
+
+.exs{display:flex;flex-direction:column;gap:16px;min-width:0}
+.exs-card h3{margin:0}
+.exs-card .sub{margin-bottom:14px}
+.exs-card .lab{display:block;margin-bottom:6px}
+.exs-name{margin-bottom:14px}
+
+.exs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.exs-field{display:flex;flex-direction:column;min-width:0}
+.exs-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.exs-chip{cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;padding:7px 14px;border-radius:20px;border:1px solid var(--brd-soft);background:var(--glass-2);color:var(--txt-2);transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.exs-chip:active{transform:scale(.97)}
+.exs-chip.on{background:rgba(255,111,97,.16);border-color:rgba(255,111,97,.55);color:var(--v)}
+.exs-chip:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.exs-customwrap{display:inline-flex;align-items:center;gap:6px}
+.exs-custom{width:92px;padding:7px 11px;font-size:12.5px}
+
+.exs-summary{margin-top:14px}
+.exs-foot{margin-top:14px}
+.exs-export{width:100%;justify-content:center}
+
+/* Rendering: the coral ring, percent inside, the lines beside it. */
+.exs-progress{display:flex;align-items:center;gap:16px}
+.exs-ringwrap{position:relative;width:64px;height:64px;flex:0 0 auto}
+.exs-ring{width:64px;height:64px;transform:rotate(-90deg)}
+.exs-ring circle{fill:none;stroke-width:6}
+.exs-ring-track{stroke:rgba(255,255,255,.08)}
+.exs-ring-fill{stroke:var(--v);stroke-linecap:round;transition:stroke-dashoffset .6s linear}
+.exs-pct{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;font-weight:700}
+.exs-lines{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+
+/* Done and failed share one row shape: a mark, the lines, the actions. */
+.exs-done{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.exs-mark{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;animation:exs-pop .45s var(--ease-out) both}
+.exs-mark svg{width:22px;height:22px;stroke-width:2.6;fill:none}
+.exs-check{background:rgba(87,214,160,.16)}
+.exs-check svg{stroke:var(--green)}
+.exs-x{background:rgba(255,45,85,.16)}
+.exs-x svg{stroke:var(--red)}
+.exs-actions{display:flex;gap:10px;flex-wrap:wrap}
+.exs-err{color:var(--red)}
+
+@keyframes exs-pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:1}}

@@ -21,6 +21,7 @@ FROM node:22-bookworm-slim AS base
 # openssl is Prisma's; without it the query engine will not load.
 # fonts-liberation stops the PDFs falling back to a boxes-and-question-marks
 #   font for anything the embedded brand fonts do not cover.
+# fontconfig is how libass resolves font names when captions are burned in.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
        chromium \
@@ -28,6 +29,7 @@ RUN apt-get update \
        openssl \
        ca-certificates \
        fonts-liberation \
+       fontconfig \
        tini \
   && rm -rf /var/lib/apt/lists/*
 
@@ -78,6 +80,10 @@ COPY assets/ assets/
 # The generated client is architecture specific, so it is generated here rather
 # than copied from the developer's machine.
 RUN pnpm --filter @toreroflow/db exec prisma generate
+
+# Caption burn-in needs the brand fonts resolvable by libass.
+COPY assets/fonts /usr/local/share/fonts/toreroflow
+RUN fc-cache -f
 
 # Where uploads, thumbnails and rendered PDFs live. A named volume mounts over
 # this in compose; creating it here means the image also runs standalone.
