@@ -4,8 +4,12 @@ import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import { carouselTargetSize, formatFromDuration } from "@toreroflow/core";
 import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
-import { conformSlide, extractThumbnail, probe, type CropRect, type TranscriptSegment } from "@toreroflow/media";
+import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
+import { transcribe } from "./transcribe";
+import { processEditAsset } from "./edit";
+import { runAnalysis } from "./analyze";
+import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
 import { runResearch } from "./research";
 import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
@@ -13,22 +17,6 @@ import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 
 const prisma = getPrisma();
-
-async function transcribe(sourcePath: string): Promise<{
-  segments: TranscriptSegment[];
-} | null> {
-  try {
-    const res = await fetch(`${env.CAPTIONS_URL}/transcribe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: sourcePath }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as { segments: TranscriptSegment[] };
-  } catch {
-    return null; // captions service down: pipeline continues without captions
-  }
-}
 
 /**
  * Conform a carousel's slides to one geometry and make it ready.
@@ -758,6 +746,32 @@ new Worker<{ clientId: string }>(
   { connection, concurrency: 1 },
 );
 
+// One at a time, all three: each is ffmpeg or whisper on the same disk, and
+// two concurrent encodes finish later than two queued ones.
+new Worker<{ editAssetId: string }>(
+  "edit",
+  async (job) => {
+    await processEditAsset(job.data.editAssetId);
+  },
+  { connection, concurrency: 1 },
+);
+
+new Worker<{ analysisId: string }>(
+  "analyze",
+  async (job) => {
+    await runAnalysis(job.data.analysisId);
+  },
+  { connection, concurrency: 1 },
+);
+
+new Worker<{ knowledgeFileId: string }>(
+  "knowledge",
+  async (job) => {
+    await extractKnowledgeFile(job.data.knowledgeFileId);
+  },
+  { connection, concurrency: 1 },
+);
+
 import { Queue } from "bullmq";
 
 const analyticsQueue = new Queue("analytics", { connection });
@@ -810,5 +824,5 @@ beat();
 setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

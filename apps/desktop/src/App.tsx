@@ -3,6 +3,7 @@ import IconDefs from "./components/IconDefs";
 import Sidebar from "./components/Sidebar";
 import DashboardScreen from "./screens/DashboardScreen";
 import UploadSchedule from "./screens/UploadSchedule";
+import EditScreen from "./screens/EditScreen";
 import CalendarScreen from "./screens/CalendarScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import ReportsScreen from "./screens/ReportsScreen";
@@ -25,6 +26,7 @@ import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 export type ScreenId =
   | "dashboard"
   | "upload"
+  | "edit"
   | "calendar"
   | "analytics"
   | "reports"
@@ -155,6 +157,9 @@ function Shell() {
               onPreview={openPreview}
               onOpenConnect={openConnect}
             />
+          )}
+          {activeScreen === "edit" && (
+            <EditScreen key={`edit-${selectedClientId ?? "none"}`} />
           )}
           {activeScreen === "calendar" && (
             <CalendarScreen

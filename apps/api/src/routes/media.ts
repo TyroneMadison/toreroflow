@@ -429,6 +429,22 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     return assetView(asset);
   });
 
+  /**
+   * The stored transcript, segments with word-level timings when the captions
+   * service produced them. Null when the video was never transcribed.
+   */
+  app.get<{ Params: { id: string } }>("/media/:id/transcript", async (request, reply) => {
+    const asset = await prisma.mediaAsset.findFirst({
+      where: {
+        id: request.params.id,
+        client: { agencyId: request.user.agencyId },
+      },
+      select: { transcript: true },
+    });
+    if (!asset) return reply.status(404).send({ error: "asset not found" });
+    return { transcript: asset.transcript ?? null };
+  });
+
   app.patch<{ Params: { id: string } }>("/media/:id/draft", async (request, reply) => {
     const body = draftSchema.parse(request.body);
     const asset = await prisma.mediaAsset.findFirst({

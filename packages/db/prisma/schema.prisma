@@ -226,6 +226,10 @@ model Client {
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
   billingMode          String         @default("calendar")
+  /// The brand's niche profile for the Ideas area: who they are, who they
+  /// serve, what they sound like. One editable blob rather than columns,
+  /// because the useful facts about a niche do not fit a schema.
+  nicheProfile         Json?
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
   createdAt            DateTime       @default(now())
@@ -245,6 +249,10 @@ model Client {
   researchRuns   ResearchRun[]
   knowledgeNotes KnowledgeNote[]
   carouselDrafts CarouselDraft[]
+  editProjects   EditProject[]
+  videoAnalyses  VideoAnalysis[]
+  contentIdeas   ContentIdea[]
+  knowledgeFiles KnowledgeFile[]
 
   @@index([agencyId])
 }
@@ -939,6 +947,123 @@ model KnowledgeNote {
   body      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// One Studio project: its sources, its edit document, and where the render
+/// landed. Past renders never mutate; Save Copy forks the row.
+model EditProject {
+  id          String  @id @default(cuid())
+  clientId    String
+  name        String  @default("Untitled project")
+  /// draft | rendering | rendered | failed
+  status      String  @default("draft")
+  /// The whole edit document as one versioned JSON blob (v:1), autosaved.
+  doc         Json?
+  /// Storage key of the finished render.
+  renderedKey String?
+  /// Render progress percent, parsed from ffmpeg while rendering.
+  renderPct   Int?
+  renderError String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assets EditAsset[]
+
+  @@index([clientId])
+}
+
+/// A source file owned by one project: not a MediaAsset, so the publish
+/// pipeline's quota counts and retention sweeps never see it.
+model EditAsset {
+  id           String  @id @default(cuid())
+  projectId    String
+  /// clip | audio | graphic
+  kind         String
+  storageKey   String
+  /// Browser-safe 1080p proxy the preview plays; the render uses the original.
+  proxyKey     String?
+  /// Filmstrip image for the timeline lane.
+  stripKey     String?
+  originalName String
+  durationSec  Float?
+  width        Int?
+  height       Int?
+  /// Word-level transcript for clips: [{ start, end, word }]
+  words        Json?
+  /// uploaded | processing | ready | failed
+  status       String   @default("uploaded")
+  createdAt    DateTime @default(now())
+
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+/// One run of the AI content analyzer over one video. This is AI analysis of
+/// the content itself, never platform retention data; no platform exposes it.
+model VideoAnalysis {
+  id           String    @id @default(cuid())
+  clientId     String
+  /// Set when the analyzed video is an existing upload rather than a drop.
+  mediaAssetId String?
+  /// Set when the video was dropped straight into the analyzer.
+  storageKey   String?
+  thumbKey     String?
+  name         String
+  durationSec  Float?
+  /// running | ready | failed
+  status       String    @default("running")
+  /// Scores, key moments, action plan and spin-offs, in the shape the screen renders.
+  result       Json?
+  error        String?
+  requestedAt  DateTime  @default(now())
+  completedAt  DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// One idea in a brand's ideas list, from first thought to posted video.
+model ContentIdea {
+  id         String   @id @default(cuid())
+  clientId   String
+  niche      String   @default("")
+  formatName String?
+  text       String
+  hook       String?
+  /// Generated script or storyboard, once the operator asks for one.
+  script     Json?
+  /// idea | scripting | ready | posted | analyzed
+  status     String   @default("idea")
+  /// brainstorm | analysis | overview | custom
+  source     String   @default("custom")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// A file dropped into a brand's knowledge base. Its contents are extracted
+/// once on drop; every AI feature reads the text, never the file again.
+model KnowledgeFile {
+  id            String   @id @default(cuid())
+  clientId      String
+  name          String
+  /// pdf | text | video | image | other
+  kind          String
+  storageKey    String
+  extractedText String   @default("")
+  /// processing | ready | failed
+  status        String   @default("processing")
+  createdAt     DateTime @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 

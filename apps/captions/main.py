@@ -32,9 +32,19 @@ def health() -> dict:
 @app.post("/transcribe")
 def transcribe(req: TranscribeRequest) -> dict:
     try:
-        segments, info = get_model().transcribe(req.path, vad_filter=True)
+        segments, info = get_model().transcribe(
+            req.path, vad_filter=True, word_timestamps=True
+        )
         out = [
-            {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
+            {
+                "start": round(s.start, 3),
+                "end": round(s.end, 3),
+                "text": s.text.strip(),
+                "words": [
+                    {"start": round(w.start, 3), "end": round(w.end, 3), "word": w.word.strip()}
+                    for w in (s.words or [])
+                ],
+            }
             for s in segments
         ]
     except Exception as exc:  # surface as a clean 500 for the worker

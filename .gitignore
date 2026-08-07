@@ -41,6 +41,9 @@ List of improvments for the app.md
 BluePrintUploadUI.png
 photo_*.jpg
 Torerone_Portfolio_Canva.pptx.pdf
+Format Finder Conversion to Toreroflow.pdf
+Screenshots/
+docs/research-private/
 
 # The server stack keeps its secrets here, and they never belong in git.
 infra/.env

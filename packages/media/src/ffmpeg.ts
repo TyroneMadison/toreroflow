@@ -48,6 +48,7 @@ export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  words?: { start: number; end: number; word: string }[];
 }
 
 // Uploaded VIDEOS are published exactly as exported: no reframe, no caption
@@ -100,6 +101,40 @@ export async function conformSlide(
     );
   }
   await run(ffmpegBin(), args);
+}
+
+/**
+ * Browser-safe editor proxy: H.264 at most 1080 wide, aspect preserved.
+ * The preview plays this; the render always uses the original. Same encode
+ * recipe as conformSlide's video branch, one notch lighter on quality
+ * because a proxy is scrubbed, not published.
+ */
+export async function conformProxy(input: string, output: string): Promise<void> {
+  await run(ffmpegBin(), [
+    "-y", "-i", input,
+    // Never upscale; trunc keeps both dimensions even for libx264.
+    "-vf", "scale=trunc(min(1080\\,iw)/2)*2:-2",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "22",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-movflags", "+faststart",
+    output,
+  ]);
+}
+
+/** One image strip of `frames` tiles, 160px wide each, for the timeline lane. */
+export async function filmstrip(input: string, output: string, frames = 10): Promise<void> {
+  const { durationSec } = await probe(input);
+  const fps = frames / Math.max(durationSec, 0.1);
+  await run(ffmpegBin(), [
+    "-y", "-i", input,
+    "-vf", `fps=${fps},scale=160:-2,tile=${frames}x1`,
+    "-frames:v", "1",
+    "-q:v", "4",
+    output,
+  ]);
 }
 
 export async function extractThumbnail(

@@ -34,6 +34,7 @@ const OVERVIEW_NAV: NavItemDef[] = [
 
 const CREATE_NAV: NavItemDef[] = [
   { target: "upload", icon: "#i-upload", label: "Upload & Schedule" },
+  { target: "edit", icon: "#i-film", label: "Edit" },
   { target: "calendar", icon: "#i-cal", label: "Calendar" },
   { target: "carousels", icon: "#i-image", label: "Carousels" },
   { target: "workflows", icon: "#i-bolt", label: "Workflows" },
