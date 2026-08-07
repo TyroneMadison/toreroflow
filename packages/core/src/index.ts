@@ -27,4 +27,5 @@ export * from "./edl";
 export * from "./captionChunks";
 export * from "./captionsToAss";
 export * from "./analysis";
+export * from "./ideaDedup";
 export * as tokens from "./tokens";

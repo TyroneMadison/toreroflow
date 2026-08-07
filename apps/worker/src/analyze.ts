@@ -1,8 +1,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import Anthropic from "@anthropic-ai/sdk";
-import { knowledgeContext, peakScore, toPlainText } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { peakScore, toPlainText } from "@toreroflow/core";
+import { getPrisma, groundingFor, Prisma } from "@toreroflow/db";
 import { extractThumbnail, probe, sampleFrames, type TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
 import { transcribe } from "./transcribe";
@@ -323,30 +323,16 @@ export async function runAnalysis(analysisId: string): Promise<void> {
       meta.durationSec * 0.02 + (i * (meta.durationSec * 0.96)) / Math.max(FRAME_COUNT - 1, 1);
 
     // What this brand is about, so the plan speaks their niche rather than
-    // generic short form advice. Same grounding block every AI feature reads.
-    const [client, notes, files] = await Promise.all([
+    // generic short form advice. Same grounding block every AI feature reads,
+    // and now literally the same function: this used to be a third hand-rolled
+    // copy of the join, and it was the one that quietly left out open ideas.
+    const [client, grounding] = await Promise.all([
       prisma.client.findUnique({
         where: { id: analysis.clientId },
-        select: { name: true, nicheProfile: true },
+        select: { name: true },
       }),
-      prisma.knowledgeNote.findMany({
-        where: { clientId: analysis.clientId },
-        orderBy: { createdAt: "desc" },
-        take: 40,
-        select: { title: true, body: true },
-      }),
-      prisma.knowledgeFile.findMany({
-        where: { clientId: analysis.clientId, status: "ready" },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        select: { name: true, extractedText: true },
-      }),
+      groundingFor(prisma, analysis.clientId),
     ]);
-    const grounding = knowledgeContext({
-      notes,
-      files,
-      nicheProfile: client?.nicheProfile ?? undefined,
-    });
 
     const frameBlocks = await Promise.all(
       frames.map(async (file, i) => {

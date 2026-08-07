@@ -5,10 +5,11 @@ import {
   captionLead,
   competitorBrief,
   digestCompetitor,
+  isDuplicateIdea,
   toPlainText,
   type CompetitorDigest,
 } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, groundingFor, Prisma } from "@toreroflow/db";
 import { renderReportPdf } from "@toreroflow/media";
 import { env } from "./env";
 
@@ -53,8 +54,28 @@ const SUGGESTIONS_SCHEMA = {
      * the count is asked for in the prompt instead.
      */
     competitorNotes: { type: "array", items: { type: "string" } },
+    /**
+     * Videos the plan implies, in the shape the Ideas list stores.
+     *
+     * The plan and the ideas list used to be strangers: the plan said make
+     * more of what works, and the operator then went to a different screen and
+     * asked a different model for ideas that knew nothing about it. These come
+     * out of the same run, so what the plan advises is what lands in the list.
+     */
+    contentIdeas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          hook: { type: "string" },
+        },
+        required: ["text", "hook"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["suggestions", "competitorNotes"],
+  required: ["suggestions", "competitorNotes", "contentIdeas"],
   additionalProperties: false,
 } as const;
 
@@ -110,7 +131,13 @@ async function askForSuggestions(
   },
   /** What the accounts this client wants to be like are actually posting. */
   competitors: CompetitorDigest[],
-): Promise<{ suggestions: InsightSuggestion[]; competitorNotes: string[] }> {
+  /** The brand's own material, the same block every other AI feature reads. */
+  grounding: string,
+): Promise<{
+  suggestions: InsightSuggestion[];
+  competitorNotes: string[];
+  contentIdeas: { text: string; hook: string }[];
+}> {
   const accountSummary = client.socialAccounts.length
     ? client.socialAccounts
         .map((a) => {
@@ -169,7 +196,23 @@ async function askForSuggestions(
       "sentences each, same plain language as the steps, written to the " +
       "client as 'you' or about the account by name.\n" +
       "When you are given nothing about those accounts, return an empty " +
-      "competitorNotes list and do not mention them at all.",
+      "competitorNotes list and do not mention them at all.\n\n" +
+      "Last, fill contentIdeas with 3 to 5 videos this plan is asking them to " +
+      "make. These are saved to their ideas list, so each one has to stand on " +
+      "its own away from this page:\n" +
+      "- text is one plain sentence saying what the video is.\n" +
+      "- hook is its first line, said out loud, six to fifteen words. It has " +
+      "to be specific to this brand. A hook that would fit any account is a " +
+      "wasted hook.\n" +
+      "- Every idea has to come from a step above or from what those accounts " +
+      "are doing. Do not invent a direction the plan does not support.\n" +
+      "- Use the brand's own material below. Do not invent facts, numbers, " +
+      "prices or claims that are not in it.\n" +
+      "- That material lists the ideas this brand already has under 'Open " +
+      "ideas'. Do not write any of those again, and do not write one of them " +
+      "again in different words. Every idea you return has to be new to that " +
+      "list.\n" +
+      "- No hashtags, no emoji, no all caps.",
     messages: [
       {
         role: "user",
@@ -184,6 +227,10 @@ async function askForSuggestions(
             ? `\n\nThese are the accounts they said they want their content to ` +
               `be like, and what those accounts have been posting. Every number ` +
               `here is measured, so use them as they are:\n${brief}`
+            : "") +
+          (grounding
+            ? `\n\nWhat we know about this brand and its niche. Use it to write ` +
+              `the steps and the ideas, do not quote it back:\n${grounding}`
             : ""),
       },
     ],
@@ -195,6 +242,7 @@ async function askForSuggestions(
   const parsed = JSON.parse(text.text) as {
     suggestions: InsightSuggestion[];
     competitorNotes?: string[];
+    contentIdeas?: { text: string; hook: string }[];
   };
   // The prompt asks for plain punctuation, but asking is not enforcing, and
   // this document goes to a paying client. See packages/core/src/plainText.ts.
@@ -207,6 +255,10 @@ async function askForSuggestions(
     competitorNotes: (parsed.competitorNotes ?? [])
       .map((n) => toPlainText(n).trim())
       .filter(Boolean),
+    contentIdeas: (parsed.contentIdeas ?? [])
+      .slice(0, 5)
+      .map((i) => ({ text: toPlainText(i.text).trim(), hook: toPlainText(i.hook).trim() }))
+      .filter((i) => i.text),
   };
 }
 
@@ -286,11 +338,49 @@ export async function generateInsight(clientId: string): Promise<void> {
       )
       .filter((d): d is CompetitorDigest => d !== null);
 
-    const { suggestions, competitorNotes } = await askForSuggestions(
+    const { suggestions, competitorNotes, contentIdeas } = await askForSuggestions(
       anthropic,
       client,
       competitors,
+      await groundingFor(prisma, clientId),
     );
+
+    // The plan's ideas land in the same list the Ideas screen reads, tagged
+    // with where they came from. Deduped against what is already there, since
+    // this job re-runs whenever the operator presses Generate again and the
+    // model has no memory of the last plan it wrote.
+    if (contentIdeas.length) {
+      const existing = await prisma.contentIdea.findMany({
+        where: { clientId },
+        select: { text: true },
+      });
+      // Comparing the text exactly is not enough: a re-run reliably returns
+      // the same idea a word or two different, which an exact match lets
+      // straight through. See packages/core/src/ideaDedup.ts for what this
+      // does and does not catch.
+      const seen = existing.map((i) => i.text);
+      const fresh: typeof contentIdeas = [];
+      for (const idea of contentIdeas) {
+        if (isDuplicateIdea(idea.text, seen)) continue;
+        // Against this batch too, so one run cannot add two of its own.
+        seen.push(idea.text);
+        fresh.push(idea);
+      }
+      if (fresh.length) {
+        await prisma.contentIdea.createMany({
+          data: fresh.map((i) => ({
+            clientId,
+            text: i.text,
+            hook: i.hook || null,
+            source: "overview",
+            niche: "",
+          })),
+        });
+      }
+      console.log(
+        `[worker] insight ideas for ${client.name}: ${fresh.length} added, ${contentIdeas.length - fresh.length} already there`,
+      );
+    }
 
     const now = new Date();
     // Date only. A timestamp reading "2:25 AM" on a client's document says

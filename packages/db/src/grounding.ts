@@ -1,5 +1,5 @@
+import type { PrismaClient } from "@prisma/client";
 import { knowledgeContext } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
 
 /**
  * What we know about one brand, as one block of plain text for a prompt.
@@ -7,8 +7,15 @@ import { getPrisma } from "@toreroflow/db";
  * Every AI feature reads this same block, and that is the whole point of it
  * living in one place. Before this each feature grew its own hand-rolled join,
  * which is how the analyzer and the carousel writer ended up disagreeing about
- * what a brand does: one of them could see the niche profile and the dropped
- * files, the other only ever saw typed notes.
+ * what a brand does: one could see the niche profile and the dropped files, the
+ * other only ever saw typed notes.
+ *
+ * It lives in this package rather than in the API because the worker needs it
+ * too. The analyzer and the game plan both run there, and a copy in each app is
+ * how the disagreement started the first time.
+ *
+ * Takes the client rather than reaching for it, matching externalStore and
+ * keeping this module out of an import cycle with index.ts.
  *
  * Only files that finished extracting are worth sending. A row still
  * processing has nothing in it yet, and a failed one never will.
@@ -17,8 +24,10 @@ import { getPrisma } from "@toreroflow/db";
  * entirely when this returns "", which is why an empty brand has to give back
  * nothing at all rather than a page of empty headings.
  */
-export async function groundingFor(clientId: string): Promise<string> {
-  const prisma = getPrisma();
+export async function groundingFor(
+  prisma: PrismaClient,
+  clientId: string,
+): Promise<string> {
   const [notes, files, client, ideas] = await Promise.all([
     prisma.knowledgeNote.findMany({
       where: { clientId },

@@ -9,9 +9,8 @@ import {
   toCanvaCsv,
   type CarouselSlide,
 } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, groundingFor } from "@toreroflow/db";
 import { env } from "../env";
-import { groundingFor } from "../knowledge/grounding";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -170,7 +169,7 @@ export async function carouselRoutes(app: FastifyInstance): Promise<void> {
       // notes only, so a brand whose knowledge lived in its niche profile and
       // its dropped files wrote its carousels on nothing at all.
       const [knowledge, inspirations] = await Promise.all([
-        groundingFor(client.id),
+        groundingFor(prisma, client.id),
         prisma.inspirationAccount.findMany({
           where: { clientId: client.id },
           select: { platform: true, handle: true },

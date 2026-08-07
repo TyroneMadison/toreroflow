@@ -9,8 +9,7 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
 import { toPlainText } from "@toreroflow/core";
-import { groundingFor as grounding } from "../knowledge/grounding";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, groundingFor as grounding } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
@@ -408,7 +407,7 @@ export async function analysisRoutes(app: FastifyInstance): Promise<void> {
               (seen
                 ? `\nSpin-offs the operator has already read. Write none of these:\n${seen}\n`
                 : "") +
-              `\nWrite 3 new spin-offs.\n\n${await grounding(analysis.clientId)}`,
+              `\nWrite 3 new spin-offs.\n\n${await grounding(prisma, analysis.clientId)}`,
           },
         ],
       });

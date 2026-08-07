@@ -8,8 +8,7 @@ import { Queue } from "bullmq";
 import IORedis from "ioredis";
 import { z } from "zod";
 import { toPlainText } from "@toreroflow/core";
-import { groundingFor as grounding } from "../knowledge/grounding";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, groundingFor as grounding } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -445,7 +444,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           messages: [
             {
               role: "user",
-              content: `Brand: ${client.name}\n${styles}\n${job}\n\n${await grounding(client.id)}`,
+              content: `Brand: ${client.name}\n${styles}\n${job}\n\n${await grounding(prisma, client.id)}`,
             },
           ],
         });
@@ -540,7 +539,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
               `Idea: ${idea.text}\n` +
               (idea.formatName ? `Format: ${idea.formatName}\n` : "") +
               (idea.hook ? `Hook it was saved with: ${idea.hook}\n` : "") +
-              `\n${await grounding(idea.clientId)}`,
+              `\n${await grounding(prisma, idea.clientId)}`,
           },
         ],
       });
@@ -630,7 +629,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
             "- Never use an em dash, an en dash or an arrow. Use commas and full stops.\n" +
             "- Use the brand's own material below. Say you do not know rather than " +
             "inventing a fact, a number or a claim that is not in it.\n\n" +
-            (await grounding(client.id)),
+            (await grounding(prisma, client.id)),
           messages: [
             ...parsed.data.history.slice(-12),
             { role: "user" as const, content: parsed.data.message },
