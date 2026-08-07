@@ -249,10 +249,11 @@ model Client {
   researchRuns   ResearchRun[]
   knowledgeNotes KnowledgeNote[]
   carouselDrafts CarouselDraft[]
-  editProjects   EditProject[]
-  videoAnalyses  VideoAnalysis[]
-  contentIdeas   ContentIdea[]
-  knowledgeFiles KnowledgeFile[]
+  editProjects    EditProject[]
+  videoAnalyses   VideoAnalysis[]
+  contentIdeas    ContentIdea[]
+  knowledgeFiles  KnowledgeFile[]
+  brainstormChats BrainstormChat[]
 
   @@index([agencyId])
 }
@@ -1053,6 +1054,24 @@ model ContentIdea {
 
 /// A file dropped into a brand's knowledge base. Its contents are extracted
 /// once on drop; every AI feature reads the text, never the file again.
+/// One brainstorm thread, kept so closing the window does not lose it.
+model BrainstormChat {
+  id       String @id @default(cuid())
+  clientId String
+  /// The first thing the operator asked, trimmed. What the list shows.
+  title    String
+  /// The whole thread as [{ role, content }]. One blob rather than a row per
+  /// message: it is only ever read and written whole, the same way
+  /// EditProject.doc is, and a thread is small.
+  messages Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
 model KnowledgeFile {
   id            String   @id @default(cuid())
   clientId      String

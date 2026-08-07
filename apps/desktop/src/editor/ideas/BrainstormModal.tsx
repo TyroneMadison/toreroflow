@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Modal from "../../modals/Modal";
 import { api } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
@@ -8,11 +8,14 @@ import "./BrainstormModal.css";
  * A chat with the brand's content strategist, and the one thing it is really
  * for: banking the hooks that come out of it.
  *
- * The thread lives in this component and nowhere else. The server is stateless,
- * so every turn carries the conversation back with it, and closing the modal
- * ends the conversation for good. That is deliberate, not a gap: a brainstorm
- * is a sitting, and what is worth keeping out of one is an idea on the board,
- * which is what the save buttons are for.
+ * Threads are kept. The first turn opens one and every turn after that appends
+ * to it, so closing the window parks a conversation instead of ending it, and
+ * the ones behind it are listed to reopen. Banking a hook is still the point of
+ * the screen, this just stops the reasoning that produced it evaporating.
+ *
+ * The server holds the thread once it exists, and a continuing turn is built
+ * from the stored copy rather than from whatever this component is holding, so
+ * two windows open on one chat cannot fork it.
  */
 
 /** Openers for someone who opened this and does not know where to start. */
@@ -25,6 +28,25 @@ const OPENERS = [
 interface Turn {
   role: "user" | "assistant";
   content: string;
+}
+
+/** A past thread as the list needs it. The words stay on the server. */
+interface ChatSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  turns: number;
+}
+
+/** "3 days ago", for a list where the exact minute never matters. */
+function whenever(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
 /**
@@ -62,7 +84,26 @@ export default function BrainstormModal({
   const [busy, setBusy] = useState(false);
   // Hooks already on the board, so a second press cannot double-save one.
   const [saved, setSaved] = useState<string[]>([]);
+  // The thread being appended to. Null until the first turn opens one.
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [past, setPast] = useState<ChatSummary[] | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+
+  // The list is only ever read on the empty state, so it loads once on mount
+  // and is refreshed when a thread is opened or dropped rather than polled.
+  const loadPast = useCallback(async () => {
+    try {
+      setPast(await api.get<ChatSummary[]>(`/clients/${clientId}/brainstorms`));
+    } catch {
+      // A missing list is not worth a toast over a working chat box. The
+      // openers still get someone started.
+      setPast([]);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    void loadPast();
+  }, [loadPast]);
 
   // Whatever just arrived is the part worth reading.
   useEffect(() => {
@@ -80,13 +121,20 @@ export default function BrainstormModal({
     setDraft("");
     setBusy(true);
     try {
-      const got = await api.post<{ reply: string }>(`/clients/${clientId}/brainstorm`, {
-        message,
-        history,
-      });
+      const got = await api.post<{ reply: string; chatId: string }>(
+        `/clients/${clientId}/brainstorm`,
+        // With a chatId the server reads the thread back itself and ignores
+        // history; it is only sent so the very first turn has something to
+        // open the thread with.
+        { message, chatId: chatId ?? undefined, history },
+      );
       const reply = got.reply.trim();
       if (!reply) throw new Error("the strategist sent nothing back");
       setThread((t) => [...t, { role: "assistant", content: reply }]);
+      if (!chatId && got.chatId) {
+        setChatId(got.chatId);
+        void loadPast();
+      }
     } catch (err) {
       // The turn never happened, so it comes back off the thread and the words
       // go back in the box rather than being retyped.
@@ -110,6 +158,46 @@ export default function BrainstormModal({
     }
   };
 
+  /** Reopen a past thread. The hooks already banked out of it stay banked. */
+  const open = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const got = await api.get<{ id: string; messages: Turn[] }>(`/brainstorms/${id}`);
+      setThread(got.messages ?? []);
+      setChatId(got.id);
+      setSaved([]);
+    } catch (err) {
+      toast.fail("Could not open that chat", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const drop = async (id: string) => {
+    // Off the list first so the row does not sit there while the request runs.
+    setPast((p) => (p ? p.filter((c) => c.id !== id) : p));
+    try {
+      await api.del(`/brainstorms/${id}`);
+      if (chatId === id) {
+        setThread([]);
+        setChatId(null);
+      }
+    } catch (err) {
+      void loadPast();
+      toast.fail("Could not delete that chat", err);
+    }
+  };
+
+  /** Park the current thread and start a new one. Nothing is lost either way. */
+  const startNew = () => {
+    setThread([]);
+    setChatId(null);
+    setSaved([]);
+    setDraft("");
+    void loadPast();
+  };
+
   return (
     <Modal maxWidth={640} onClose={onClose}>
       <div className="modal-head">
@@ -117,6 +205,11 @@ export default function BrainstormModal({
           <h3>Brainstorm</h3>
           <p>The strategist for this brand, with its knowledge base already read.</p>
         </div>
+        {thread.length > 0 && (
+          <button type="button" className="btn ghost bsnew" disabled={busy} onClick={startNew}>
+            New chat
+          </button>
+        )}
         <div className="modal-x" onClick={onClose}>
           <svg>
             <use href="#i-x" />
@@ -138,6 +231,35 @@ export default function BrainstormModal({
                   </button>
                 ))}
               </div>
+
+              {past && past.length > 0 && (
+                <div className="bspast">
+                  <div className="lab">Past chats</div>
+                  {past.map((c) => (
+                    <div className="bspastrow" key={c.id}>
+                      <button
+                        type="button"
+                        className="bspastopen"
+                        disabled={busy}
+                        onClick={() => void open(c.id)}
+                      >
+                        <b>{c.title}</b>
+                        <span className="sub">
+                          {whenever(c.updatedAt)}, {c.turns} {c.turns === 1 ? "message" : "messages"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="dangerbtn"
+                        title="Delete this chat"
+                        onClick={() => void drop(c.id)}
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

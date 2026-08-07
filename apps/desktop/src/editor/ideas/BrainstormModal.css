@@ -46,3 +46,23 @@
 .bscompose .cfield{flex:1;min-width:0}
 .bsbox{resize:none;font-size:12.5px;line-height:1.5}
 .bssend{flex:0 0 auto}
+
+/* ---- past chats, on the empty state ---- */
+
+.bspast{margin-top:20px;border-top:1px solid var(--brd-soft);padding-top:14px}
+.bspast .lab{display:block;margin-bottom:8px}
+.bspastrow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.bspastopen{flex:1;min-width:0;text-align:left;cursor:pointer;font-family:var(--font);
+  background:var(--glass-2);border:1px solid var(--brd-soft);border-radius:11px;
+  padding:9px 12px;color:var(--txt);
+  transition:background var(--dur-tap) linear,transform var(--dur-tap) var(--ease-out)}
+.bspastopen:hover{background:var(--glass-3)}
+.bspastopen:active{transform:scale(.99)}
+.bspastopen:disabled{opacity:.5;cursor:default}
+/* The title is one line however long the question was. */
+.bspastopen b{display:block;font-size:12.5px;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bspastopen .sub{font-size:11px}
+
+/* The head gains a New chat button, so the close cross keeps its own corner. */
+.bsnew{margin-left:auto;margin-right:10px;flex:0 0 auto}

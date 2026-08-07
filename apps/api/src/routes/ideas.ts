@@ -62,6 +62,12 @@ const generateIdeasSchema = z.object({
 
 const brainstormSchema = z.object({
   message: z.string().min(1).max(2000),
+  /** An existing thread to continue. Absent starts a new one. */
+  chatId: z.string().max(60).optional(),
+  /**
+   * Only used to open a thread. Once one exists the stored copy is what the
+   * next turn is built from, because that is the half nothing else can edit.
+   */
   history: z
     .array(
       z.object({
@@ -72,6 +78,17 @@ const brainstormSchema = z.object({
     .max(200)
     .default([]),
 });
+
+type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/** How many turns a stored thread keeps, oldest dropped first. */
+const MAX_STORED_TURNS = 200;
+
+/** The list needs a name for a thread and the operator never types one. */
+function chatTitle(firstMessage: string): string {
+  const clean = firstMessage.trim().replace(/\s+/g, " ");
+  return clean.length <= 80 ? clean : `${clean.slice(0, 79).trimEnd()}...`;
+}
 
 /*
  * No minItems above 1 and no maxItems anywhere: structured output rejects both
@@ -609,6 +626,21 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       }
       if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
 
+      // Continuing a thread reads it back rather than trusting what the window
+      // sent, so a stale tab cannot rewrite the history it is answering from.
+      const chat = parsed.data.chatId
+        ? await prisma.brainstormChat.findFirst({
+            where: { id: parsed.data.chatId, clientId: client.id },
+          })
+        : null;
+      if (parsed.data.chatId && !chat) {
+        return reply.status(404).send({
+          error: "that chat is gone",
+          detail: "It was deleted somewhere else. Start a new one.",
+        });
+      }
+      const history: ChatTurn[] = chat ? (chat.messages as ChatTurn[]) : parsed.data.history;
+
       try {
         const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
         const response = await anthropic.messages.create({
@@ -631,12 +663,36 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
             "inventing a fact, a number or a claim that is not in it.\n\n" +
             (await grounding(prisma, client.id)),
           messages: [
-            ...parsed.data.history.slice(-12),
+            ...history.slice(-12),
             { role: "user" as const, content: parsed.data.message },
           ],
         });
         if (response.stop_reason === "refusal") return reply.status(502).send(REFUSED);
-        return { reply: toPlainText(textOf(response)) };
+        const answer = toPlainText(textOf(response));
+
+        // Written before the response goes out. The window holds the thread in
+        // local state only, so a turn that was paid for would be gone the
+        // moment the operator closed it.
+        const turns: ChatTurn[] = [
+          ...history,
+          { role: "user" as const, content: parsed.data.message },
+          { role: "assistant" as const, content: answer },
+        ].slice(-MAX_STORED_TURNS);
+
+        const saved = chat
+          ? await prisma.brainstormChat.update({
+              where: { id: chat.id },
+              data: { messages: turns },
+            })
+          : await prisma.brainstormChat.create({
+              data: {
+                clientId: client.id,
+                title: chatTitle(parsed.data.message),
+                messages: turns,
+              },
+            });
+
+        return { reply: answer, chatId: saved.id, title: saved.title };
       } catch (err) {
         request.log.error({ err }, "the brainstorm turn failed");
         return reply.status(502).send({
@@ -646,4 +702,49 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  /**
+   * Past chats.
+   *
+   * The list never carries the threads themselves. A brand with fifty
+   * brainstorms behind it would otherwise ship every word of all of them every
+   * time the window opened, to render a column of titles.
+   */
+  app.get<{ Params: { clientId: string } }>(
+    "/clients/:clientId/brainstorms",
+    async (request, reply) => {
+      const client = await ownedClient(request.params.clientId, request.user.agencyId);
+      if (!client) return reply.status(404).send({ error: "brand not found" });
+      const rows = await prisma.brainstormChat.findMany({
+        where: { clientId: client.id },
+        orderBy: { updatedAt: "desc" },
+        take: 50,
+        select: { id: true, title: true, messages: true, updatedAt: true },
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        updatedAt: r.updatedAt,
+        turns: Array.isArray(r.messages) ? r.messages.length : 0,
+      }));
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/brainstorms/:id", async (request, reply) => {
+    const chat = await prisma.brainstormChat.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!chat) return reply.status(404).send({ error: "chat not found" });
+    return chat;
+  });
+
+  app.delete<{ Params: { id: string } }>("/brainstorms/:id", async (request, reply) => {
+    const chat = await prisma.brainstormChat.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      select: { id: true },
+    });
+    if (!chat) return reply.status(404).send({ error: "chat not found" });
+    await prisma.brainstormChat.delete({ where: { id: chat.id } });
+    return { ok: true };
+  });
 }
