@@ -93,7 +93,7 @@ function GainRows({ accounts, label }: { accounts: AccountAnalytics[]; label: st
             </div>
             <span className="cur">{fmt(a.followers)}</span>
             <span className={`delta ${d == null || d === 0 ? "flat" : d > 0 ? "up" : "down"}`}>
-              {d == null ? "–" : d > 0 ? `+${fmt(d)}` : fmt(d)}
+              {d == null ? "-" : d > 0 ? `+${fmt(d)}` : fmt(d)}
             </span>
           </div>
         );
@@ -298,7 +298,18 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
    * there is nothing to report, and folding those into one total would make a
    * real number look like a poor one.
    */
-  const SAVE_PLATFORMS = new Set(["instagram", "tiktok"]);
+  /*
+   * TikTok is deliberately not in here, even though it has a save button.
+   * Having the button and the provider reporting the number are different
+   * things, and this list is about the second. Measured 2026-08-07 across this
+   * agency's real history: of 313 TikTok posts, 312 report likes, 141 report
+   * comments and 78 report shares, and exactly 0 report a save. Instagram
+   * reports saves on 430 of 584. A field that is absent on every post while its
+   * neighbours come through is not a quiet month, it is a field the provider
+   * does not serve, and showing its zero would break the rule right below.
+   * Put tiktok back the day a non-zero save turns up in ExternalVideo.
+   */
+  const SAVE_PLATFORMS = new Set(["instagram"]);
   const savablePosts = all.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
   const totalSaves = savablePosts.reduce((s, p) => s + p.saves, 0);
   const totalComments = all.reduce((s, p) => s + p.comments, 0);
@@ -661,8 +672,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                   {savablePosts.length === 0 && !loading && (
                     <p className="lnote" style={{ marginLeft: 0, marginTop: 6 }}>
-                      Saves are counted on Instagram and TikTok only. No other platform has the
-                      button.
+                      Saves are counted on Instagram only. YouTube and Facebook have no save
+                      button, and TikTok has one but has never reported the number, so counting
+                      its zeros would understate a real total rather than leave it out.
                     </p>
                   )}
                 </div>

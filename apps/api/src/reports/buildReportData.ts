@@ -329,7 +329,15 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
    * a bad month rather than a metric their platform does not keep. So the row
    * appears only when a save-capable platform is in the period.
    */
-  const SAVE_PLATFORMS = new Set(["instagram", "tiktok"]);
+  /*
+   * Instagram only, deliberately. TikTok has a save button but the provider has
+   * never sent the number: measured 2026-08-07 over this agency's real history,
+   * 0 of 313 TikTok posts carry a save while 312 carry likes and 78 carry
+   * shares. This row goes out on a document a client pays for, so a TikTok only
+   * month must not print "Saves 0", which reads as nobody saved it rather than
+   * nobody counted it. Put tiktok back when a non-zero save appears.
+   */
+  const SAVE_PLATFORMS = new Set(["instagram"]);
   const savable = current.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
   const engRows = [
     { name: "Likes", value: sum(current, (p) => p.likes), color: "linear-gradient(90deg,#FF8A78,#E5473C)" },
