@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import { join } from "node:path";
 
 // Resolved lazily so dotenv (loaded by the host app) runs first.
 const ffmpegBin = (): string => process.env.FFMPEG_PATH ?? "ffmpeg";
@@ -135,6 +137,40 @@ export async function filmstrip(input: string, output: string, frames = 10): Pro
     "-q:v", "4",
     output,
   ]);
+}
+
+/**
+ * The frames the analyzer looks at: `count` stills spread evenly across the
+ * runtime, skipping the first and last 2 percent so a black lead-in or a
+ * trailing fade never burns one of twelve chances to see the video.
+ *
+ * One pass, not `count` seeks: fps = (count - 1) / span puts frame 1 at 2
+ * percent and the last frame at 98 percent. ffmpeg can emit an extra frame at
+ * the boundary, so the count is enforced on the way out rather than trusted.
+ */
+export async function sampleFrames(
+  input: string,
+  outDir: string,
+  count: number,
+  durationSec: number,
+): Promise<string[]> {
+  const n = Math.max(1, Math.floor(count));
+  const duration = Math.max(durationSec, 0);
+  const start = duration * 0.02;
+  const span = Math.max(duration * 0.96, 0.1);
+  await fs.mkdir(outDir, { recursive: true });
+  await run(ffmpegBin(), [
+    "-y",
+    "-ss", start.toFixed(3),
+    "-i", input,
+    // A hair past the span so the closing frame lands rather than being cut.
+    "-t", (span + 0.05).toFixed(3),
+    "-vf", `fps=${n > 1 ? (n - 1) / span : 1 / span},scale=640:-2`,
+    "-q:v", "4",
+    join(outDir, "frame-%02d.jpg"),
+  ]);
+  const names = (await fs.readdir(outDir)).filter((f) => /^frame-\d+\.jpg$/.test(f)).sort();
+  return names.slice(0, n).map((f) => join(outDir, f));
 }
 
 export async function extractThumbnail(

@@ -11,6 +11,7 @@ import {
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
+import { groundingFor } from "../knowledge/grounding";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -165,12 +166,11 @@ export async function carouselRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const [notes, inspirations] = await Promise.all([
-        prisma.knowledgeNote.findMany({
-          where: { clientId: client.id },
-          orderBy: { createdAt: "desc" },
-          take: 40,
-        }),
+      // The same block every other AI feature reads. This used to be typed
+      // notes only, so a brand whose knowledge lived in its niche profile and
+      // its dropped files wrote its carousels on nothing at all.
+      const [knowledge, inspirations] = await Promise.all([
+        groundingFor(client.id),
         prisma.inspirationAccount.findMany({
           where: { clientId: client.id },
           select: { platform: true, handle: true },
@@ -178,9 +178,6 @@ export async function carouselRoutes(app: FastifyInstance): Promise<void> {
         }),
       ]);
 
-      const knowledge = notes.length
-        ? notes.map((n) => `## ${n.title}\n${n.body}`).join("\n\n")
-        : "Nothing recorded yet.";
       const references = inspirations.length
         ? inspirations.map((i) => `${i.platform} @${i.handle}`).join(", ")
         : "none named";
@@ -219,7 +216,7 @@ export async function carouselRoutes(app: FastifyInstance): Promise<void> {
                 `Accounts they want to be like: ${references}\n` +
                 `Slides wanted: ${parsed.data.slideCount}\n` +
                 `Topic: ${parsed.data.topic}\n\n` +
-                `What we know about this brand and its niche:\n${knowledge}`,
+                (knowledge ? `What we know about this brand and its niche:\n${knowledge}` : ""),
             },
           ],
         });

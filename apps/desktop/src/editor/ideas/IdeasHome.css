@@ -1,0 +1,116 @@
+/* Ideas: the brand's niche at the top, generated formats under it, and the
+   saved list at the bottom. The only stylesheet for the three components here,
+   NicheCard and IdeaList carry none of their own.
+   Motion is transform/opacity only. */
+
+.ideashome{max-width:1080px;margin:0 auto}
+
+/* Every heading in this area sits inside a .card except the saved list's and
+   the two modals', which get the same size from here. */
+.idealist h3,.modal:has(.nicheactions) h3{font-size:15px;font-weight:620}
+.idealist .sub,.modal:has(.nicheactions) .sub{font-size:12.5px;color:var(--txt-3);margin-top:2px}
+.nichetext .lab,.fhooks .lab,.scriptsec .lab{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;
+  color:var(--txt-3);font-weight:600}
+
+/* ---- the niche card ---- */
+
+.nicheskel{height:104px;border-radius:var(--radius)}
+.nicherow{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.nichetext{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 auto}
+.nichetext b{font-size:14px;font-weight:620;line-height:1.45}
+.nichecard .sub{margin-top:0}
+
+/* ---- the chips ---- */
+
+.nichechips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.nichechips.small{gap:6px}
+.exchips{margin-top:14px}
+
+.nchip{font-family:var(--font);font-size:12px;font-weight:600;color:var(--txt-2);padding:7px 13px;
+  border-radius:20px;background:var(--glass);border:1px solid var(--brd-soft);cursor:pointer;
+  transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
+.nchip:not(.on):not(.off):hover{color:var(--txt);background:var(--glass-2)}
+.nchip:active{transform:scale(.96)}
+.nchip.on{color:#000;background:var(--grad);border-color:transparent;box-shadow:0 6px 16px rgba(255,111,97,.3)}
+/* At the voice cap the unpicked chips are disabled, so they have to look spent
+   rather than merely unselected. */
+.nchip.off{opacity:.3;cursor:not-allowed}
+/* The collapsed card only reports the voice, it does not take a press. */
+.nichechips.small .nchip{font-size:10.5px;padding:3px 9px;cursor:default;box-shadow:none}
+
+/* ---- the niche form ---- */
+
+.nichearea{min-height:88px;resize:vertical;line-height:1.5}
+.nichecount{display:flex;justify-content:space-between;gap:10px;font-size:10.5px;color:var(--txt-3)}
+.nichecount .ok{color:var(--green)}
+.nichegap{margin-top:14px}
+.nichenote{font-size:10.5px;color:var(--txt-3)}
+.nicheactions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+
+/* ---- making ideas ---- */
+
+.ideabuttons{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.ideapicker,.ideaload{margin-top:12px}
+.ideapicker .nichechips{margin-top:12px}
+.ideaload b{font-size:14px;font-weight:620}
+.ideabar{height:6px;border-radius:4px;margin-top:14px}
+
+/* ---- a generated format ---- */
+
+.ideashome>.stagger{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.fcard{padding:16px 18px}
+.fhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fheadl{display:flex;align-items:center;flex-wrap:wrap;gap:9px;min-width:0}
+.fheadl b{font-size:13.5px;font-weight:620}
+.fcat{color:var(--v);background:rgba(255,111,97,.14);flex:0 0 auto}
+.fdesc{font-size:12.5px;color:var(--txt-2);line-height:1.55;margin-top:10px}
+
+/* The hooks are the point of the card, so they get the room. */
+.fhooks{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.hookrow{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 12px;
+  border-radius:var(--radius-sm);background:var(--glass);border:1px solid var(--brd-soft)}
+.hookrow span{font-size:12.5px;line-height:1.5;min-width:0}
+.hookrow .cbtn{flex:0 0 auto}
+/* A banked hook cannot be banked twice, and the button says so in green. */
+.hookrow .cbtn:disabled{background:rgba(87,214,160,.16);color:var(--green)}
+.fmore{align-self:flex-start;margin-top:4px}
+.fmore:disabled{opacity:.55}
+
+/* ---- the saved list ---- */
+
+.idealist{margin-top:24px}
+.ideafilters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.ideafilters .field-in{width:auto;font-size:12.5px;padding:9px 11px}
+.ideasearch{flex:1 1 220px;min-width:0}
+.idealist .stagger{display:flex;flex-direction:column;gap:10px}
+.ideaskel{height:92px;border-radius:var(--radius)}
+
+.idearow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 18px}
+.ideal{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1 1 auto}
+.idear{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:8px;flex:0 0 auto}
+.idear .cbtn:disabled{opacity:.55}
+@media(max-width:760px){.idearow{flex-direction:column}.idear{justify-content:flex-start}}
+
+.ideafmt{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--txt-3);font-weight:600}
+/* The close icons elsewhere sit in an .iconbtn, which already sizes them. This
+   bolt stands on its own beside the format name. */
+.ideafmt .ideaicon{width:13px;height:13px;stroke:var(--v);stroke-width:2;fill:none;flex:0 0 auto}
+.ideatext{font-size:13.5px;font-weight:620;line-height:1.45}
+.ideahook{font-size:12px;color:var(--txt-2);line-height:1.5;font-style:italic;margin-top:3px;
+  padding-left:10px;border-left:2px solid rgba(255,111,97,.45)}
+.ideastatus{width:150px;font-size:12px;padding:8px 10px}
+
+/* ---- the two modals ---- */
+
+/* These pass plain children to the modal shell rather than the .modal-head and
+   .modal-body pair, so the padding comes from here. */
+.modal:has(.nicheactions){padding:22px}
+.ideaarea{min-height:80px;resize:vertical;line-height:1.5}
+
+/* Each part of a script is its own panel, so beats and shots stay told apart. */
+.scriptsec{margin-top:14px;padding:12px 14px;border-radius:var(--radius-sm);background:var(--glass);
+  border:1px solid var(--brd-soft)}
+.scriptsec p{font-size:12.5px;color:var(--txt-2);line-height:1.55;margin-top:6px}
+.scriptsec ol,.scriptsec ul{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding-left:18px}
+.scriptsec li{font-size:12.5px;color:var(--txt-2);line-height:1.5}

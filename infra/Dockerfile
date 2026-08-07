@@ -18,6 +18,8 @@ FROM node:22-bookworm-slim AS base
 #   game plan, invoices and the year-end Schedule C export. packages/media
 #   looks for /usr/bin/chromium, which is exactly where Debian puts it.
 # ffmpeg transcodes uploads and pulls thumbnails.
+# poppler-utils gives pdftotext, because knowledge files include PDFs and a
+#   brand deck nobody can read is a brand deck the model never sees.
 # openssl is Prisma's; without it the query engine will not load.
 # fonts-liberation stops the PDFs falling back to a boxes-and-question-marks
 #   font for anything the embedded brand fonts do not cover.
@@ -27,6 +29,7 @@ RUN apt-get update \
        chromium \
        ffmpeg \
        openssl \
+       poppler-utils \
        ca-certificates \
        fonts-liberation \
        fontconfig \

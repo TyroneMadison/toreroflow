@@ -2,28 +2,16 @@ import { useState } from "react";
 import { useAppState } from "../state/AppState";
 import StudioHome from "../editor/StudioHome";
 import StudioEditor from "../editor/StudioEditor";
+import AnalyzeHome from "../editor/analyze/AnalyzeHome";
+import AnalysisDetail from "../editor/analyze/AnalysisDetail";
+import IdeasHome from "../editor/ideas/IdeasHome";
 
 type EditArea = "studio" | "analyze" | "ideas";
 
-const AREAS: { id: EditArea; label: string; title: string; sub: string }[] = [
-  {
-    id: "studio",
-    label: "Studio",
-    title: "Studio",
-    sub: "Drop raw footage, tighten the cut, style the captions, and export a vertical video straight into Upload and Schedule.",
-  },
-  {
-    id: "analyze",
-    label: "Analyze",
-    title: "Analyze",
-    sub: "Drop any video for a second-by-second AI breakdown: hook, retention and payoff scores, what worked, and a four-step action plan.",
-  },
-  {
-    id: "ideas",
-    label: "Ideas",
-    title: "Ideas",
-    sub: "The brand's niche profile, generated formats and hooks, a brainstorm chat, and an ideas list that tracks each one from idea to posted.",
-  },
+const AREAS: { id: EditArea; label: string }[] = [
+  { id: "studio", label: "Studio" },
+  { id: "analyze", label: "Analyze" },
+  { id: "ideas", label: "Ideas" },
 ];
 
 export default function EditScreen() {
@@ -32,6 +20,9 @@ export default function EditScreen() {
   // The Studio project being edited. The screen remounts per brand (keyed in
   // App.tsx), so a project never survives a brand switch.
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  // The analysis being read. Same rule: brand-keyed, so it never survives a
+  // brand switch.
+  const [openAnalysisId, setOpenAnalysisId] = useState<string | null>(null);
 
   if (!selectedClient) {
     return (
@@ -45,8 +36,6 @@ export default function EditScreen() {
       </section>
     );
   }
-
-  const active = AREAS.find((a) => a.id === area)!;
 
   return (
     <section className="screen active" data-screen="edit">
@@ -77,11 +66,17 @@ export default function EditScreen() {
           ) : (
             <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
           )
+        ) : area === "analyze" ? (
+          openAnalysisId ? (
+            <AnalysisDetail
+              analysisId={openAnalysisId}
+              onBack={() => setOpenAnalysisId(null)}
+            />
+          ) : (
+            <AnalyzeHome clientId={selectedClient.id} onOpen={setOpenAnalysisId} />
+          )
         ) : (
-          <div className="card glass" key={active.id}>
-            <h3>{active.title}</h3>
-            <div className="sub">{active.sub}</div>
-          </div>
+          <IdeasHome clientId={selectedClient.id} />
         )}
       </div>
     </section>
