@@ -2,9 +2,9 @@
 #
 #   docker compose -f infra/docker-compose.prod.yml up -d
 #
-# Nothing here publishes a port to the internet. Postgres and Redis are
-# reachable only over the compose network; the API is bound to loopback and
-# reached through Tailscale, which terminates TLS and holds the certificate.
+# Nothing here publishes a port to the internet. Postgres is reachable only
+# over the compose network; the API is bound to loopback and reached through
+# Tailscale, which terminates TLS and holds the certificate.
 # On a fresh VPS with no firewall a published 5432 is found and attacked within
 # the hour, so the rule is that the open internet gets nothing at all.
 #
@@ -35,20 +35,6 @@ services:
       timeout: 5s
       retries: 12
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    # Persistent, because the queue holds scheduled posts. Losing Redis on a
-    # reboot would silently drop whatever had not run yet.
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-
   api:
     build:
       context: ..
@@ -59,7 +45,6 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://toreroflow:${POSTGRES_PASSWORD}@postgres:5432/toreroflow
-      REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/storage
       # The caption button transcribes a transcript-less video on demand.
       CAPTIONS_URL: http://captions:4710
@@ -79,7 +64,6 @@ services:
       - ./../deploy:/app/deploy
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
     healthcheck:
       # Node rather than curl: the slim image has no curl and adding one for a
       # healthcheck is a package to keep patched forever.
@@ -121,7 +105,6 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://toreroflow:${POSTGRES_PASSWORD}@postgres:5432/toreroflow
-      REDIS_URL: redis://redis:6379
       STORAGE_DIR: /app/storage
       # Both sides mount the same storage volume at the same path, so the
       # absolute path the worker sends resolves to the same file here.
@@ -133,7 +116,6 @@ services:
       - storage:/app/storage
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
       # Waits for the API, not just the database, because the API is what runs
       # the migrations and it only reports healthy once they are applied. On a
       # first boot the worker otherwise wins the race, asks for a table that
@@ -145,6 +127,5 @@ services:
 
 volumes:
   pgdata:
-  redisdata:
   storage:
   whispermodels:

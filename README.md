@@ -85,7 +85,7 @@ system's: a native list takes no radius, no blur and no animation on any platfor
 
 ## How it is put together
 
-Today it runs as a desktop shell talking to a local API, with Postgres and Redis in Docker.
+Today it runs as a desktop shell talking to a local API, with Postgres in Docker.
 
 ```mermaid
 flowchart LR
@@ -94,9 +94,8 @@ flowchart LR
     end
     subgraph local["Local services"]
         API["Fastify API"]
-        W["BullMQ workers<br/>media, publish, analytics,<br/>insights, research, bank"]
-        DB[("PostgreSQL")]
-        R[("Redis")]
+        W["Workers<br/>media, publish, analytics,<br/>insights, research, bank"]
+        DB[("PostgreSQL<br/>data and job queues")]
     end
     subgraph ext["External"]
         PUB["Publishing provider<br/>IG, TikTok, YT, FB, Snap"]
@@ -106,8 +105,7 @@ flowchart LR
     end
     UI <--> API
     API --> DB
-    API --> R
-    R --> W
+    DB --> W
     W --> PUB
     W --> CAP
     W --> BANK
@@ -119,8 +117,9 @@ provider to direct platform APIs without touching the rest of the app. Competito
 behind the same kind of interface, for the same reason.
 
 **Next up: making it standalone.** The installer today builds a window that expects that local API,
-so it needs the repo and Docker on the machine. Embedding the database, dropping Redis and
-compiling the API into a sidecar is the work that turns this into something you just download.
+so it needs the repo and Docker on the machine. Redis is gone and the job queues run on Postgres;
+embedding the database and compiling the API into a sidecar is the rest of the work that turns this
+into something you just download.
 
 ---
 
@@ -130,7 +129,7 @@ compiling the API into a sidecar is the work that turns this into something you 
 apps/
   desktop/     Tauri v2 + React client, the app itself
   api/         Fastify API
-  worker/      BullMQ workers: media, publish, analytics, insights, research, bank
+  worker/      background workers: media, publish, analytics, insights, research, bank
   captions/    Python faster-whisper service
 packages/
   core/        pure logic and shared types, each with a runnable check beside it
@@ -138,7 +137,7 @@ packages/
   publishers/  publishing adapter, provider, dry-run
   media/       encode profiles, ffmpeg helpers, PDF rendering
 assets/        document templates and the embedded brand fonts
-infra/         docker-compose: Postgres 16 + Redis 7
+infra/         docker-compose: Postgres 16
 ```
 
 ### Checks, not a test framework
@@ -163,7 +162,7 @@ stylesheet and fails if any animation would cost a layout or a repaint.
 ```bash
 pnpm install
 cp .env.example .env      # fill in the keys you need
-pnpm infra:up             # Postgres + Redis
+pnpm infra:up             # Postgres
 pnpm db:migrate
 pnpm dev:api              # API on http://localhost:4700
 pnpm --filter @toreroflow/desktop tauri dev

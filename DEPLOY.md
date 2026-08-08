@@ -33,8 +33,8 @@ systemctl enable --now docker
 ```
 
 Then close everything except SSH and the web ports. This is the single highest
-value thing on the page: Postgres and Redis publish no ports in the compose
-file, and this makes sure nothing else does either.
+value thing on the page: Postgres publishes no port in the compose file, and
+this makes sure nothing else does either.
 
 ```bash
 ufw default deny incoming && ufw default allow outgoing

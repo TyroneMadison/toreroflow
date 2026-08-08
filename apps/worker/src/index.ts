@@ -5,6 +5,7 @@ import {
   getPrisma,
   Prisma,
   persistProviderPosts,
+  reschedule,
   scheduleCron,
   upsertExternalVideo,
   work,
@@ -706,6 +707,39 @@ void work<{ connectionId?: string }>("bank", { concurrency: 1 }, async ({ connec
 // A fixed hour rather than "every 24 hours from whenever this last restarted",
 // which is what the old scheduler meant and which drifted with every deploy.
 void scheduleCron("bank", "0 3 * * *");
+
+/*
+ * Re-queue what the calendar says is still coming.
+ *
+ * The queue and the database are two records of the same promise, and only one
+ * of them is backed up. Moving the queue store from Redis to Postgres would
+ * otherwise have dropped every delayed publish job that existed at that moment:
+ * the card would still read "scheduled", the time would pass, and nothing would
+ * post. The database is the copy that survives, so it is the copy that wins.
+ *
+ * Keyed on the target id, the same key the scheduling route uses, so a job that
+ * is already queued is moved to the time it already had and nothing is
+ * duplicated. That is what makes this safe on every boot rather than a one-off
+ * script somebody has to remember on the day of a migration.
+ *
+ * Future times only. A target whose moment passed while nothing was queued is
+ * left alone on purpose: publishing a client's video days late is a worse
+ * outcome than not publishing it, and either way it is visible on the calendar.
+ */
+void (async () => {
+  try {
+    const coming = await prisma.postTarget.findMany({
+      where: { status: "scheduled", scheduledAt: { gt: new Date() } },
+      select: { id: true, scheduledAt: true },
+    });
+    for (const target of coming) {
+      await reschedule("publish", { targetId: target.id }, target.id, target.scheduledAt!);
+    }
+    if (coming.length) console.log(`[worker] re-queued ${coming.length} scheduled posts`);
+  } catch (err) {
+    console.error("[worker] could not re-queue scheduled posts:", err);
+  }
+})();
 
 /*
  * The State filing deadline, checked once a day.
