@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { PgBoss } from "pg-boss";
 
 /**
@@ -11,15 +12,18 @@ import { PgBoss } from "pg-boss";
  *
  * This module is deliberately shaped like the small part of BullMQ the app
  * actually used, so the call sites read the same. pg-boss v12 differs from
- * BullMQ in four ways that each cause a silent bug if you assume otherwise,
- * and all four are handled here rather than at twenty call sites:
+ * BullMQ in five ways that each cause a silent bug if you assume otherwise,
+ * and all five are handled here rather than at twenty call sites:
  *
  *  1. A queue must be created before anything can be sent to it.
  *  2. A work handler is given an ARRAY of jobs, never one.
  *  3. Deduping a queued job by key needs the queue's policy set to "short".
  *     Under the default policy a second send with the same key is accepted,
  *     which for us would mean a post published twice.
- *  4. The package is ESM with a named export; there is no default export.
+ *  4. Policy "short" then dedupes jobs with NO key against each other, because
+ *     its index coalesces a null key to the empty string. Two uploads in a row
+ *     and the second never processes. See enqueue().
+ *  5. The package is ESM with a named export; there is no default export.
  */
 
 /** Every queue in the app. Adding one here is what creates it on boot. */
@@ -110,7 +114,22 @@ export async function enqueue(
 ): Promise<string | null> {
   const b = await getBoss();
   return b.send(queue, data, {
-    ...(options.key ? { singletonKey: options.key } : {}),
+    /*
+     * A key of its own when the caller gave none, which reads like a no-op and
+     * is not one.
+     *
+     * The index behind policy "short" is unique on
+     * (name, COALESCE(singleton_key, '')), so every keyless job on a queue
+     * collides on the empty string. Two of them in a row and the second is
+     * dropped and reported as sent. That is two uploads where the second card
+     * never leaves "Queued for processing", two knowledge files where only the
+     * first is ever read, two videos analyzed where one silently is not.
+     *
+     * "short" has to stay: it is what makes a key dedupe at all, which is what
+     * stops a post going out twice. So no key means a unique key, which is
+     * what no key was always supposed to mean.
+     */
+    singletonKey: options.key ?? randomUUID(),
     ...(options.startAfter !== undefined ? { startAfter: options.startAfter } : {}),
     ...(options.retryLimit !== undefined ? { retryLimit: options.retryLimit } : {}),
     ...(options.retryDelaySeconds !== undefined ? { retryDelay: options.retryDelaySeconds } : {}),

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { PgBoss } from "pg-boss";
 
 /**
- * The four pg-boss behaviours this app's queues depend on.
+ * The pg-boss behaviours this app's queues depend on.
  *
  * Every one of them differs from BullMQ, which is what these queues used to run
  * on, and every one fails silently rather than loudly if it changes: a post
@@ -36,6 +37,21 @@ try {
   const second = await boss.send("dedupe", { n: 2 }, { singletonKey: "k" });
   assert.notEqual(first, null, "the first send with a key is accepted");
   assert.equal(second, null, 'a second send with a live key is dropped under policy "short"');
+
+  /* 1b. ...and two jobs with NO key must NOT dedupe against each other.
+   *     The index behind "short" is unique on (name, COALESCE(key, '')), so
+   *     keyless jobs all collide on the empty string unless enqueue() hands
+   *     each one a key of its own. Sending raw here, the way the library
+   *     behaves underneath, is the thing worth pinning: if a future version
+   *     stops dropping the second one, enqueue()'s workaround is dead weight
+   *     and this says so. */
+  const bare1 = await boss.send("dedupe", { n: 1 });
+  const bare2 = await boss.send("dedupe", { n: 2 });
+  assert.notEqual(bare1, null, "the first keyless send is accepted");
+  assert.equal(bare2, null, 'a second keyless send is ALSO dropped under policy "short"');
+  const unique1 = await boss.send("dedupe", { n: 3 }, { singletonKey: randomUUID() });
+  const unique2 = await boss.send("dedupe", { n: 4 }, { singletonKey: randomUUID() });
+  assert.ok(unique1 && unique2, "which is why enqueue() gives a keyless job a key of its own");
 
   /* 2. A job has to be findable by that key and cancellable, which is how a
    *    scheduled post is called off. */
