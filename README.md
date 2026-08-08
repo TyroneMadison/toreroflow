@@ -19,7 +19,7 @@ and hand the client something worth reading.
 
 ![Release](https://img.shields.io/github/v/release/TyroneMadison/toreroflow?style=flat-square&color=FF6F61&label=release)
 ![Platform](https://img.shields.io/badge/platform-Windows-1c1c1e?style=flat-square)
-![Checks](https://img.shields.io/badge/checks-47%20runnable-1c1c1e?style=flat-square)
+![Checks](https://img.shields.io/badge/checks-49%20runnable-1c1c1e?style=flat-square)
 
 <br/>
 
@@ -133,10 +133,12 @@ you have to sit and wait.
 
 <br/>
 
-**Upload & Schedule.** The original is kept untouched and a web-safe copy is made for
-everything else. The video is transcribed, and a name and description get drafted from what
-it actually says. One name and one description cover every platform, with YouTube's own
-title and description behind a toggle, because YouTube is the only one that works that way.
+**Upload & Schedule.** The original is kept untouched. An upload waits for the file and
+nothing else: it is read for its dimensions, a thumbnail is pulled, and it is ready. One
+press of Generate caption and title transcribes it and drafts a name and description from
+what it actually says, because that is the point at which the words are wanted. One name and
+one description cover every platform, with YouTube's own title and description behind a
+toggle, because YouTube is the only one that works that way.
 
 Per-platform options are the ones the platform genuinely supports, not a lowest common
 denominator: Instagram gets reels with a cover frame you scrub to, collaborators, a pinned
@@ -241,14 +243,15 @@ system's: a native list takes no radius, no blur and no animation on any platfor
 
 ## How it is put together
 
-Today it runs as a desktop shell talking to a local API, with Postgres in Docker.
+A desktop shell on the operator's machine, and everything else on one server it reaches over
+HTTPS. The shell holds no data and runs no processes of its own.
 
 ```mermaid
 flowchart LR
-    subgraph desktop["Desktop - Tauri 2 + React"]
+    subgraph desktop["Your machine - Tauri 2 + React"]
         UI["Dashboard, upload, edit,<br/>calendar, analytics,<br/>financials, reports"]
     end
-    subgraph local["Local services"]
+    subgraph server["The server - Docker, reached over HTTPS"]
         API["Fastify API"]
         W["Workers - 9 queues<br/>media, publish, analytics, insights,<br/>research, bank, edit, analyze, knowledge"]
         DB[("PostgreSQL<br/>data and job queues")]
@@ -279,9 +282,9 @@ official Redis build for Windows and Postgres has to be there anyway. The worker
 anything the calendar still expects on every boot, so the queue can be replaced underneath
 the app without a scheduled post going quiet.
 
-**Next up: making it standalone.** The installer today builds a window that expects that local API,
-so it needs the repo and Docker on the machine. Embedding the database and compiling the API into
-a sidecar is the rest of the work that turns this into something you just download.
+**The installed app needs nothing on the machine.** It reads one setting, the address of the
+server, and talks to it over HTTPS. No Docker, no database, no ffmpeg, no repository: install it
+and open it. Everything below is for working on the code, not for running the app.
 
 ---
 
@@ -312,7 +315,7 @@ that runs under `tsx` and fails loudly:
 pnpm -r test
 ```
 
-Forty-seven of them, covering what would be expensive to get wrong: money arithmetic, Schedule C
+Forty-nine of them, covering what would be expensive to get wrong: money arithmetic, Schedule C
 line numbers, encryption at rest, a spending ceiling that can never be exceeded, the edit decision
 list that drives every render, and one that reads the stylesheet and fails if any animation would
 cost a layout or a repaint.
@@ -321,18 +324,28 @@ cost a layout or a repaint.
 
 ## Getting started
 
+**To use the app:** install it and open it. Nothing on this page is required.
+
+**To work on it,** you want a stack of your own rather than the live one, because the live one
+holds real client data.
+
 **Prereqs:** Node 20+, pnpm, Docker Desktop, Rust toolchain, ffmpeg.
 
 ```bash
 pnpm install
 cp .env.example .env      # fill in the keys you need
-pnpm infra:up             # Postgres
+pnpm infra:up             # Postgres, the only container
 pnpm db:migrate
 pnpm dev:api              # API on http://localhost:4700
 pnpm --filter @toreroflow/desktop tauri dev
 ```
 
 Or run `start.cmd` at the repo root, which does all of that in order.
+
+`VITE_API_URL` in the root `.env` decides which API a build talks to, and the desktop reads
+that file rather than one of its own ([vite.config.ts](apps/desktop/vite.config.ts) sets
+`envDir` to the repo root on purpose). Point it at `http://localhost:4700` to work against
+the stack above; leave it on the server address to build something shippable.
 
 ---
 
