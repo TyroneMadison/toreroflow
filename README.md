@@ -49,7 +49,18 @@ Three areas behind one tab, each of which used to be somebody else's product.
     <td width="33%" valign="top"><b>Analyze</b><br/><sub>A video that scores itself</sub><br/><br/>Hook, retention, payoff and a peak score, with the key moments marked on the video and named. An action plan for the next cut, and spin-off ideas from what already worked.</td>
     <td width="33%" valign="top"><b>Ideas</b><br/><sub>An ideas desk that knows the brand</sub><br/><br/>Hooks, scripts and shot lists for the brand's own niche, grounded in a knowledge base you drag files into. Brainstorm threads that are still there tomorrow.</td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/screens/edit-studio.png" alt="Studio: the project list for a brand, with a named cut ready to open" /></td>
+    <td align="center"><img src="docs/screens/edit-analyze.png" alt="Analyze: a scored video with its peak score on the card" /></td>
+    <td align="center"><img src="docs/screens/edit-ideas.png" alt="Ideas: the brand's niche and the knowledge base the studio writes from" /></td>
+  </tr>
 </table>
+
+<div align="center">
+  <img src="docs/screens/edit-ideas-list.png" width="820" alt="Saved ideas: hooks grouped by format, each with the niche it was written for and a button to write the script" />
+  <br/>
+  <sub>Every idea for a brand in one list, from first line to posted, each one able to become a script.</sub>
+</div>
 
 ```mermaid
 flowchart LR
