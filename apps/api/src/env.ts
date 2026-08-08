@@ -77,7 +77,6 @@ export interface Env {
    * all-time YouTube rankings stay unavailable rather than failing.
    */
   YOUTUBE_API_KEY: string;
-  REDIS_URL: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
   /**
@@ -127,7 +126,6 @@ export const env: Env = {
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
-  REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   REPO_ROOT: repoRoot,

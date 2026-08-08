@@ -87,25 +87,60 @@ export interface EnqueueOptions {
   /** How many times to retry a failure, and how long to wait between. */
   retryLimit?: number;
   retryDelaySeconds?: number;
+  /**
+   * Grow the wait between retries instead of keeping it flat. Publishing uses
+   * it: a platform that just refused is unlikely to say yes a second time
+   * thirty seconds later, and three evenly spaced retries is closer to
+   * hammering it than to backing off.
+   */
+  retryBackoff?: boolean;
 }
 
 /**
- * Queue a job. Returns false when a key was given and a job already holds it,
- * which is a successful no-op rather than a failure.
+ * Queue a job, returning its id.
+ *
+ * Null means a key was given and a job already holds it, which is a successful
+ * no-op rather than a failure. The id is only needed by the one caller that
+ * waits for its job to finish; everyone else can ignore it.
  */
 export async function enqueue(
   queue: QueueName,
   data: object,
   options: EnqueueOptions = {},
-): Promise<boolean> {
+): Promise<string | null> {
   const b = await getBoss();
-  const id = await b.send(queue, data, {
+  return b.send(queue, data, {
     ...(options.key ? { singletonKey: options.key } : {}),
     ...(options.startAfter !== undefined ? { startAfter: options.startAfter } : {}),
     ...(options.retryLimit !== undefined ? { retryLimit: options.retryLimit } : {}),
     ...(options.retryDelaySeconds !== undefined ? { retryDelay: options.retryDelaySeconds } : {}),
+    ...(options.retryBackoff !== undefined ? { retryBackoff: options.retryBackoff } : {}),
   });
-  return id !== null;
+}
+
+/**
+ * Wait for one job to finish, within reason.
+ *
+ * Only the report rebuild needs this: it kicks off an analytics ingest and has
+ * to have the fresh follower snapshots before it renders the page, or it
+ * publishes last cycle's numbers. Bounded and never fatal, so a worker that is
+ * not running times out and the page is still rebuilt with everything else
+ * current rather than the request hanging.
+ */
+export async function waitForJob(
+  queue: QueueName,
+  id: string,
+  timeoutMs = 30_000,
+): Promise<"completed" | "failed" | "timed out"> {
+  const b = await getBoss();
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const job = await b.getJobById(queue, id);
+    if (job?.state === "completed") return "completed";
+    if (job?.state === "failed" || job?.state === "cancelled") return "failed";
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return "timed out";
 }
 
 /**
@@ -155,12 +190,27 @@ export async function scheduleCron(
   await b.schedule(queue, cron, data);
 }
 
+/** What a handler is told about the job beyond its payload. */
+export interface JobMeta {
+  /**
+   * How many times this job has already failed, 0 on the first run.
+   *
+   * Publishing needs it: it decides whether a failure is the final one and the
+   * post should be marked failed for good, or just another attempt. Same
+   * meaning and same base as BullMQ's attemptsMade, so callers do not shift.
+   */
+  retryCount: number;
+}
+
 /**
  * Run `handler` for each job on a queue.
  *
  * pg-boss hands the handler a batch; this unwraps it and runs them one at a
  * time so a handler only ever deals with a single job, the way the worker code
  * was already written. `concurrency` is how many are taken per poll.
+ *
+ * Metadata is always requested, because retryCount only arrives with it and a
+ * handler silently receiving undefined there would mark first failures final.
  *
  * A throw propagates, which is what marks the job failed and lets the retry
  * policy do its work. Swallowing it here would turn every failure into a
@@ -169,12 +219,20 @@ export async function scheduleCron(
 export async function work<T extends object>(
   queue: QueueName,
   options: { concurrency?: number },
-  handler: (data: T) => Promise<void>,
+  handler: (data: T, meta: JobMeta) => Promise<void>,
 ): Promise<void> {
   const b = await getBoss();
-  await b.work<T>(queue, { batchSize: options.concurrency ?? 1 }, async (jobs) => {
-    for (const job of jobs) await handler(job.data);
-  });
+  // All three type parameters are given on purpose. pg-boss picks the
+  // with-metadata handler shape from the literal type of the options object, so
+  // naming only the payload type leaves the options generic at its default and
+  // the job arrives without retryCount on it.
+  await b.work<T, void, { batchSize: number; includeMetadata: true }>(
+    queue,
+    { batchSize: options.concurrency ?? 1, includeMetadata: true },
+    async (jobs) => {
+      for (const job of jobs) await handler(job.data, { retryCount: job.retryCount });
+    },
+  );
 }
 
 /** Closes the connection. Called when the worker or the API shuts down. */

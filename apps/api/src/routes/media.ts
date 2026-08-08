@@ -4,12 +4,10 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { CAROUSEL_ABSOLUTE_MAX, decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, Prisma, cancelByKey, enqueue } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -65,10 +63,6 @@ const draftSchema = z.object({
 
 export async function mediaRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
-  // Needed to drop the delayed jobs of posts a revision supersedes.
-  const publishQueue = new Queue<{ targetId: string }>("publish", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -213,7 +207,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       where: { id: asset.id },
       data: { storageKey },
     });
-    await mediaQueue.add("process", { assetId: asset.id });
+    await enqueue("media", { assetId: asset.id });
     return reply
       .status(201)
       .send(assetView(updated));
@@ -382,7 +376,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
           : {}),
       },
     });
-    await mediaQueue.add("process", { assetId: asset.id });
+    await enqueue("media", { assetId: asset.id });
     return reply.status(201).send(assetView(updated));
     },
   );
@@ -849,8 +843,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         },
       });
       for (const target of stale) {
-        const job = await publishQueue.getJob(target.id);
-        if (job) await job.remove();
+        // Drops the delayed publish of a post this revision supersedes.
+        await cancelByKey("publish", target.id);
       }
       const ids = stale.map((t) => t.id);
       if (ids.length) {

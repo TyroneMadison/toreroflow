@@ -12,10 +12,8 @@ import {
   PLATFORMS,
   type Platform,
 } from "@toreroflow/core";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { z } from "zod";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, enqueue } from "@toreroflow/db";
 import {
   DryRunPublisher,
   YouTubeProvider,
@@ -64,9 +62,6 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
   const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
-  const queueConnection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const analyticsQueue = new Queue("analytics", { connection: queueConnection });
-  const insightsQueue = new Queue("insights", { connection: queueConnection });
 
   /** Zernio profile backing this client, created on first use. */
   const ensureProviderProfile = async (client: {
@@ -440,11 +435,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         }
         // Backfill history from the provider's already-synced posts right away.
         if (valid.length) {
-          await analyticsQueue.add(
-            "ingest",
-            {},
-            { removeOnComplete: true, removeOnFail: true },
-          );
+          await enqueue("analytics", {});
         }
         return { imported: valid.length };
       } catch (error) {
@@ -849,11 +840,7 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       // immediately. The queued ingest refreshes follower snapshots and
       // per-day history right behind it.
       postsCache.delete(client.id);
-      await analyticsQueue.add(
-        "ingest",
-        {},
-        { removeOnComplete: true, removeOnFail: true },
-      );
+      await enqueue("analytics", {});
 
       // Lifetime YouTube counts move too, so refresh them in the same
       // action rather than leaving a stale catalogue behind a fresh window.
@@ -1103,13 +1090,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         },
       });
 
-      // jobId is the client id, so BullMQ refuses a duplicate for as long as
-      // the job exists, which is the same guard one layer down.
-      await insightsQueue.add(
-        "generate",
-        { clientId: client.id },
-        { jobId: client.id, removeOnComplete: true, removeOnFail: true },
-      );
+      // Keyed on the client, so a second press while one is still queued is
+      // dropped, which is the same guard one layer down.
+      await enqueue("insights", { clientId: client.id }, { key: client.id });
 
       return reply.status(202).send(insightView(row));
     },

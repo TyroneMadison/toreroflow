@@ -1,8 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { estimateCents, normalizeHandle, platformsFor, isResearchPlatform } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -22,14 +20,8 @@ const CENTS_PER_CALL = 0.15;
 
 export async function researchRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const researchQueue = new Queue<{ runId: string }>("research", { connection });
 
   app.addHook("onRequest", requireAuth);
-  app.addHook("onClose", async () => {
-    await researchQueue.close();
-    connection.disconnect();
-  });
 
   const ownedClient = (id: string, agencyId: string) =>
     prisma.client.findFirst({ where: { id, agencyId, deletedAt: null }, select: { id: true } });
@@ -177,11 +169,7 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
       const run = await prisma.researchRun.create({
         data: { clientId: client.id, status: "running", maxCents },
       });
-      await researchQueue.add(
-        "research",
-        { runId: run.id },
-        { jobId: run.id, removeOnComplete: true, removeOnFail: true },
-      );
+      await enqueue("research", { runId: run.id }, { key: run.id });
       return reply.status(202).send(run);
     },
   );

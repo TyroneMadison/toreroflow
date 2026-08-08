@@ -2,9 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
 import nodePath from "node:path";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, enqueue, waitForJob } from "@toreroflow/db";
 import { YouTubeProvider, ZernioProvider } from "@toreroflow/publishers";
 import {
   ALERT_KINDS,
@@ -83,12 +81,6 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
       : null;
   const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
-  const analyticsQueue = new Queue("analytics", {
-    connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
-  });
-  app.addHook("onClose", async () => {
-    await analyticsQueue.close();
-  });
 
   const templatePath = nodePath.join(env.REPO_ROOT, "assets", "report-template.html");
 
@@ -294,30 +286,17 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
    *
    * The wait is bounded and never fatal: if the worker is not running, the
    * page is still rebuilt with everything else current instead of the request
-   * hanging. The job is kept until observed, because a job removed on
-   * completion reports no state to wait on.
+   * hanging.
    */
   const runAnalyticsIngest = async (
     timeoutMs = 30_000,
   ): Promise<"completed" | "failed" | "timed out"> => {
-    const job = await analyticsQueue.add(
-      "ingest",
-      {},
-      { removeOnComplete: false, removeOnFail: false },
-    );
-    const started = Date.now();
-    try {
-      while (Date.now() - started < timeoutMs) {
-        const state = await job.getState();
-        if (state === "completed") return "completed";
-        if (state === "failed") return "failed";
-        await new Promise((r) => setTimeout(r, 400));
-      }
-      return "timed out";
-    } finally {
-      // Kept only long enough to observe; leaving it would grow the queue.
-      await job.remove().catch(() => undefined);
-    }
+    const id = await enqueue("analytics", {});
+    // No key on this one, so a send always yields an id. Treated as a timeout
+    // rather than thrown, because a report that rebuilds with slightly older
+    // follower counts beats a request that fails outright.
+    if (!id) return "timed out";
+    return waitForJob("analytics", id, timeoutMs);
   };
 
   /**

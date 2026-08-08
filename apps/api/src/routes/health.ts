@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import IORedis from "ioredis";
 import type { HealthResponse } from "@toreroflow/core";
-import { env } from "../env";
+import { getPrisma } from "@toreroflow/db";
 
 /**
  * Is the stack actually working, not just answering.
@@ -12,29 +11,31 @@ import { env } from "../env";
  * finishes rather than a process that is not running.
  */
 
-/** Written by the worker every 30s with a TTL, so it expires when it dies. */
-const HEARTBEAT_KEY = "toreroflow:worker:alive";
+/**
+ * How old the worker's last stamp can be before it counts as dead.
+ *
+ * It stamps every 30 seconds. Three beats of slack, so one slow tick under
+ * load does not flip the app to "worker down" while it is working fine.
+ *
+ * This was a Redis key with a TTL that expired on its own. Postgres has no
+ * TTL, so staleness is judged here instead. The half that matters is unchanged:
+ * a worker that is killed cannot clear anything on the way out, so this must go
+ * stale by itself rather than depend on being tidied up.
+ */
+const HEARTBEAT_STALE_MS = 90_000;
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
-  const redis = new IORedis(env.REDIS_URL, {
-    maxRetriesPerRequest: 1,
-    // Health has to answer even when Redis is the thing that is down.
-    enableOfflineQueue: false,
-    lazyConnect: true,
-  });
-  redis.on("error", () => undefined);
-  void redis.connect().catch(() => undefined);
-
-  app.addHook("onClose", async () => {
-    redis.disconnect();
-  });
+  const prisma = getPrisma();
 
   app.get("/health", async (): Promise<HealthResponse> => {
     let worker: "up" | "down" = "down";
     try {
-      worker = (await redis.exists(HEARTBEAT_KEY)) === 1 ? "up" : "down";
+      const beat = await prisma.workerHeartbeat.findUnique({ where: { id: "worker" } });
+      worker =
+        beat && Date.now() - beat.beatAt.getTime() < HEARTBEAT_STALE_MS ? "up" : "down";
     } catch {
-      // Redis unreachable means the worker cannot be running either.
+      // The database being unreachable is its own problem, but it does mean
+      // nothing can be said about the worker, and "down" is the safer answer.
     }
     return {
       status: "ok",

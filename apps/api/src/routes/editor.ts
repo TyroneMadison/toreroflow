@@ -4,8 +4,6 @@ import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { z } from "zod";
 import {
   edlFromDoc,
@@ -14,7 +12,7 @@ import {
   toOutputTime,
   type EditDoc,
 } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
@@ -103,11 +101,6 @@ const SHORTEN_SCHEMA = {
 
 export async function editorRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const editQueue = new Queue<
-    { editAssetId: string } | { editProjectId: string; job: "render" }
-  >("edit", { connection });
-  const mediaQueue = new Queue<{ assetId: string }>("media", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -302,7 +295,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
         } as Prisma.InputJsonValue,
       },
     });
-    await editQueue.add("render", { editProjectId: project.id, job: "render" });
+    await enqueue("edit", { editProjectId: project.id, job: "render" });
     return reply.status(202).send({ ok: true });
   });
 
@@ -357,7 +350,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
         where: { id: asset.id },
         data: { storageKey },
       });
-      await mediaQueue.add("process", { assetId: asset.id });
+      await enqueue("media", { assetId: asset.id });
 
       // The media assetView shape, for a just-uploaded video: everything the
       // pipeline has not made yet is null, same as any fresh upload.
@@ -579,7 +572,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
         where: { id: asset.id },
         data: { storageKey },
       });
-      await editQueue.add("process", { editAssetId: asset.id });
+      await enqueue("edit", { editAssetId: asset.id });
       return reply.status(201).send(assetView(updated));
     },
   );

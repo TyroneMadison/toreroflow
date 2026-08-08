@@ -5,11 +5,9 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { z } from "zod";
 import { toPlainText } from "@toreroflow/core";
-import { getPrisma, groundingFor as grounding } from "@toreroflow/db";
+import { getPrisma, groundingFor as grounding, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
@@ -101,8 +99,6 @@ const TRANSCRIPT_CHARS = 4000;
 
 export async function analysisRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const analyzeQueue = new Queue<{ analysisId: string }>("analyze", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -218,7 +214,7 @@ export async function analysisRoutes(app: FastifyInstance): Promise<void> {
         where: { id: analysis.id },
         data: { storageKey },
       });
-      await analyzeQueue.add("analyze", { analysisId: analysis.id });
+      await enqueue("analyze", { analysisId: analysis.id });
       return reply.status(201).send(analysisView(updated));
     },
   );
@@ -256,7 +252,7 @@ export async function analysisRoutes(app: FastifyInstance): Promise<void> {
           status: "running",
         },
       });
-      await analyzeQueue.add("analyze", { analysisId: analysis.id });
+      await enqueue("analyze", { analysisId: analysis.id });
       return reply.status(201).send(analysisView(analysis));
     },
   );
@@ -323,7 +319,7 @@ export async function analysisRoutes(app: FastifyInstance): Promise<void> {
     const updated = await prisma.videoAnalysis.findUniqueOrThrow({
       where: { id: analysis.id },
     });
-    await analyzeQueue.add("analyze", { analysisId: analysis.id });
+    await enqueue("analyze", { analysisId: analysis.id });
     return analysisView(updated);
   });
 

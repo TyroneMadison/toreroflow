@@ -4,11 +4,9 @@ import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { z } from "zod";
 import { toPlainText } from "@toreroflow/core";
-import { getPrisma, groundingFor as grounding } from "@toreroflow/db";
+import { getPrisma, groundingFor as grounding, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -184,8 +182,6 @@ const KNOWLEDGE_KINDS: Record<string, string> = {
 
 export async function ideasRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const knowledgeQueue = new Queue<{ knowledgeFileId: string }>("knowledge", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -367,7 +363,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
         where: { id: row.id },
         data: { storageKey },
       });
-      await knowledgeQueue.add("extract", { knowledgeFileId: row.id });
+      await enqueue("knowledge", { knowledgeFileId: row.id });
       return reply.status(201).send(updated);
     },
   );

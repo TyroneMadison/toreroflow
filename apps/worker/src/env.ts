@@ -8,7 +8,6 @@ const repoRoot = path.resolve(here, "../../..");
 dotenv.config({ path: path.join(repoRoot, ".env") });
 
 export const env = {
-  REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   COPY_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",

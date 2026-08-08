@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import { monthWindowStart, toCents, totalsFor, totalsByMonth } from "@toreroflow/core";
-import { encryptSecret, getPrisma } from "@toreroflow/db";
+import { encryptSecret, getPrisma, enqueue } from "@toreroflow/db";
 import {
   BankError,
   claimSetupToken,
@@ -28,8 +26,6 @@ import { requireAuth } from "../plugins/requireAuth";
 
 export async function bankRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const bankQueue = new Queue<{ connectionId?: string }>("bank", { connection });
 
   /**
    * Queues a pull and says so on the row before returning.
@@ -46,20 +42,13 @@ export async function bankRoutes(app: FastifyInstance): Promise<void> {
       where: { id: connectionId },
       data: { status: "syncing", error: null },
     });
-    await bankQueue.add(
-      "sync",
-      { connectionId },
-      // No colon in the job id: the queue uses it as a key separator and
-      // rejects custom ids containing one.
-      { jobId: connectionId, removeOnComplete: true, removeOnFail: true },
-    );
+    // One sync per connection at a time. A second press while the first is
+    // still queued is dropped rather than stacking reads on a bank that allows
+    // roughly 24 a day.
+    await enqueue("bank", { connectionId }, { key: connectionId });
   };
 
   app.addHook("onRequest", requireAuth);
-  app.addHook("onClose", async () => {
-    await bankQueue.close();
-    connection.disconnect();
-  });
 
   /** What is currently linked. There are no app-level credentials to check. */
   app.get("/bank/connections", async (request) => {

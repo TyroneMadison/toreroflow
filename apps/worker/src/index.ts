@@ -1,9 +1,14 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { Worker } from "bullmq";
-import IORedis from "ioredis";
 import { carouselTargetSize, formatFromDuration } from "@toreroflow/core";
-import { getPrisma, Prisma, persistProviderPosts, upsertExternalVideo } from "@toreroflow/db";
+import {
+  getPrisma,
+  Prisma,
+  persistProviderPosts,
+  scheduleCron,
+  upsertExternalVideo,
+  work,
+} from "@toreroflow/db";
 import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
 import { transcribe } from "./transcribe";
@@ -429,7 +434,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       });
     }
     console.error(`[worker] target ${target.id} attempt ${attemptsMade + 1} failed: ${message}`);
-    throw error; // let BullMQ retry with backoff
+    throw error; // throwing is what marks it failed and triggers the retry
   }
 }
 
@@ -665,22 +670,19 @@ async function ingestAnalytics(): Promise<void> {
   );
 }
 
-const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+void work<{ assetId: string }>("media", { concurrency: 1 }, async ({ assetId }) => {
+  await processAsset(assetId);
+});
 
-new Worker<{ assetId: string }>(
-  "media",
-  async (job) => {
-    await processAsset(job.data.assetId);
-  },
-  { connection, concurrency: 1 },
-);
-
-new Worker<{ targetId: string }>(
+// retryCount is what attemptsMade used to be: how many times this job has
+// already failed, 0 on the first run. publishTarget decides from it whether a
+// failure is the last one and the post is marked failed for good.
+void work<{ targetId: string }>(
   "publish",
-  async (job) => {
-    await publishTarget(job.data.targetId, job.attemptsMade);
+  { concurrency: 2 },
+  async ({ targetId }, { retryCount }) => {
+    await publishTarget(targetId, retryCount);
   },
-  { connection, concurrency: 2 },
 );
 
 // One at a time: these are model calls plus a headless browser print, and
@@ -688,14 +690,10 @@ new Worker<{ targetId: string }>(
 // One at a time: every run spends real money against a prepaid wallet, and
 // research is something the operator watches rather than fires and forgets.
 // One at a time: this reads a real bank and there is exactly one of them.
-new Worker<{ connectionId?: string }>(
-  "bank",
-  async (job) => {
-    if (job.data.connectionId) await syncBankConnection(job.data.connectionId);
-    else await syncAllBanks();
-  },
-  { connection, concurrency: 1 },
-);
+void work<{ connectionId?: string }>("bank", { concurrency: 1 }, async ({ connectionId }) => {
+  if (connectionId) await syncBankConnection(connectionId);
+  else await syncAllBanks();
+});
 /*
  * Once a day, unprompted.
  *
@@ -705,12 +703,9 @@ new Worker<{ connectionId?: string }>(
  * underlying data once every 24 hours and allows roughly 24 reads in that
  * time, so daily is both as fresh as the data gets and nowhere near the limit.
  */
-const bankQueue = new Queue<{ connectionId?: string }>("bank", { connection });
-void bankQueue.upsertJobScheduler(
-  "daily-bank",
-  { every: 24 * 60 * 60 * 1000 },
-  { name: "sync", data: {} },
-);
+// A fixed hour rather than "every 24 hours from whenever this last restarted",
+// which is what the old scheduler meant and which drifted with every deploy.
+void scheduleCron("bank", "0 3 * * *");
 
 /*
  * The State filing deadline, checked once a day.
@@ -730,58 +725,44 @@ setInterval(
   6 * 60 * 60 * 1000,
 );
 
-new Worker<{ runId: string }>(
-  "research",
-  async (job) => {
-    await runResearch(job.data.runId);
-  },
-  { connection, concurrency: 1 },
-);
+void work<{ runId: string }>("research", { concurrency: 1 }, async ({ runId }) => {
+  await runResearch(runId);
+});
 
-new Worker<{ clientId: string }>(
-  "insights",
-  async (job) => {
-    await generateInsight(job.data.clientId);
-  },
-  { connection, concurrency: 1 },
-);
+void work<{ clientId: string }>("insights", { concurrency: 1 }, async ({ clientId }) => {
+  await generateInsight(clientId);
+});
 
 // One at a time, all three: each is ffmpeg or whisper on the same disk, and
 // two concurrent encodes finish later than two queued ones. The one queue
 // carries both jobs: asset processing (the default) and full renders.
-new Worker<{ editAssetId?: string; editProjectId?: string; job?: string }>(
+void work<{ editAssetId?: string; editProjectId?: string; job?: string }>(
   "edit",
-  async (job) => {
-    if (job.data.job === "render" && job.data.editProjectId) {
-      await renderProject(job.data.editProjectId);
-    } else if (job.data.editAssetId) {
-      await processEditAsset(job.data.editAssetId);
+  { concurrency: 1 },
+  async (data) => {
+    if (data.job === "render" && data.editProjectId) {
+      await renderProject(data.editProjectId);
+    } else if (data.editAssetId) {
+      await processEditAsset(data.editAssetId);
     }
   },
-  { connection, concurrency: 1 },
 );
 
-new Worker<{ analysisId: string }>(
-  "analyze",
-  async (job) => {
-    await runAnalysis(job.data.analysisId);
-  },
-  { connection, concurrency: 1 },
-);
+void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
+  await runAnalysis(analysisId);
+});
 
-new Worker<{ knowledgeFileId: string }>(
+void work<{ knowledgeFileId: string }>(
   "knowledge",
-  async (job) => {
-    await extractKnowledgeFile(job.data.knowledgeFileId);
+  { concurrency: 1 },
+  async ({ knowledgeFileId }) => {
+    await extractKnowledgeFile(knowledgeFileId);
   },
-  { connection, concurrency: 1 },
 );
 
-import { Queue } from "bullmq";
-
-const analyticsQueue = new Queue("analytics", { connection });
-new Worker(
+void work(
   "analytics",
+  { concurrency: 1 },
   async () => {
     await ingestAnalytics();
     // Lifetime view counts keep climbing, so refresh them on the same beat.
@@ -795,14 +776,10 @@ new Worker(
     // that actually keeps the disk down.
     await sweepPostedThumbnails();
   },
-  { connection, concurrency: 1 },
 );
 // Daily schedule plus one catch-up pull on boot (same-day dedupe inside).
-void analyticsQueue.upsertJobScheduler(
-  "daily-analytics",
-  { every: 24 * 60 * 60 * 1000 },
-  { name: "ingest", data: {} },
-);
+// An hour after the bank sync so two heavy jobs are not started together.
+void scheduleCron("analytics", "0 4 * * *");
 void (async () => {
   await ingestAnalytics();
   await refreshYouTubeCatalogues();
@@ -816,14 +793,25 @@ void (async () => {
  * nothing anywhere saying why. That is exactly what happened, and the videos
  * looked like the broken thing when the worker was the broken thing.
  *
- * A key with a TTL rather than a flag, because a worker that is killed cannot
- * clear a flag on the way out, and a stale "running" is worse than no signal.
+ * A timestamp that has to be refreshed rather than a flag, because a worker
+ * that is killed cannot clear a flag on the way out, and a stale "running" is
+ * worse than no signal. This was a Redis key with a TTL, which expired by
+ * itself; Postgres has none, so the reader judges it by age instead and the
+ * guarantee is the same.
  */
-const HEARTBEAT_KEY = "toreroflow:worker:alive";
 const HEARTBEAT_SECONDS = 30;
 
 const beat = () => {
-  void connection.set(HEARTBEAT_KEY, String(Date.now()), "EX", HEARTBEAT_SECONDS * 3);
+  const beatAt = new Date();
+  void prisma.workerHeartbeat
+    .upsert({
+      where: { id: "worker" },
+      create: { id: "worker", beatAt },
+      update: { beatAt },
+    })
+    // Never throw out of a timer: an unhandled rejection here would take down
+    // the process this is supposed to be reporting on.
+    .catch((err: unknown) => console.error("[worker] heartbeat failed:", err));
 };
 beat();
 setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();

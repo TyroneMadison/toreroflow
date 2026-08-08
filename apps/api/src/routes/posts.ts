@@ -1,7 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import { fileLink } from "../files/link";
-import { Queue } from "bullmq";
-import IORedis from "ioredis";
 import {
   appendWatchNext,
   captionFor,
@@ -11,7 +9,7 @@ import {
   schedulePostSchema,
   youtubeTitleFor,
 } from "@toreroflow/core";
-import { getPrisma } from "@toreroflow/db";
+import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -34,8 +32,6 @@ function draftName(draft: unknown): string {
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
-  const publishQueue = new Queue<{ targetId: string }>("publish", { connection });
 
   app.addHook("onRequest", requireAuth);
 
@@ -258,19 +254,18 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         })
       : null;
 
-    const delay = Math.max(0, scheduledAt.getTime() - Date.now());
     for (const target of [...post.targets, ...(storyTarget ? [storyTarget] : [])]) {
-      // jobId = target id so a reschedule can replace the delayed job.
-      await publishQueue.add(
+      // Keyed on the target so a reschedule can move this exact job, and so a
+      // double submit cannot queue the same post twice.
+      await enqueue(
         "publish",
         { targetId: target.id },
         {
-          jobId: target.id,
-          delay,
-          attempts: 3,
-          backoff: { type: "exponential", delay: 30_000 },
-          removeOnComplete: true,
-          removeOnFail: true,
+          key: target.id,
+          startAfter: scheduledAt,
+          retryLimit: 3,
+          retryDelaySeconds: 30,
+          retryBackoff: true,
         },
       );
     }
@@ -373,20 +368,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         where: { id: target.id },
         data: { scheduledAt: when },
       });
-      const existing = await publishQueue.getJob(target.id);
-      if (existing) await existing.remove();
-      await publishQueue.add(
-        "publish",
-        { targetId: target.id },
-        {
-          jobId: target.id,
-          delay: Math.max(0, when.getTime() - Date.now()),
-          attempts: 3,
-          backoff: { type: "exponential", delay: 30_000 },
-          removeOnComplete: true,
-          removeOnFail: true,
-        },
-      );
+      // One statement, so unlike the old remove-then-add there is no instant
+      // where this post is queued nowhere.
+      await reschedule("publish", { targetId: target.id }, target.id, when);
       return { id: updated.id, scheduledAt: updated.scheduledAt };
     },
   );
@@ -408,8 +392,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: "already publishing or posted" });
     }
 
-    const job = await publishQueue.getJob(target.id);
-    if (job) await job.remove();
+      await cancelByKey("publish", target.id);
     await prisma.postTarget.delete({ where: { id: target.id } });
 
     const left = await prisma.postTarget.count({ where: { postId: target.postId } });
@@ -433,8 +416,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: "post already publishing or posted" });
     }
     for (const target of post.targets) {
-      const job = await publishQueue.getJob(target.id);
-      if (job) await job.remove();
+      await cancelByKey("publish", target.id);
     }
     await prisma.postTarget.deleteMany({ where: { postId: post.id } });
     await prisma.post.delete({ where: { id: post.id } });

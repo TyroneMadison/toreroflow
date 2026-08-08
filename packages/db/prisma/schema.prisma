@@ -1054,6 +1054,18 @@ model ContentIdea {
 
 /// A file dropped into a brand's knowledge base. Its contents are extracted
 /// once on drop; every AI feature reads the text, never the file again.
+/// Is the worker alive?
+///
+/// One row, stamped every 30 seconds. This was a Redis key with a TTL, which
+/// expired on its own when the worker died; Postgres has no TTL, so the reader
+/// judges it by age instead. Same guarantee, and the important half is
+/// unchanged: a worker that is killed cannot tidy up after itself, so this must
+/// go stale on its own rather than rely on anything being cleared.
+model WorkerHeartbeat {
+  id     String   @id @default("worker")
+  beatAt DateTime
+}
+
 /// One brainstorm thread, kept so closing the window does not lose it.
 model BrainstormChat {
   id       String @id @default(cuid())
