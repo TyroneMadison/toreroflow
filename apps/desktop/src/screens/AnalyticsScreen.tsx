@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { followsMeasurable, reportsSaves } from "@toreroflow/core";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
@@ -298,19 +299,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
    * there is nothing to report, and folding those into one total would make a
    * real number look like a poor one.
    */
-  /*
-   * TikTok is deliberately not in here, even though it has a save button.
-   * Having the button and the provider reporting the number are different
-   * things, and this list is about the second. Measured 2026-08-07 across this
-   * agency's real history: of 313 TikTok posts, 312 report likes, 141 report
-   * comments and 78 report shares, and exactly 0 report a save. Instagram
-   * reports saves on 430 of 584. A field that is absent on every post while its
-   * neighbours come through is not a quiet month, it is a field the provider
-   * does not serve, and showing its zero would break the rule right below.
-   * Put tiktok back the day a non-zero save turns up in ExternalVideo.
-   */
-  const SAVE_PLATFORMS = new Set(["instagram"]);
-  const savablePosts = all.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
+  // Which platforms actually report a save is one question with one answer,
+  // and the client report has to give the same one. See packages/core.
+  const savablePosts = all.filter((p) => reportsSaves(p.platforms));
   const totalSaves = savablePosts.reduce((s, p) => s + p.saves, 0);
   const totalComments = all.reduce((s, p) => s + p.comments, 0);
   const totalShares = all.reduce((s, p) => s + p.shares, 0);
@@ -321,7 +312,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
    * row of zeros would read as "this video won you nobody" when the truth is
    * that it was never measured. Shown only once a real number arrives.
    */
-  const followsReported = all.some((p) => p.follows > 0);
+  const followsReported = followsMeasurable(all);
   const totalFollows = all.reduce((s, p) => s + p.follows, 0);
 
   const engagement = [
@@ -785,7 +776,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                               button: nobody saved it is a different fact from
                               nobody could. */}
                           <div className="m">
-                            {p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)) ? fmt(p.saves) : "-"}
+                            {reportsSaves(p.platforms) ? fmt(p.saves) : "-"}
                           </div>
                           <div className="m">{fmt(p.comments)}</div>
                           <div className="m">{fmt(p.shares)}</div>

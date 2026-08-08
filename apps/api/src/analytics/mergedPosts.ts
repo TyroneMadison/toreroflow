@@ -31,7 +31,12 @@ export interface MergedPost {
   likes: number;
   comments: number;
   shares: number;
-  /** Instagram and TikTok only; every other platform has no save button. */
+  /**
+   * Instagram only in practice. YouTube and Facebook have no save button, and
+   * TikTok has one the provider has never reported. Both consumers ask
+   * reportsSaves() from packages/core rather than reading this as a
+   * measurement on its own.
+   */
   saves: number;
   reach: number;
   /**

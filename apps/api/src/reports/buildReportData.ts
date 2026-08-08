@@ -1,14 +1,20 @@
 /**
  * Turns real analytics into the JSON the Torerone report template renders.
  *
- * Two honesty rules run through this file:
+ * Three honesty rules run through this file:
  *  - A change indicator is only emitted when a genuine prior period exists.
  *    Follower and subscriber counts are point-in-time snapshots that only
  *    began on 2026-07-25, so they are shown without an arrow rather than
  *    compared against nothing.
  *  - Watch time is derived from views multiplied by average watch, because
  *    YouTube's Data API does not report it. Every label says "estimated".
+ *  - A metric is only shown for platforms that actually report it. Saves
+ *    ask reportsSaves() rather than summing whatever arrived, so a period
+ *    with nothing save-reporting in it leaves the row out instead of
+ *    printing a zero the client would read as their result.
  */
+
+import { reportsSaves } from "@toreroflow/core";
 
 export type Direction = "up" | "down" | "flat";
 
@@ -26,7 +32,11 @@ export interface ReportPost {
   likes: number;
   comments: number;
   shares: number;
-  /** Instagram and TikTok only; every other platform has no save button. */
+  /**
+   * Instagram only in practice. YouTube and Facebook have no save button, and
+   * TikTok has one the provider has never reported. Ask reportsSaves() rather
+   * than trusting this to be a measurement.
+   */
   saves: number;
   reach: number;
   avgWatchSec: number | null;
@@ -329,16 +339,10 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
    * a bad month rather than a metric their platform does not keep. So the row
    * appears only when a save-capable platform is in the period.
    */
-  /*
-   * Instagram only, deliberately. TikTok has a save button but the provider has
-   * never sent the number: measured 2026-08-07 over this agency's real history,
-   * 0 of 313 TikTok posts carry a save while 312 carry likes and 78 carry
-   * shares. This row goes out on a document a client pays for, so a TikTok only
-   * month must not print "Saves 0", which reads as nobody saved it rather than
-   * nobody counted it. Put tiktok back when a non-zero save appears.
-   */
-  const SAVE_PLATFORMS = new Set(["instagram"]);
-  const savable = current.filter((p) => p.platforms.some((pl) => SAVE_PLATFORMS.has(pl)));
+  // The same rule the analytics screen applies, from the same place, so this
+  // document cannot quietly disagree with the screen it was generated from.
+  // See packages/core for why TikTok is not on the list.
+  const savable = current.filter((p) => reportsSaves(p.platforms));
   const engRows = [
     { name: "Likes", value: sum(current, (p) => p.likes), color: "linear-gradient(90deg,#FF8A78,#E5473C)" },
     { name: "Comments", value: sum(current, (p) => p.comments), color: "linear-gradient(90deg,#8b7bff,#4ea8ff)" },

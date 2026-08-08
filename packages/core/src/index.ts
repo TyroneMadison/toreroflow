@@ -28,4 +28,5 @@ export * from "./captionChunks";
 export * from "./captionsToAss";
 export * from "./analysis";
 export * from "./ideaDedup";
+export * from "./platformMetrics";
 export * as tokens from "./tokens";
