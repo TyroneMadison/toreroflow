@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -18,6 +19,65 @@ import { relaunch } from "@tauri-apps/plugin-process";
 
 export type UpdatePhase = "idle" | "checking" | "downloading" | "installing" | "done" | "failed";
 
+/*
+ * A note left on disk before an install, read back on the next launch.
+ *
+ * On Windows the updater hands the installer to the shell and then calls
+ * std::process::exit(0) on the spot, without looking at whether the shell
+ * accepted it. Everything after that point happens with this app already dead,
+ * so an install that never lands has nobody left to report it: the "failed"
+ * phase below cannot render, because the process that would render it is gone.
+ * What the operator sees is the window vanish, come back, and still say the old
+ * version, which is indistinguishable from an update that was never offered.
+ *
+ * This is the smallest thing that survives that: write down what was attempted,
+ * and on the next launch, if the app is still not the version it tried to
+ * become, say so. It cannot prevent the failure. It ends the silence, which is
+ * what made this take a week to notice.
+ */
+const ATTEMPT_KEY = "toreroflow-update-attempt";
+
+interface Attempt {
+  version: string;
+  at: number;
+}
+
+/** Parse a stored note. A corrupt one is the same as none: this is a hint, not a record. */
+export function parseAttempt(raw: string | null): Attempt | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<Attempt>;
+    return typeof parsed.version === "string" &&
+      parsed.version !== "" &&
+      typeof parsed.at === "number"
+      ? { version: parsed.version, at: parsed.at }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The version an earlier run tried and failed to become, or null.
+ *
+ * Null when there was no attempt, when the attempt is the version now running
+ * (so it worked), or when the note is unreadable. Only a note naming a version
+ * this app is not counts as stranded.
+ */
+export function strandedVersion(attempt: Attempt | null, running: string): string | null {
+  if (!attempt) return null;
+  return attempt.version === running ? null : attempt.version;
+}
+
+function readAttempt(): Attempt | null {
+  try {
+    return parseAttempt(localStorage.getItem(ATTEMPT_KEY));
+  } catch {
+    // Storage itself refusing to be read, which is not the same as a bad value.
+    return null;
+  }
+}
+
 export interface AppUpdate {
   update: Update | null;
   phase: UpdatePhase;
@@ -25,6 +85,11 @@ export interface AppUpdate {
   problem: string | null;
   /** Set once a check has finished and found nothing, so a button can say so. */
   checkedAndCurrent: boolean;
+  /**
+   * The version a previous run downloaded, pressed install on, and did not
+   * become. Null when the last attempt worked or there has not been one.
+   */
+  strandedAt: string | null;
   look(): Promise<void>;
   install(): Promise<void>;
   dismiss(): void;
@@ -36,6 +101,24 @@ export function useAppUpdate(): AppUpdate {
   const [progress, setProgress] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const [checkedAndCurrent, setCheckedAndCurrent] = useState(false);
+  const [strandedAt, setStrandedAt] = useState<string | null>(null);
+
+  // Read the note from the last attempt once, on mount. Running the version it
+  // was trying to reach means it worked, and the note goes.
+  useEffect(() => {
+    const attempt = readAttempt();
+    if (!attempt) return;
+    void getVersion()
+      .then((running) => {
+        const stranded = strandedVersion(attempt, running);
+        if (stranded) setStrandedAt(stranded);
+        else localStorage.removeItem(ATTEMPT_KEY);
+      })
+      .catch(() => {
+        // No version to compare against is not evidence either way, so the note
+        // stays for the next launch rather than being cleared on a guess.
+      });
+  }, []);
 
   const look = useCallback(async () => {
     setPhase("checking");
@@ -66,6 +149,17 @@ export function useAppUpdate(): AppUpdate {
     if (!update) return;
     setProblem(null);
     setPhase("downloading");
+    // Written before the attempt, not after: on Windows there is no "after" in
+    // this process. See the note on ATTEMPT_KEY.
+    try {
+      localStorage.setItem(
+        ATTEMPT_KEY,
+        JSON.stringify({ version: update.version, at: Date.now() } satisfies Attempt),
+      );
+    } catch {
+      // Storage being unavailable costs the warning on the next launch, not the
+      // update, so it must not stop the install.
+    }
     let total = 0;
     let got = 0;
     try {
@@ -91,5 +185,5 @@ export function useAppUpdate(): AppUpdate {
     setCheckedAndCurrent(false);
   }, []);
 
-  return { update, phase, progress, problem, checkedAndCurrent, look, install, dismiss };
+  return { update, phase, progress, problem, checkedAndCurrent, strandedAt, look, install, dismiss };
 }

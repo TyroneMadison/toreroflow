@@ -37,7 +37,7 @@ const CHECK_EVERY_MS = 15 * 60 * 1000;
 const FOCUS_CHECK_FLOOR_MS = 60 * 1000;
 
 export default function UpdateBanner() {
-  const { update, phase, progress, problem, look, install } = useAppUpdate();
+  const { update, phase, progress, problem, strandedAt, look, install } = useAppUpdate();
   const [dismissed, setDismissed] = useState(false);
   const lastLook = useRef(0);
 
@@ -110,6 +110,16 @@ export default function UpdateBanner() {
                 mid-upload needs to know that before they press, not after. */}
             {update.body ? `${update.body} · ` : ""}
             Installs in a few seconds and restarts the app.
+          </div>
+        )}
+        {/* The one thing this app can say about a Windows install that died
+            with the process that started it. Shown beside the offer rather
+            than instead of it, because trying again is still worth a press. */}
+        {phase === "idle" && strandedAt === update.version && (
+          <div className="updatebar-notes bad">
+            Version {strandedAt} downloaded last time but never finished
+            installing. If it does the same again, install it by hand from the
+            releases page.
           </div>
         )}
         {phase === "downloading" && (
