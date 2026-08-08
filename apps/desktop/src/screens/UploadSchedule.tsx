@@ -39,9 +39,11 @@ interface UploadScheduleProps {
 
 const STATUS_LABEL: Record<MediaAssetInfo["status"], string> = {
   uploaded: "Queued for processing…",
-  // Transcription still runs here (local, free). AI copy no longer does: it
-  // costs money per call and now runs only from its button.
-  processing: "Transcribing…",
+  // Reading the file and pulling a thumbnail, and that is all. Neither the
+  // transcript nor the AI copy is made here any more: both wait for the
+  // "Generate caption and title" button, so an upload is only as slow as the
+  // file itself.
+  processing: "Getting it ready…",
   ready: "Ready",
   failed: "Processing failed",
 };

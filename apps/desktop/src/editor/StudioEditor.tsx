@@ -85,6 +85,9 @@ export function useEditor(): EditorCtx {
 
 const STEPS = ["1. Auto cut", "2. Edit", "3. Caption style", "4. Export"];
 
+/** What the database calls a project nobody has named. Matches the Prisma default. */
+const UNTITLED = "Untitled project";
+
 /**
  * The Studio editor shell. Loads one project, owns the doc state and the
  * shared playback clock, and renders the 4-step flow with the phone preview
@@ -175,6 +178,32 @@ function LoadedEditor({
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
+  /*
+   * The project's name, typed here or nowhere.
+   *
+   * A new project is created as "Untitled project" and there was no way to
+   * change that, so a second one was indistinguishable from the first. Held
+   * locally while typing and written on blur rather than per keystroke: the
+   * document autosaves on a debounce because it changes constantly, but a name
+   * is finished when the operator looks away from it.
+   */
+  // An untouched project shows the placeholder rather than the words
+  // "Untitled project", so typing a name does not start with selecting one.
+  const [nameDraft, setNameDraft] = useState(
+    initial.name === UNTITLED ? "" : initial.name,
+  );
+  const commitName = useCallback(() => {
+    const typed = nameDraft.trim();
+    if (typed !== nameDraft) setNameDraft(typed);
+    const next = typed || UNTITLED;
+    if (next === project.name) return;
+    setProject((prev) => ({ ...prev, name: next }));
+    void api.patch(`/edit-projects/${project.id}`, { name: next }).catch(() => {
+      // Losing a rename is not worth interrupting an edit for. The next blur
+      // tries again, and the name on screen is the one the operator typed.
+    });
+  }, [nameDraft, project.id, project.name]);
+
   // seek() records the target in a ref and bumps a counter; the preview
   // applies it to the video element in an effect keyed on the counter.
   const seekTo = useRef(0);
@@ -252,6 +281,22 @@ function LoadedEditor({
               <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
+          <input
+            className="namein stu-name"
+            aria-label="Project name"
+            value={nameDraft}
+            maxLength={120}
+            placeholder="Name this project"
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                setNameDraft(project.name === UNTITLED ? "" : project.name);
+                e.currentTarget.blur();
+              }
+            }}
+          />
           <div className="stu-steps">
             {STEPS.map((label, i) => {
               const n = i + 1;

@@ -12,7 +12,6 @@ import {
 } from "@toreroflow/db";
 import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
-import { transcribe } from "./transcribe";
 import { processEditAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
@@ -120,25 +119,18 @@ async function processAsset(assetId: string): Promise<void> {
       },
     });
 
-    // 2. Transcribe (local faster-whisper service). Free and local, so it
-    // still runs on every upload; what no longer runs here is the AI copy
-    // draft. That call costs real money per upload and was being spent on
-    // videos whose caption the operator was going to write or rewrite anyway.
-    // Words are now written only when the "Generate caption and title" button
-    // asks for them.
-    const transcript = await transcribe(sourcePath);
-    const segments = transcript?.segments ?? [];
-    if (transcript) {
-      await prisma.mediaAsset.update({
-        where: { id: asset.id },
-        data: { transcript: segments as unknown as Prisma.InputJsonValue },
-      });
-    }
-
-    // 3. Thumbnail from the source video itself.
+    // 2. Thumbnail from the source video itself.
     // The video is never re-encoded: it publishes exactly as exported, so
-    // there is no reframe and no burned-in captions. The transcript above
-    // exists to feed the title and description, nothing more.
+    // there is no reframe and no burned-in captions.
+    //
+    // Transcription used to sit between these two, on every upload. It is free
+    // and local, which is why it was allowed to, but free is not the same as
+    // fast: it is the longest part of the job by far, and it held a video at
+    // "processing" for as long as it took while the operator waited to do
+    // anything with a file that was already safely stored. Most uploads never
+    // needed it. The "Generate caption and title" button already transcribes a
+    // video that has no transcript, so the words are made when something
+    // actually wants to read them.
     const thumbAt = Math.min(1, (meta.durationSec || 1) * 0.25);
     await extractThumbnail(sourcePath, path.join(assetDir, "thumb.jpg"), thumbAt);
 
@@ -146,7 +138,7 @@ async function processAsset(assetId: string): Promise<void> {
       where: { id: asset.id },
       data: { status: "ready" },
     });
-    console.log(`[worker] asset ${asset.id} ready (${segments.length} transcript segments)`);
+    console.log(`[worker] asset ${asset.id} ready (${Math.round(meta.durationSec)}s)`);
   } catch (error) {
     console.error(`[worker] asset ${asset.id} failed:`, error);
     await prisma.mediaAsset.update({

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/renderEdit.check.ts"
+    "test": "tsx src/renderEdit.check.ts && tsx src/browserReady.check.ts"
   },
   "dependencies": {
     "@toreroflow/core": "workspace:*"

@@ -497,11 +497,14 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     /*
      * No transcript yet: make one now, while the button is held down.
      *
-     * Normally the worker transcribes during processing, so this path only
-     * runs for a video that slipped through while the captions service was
-     * down. It needs the source file, which retention clears a week after
-     * posting, so an old posted video genuinely cannot be transcribed and the
-     * error below says so.
+     * This is the normal path, not a fallback. Uploading no longer transcribes,
+     * because doing it there made every upload wait on the slowest step for
+     * words most videos never needed. Here they are wanted, by definition: the
+     * caption is about to be written from them.
+     *
+     * It needs the source file, which retention clears a week after posting, so
+     * an old posted video genuinely cannot be transcribed and the error below
+     * says so.
      *
      * Transcription is the local whisper container, not a paid API, so doing
      * it inline costs seconds rather than money. A 60 second clip is a few

@@ -25,6 +25,11 @@ export interface ProbeResult {
   durationSec: number;
   width: number;
   height: number;
+  /** Codec names as ffprobe reports them, empty when the stream is absent. */
+  videoCodec: string;
+  audioCodec: string;
+  /** Video pixel format, e.g. "yuv420p". Browsers decode little else. */
+  pixFmt: string;
 }
 
 export async function probe(path: string): Promise<ProbeResult> {
@@ -36,14 +41,48 @@ export async function probe(path: string): Promise<ProbeResult> {
   ]);
   const data = JSON.parse(out) as {
     format?: { duration?: string };
-    streams?: Array<{ codec_type?: string; width?: number; height?: number }>;
+    streams?: Array<{
+      codec_type?: string;
+      codec_name?: string;
+      pix_fmt?: string;
+      width?: number;
+      height?: number;
+    }>;
   };
   const video = data.streams?.find((s) => s.codec_type === "video");
+  const audio = data.streams?.find((s) => s.codec_type === "audio");
   return {
     durationSec: Number.parseFloat(data.format?.duration ?? "0") || 0,
     width: video?.width ?? 0,
     height: video?.height ?? 0,
+    videoCodec: video?.codec_name ?? "",
+    audioCodec: audio?.codec_name ?? "",
+    pixFmt: video?.pix_fmt ?? "",
   };
+}
+
+/**
+ * Whether a file can go straight into a `<video>` element as it is.
+ *
+ * The editor's preview needs something the webview can decode. Making that
+ * copy costs about as long as the transcription does, and for footage exported
+ * by a phone or by CapCut it is spent turning an H.264 MP4 into a slightly
+ * larger H.264 MP4. Sources that genuinely need it are ProRes, HEVC, 10-bit,
+ * anything above 1080 wide (where the point is smooth scrubbing rather than
+ * decodability), and audio the webview will not take.
+ *
+ * Deliberately conservative: a false negative costs the encode that used to
+ * happen every time anyway, while a false positive is a preview that will not
+ * play at all.
+ */
+export function isBrowserReady(meta: ProbeResult): boolean {
+  return (
+    meta.videoCodec === "h264" &&
+    meta.pixFmt === "yuv420p" &&
+    meta.width > 0 &&
+    meta.width <= 1080 &&
+    (meta.audioCodec === "aac" || meta.audioCodec === "")
+  );
 }
 
 export interface TranscriptSegment {

@@ -80,9 +80,10 @@ export interface Env {
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
   /**
-   * The transcription service. The worker transcribes every upload with it;
-   * the API only calls it from the caption button, for a video that slipped
-   * through with no transcript while its source still exists.
+   * The transcription service. The API calls it from the caption button, which
+   * is where an uploaded video gets its words; the worker calls it for the
+   * analyzer, the editor and knowledge files, which cannot do their job
+   * without them.
    */
   CAPTIONS_URL: string;
   REPO_ROOT: string;

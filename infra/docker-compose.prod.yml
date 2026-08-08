@@ -73,9 +73,10 @@ services:
       retries: 5
       start_period: 30s
 
-  # Transcription. Nothing user-facing talks to it; the worker calls it while
-  # processing an upload, and a video without a transcript still publishes, so
-  # this being down costs AI drafts and nothing else.
+  # Transcription. Nothing user-facing talks to it directly. The caption button
+  # asks for words when it needs them, and the editor and analyzer cannot work
+  # without them, but a video publishes fine with no transcript at all, so this
+  # being down costs drafts and edits rather than posts.
   captions:
     build:
       context: ..

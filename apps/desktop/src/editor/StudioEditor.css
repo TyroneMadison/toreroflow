@@ -3,6 +3,10 @@
 .stu{display:flex;flex-direction:column;gap:16px;min-width:0}
 
 .stu-top{display:flex;align-items:center;gap:12px}
+/* Inherits .namein: invisible until hovered, so the header reads as a title
+   rather than a form. Fixed width because it sits left of the centered step
+   pills, and a field that grows with its text would shove them off centre. */
+.stu-name{flex:0 0 auto;width:210px;font-weight:700;font-size:14px}
 .stu-save{display:flex;align-items:center;gap:10px;margin-left:auto}
 .stu-savestate.ok{color:var(--green)}
 .stu-copyerr{color:var(--red)}
