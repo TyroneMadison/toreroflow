@@ -270,3 +270,93 @@ positions in the order:
 
 This still finishes M6 last, as intended, and avoids QA'ing the same
 screens twice.
+
+---
+
+## Part D: Getting Docker off the operator's machine (scoped 2026-08-08)
+
+**Status: Needs a decision, then Ready.** Not started. Written down so it can
+be picked up without re-deriving any of it.
+
+### What is already true, and what is not
+
+The installed app needs nothing on the machine. Verified on the running 0.2.2
+build: one established connection, to the server on 443, and none to
+`localhost:4700` while a local API sat there answering. The desktop reads one
+setting (`VITE_API_URL`), touches no files, spawns no processes, and uploads
+bytes rather than paths. `start.cmd` claimed otherwise for a week and was
+corrected in `352873f`.
+
+So "the app needs Docker" is already false. **The one remaining use of Docker on
+the laptop is development**: a Postgres container, the API and the worker, so a
+change can be tried somewhere that is not the live server holding real client
+data. Removing that safely means putting it somewhere else, not deleting it.
+
+Two bugs found on 2026-08-08 are the argument for keeping a test target at all:
+a queue that silently dropped four of every five videos dropped on the uploader,
+and a deploy that would have thrown away every scheduled post. Both were caught
+before they reached anyone. Neither would have been, developing against
+production.
+
+### The shape
+
+A second stack on the same box, beside production, that a dev build points at.
+
+- **A separate compose project.** `infra/docker-compose.staging.yml` with its own
+  project name, exactly as `docker-compose.prod.yml` already carries the warning
+  about: compose scopes volumes and container names to the project, so sharing a
+  name means two stacks fighting over one database volume, and Postgres only
+  sets its password on first init of a data directory.
+- **Its own database, its own storage volume, its own port.** Bound to loopback
+  like production, reached over the tailnet. Never the production volumes.
+- **Seeded, not copied.** A dump of production would put real client data in a
+  second place, which is the thing this is supposed to avoid. It wants a small
+  seed: one placeholder brand, a dry-run publishing provider, no bank
+  credential, no Anthropic key unless a specific test needs one.
+- **A second Funnel hostname or a tailnet-only address.** Production is public
+  through Funnel; staging has no reason to be. Tailnet-only is the safer default
+  and costs nothing.
+- **Pointing a build at it** is already one line: `VITE_API_URL` in the root
+  `.env`, which `apps/desktop/vite.config.ts` deliberately makes the desktop
+  read. No code change needed for this part.
+
+### What it costs
+
+Disk and memory on the box for a second Postgres, a second API, a second worker
+and a second captions container. Captions is the heavy one, it carries a whisper
+model. Worth checking free space and RAM on the server before committing;
+dropping staging's captions container and pointing it at production's is
+tempting and wrong, because that is a shared mutable dependency between the two
+environments.
+
+Deploys get a second target, so `self-update.sh` and the watcher need to know
+which stack they are updating, or staging needs its own pair.
+
+### The decision it is blocked on
+
+**Does the app ever need to work with the server down?** That is a different
+feature from this one and it changes the answer:
+
+- If **no**, this is the whole job, and the standalone backlog item's phases 2
+  to 4 (ship Postgres, ship ffmpeg, ship whisper) can be closed as obsolete.
+  They were written when the app carried its own backend. It does not any more.
+  ffmpeg and whisper run in server containers; bundling them with a desktop
+  client would achieve nothing.
+- If **yes**, that is an offline mode: a local database, sync, and conflict
+  resolution when the two disagree. Much larger than it sounds, and unrelated
+  to Docker.
+
+The original list item said "not run off docker, its own standalone app I can
+download anywhere on any device". For Windows the first half is done. "Any
+device" is a Mac and Linux build question, which is a per-platform build and
+binary set, not a Docker question.
+
+### Sequence when it is picked up
+
+1. Check free disk and RAM on the server.
+2. `infra/docker-compose.staging.yml`, own project name, own volumes, loopback
+   port, tailnet-only.
+3. A seed script: one placeholder brand, dry-run provider, no live credentials.
+4. Teach the deploy watcher which stack it is updating.
+5. Point a dev build at it and run the checks that need a database against it.
+6. Then, and only then, Docker Desktop can come off the laptop.
