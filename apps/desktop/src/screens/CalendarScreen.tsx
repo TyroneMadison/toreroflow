@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type DragEvent as RDragEvent } from "react";
+import BestTimes from "../components/BestTimes";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import { api, fileUrl, type PostTargetInfo } from "../lib/api";
+import { api, fileUrl, type ClientPost, type PostTargetInfo } from "../lib/api";
 import { holidayFor } from "../lib/holidays";
 import { PF_ID } from "../lib/platforms";
 import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
@@ -71,7 +72,28 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const [view, setView] = useState<CalView>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
+  // Feeds the best-times strip. Loaded once per brand, not polled: it is
+  // built from published history, which moves daily, not while you watch.
+  const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const today = new Date().toDateString();
+
+  useEffect(() => {
+    setBestTimePosts([]);
+    if (!selectedClient) return;
+    let cancelled = false;
+    api
+      .get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`)
+      .then((r) => {
+        if (!cancelled) setBestTimePosts(r.posts);
+      })
+      .catch(() => {
+        // The strip simply does not render. Scheduling works fine without it,
+        // and the calendar failing to load is the error worth hearing about.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient]);
 
   // Visible range per view.
   let rangeStart: Date;
@@ -281,6 +303,29 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         </button>
       </div>
       <div className="stage">
+        {/* The same widget the upload screen carries, laid flat so the week
+            still fits on screen below it. Hidden entirely when there is no
+            history: an empty strip would just push the calendar down. */}
+        {bestTimePosts.length > 0 && (
+          <div className="card glass btwide">
+            <div className="btwide-head">
+              <h3>
+                <svg
+                  style={{ width: 16, height: 16, stroke: "var(--v)", fill: "none", strokeWidth: 2 }}
+                  viewBox="0 0 24 24"
+                >
+                  <use href="#i-bolt" />
+                </svg>{" "}
+                Best times to post
+              </h3>
+              <div className="sub">
+                Measured from {selectedClient?.name ?? "this brand"}'s own results
+              </div>
+            </div>
+            <BestTimes posts={bestTimePosts} />
+          </div>
+        )}
+
         <div className="calbar">
           <div className="seg">
             {(["day", "week", "month"] as CalView[]).map((v) => (

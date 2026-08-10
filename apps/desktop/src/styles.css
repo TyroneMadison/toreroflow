@@ -774,6 +774,19 @@
 .btval span.thin{color:var(--amber)}
 .btnote{margin-top:12px;font-size:10.5px;line-height:1.5;color:var(--txt-3)}
 
+/* The calendar's variant of the same widget: laid flat across the top so the
+   week grid still fits below it. Each hour becomes a small column, hour and
+   figure on the first row, the bar underneath spanning both. */
+.btwide{margin-bottom:16px}
+.btwide-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.btwide-head .sub{margin:0}
+.btwide .btrows{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 18px}
+.btwide .btrow{grid-template-columns:1fr auto;grid-template-rows:auto auto;row-gap:5px;align-items:baseline}
+.btwide .bthour{grid-column:1;grid-row:1}
+.btwide .btval{grid-column:2;grid-row:1}
+.btwide .btbar{grid-column:1 / -1;grid-row:2}
+.btwide .btnote{margin-top:10px}
+
 .qactions{margin-left:auto;display:flex;gap:6px;flex:0 0 auto;opacity:0;transition:opacity .18s}
 .queue-item:hover .qactions,.qactions:focus-within{opacity:1}
 .qactions .iconbtn{width:30px;height:30px;border-radius:10px}
