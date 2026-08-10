@@ -275,13 +275,21 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
   fc.push(`[${vcur}]${post.join(",")}[vout]`);
 
   // Audio items: trimmed, volume, shifted with adelay, mixed over the clip
-  // audio without renormalizing. ponytail: broll audio is not mixed in;
-  // wire its volume through here if operators ever ask for it.
+  // audio without renormalizing. srcIn is where the item starts in its SOURCE
+  // file: detached clip audio carries it so the sound lines up with footage
+  // that does not begin at the top of the take. ponytail: broll audio is still
+  // not mixed in; the plan does not know whether a broll file has an audio
+  // stream, and a missing [idx:a] pad kills the whole filtergraph, so wiring
+  // it needs hasAudio probed into RenderAssetInfo first.
   let acur = "acat";
   if (doc.audio.length > 0) {
     doc.audio.forEach((item, k) => {
       const idx = inputIdx(item.assetId);
-      const chain: string[] = [`atrim=start=0:end=${n(item.dur)}`, "asetpts=PTS-STARTPTS"];
+      const from = item.srcIn ?? 0;
+      const chain: string[] = [
+        `atrim=start=${n(from)}:end=${n(from + item.dur)}`,
+        "asetpts=PTS-STARTPTS",
+      ];
       if (item.volume !== 100) chain.push(`volume=${n(item.volume / 100)}`);
       chain.push(`adelay=${Math.max(0, Math.round(item.at * 1000))}:all=1`);
       fc.push(`[${idx}:a]${chain.join(",")}[au${k}]`);

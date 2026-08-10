@@ -7,9 +7,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { emptyDoc, type EditDoc } from "@toreroflow/core";
+import {
+  edlFromDoc,
+  emptyDoc,
+  locate,
+  splitAt,
+  type AudioItem,
+  type EditDoc,
+} from "@toreroflow/core";
 import { api } from "../lib/api";
+import { actionFor, loadOverrides, type KeyActionId, type KeyBinding } from "../lib/keymap";
 import { useEditDoc, type SaveState } from "./useEditDoc";
+import KeymapModal from "./KeymapModal";
 import PhonePreview from "./PhonePreview";
 import AutoCutStep from "./steps/AutoCutStep";
 import EditStep from "./steps/EditStep";
@@ -73,6 +82,11 @@ export interface EditorCtx {
   step: number;
   setStep: (n: number) => void;
   saveState: SaveState;
+  /** "blade" arms click-to-split on the timeline; "select" is the mouse. */
+  tool: "select" | "blade";
+  setTool: (t: "select" | "blade") => void;
+  /** Runs a keymap action by id, so buttons and keys share one behavior. */
+  runAction: (id: KeyActionId) => void;
 }
 
 const EditorContext = createContext<EditorCtx | null>(null);
@@ -175,6 +189,11 @@ function LoadedEditor({
   const [selection, setSelection] = useState<Selection>(null);
   const [playing, setPlaying] = useState(false);
   const [outputTime, setOutputTime] = useState(0);
+  const [tool, setTool] = useState<"select" | "blade">("select");
+  const [keyOverrides, setKeyOverrides] = useState<Partial<Record<KeyActionId, KeyBinding>>>(
+    loadOverrides,
+  );
+  const [showKeys, setShowKeys] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -220,6 +239,212 @@ function LoadedEditor({
     setProject((prev) => ({ ...prev, name: p.name, status: p.status }));
   }, [project.id]);
 
+  /* ---- keyboard actions ----
+     One listener for the whole editor. Every action reads the same selection
+     and doc the mouse does, so a key and a click can never disagree. */
+
+  const durations = useMemo(() => {
+    const d: Record<string, number> = {};
+    for (const a of assets) if (a.kind === "clip" && a.durationSec !== null) d[a.id] = a.durationSec;
+    return d;
+  }, [assets]);
+
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const stateRef = useRef({ selection, outputTime, playing, tool });
+  stateRef.current = { selection, outputTime, playing, tool };
+
+  const runAction = useCallback(
+    (id: KeyActionId) => {
+      const { selection: sel, outputTime: t, playing: pl, tool: tl } = stateRef.current;
+      const d = docRef.current;
+      const FRAME = 1 / 30;
+      const edl = edlFromDoc(d, durations);
+      const total = edl.reduce((acc, s) => acc + (s.srcOut - s.srcIn), 0);
+
+      switch (id) {
+        case "select":
+          setTool("select");
+          return;
+        case "blade":
+          setTool(tl === "blade" ? "select" : "blade");
+          return;
+        case "playPause":
+          setPlaying(!pl);
+          return;
+        case "prevFrame":
+        case "nextFrame": {
+          const dir = id === "nextFrame" ? 1 : -1;
+          seek(Math.max(0, Math.min(total, t + dir * FRAME)));
+          return;
+        }
+        case "jumpStart":
+          seek(0);
+          return;
+        case "jumpEnd":
+          seek(Math.max(0, total - 0.001));
+          return;
+        case "undo":
+          undo();
+          return;
+        case "redo":
+          redo();
+          return;
+        case "splitAtPlayhead": {
+          const loc = total > 0 ? locate(edl, Math.min(t, total - 0.001)) : null;
+          if (!loc) return;
+          const seg = edl[loc.segIndex];
+          if (!seg) return;
+          update((x) => splitAt(x, seg.assetId, loc.srcTime));
+          return;
+        }
+        case "delete": {
+          if (!sel) return;
+          if (sel.kind === "clip") {
+            update((x) => ({ ...x, clips: x.clips.filter((c) => c.assetId !== sel.assetId) }));
+          } else if (sel.kind === "text") {
+            update((x) => ({ ...x, texts: x.texts.filter((i) => i.id !== sel.id) }));
+          } else if (sel.kind === "broll") {
+            update((x) => ({ ...x, broll: x.broll.filter((i) => i.id !== sel.id) }));
+          } else if (sel.kind === "graphic") {
+            update((x) => ({ ...x, graphics: x.graphics.filter((i) => i.id !== sel.id) }));
+          } else {
+            update((x) => ({ ...x, audio: x.audio.filter((i) => i.id !== sel.id) }));
+          }
+          setSelection(null);
+          return;
+        }
+        case "duplicate": {
+          // Overlays only: a main clip appears once per asset by design, and
+          // the timeline keys blocks by asset id.
+          if (!sel || sel.kind === "clip") return;
+          const nid = Math.random().toString(36).slice(2, 10);
+          const copy = <T extends { id: string; at: number; dur: number }>(it: T): T => ({
+            ...it,
+            id: nid,
+            at: it.at + it.dur,
+          });
+          if (sel.kind === "text") {
+            update((x) => {
+              const it = x.texts.find((i) => i.id === sel.id);
+              return it ? { ...x, texts: [...x.texts, copy(it)] } : x;
+            });
+          } else if (sel.kind === "broll") {
+            update((x) => {
+              const it = x.broll.find((i) => i.id === sel.id);
+              return it ? { ...x, broll: [...x.broll, copy(it)] } : x;
+            });
+          } else if (sel.kind === "graphic") {
+            update((x) => {
+              const it = x.graphics.find((i) => i.id === sel.id);
+              return it ? { ...x, graphics: [...x.graphics, copy(it)] } : x;
+            });
+          } else {
+            update((x) => {
+              const it = x.audio.find((i) => i.id === sel.id);
+              return it ? { ...x, audio: [...x.audio, copy(it)] } : x;
+            });
+          }
+          return;
+        }
+        case "mute": {
+          if (!sel) return;
+          if (sel.kind === "clip") {
+            update((x) => {
+              const fx = x.clipFx[sel.assetId] ?? { volume: 100 };
+              return {
+                ...x,
+                clipFx: {
+                  ...x.clipFx,
+                  [sel.assetId]: { ...fx, volume: fx.volume === 0 ? 100 : 0 },
+                },
+              };
+            });
+          } else if (sel.kind === "audio") {
+            update((x) => ({
+              ...x,
+              audio: x.audio.map((i) =>
+                i.id === sel.id ? { ...i, volume: i.volume === 0 ? 100 : 0 } : i,
+              ),
+            }));
+          } else if (sel.kind === "broll") {
+            update((x) => ({
+              ...x,
+              broll: x.broll.map((i) =>
+                i.id === sel.id ? { ...i, volume: i.volume === 0 ? 100 : 0 } : i,
+              ),
+            }));
+          }
+          return;
+        }
+        case "detachAudio": {
+          if (!sel || sel.kind !== "clip") return;
+          const assetId = sel.assetId;
+          const duration = durations[assetId];
+          if (!(duration > 0)) return;
+          const cuts = d.cuts[assetId] ?? [];
+          const interior = cuts.some((c) => c.end < duration - 0.001 || c.start > 0.001);
+          // With words cut out of the middle, one continuous audio item would
+          // drift out of sync with the video the moment the first cut passes.
+          // Refusing is honest; the whole-clip case is the one people mean.
+          if (interior && !(cuts.length === 1 && cuts[0]!.end >= duration - 0.001)) return;
+          const tail = cuts.find((c) => c.end >= duration - 0.001);
+          const visible = duration - (tail ? tail.end - tail.start : 0);
+          let atOut = 0;
+          for (const seg of edl) {
+            if (seg.assetId === assetId) break;
+            atOut += seg.srcOut - seg.srcIn;
+          }
+          const item: AudioItem = {
+            id: Math.random().toString(36).slice(2, 10),
+            assetId,
+            at: atOut,
+            dur: Math.max(0.2, visible),
+            volume: d.clipFx[assetId]?.volume ?? 100,
+            kind: "detached",
+            srcIn: 0,
+          };
+          update((x) => ({
+            ...x,
+            audio: [...x.audio, item],
+            clipFx: {
+              ...x.clipFx,
+              [assetId]: { ...(x.clipFx[assetId] ?? { volume: 100 }), volume: 0 },
+            },
+          }));
+          setSelection({ kind: "audio", id: item.id });
+          return;
+        }
+      }
+    },
+    [durations, seek, undo, redo, update],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      // Typing is typing. A key aimed at an input, a textarea, or an open
+      // dialog must never reach the timeline.
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable ||
+          t.closest('[role="dialog"]'))
+      ) {
+        return;
+      }
+      if (showKeys) return;
+      const id = actionFor(e, keyOverrides);
+      if (!id) return;
+      e.preventDefault();
+      runAction(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keyOverrides, runAction, showKeys]);
+
   const saveCopy = useCallback(async () => {
     setCopying(true);
     setCopyError(null);
@@ -252,6 +477,9 @@ function LoadedEditor({
       step,
       setStep,
       saveState,
+      tool,
+      setTool,
+      runAction,
     }),
     [
       project,
@@ -269,6 +497,8 @@ function LoadedEditor({
       selection,
       step,
       saveState,
+      tool,
+      runAction,
     ],
   );
 
@@ -322,10 +552,22 @@ function LoadedEditor({
             })}
           </div>
           <div className="stu-save">
+            {tool === "blade" && (
+              <span className="mini" style={{ color: "var(--v)", fontWeight: 700 }}>
+                Blade: click a clip to split. A to leave.
+              </span>
+            )}
             {copyError && <span className="mini stu-copyerr">{copyError}</span>}
             <span className={`mini stu-savestate${saveState === "saved" ? " ok" : ""}`}>
               {saveState === "saving" ? "Saving..." : "Saved"}
             </span>
+            <button
+              className="btn ghost"
+              title="Keyboard shortcuts, and where to change them"
+              onClick={() => setShowKeys(true)}
+            >
+              Keys
+            </button>
             <button className="btn ghost" onClick={saveCopy} disabled={copying}>
               {copying ? "Copying..." : "Save copy"}
             </button>
@@ -344,6 +586,13 @@ function LoadedEditor({
           )}
         </div>
       </div>
+      {showKeys && (
+        <KeymapModal
+          overrides={keyOverrides}
+          onChange={setKeyOverrides}
+          onClose={() => setShowKeys(false)}
+        />
+      )}
     </EditorContext.Provider>
   );
 }

@@ -13,6 +13,7 @@ import {
 import {
   DEFAULT_TEXT_STYLE,
   addCut,
+  adjustTailCut,
   edlFromDoc,
   locate,
   outputDuration,
@@ -104,6 +105,8 @@ export default function Timeline() {
     setPlaying,
     selection,
     setSelection,
+    tool,
+    setTool,
   } = useEditor();
 
   const [drawer, setDrawer] = useState<DrawerKind | null>(null);
@@ -301,6 +304,39 @@ export default function Timeline() {
     setChipDrag(null);
   };
 
+  /* ---- row packing: overlapping chips stack instead of covering each other ---- */
+
+  const ROW_H = 28;
+  /** First-fit rows by start time; a chip takes the first row whose last
+   *  occupant has ended. Two texts at the same moment land on two rows. */
+  const packRows = (
+    items: Array<{ id: string; at: number; dur: number }>,
+  ): Record<string, number> => {
+    const rowEnds: number[] = [];
+    const out: Record<string, number> = {};
+    for (const it of [...items].sort((a, b) => a.at - b.at)) {
+      let r = rowEnds.findIndex((end) => it.at >= end - 0.001);
+      if (r === -1) {
+        r = rowEnds.length;
+        rowEnds.push(0);
+      }
+      rowEnds[r] = it.at + it.dur;
+      out[it.id] = r;
+    }
+    return out;
+  };
+  const textRows = useMemo(() => packRows(doc.texts), [doc.texts]);
+  const brollRows = useMemo(
+    () => packRows([...doc.broll, ...doc.graphics]),
+    [doc.broll, doc.graphics],
+  );
+  const audioRows = useMemo(() => packRows(doc.audio), [doc.audio]);
+  const laneHeight = (rows: Record<string, number>, min: number): number =>
+    Math.max(min, 8 + (Math.max(-1, ...Object.values(rows)) + 1) * ROW_H);
+  const rowTop = (rows: Record<string, number>, id: string) => ({
+    top: 4 + (rows[id] ?? 0) * ROW_H,
+  });
+
   const chipStyle = (lane: Lane, it: { id: string; at: number; dur: number }): CSSProperties => {
     let width = Math.max(12, it.dur * pps);
     let tx = 0;
@@ -323,7 +359,18 @@ export default function Timeline() {
     selection !== null && "id" in selection && selection.id === id &&
     selection.kind === (lane === "texts" ? "text" : lane === "graphics" ? "graphic" : lane);
 
-  /* ---- trim: dragging the coral right edge adds a tail cut ---- */
+  /* ---- trim: the coral right edge moves both ways ----
+     Left adds to the tail cut; right gives the hidden tail back. The rightward
+     cap is however much a tail cut is currently hiding, so a never-trimmed
+     clip's handle simply does not move right: there is nothing to restore. */
+
+  /** Seconds hidden by this asset's end-touching cut, 0 when there is none. */
+  const tailHidden = (assetId: string): number => {
+    const duration = durations[assetId];
+    if (!(duration > 0)) return 0;
+    const tail = (doc.cuts[assetId] ?? []).find((c) => c.end >= duration - 0.001);
+    return tail ? tail.end - tail.start : 0;
+  };
 
   const onTrimDown = (e: ReactPointerEvent<HTMLDivElement>, assetId: string) => {
     e.stopPropagation();
@@ -337,7 +384,10 @@ export default function Timeline() {
   };
   const onTrimMove = (e: ReactPointerEvent<HTMLDivElement>, vis: number) => {
     if (!trim || !(e.buttons & 1)) return;
-    const dx = Math.min(0, Math.max(-(vis - MIN_DUR) * pps, e.clientX - trim.startX));
+    const dx = Math.min(
+      tailHidden(trim.assetId) * pps,
+      Math.max(-(vis - MIN_DUR) * pps, e.clientX - trim.startX),
+    );
     setTrim({ ...trim, dx });
   };
   const onTrimUp = (vis: number) => {
@@ -345,9 +395,16 @@ export default function Timeline() {
     const dSec = trim.dx / pps;
     const assetId = trim.assetId;
     setTrim(null);
-    if (dSec > -0.01) return;
+    if (Math.abs(dSec) < 0.01) return;
     const duration = durations[assetId];
     if (!(duration > 0)) return;
+    if (dSec > 0) {
+      // Restoring N visible seconds slides the tail cut's start right by
+      // exactly N source seconds: the hidden tail is one contiguous range,
+      // so no EDL walk is needed on this side.
+      update((d) => adjustTailCut(d, assetId, dSec, duration));
+      return;
+    }
     // Source time of the new visible end, walked over this asset's segments.
     let remain = Math.max(MIN_DUR, vis + dSec);
     let srcEnd = duration;
@@ -600,7 +657,7 @@ export default function Timeline() {
           <div
             className="tl-body"
             ref={bodyRef}
-            style={{ width: contentW }}
+            style={{ width: contentW, cursor: tool === "blade" ? "crosshair" : undefined }}
             onPointerDown={onBodyDown}
             onPointerMove={onBodyMove}
             onPointerUp={onBodyUp}
@@ -621,12 +678,18 @@ export default function Timeline() {
               ))}
             </div>
 
-            <div className="tl-lane tl-lane-text">
+            <div
+              className="tl-lane tl-lane-text"
+              style={{ height: laneHeight(textRows, 32) }}
+            >
+              <span className="tl-lanelab">
+                <i style={{ background: "var(--v)" }} />Text
+              </span>
               {doc.texts.map((t) => (
                 <div
                   key={t.id}
-                  className={`tl-chip${chipSelected("texts", t.id) ? " on" : ""}`}
-                  style={chipStyle("texts", t)}
+                  className={`tl-chip tl-chip-text${chipSelected("texts", t.id) ? " on" : ""}`}
+                  style={{ ...chipStyle("texts", t), ...rowTop(textRows, t.id) }}
                   onPointerDown={(e) => onChipDown(e, "texts", t.id)}
                   onPointerMove={onChipMove}
                   onPointerUp={() => onChipUp("texts", t.id)}
@@ -640,9 +703,13 @@ export default function Timeline() {
 
             <div
               className="tl-lane tl-lane-broll"
+              style={{ height: laneHeight(brollRows, 36) }}
               onDragOver={allowDrop}
               onDrop={onBrollDrop}
             >
+              <span className="tl-lanelab">
+                <i style={{ background: "#5AA9FF" }} />B-roll
+              </span>
               {drawer === "graphics" &&
                 doc.broll.length === 0 &&
                 doc.graphics.length === 0 && (
@@ -651,8 +718,8 @@ export default function Timeline() {
               {doc.broll.map((b) => (
                 <div
                   key={b.id}
-                  className={`tl-chip${chipSelected("broll", b.id) ? " on" : ""}`}
-                  style={chipStyle("broll", b)}
+                  className={`tl-chip tl-chip-broll${chipSelected("broll", b.id) ? " on" : ""}`}
+                  style={{ ...chipStyle("broll", b), ...rowTop(brollRows, b.id) }}
                   onPointerDown={(e) => onChipDown(e, "broll", b.id)}
                   onPointerMove={onChipMove}
                   onPointerUp={() => onChipUp("broll", b.id)}
@@ -670,8 +737,8 @@ export default function Timeline() {
               {doc.graphics.map((g) => (
                 <div
                   key={g.id}
-                  className={`tl-chip${chipSelected("graphics", g.id) ? " on" : ""}`}
-                  style={chipStyle("graphics", g)}
+                  className={`tl-chip tl-chip-graphic${chipSelected("graphics", g.id) ? " on" : ""}`}
+                  style={{ ...chipStyle("graphics", g), ...rowTop(brollRows, g.id) }}
                   onPointerDown={(e) => onChipDown(e, "graphics", g.id)}
                   onPointerMove={onChipMove}
                   onPointerUp={() => onChipUp("graphics", g.id)}
@@ -688,8 +755,10 @@ export default function Timeline() {
                 <div className="tl-hint">Add clips in step 1 to build the timeline</div>
               )}
               {blocks.map((b) => {
-                const width = Math.max(24, b.vis * pps);
                 const trimming = trim?.assetId === b.assetId ? trim.dx : 0;
+                // A rightward drag previews as the block itself widening into
+                // the footage it is about to get back.
+                const width = Math.max(24, b.vis * pps + Math.max(0, trimming));
                 return (
                   <div
                     key={b.assetId}
@@ -699,7 +768,29 @@ export default function Timeline() {
                       if ((e.target as HTMLElement).closest(".tl-trim")) return;
                       e.stopPropagation();
                     }}
-                    onClick={() => setSelection({ kind: "clip", assetId: b.assetId })}
+                    onClick={(e) => {
+                      if (tool !== "blade") {
+                        setSelection({ kind: "clip", assetId: b.assetId });
+                        return;
+                      }
+                      // Blade: the click point in visible seconds, walked to
+                      // source time over this asset's own segments, exactly
+                      // the way the trim commit does it.
+                      const r = e.currentTarget.getBoundingClientRect();
+                      let remain = Math.max(0.05, (e.clientX - r.left) / pps);
+                      let src: number | null = null;
+                      for (const seg of edl) {
+                        if (seg.assetId !== b.assetId) continue;
+                        const len = seg.srcOut - seg.srcIn;
+                        if (remain <= len) {
+                          src = seg.srcIn + remain;
+                          break;
+                        }
+                        remain -= len;
+                      }
+                      if (src !== null) update((d) => splitAt(d, b.assetId, src));
+                      setTool("select");
+                    }}
                   >
                     <div className="tl-clipname">
                       {byId[b.assetId]?.originalName ?? "Clip"}
@@ -719,13 +810,18 @@ export default function Timeline() {
                       <i key={`s${i}`} className="tl-splitline" style={{ left: s * pps }} />
                     ))}
                     <div className="tl-durbadge">{b.vis.toFixed(1)}s</div>
-                    {trimming !== 0 && (
+                    {trimming < 0 && (
                       <div className="tl-trimshade" style={{ width: -trimming }} />
                     )}
                     <div
                       className="tl-trim"
+                      title={
+                        tailHidden(b.assetId) > 0
+                          ? "Drag left to shorten, right to bring trimmed footage back"
+                          : "Drag left to shorten"
+                      }
                       style={{
-                        transform: trimming !== 0 ? `translateX(${trimming}px)` : undefined,
+                        transform: trimming < 0 ? `translateX(${trimming}px)` : undefined,
                       }}
                       onPointerDown={(e) => onTrimDown(e, b.assetId)}
                       onPointerMove={(e) => onTrimMove(e, b.vis)}
@@ -738,17 +834,21 @@ export default function Timeline() {
 
             <div
               className="tl-lane tl-lane-audio"
+              style={{ height: laneHeight(audioRows, 36) }}
               onDragOver={allowDrop}
               onDrop={onAudioDrop}
             >
+              <span className="tl-lanelab">
+                <i style={{ background: "#4FE29A" }} />Audio
+              </span>
               {drawer === "audio" && doc.audio.length === 0 && (
                 <div className="tl-hint">Drop audio here</div>
               )}
               {doc.audio.map((a) => (
                 <div
                   key={a.id}
-                  className={`tl-chip${chipSelected("audio", a.id) ? " on" : ""}`}
-                  style={chipStyle("audio", a)}
+                  className={`tl-chip tl-chip-audio${chipSelected("audio", a.id) ? " on" : ""}`}
+                  style={{ ...chipStyle("audio", a), ...rowTop(audioRows, a.id) }}
                   onPointerDown={(e) => onChipDown(e, "audio", a.id)}
                   onPointerMove={onChipMove}
                   onPointerUp={() => onChipUp("audio", a.id)}

@@ -1,5 +1,6 @@
 import {
   addCut,
+  adjustTailCut,
   applyTemplate,
   BITRATE_PRESETS,
   CAPTION_TEMPLATES,
@@ -220,5 +221,43 @@ deepEq(
   },
   "bitrate presets pin the kbps table",
 );
+
+/*
+ * adjustTailCut is what makes the trim handle move both ways. The expensive
+ * mistakes: restoring footage resurrecting words the operator cut from the
+ * middle, and a shrink through the helper disagreeing with one through
+ * addCut.
+ */
+{
+  const d0 = emptyDoc(["a"]);
+  const dur = 30;
+
+  // Shrink with no tail cut starts one.
+  const shrunk = adjustTailCut(d0, "a", -10, dur);
+  deepEq(shrunk.cuts["a"], [{ start: 20, end: 30 }], "a first shrink creates the tail cut");
+
+  // Extending gives part of it back, from the front of the hidden range.
+  const grown = adjustTailCut(shrunk, "a", 4, dur);
+  deepEq(grown.cuts["a"], [{ start: 24, end: 30 }], "extending slides the cut start right");
+
+  // Extending past everything hidden drops the cut, and no further.
+  const full = adjustTailCut(grown, "a", 99, dur);
+  eq(full.cuts["a"], undefined, "restoring everything removes the cut entirely");
+  eq(
+    adjustTailCut(d0, "a", 5, dur).cuts["a"],
+    undefined,
+    "extending an untrimmed clip is a no-op, not an invented cut",
+  );
+
+  // An interior word cut survives the round trip untouched.
+  const withWord = addCut(d0, "a", { start: 5, end: 6 }, dur);
+  const trimmedToo = adjustTailCut(withWord, "a", -10, dur);
+  const restored = adjustTailCut(trimmedToo, "a", 10, dur);
+  deepEq(
+    restored.cuts["a"],
+    [{ start: 5, end: 6 }],
+    "re-lengthening the tail never resurrects a word cut from the middle",
+  );
+}
 
 console.log("editDoc: all checks passed");

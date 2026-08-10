@@ -8,8 +8,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  CAPTION_TEMPLATES,
   ZOOM,
+  captionKaraoke,
   chunksFor,
   editedWords,
   edlFromDoc,
@@ -124,7 +124,9 @@ function overlayCss(x: number, y: number, s: TextStyle): CSSProperties {
     ...(s.background.on
       ? {
           background: hexAlpha(s.background.color, s.background.opacity),
-          padding: "3px 8px",
+          // Box padding tracks SIZE like the export: 0..100 maps to a 0..20px
+          // ASS box outline at 1080, scaled to the stage.
+          padding: `${Math.max(1, (s.background.size / 5) * TEXT_SCALE).toFixed(1)}px`,
           borderRadius: s.background.shape === "square" ? 2 : 8,
         }
       : {}),
@@ -352,17 +354,11 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
   const caption =
     chunkIndex >= 0 && chunks[chunkIndex].text.trim() ? chunks[chunkIndex] : undefined;
 
-  // Karaoke accent: an explicit karaoke animation wins; with no animation
-  // chosen the template decides via its accent color. Any other animation
-  // turns the highlight off, and a break-overridden chunk never highlights.
-  const anim = doc.captions.style.animation;
-  const wantsKaraoke =
-    anim === "karaoke" ||
-    (anim === undefined &&
-      Boolean(CAPTION_TEMPLATES.find((t) => t.id === doc.captions.template)?.style.accentColor));
+  // Karaoke accent: the export's captionKaraoke rule, so preview and render
+  // agree, and a break-overridden chunk never highlights because its word
+  // timings no longer match the text.
   const karaoke =
-    wantsKaraoke &&
-    Boolean(doc.captions.style.accentColor) &&
+    captionKaraoke(doc.captions) &&
     !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex);
   const perChunk = doc.captions.style.wordsPerLine * doc.captions.style.lines;
   const captionWords =

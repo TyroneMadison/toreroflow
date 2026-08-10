@@ -4,6 +4,7 @@ import {
   DEFAULT_CAPTION_STYLE,
   FONTS,
   applyTemplate,
+  captionKaraoke,
   chunksFor,
   editedWords,
   edlFromDoc,
@@ -13,16 +14,19 @@ import {
   type Word,
 } from "@toreroflow/core";
 import { useEditor } from "../StudioEditor";
-import { Chip, HexField, SliderRow } from "../panels";
-import { ALIGN_PATHS, SWATCHES } from "../panels/TextPanel";
+import { Chip, ColorField, HexField, SliderRow } from "../panels";
+import { ALIGN_PATHS } from "../panels/TextPanel";
 import "./CaptionStep.css";
 
-/** Caption animations; ids land in captions.style.animation. */
+/**
+ * Caption animations; ids land in captions.style.animation and every one of
+ * them maps to a real ASS effect in captionsToAss. Word pop is gone on
+ * purpose: per-word transforms have no honest caption-level ASS form.
+ */
 const ANIMS: Array<{ id: string; label: string }> = [
   { id: "pop", label: "Pop" },
   { id: "karaoke", label: "Karaoke" },
   { id: "emphasis", label: "Emphasis" },
-  { id: "wordpop", label: "Word pop" },
   { id: "typewriter", label: "Typewriter" },
   { id: "focus", label: "Focus" },
   { id: "slideup", label: "Slide up" },
@@ -70,18 +74,6 @@ function tileCss(style: Partial<CaptionStyle>): CSSProperties {
         }
       : {}),
   };
-}
-
-/** Template name in its own style; an accent template colors its back half. */
-function TileLabel({ label, accent }: { label: string; accent?: string }) {
-  if (!accent) return <>{label}</>;
-  const head = label.slice(0, Math.ceil(label.length / 2));
-  return (
-    <>
-      {head}
-      <span style={{ color: accent }}>{label.slice(head.length)}</span>
-    </>
-  );
 }
 
 function Section({
@@ -149,10 +141,11 @@ export default function CaptionStep() {
   };
   const addCustom = () => {
     const n = customs.reduce((m, c) => Math.max(m, Number(c.id.replace("custom-", "")) || 0), 0) + 1;
-    saveCustoms([
-      ...customs,
-      { id: `custom-${n}`, label: `Custom ${n}`, style: JSON.parse(JSON.stringify(s)) as CaptionStyle },
-    ]);
+    const style = JSON.parse(JSON.stringify(s)) as CaptionStyle;
+    // A custom carries an explicit animation: applying it later cannot fall
+    // back to a template lookup, because customs are not in CAPTION_TEMPLATES.
+    style.animation ??= captionKaraoke(doc.captions) ? "karaoke" : "none";
+    saveCustoms([...customs, { id: `custom-${n}`, label: `Custom ${n}`, style }]);
   };
   const applyCustom = (c: CustomTemplate) =>
     update((d) => ({
@@ -213,7 +206,7 @@ export default function CaptionStep() {
                 onClick={() => update((d) => applyTemplate(d, t.id))}
               >
                 <span className="cst-tile-label" style={t.id === "none" ? undefined : tileCss(t.style)}>
-                  <TileLabel label={t.label} accent={t.style.accentColor} />
+                  {t.label}
                 </span>
               </button>
             );
@@ -225,7 +218,7 @@ export default function CaptionStep() {
               onClick={() => applyCustom(c)}
             >
               <span className="cst-tile-label" style={tileCss(c.style)}>
-                <TileLabel label={c.label} accent={c.style.accentColor} />
+                {c.label}
               </span>
               <span
                 className="cst-tile-x"
@@ -253,7 +246,9 @@ export default function CaptionStep() {
               on={(s.animation ?? "none") === a.id}
               onClick={() => patchStyle({ animation: a.id })}
             >
-              {a.label}
+              <span className={`cst-anim cst-anim-${a.id}`} data-word={a.label}>
+                {a.label}
+              </span>
             </Chip>
           ))}
         </div>
@@ -288,29 +283,12 @@ export default function CaptionStep() {
 
           <div className="glass-sm pnl-card">
             <b>Color</b>
-            <div className="pnl-swatches">
-              {SWATCHES.map((c) => (
-                <button
-                  key={c}
-                  className={`pnl-swatch${s.color.toUpperCase() === c ? " on" : ""}`}
-                  style={{ background: c }}
-                  title={c}
-                  onClick={() => patchStyle({ color: c })}
-                />
-              ))}
-            </div>
-            <HexField value={s.color} onCommit={(hex) => patchStyle({ color: hex })} />
+            <ColorField value={s.color} onCommit={(hex) => patchStyle({ color: hex })} />
           </div>
 
           <div className="glass-sm pnl-card">
             <b>Size</b>
             <SliderRow min={12} max={96} value={s.size} def={48} onCommit={(v) => patchStyle({ size: v })} />
-          </div>
-
-          <div className="glass-sm pnl-card">
-            <b>Line space</b>
-            <SliderRow label="X" min={-50} max={50} value={s.lineSpaceX} def={0} onCommit={(v) => patchStyle({ lineSpaceX: v })} />
-            <SliderRow label="Y" min={-50} max={50} value={s.lineSpaceY} def={0} onCommit={(v) => patchStyle({ lineSpaceY: v })} />
           </div>
 
           <div className="glass-sm pnl-card">
@@ -371,18 +349,7 @@ export default function CaptionStep() {
           <div className="glass-sm pnl-card">
             <b>Accent color</b>
             <div className="sub">The karaoke highlight.</div>
-            <div className="pnl-swatches">
-              {SWATCHES.map((c) => (
-                <button
-                  key={c}
-                  className={`pnl-swatch${s.accentColor.toUpperCase() === c ? " on" : ""}`}
-                  style={{ background: c }}
-                  title={c}
-                  onClick={() => patchStyle({ accentColor: c })}
-                />
-              ))}
-            </div>
-            <HexField value={s.accentColor} onCommit={(hex) => patchStyle({ accentColor: hex })} />
+            <ColorField value={s.accentColor} onCommit={(hex) => patchStyle({ accentColor: hex })} />
           </div>
 
           <div className="glass-sm pnl-card">
@@ -411,14 +378,14 @@ export default function CaptionStep() {
             {s.outline.on && (
               <>
                 <SliderRow label="SIZE" min={0} max={20} value={s.outline.size} def={6} onCommit={(v) => patchStyle({ outline: { ...s.outline, size: v } })} />
-                <SliderRow label="DST" min={0} max={30} value={s.outline.distance} def={0} onCommit={(v) => patchStyle({ outline: { ...s.outline, distance: v } })} />
-                <HexField value={s.outline.color} onCommit={(hex) => patchStyle({ outline: { ...s.outline, color: hex } })} />
+                <ColorField value={s.outline.color} onCommit={(hex) => patchStyle({ outline: { ...s.outline, color: hex } })} />
               </>
             )}
           </div>
 
           <div className="glass-sm pnl-card">
             <b>Glow</b>
+            <div className="sub">Preview only; glow does not reach the export.</div>
             <div className="pnl-chiprow">
               <Chip on={s.glow.on} onClick={() => patchStyle({ glow: { ...s.glow, on: !s.glow.on } })}>
                 {s.glow.on ? "On" : "Off"}
@@ -426,7 +393,6 @@ export default function CaptionStep() {
             </div>
             {s.glow.on && (
               <>
-                <SliderRow label="INT" min={0} max={100} value={s.glow.intensity} def={50} onCommit={(v) => patchStyle({ glow: { ...s.glow, intensity: v } })} />
                 <SliderRow label="SPR" min={0} max={100} value={s.glow.spread} def={50} onCommit={(v) => patchStyle({ glow: { ...s.glow, spread: v } })} />
                 <HexField value={s.glow.color} onCommit={(hex) => patchStyle({ glow: { ...s.glow, color: hex } })} />
               </>
@@ -451,7 +417,7 @@ export default function CaptionStep() {
                 </div>
                 <SliderRow label="OPA" min={0} max={100} value={s.background.opacity} def={80} onCommit={(v) => patchStyle({ background: { ...s.background, opacity: v } })} />
                 <SliderRow label="SIZE" min={0} max={100} value={s.background.size} def={50} onCommit={(v) => patchStyle({ background: { ...s.background, size: v } })} />
-                <HexField value={s.background.color} onCommit={(hex) => patchStyle({ background: { ...s.background, color: hex } })} />
+                <ColorField value={s.background.color} onCommit={(hex) => patchStyle({ background: { ...s.background, color: hex } })} />
               </>
             )}
           </div>

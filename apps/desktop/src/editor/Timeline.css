@@ -24,15 +24,27 @@
 
 /* lanes */
 .tl-lane{position:relative;border-top:1px solid var(--brd-soft)}
-.tl-lane-text{height:32px}
-.tl-lane-broll{height:36px}
+/* Overlay lane heights are inline now: they grow a row per overlapping chip.
+   These are the single-row minimums. */
+.tl-lane-text{min-height:32px}
+.tl-lane-broll{min-height:36px}
 .tl-lane-clips{height:70px}
-.tl-lane-audio{height:36px;border-bottom:1px solid var(--brd-soft)}
+.tl-lane-audio{min-height:36px;border-bottom:1px solid var(--brd-soft)}
+
+/* The lane's name, pinned to the left edge while the timeline scrolls under
+   it, so which row is which is never a guess. */
+.tl-lanelab{position:sticky;left:6px;z-index:4;display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:2px 8px;border-radius:7px;font-size:9px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--txt-3);background:rgba(0,0,0,.45);border:1px solid var(--brd-soft);pointer-events:none}
+.tl-lanelab i{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
 .tl-hint{position:absolute;inset:4px 8px;display:flex;align-items:center;justify-content:center;border:1.5px dashed rgba(255,255,255,.18);border-radius:10px;color:var(--txt-3);font-size:11.5px;pointer-events:none}
 
 /* overlay chips: text, b-roll, graphics, audio */
-.tl-chip{position:absolute;top:4px;bottom:4px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:9px;background:var(--glass-2);border:1px solid var(--brd-soft);box-shadow:var(--lg-rim);font-size:11px;font-weight:600;color:var(--txt-2);white-space:nowrap;overflow:hidden;cursor:grab;user-select:none;touch-action:none}
+.tl-chip{position:absolute;top:4px;height:24px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:9px;background:var(--glass-2);border:1px solid var(--brd-soft);box-shadow:var(--lg-rim);font-size:11px;font-weight:600;color:var(--txt-2);white-space:nowrap;overflow:hidden;cursor:grab;user-select:none;touch-action:none}
 .tl-chip.on{border-color:rgba(255,111,97,.65);color:var(--txt);box-shadow:inset 0 0 0 1px rgba(255,111,97,.35)}
+/* One tint per kind, on the leading edge, so a crowded timeline still reads. */
+.tl-chip-text{border-left:3px solid var(--v)}
+.tl-chip-broll{border-left:3px solid #5AA9FF}
+.tl-chip-graphic{border-left:3px solid #B78AFF}
+.tl-chip-audio{border-left:3px solid #4FE29A}
 .tl-edge{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
 .tl-edge.l{left:0}
 .tl-edge.r{right:0}

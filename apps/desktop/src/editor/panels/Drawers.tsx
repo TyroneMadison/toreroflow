@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EditDoc } from "@toreroflow/core";
 import { api } from "../../lib/api";
 import { useEditor, type EditAssetInfo } from "../StudioEditor";
@@ -80,6 +80,17 @@ function DrawerBase({ tab, open, onClose, onTab }: DrawerProps & { tab: DrawerTa
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // The drawer covers the panel that opened it, so Escape must work without
+  // the pointer ever finding the scrim.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   const kind = KIND[tab];
   const list = assets.filter((a) => a.kind === kind);
@@ -164,6 +175,14 @@ function DrawerBase({ tab, open, onClose, onTab }: DrawerProps & { tab: DrawerTa
     <>
       <div className={`pnl-scrim${open ? " open" : ""}`} onClick={onClose} />
       <aside className={`glass pnl-drawer${open ? " open" : ""}`}>
+        <div className="pnl-drawhead">
+          <button className="iconbtn" aria-label="Close" onClick={onClose}>
+            <svg style={{ transform: "rotate(90deg)" }}>
+              <use href="#i-chev" />
+            </svg>
+          </button>
+          <h3>{tab[0].toUpperCase() + tab.slice(1)}</h3>
+        </div>
         <div className="pnl-drawtabs">
           {(["clips", "audio", "graphics"] as const).map((t) => (
             <button

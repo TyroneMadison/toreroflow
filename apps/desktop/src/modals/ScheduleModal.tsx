@@ -194,7 +194,20 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
 
   return (
     <Modal maxWidth={520} onClose={onClose}>
-      <div className="modal-head">
+      {/* .modal-head is sticky with background:inherit, which on a .glass modal
+          is a 5% white fill; scrolled body content showed through the title.
+          Its blur(30px) cannot help either: the parent .glass already carries a
+          backdrop-filter, so the child's samples behind the modal, not inside
+          it. An opaque surface, rounded to the modal's own top corners. */}
+      <div
+        className="modal-head"
+        style={{
+          background: "var(--bg-1)",
+          backdropFilter: "none",
+          WebkitBackdropFilter: "none",
+          borderRadius: "var(--radius) var(--radius) 0 0",
+        }}
+      >
         <div>
           <h3>Schedule post</h3>
           <p>{videoLabel(asset)}</p>
@@ -206,7 +219,16 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         </div>
       </div>
       <div className="modal-body">
-        <label className="flabel">Platforms</label>
+        <label className="flabel">Post at</label>
+        <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+        <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
+          Posts with the title saved on this video. Each platform publishes
+          independently with automatic retries.
+        </p>
+
+        <label className="flabel" style={{ marginTop: 18 }}>
+          Platforms
+        </label>
         {connected.length === 0 && (
           <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
             No connected platforms. Connect them in Settings first.
@@ -507,15 +529,6 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
             )}
           </div>
         )}
-
-        <label className="flabel" style={{ marginTop: 18 }}>
-          Post at
-        </label>
-        <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
-        <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
-          Posts with the title saved on this video. Each platform publishes
-          independently with automatic retries.
-        </p>
 
         {/* Keyed by the message so a second, different failure redraws. */}
         {error && (

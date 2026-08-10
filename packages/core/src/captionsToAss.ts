@@ -143,6 +143,21 @@ function karaokeText(text: string, durSec: number): string {
 
 const POP_IN = "\\t(0,140,\\fscx108\\fscy108)\\t(140,240,\\fscx100\\fscy100)";
 
+/**
+ * Whether the caption karaoke highlight runs, shared by export and preview so
+ * they cannot drift. The animation chip decides: "karaoke" turns it on, any
+ * other choice turns it off, and with no chip chosen the template's accent
+ * color decides. Custom templates are not in CAPTION_TEMPLATES, so their own
+ * saved style speaks for them instead of a lookup that would always miss.
+ */
+export function captionKaraoke(cap: CaptionSettings): boolean {
+  if (!cap.style.accentColor) return false;
+  const anim = cap.style.animation;
+  if (anim !== undefined) return anim === "karaoke";
+  if (cap.template.startsWith("custom-")) return true;
+  return Boolean(CAPTION_TEMPLATES.find((t) => t.id === cap.template)?.style.accentColor);
+}
+
 function textEvents(item: TextItem, style: string, w: number, h: number): string[] {
   const { px, py } = posOf(item.x, item.y, w, h);
   const hasPos = item.x !== 0 || item.y !== 0;
@@ -202,8 +217,9 @@ function textEvents(item: TextItem, style: string, w: number, h: number): string
 /**
  * The whole ASS file: Script Info, one Style per distinct look (C for
  * captions, T1..Tn for text items), and every Dialogue event. Chunks and
- * text item times are OUTPUT time. Karaoke turns on when the caption style
- * has an accent color and the chosen template defines one.
+ * text item times are OUTPUT time. The caption animation chip maps to real
+ * tags: karaoke per captionKaraoke, fade to \fad, pop and emphasis and focus
+ * to \t sketches, slide up to \move, typewriter to growing-prefix events.
  */
 export function assFromDoc(input: {
   chunks: CaptionChunk[];
@@ -220,16 +236,35 @@ export function assFromDoc(input: {
   const events: string[] = [];
 
   if (cap.enabled) {
-    const template = CAPTION_TEMPLATES.find((t) => t.id === cap.template);
-    const karaoke = Boolean(cap.style.accentColor) && Boolean(template?.style.accentColor);
+    const anim = cap.style.animation;
+    const karaoke = captionKaraoke(cap);
     styleLines.push(styleLine("C", cap.style, hexToAss(karaoke ? cap.style.accentColor : cap.style.color)));
     const overrides = new Map(cap.breaks.map((b) => [b.chunkIndex, b.text]));
     const { px, py } = posOf(cap.style.x, cap.style.y, w, h);
-    const posTag = cap.style.x !== 0 || cap.style.y !== 0 ? `{\\pos(${px},${py})}` : "";
+    // Slide up rides \move, which needs coordinates even at the default spot.
+    let tags = "";
+    if (anim === "slideup") tags += `\\move(${px},${py + 18},${px},${py},0,140)`;
+    else if (cap.style.x !== 0 || cap.style.y !== 0) tags += `\\pos(${px},${py})`;
+    if (anim === "fade") tags += "\\fad(160,120)";
+    else if (anim === "pop") tags += "\\fscx90\\fscy90\\t(0,120,\\fscx100\\fscy100)";
+    else if (anim === "emphasis") tags += "\\t(0,200,\\fscx106\\fscy106)";
+    else if (anim === "focus") tags += "\\alpha&H80&\\t(0,200,\\alpha&H00&)";
+    const posTag = tags ? `{${tags}}` : "";
     input.chunks.forEach((chunk, i) => {
       const text = applyCase(overrides.get(i) ?? chunk.text, cap.style.case);
       // An override with empty text removes that caption entirely.
       if (!text.trim()) return;
+      if (anim === "typewriter") {
+        // Growing prefix, staggered starts, the same sketch text items use.
+        const words = text.split(/\s+/).filter(Boolean);
+        const step = Math.min(0.12, (chunk.end - chunk.start) / words.length);
+        words.forEach((_, k) => {
+          const s = chunk.start + k * step;
+          const e = k === words.length - 1 ? chunk.end : chunk.start + (k + 1) * step;
+          events.push(dialogue(0, s, e, "C", posTag + escapeText(words.slice(0, k + 1).join(" "))));
+        });
+        return;
+      }
       const body = karaoke ? karaokeText(text, chunk.end - chunk.start) : escapeText(text);
       events.push(dialogue(0, chunk.start, chunk.end, "C", posTag + body));
     });

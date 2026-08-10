@@ -1,4 +1,4 @@
-/* Caption Style step. Motion here is transform and opacity only. */
+/* Caption Style step. Motion here is transform, opacity, and clip-path only. */
 
 .cst{display:flex;flex-direction:column;gap:14px;min-width:0}
 
@@ -21,6 +21,32 @@
 .cst-tile-x{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.55);color:var(--txt-2);font-size:11px;font-weight:700;line-height:1;display:grid;place-items:center;font-family:var(--font);cursor:pointer}
 .cst-tile-x:hover{color:var(--txt)}
 .cst-savetpl{margin-top:12px}
+
+/* Animation chips: each label demos its own effect on a loop. The motion
+   check allows transform, opacity, and clip-path only, so karaoke sweeps a
+   clip-path over a coral copy instead of background-position, and focus
+   settles by opacity instead of filter blur. */
+.cst-anim{display:inline-block;position:relative}
+.cst-anim-pop{animation:cst-a-pop 1.6s var(--ease-out) infinite}
+@keyframes cst-a-pop{0%{transform:scale(.4);opacity:0}16%{transform:scale(1.1);opacity:1}26%,100%{transform:scale(1);opacity:1}}
+.cst-anim-karaoke::after{content:attr(data-word);position:absolute;left:0;top:0;color:var(--v);clip-path:inset(0 100% 0 0);animation:cst-a-karaoke 1.6s linear infinite}
+@keyframes cst-a-karaoke{0%{clip-path:inset(0 100% 0 0)}70%,100%{clip-path:inset(0 0 0 0)}}
+.cst-anim-emphasis{animation:cst-a-emph 1.2s ease-in-out infinite}
+@keyframes cst-a-emph{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.cst-anim-typewriter{animation:cst-a-type 1.8s steps(8,end) infinite}
+@keyframes cst-a-type{0%{clip-path:inset(0 100% 0 0)}60%,100%{clip-path:inset(0 0 0 0)}}
+.cst-anim-focus{animation:cst-a-focus 1.6s var(--ease-out) infinite}
+@keyframes cst-a-focus{0%{opacity:.2;transform:scale(1.08)}45%,100%{opacity:1;transform:scale(1)}}
+.cst-anim-slideup{animation:cst-a-slide 1.6s var(--ease-out) infinite}
+@keyframes cst-a-slide{0%{transform:translateY(7px);opacity:0}35%,100%{transform:translateY(0);opacity:1}}
+.cst-anim-fade{animation:cst-a-fade 1.8s ease-in-out infinite}
+@keyframes cst-a-fade{0%{opacity:0}40%,70%{opacity:1}100%{opacity:0}}
+
+/* ColorField sliders: gradient tracks need appearance none, so the thumb
+   gets its own picker-style ring. Loaded app-wide with this sheet. */
+.cf-range{appearance:none;-webkit-appearance:none;height:12px;border-radius:6px;border:1px solid var(--brd-soft);background:#333;cursor:pointer}
+.cf-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid rgba(0,0,0,.4);box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.cf-hue{background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
 
 /* Caption breaks: one row per chunk, time range + editable text. */
 .cst-breaks{display:flex;flex-direction:column;gap:8px;margin-top:10px}

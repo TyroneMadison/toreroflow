@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { TextAnim, TextItem, TextStyle } from "@toreroflow/core";
 import { useEditor } from "../StudioEditor";
-import { Chip, HexField, SliderRow, SubPills } from "./index";
+import { Chip, ColorField, HexField, SliderRow, SubPills } from "./index";
 
 const FONT_STACKS: Array<{ label: string; value: string }> = [
   { label: "Arial", value: "Arial, Helvetica, sans-serif" },
@@ -12,21 +12,6 @@ const FONT_STACKS: Array<{ label: string; value: string }> = [
   { label: "Trebuchet", value: "'Trebuchet MS', Tahoma, sans-serif" },
   { label: "Courier", value: "'Courier New', Courier, monospace" },
   { label: "Times", value: "'Times New Roman', Times, serif" },
-];
-
-export const SWATCHES = [
-  "#FFFFFF",
-  "#000000",
-  "#FF6F61",
-  "#FF9A73",
-  "#F5C518",
-  "#57D6A0",
-  "#4FA3FF",
-  "#9B6CFF",
-  "#FF6FB5",
-  "#FF2D55",
-  "#FF8A3C",
-  "#9AA0A6",
 ];
 
 const ANIMS: Array<{ id: TextAnim; label: string }> = [
@@ -120,29 +105,12 @@ export default function TextPanel({ id }: { id: string }) {
 
             <div className="glass-sm pnl-card">
               <b>Color</b>
-              <div className="pnl-swatches">
-                {SWATCHES.map((c) => (
-                  <button
-                    key={c}
-                    className={`pnl-swatch${s.color.toUpperCase() === c ? " on" : ""}`}
-                    style={{ background: c }}
-                    title={c}
-                    onClick={() => patchStyle({ color: c })}
-                  />
-                ))}
-              </div>
-              <HexField value={s.color} onCommit={(hex) => patchStyle({ color: hex })} />
+              <ColorField value={s.color} onCommit={(hex) => patchStyle({ color: hex })} />
             </div>
 
             <div className="glass-sm pnl-card">
               <b>Size</b>
               <SliderRow min={12} max={96} value={s.size} def={48} onCommit={(v) => patchStyle({ size: v })} />
-            </div>
-
-            <div className="glass-sm pnl-card">
-              <b>Line space</b>
-              <SliderRow label="X" min={-50} max={50} value={s.lineSpaceX} def={0} onCommit={(v) => patchStyle({ lineSpaceX: v })} />
-              <SliderRow label="Y" min={-50} max={50} value={s.lineSpaceY} def={0} onCommit={(v) => patchStyle({ lineSpaceY: v })} />
             </div>
 
             <div className="glass-sm pnl-card">
@@ -204,14 +172,14 @@ export default function TextPanel({ id }: { id: string }) {
               {s.outline.on && (
                 <>
                   <SliderRow label="SIZE" min={0} max={20} value={s.outline.size} def={6} onCommit={(v) => patchStyle({ outline: { ...s.outline, size: v } })} />
-                  <SliderRow label="DST" min={0} max={30} value={s.outline.distance} def={0} onCommit={(v) => patchStyle({ outline: { ...s.outline, distance: v } })} />
-                  <HexField value={s.outline.color} onCommit={(hex) => patchStyle({ outline: { ...s.outline, color: hex } })} />
+                  <ColorField value={s.outline.color} onCommit={(hex) => patchStyle({ outline: { ...s.outline, color: hex } })} />
                 </>
               )}
             </div>
 
             <div className="glass-sm pnl-card">
               <b>Glow</b>
+              <div className="sub">Preview only; glow does not reach the export.</div>
               <div className="pnl-chiprow">
                 <Chip on={s.glow.on} onClick={() => patchStyle({ glow: { ...s.glow, on: !s.glow.on } })}>
                   {s.glow.on ? "On" : "Off"}
@@ -219,7 +187,6 @@ export default function TextPanel({ id }: { id: string }) {
               </div>
               {s.glow.on && (
                 <>
-                  <SliderRow label="INT" min={0} max={100} value={s.glow.intensity} def={50} onCommit={(v) => patchStyle({ glow: { ...s.glow, intensity: v } })} />
                   <SliderRow label="SPR" min={0} max={100} value={s.glow.spread} def={50} onCommit={(v) => patchStyle({ glow: { ...s.glow, spread: v } })} />
                   <HexField value={s.glow.color} onCommit={(hex) => patchStyle({ glow: { ...s.glow, color: hex } })} />
                 </>
@@ -244,7 +211,7 @@ export default function TextPanel({ id }: { id: string }) {
                   </div>
                   <SliderRow label="OPA" min={0} max={100} value={s.background.opacity} def={80} onCommit={(v) => patchStyle({ background: { ...s.background, opacity: v } })} />
                   <SliderRow label="SIZE" min={0} max={100} value={s.background.size} def={50} onCommit={(v) => patchStyle({ background: { ...s.background, size: v } })} />
-                  <HexField value={s.background.color} onCommit={(hex) => patchStyle({ background: { ...s.background, color: hex } })} />
+                  <ColorField value={s.background.color} onCommit={(hex) => patchStyle({ background: { ...s.background, color: hex } })} />
                 </>
               )}
             </div>

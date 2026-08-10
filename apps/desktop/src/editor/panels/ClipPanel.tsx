@@ -33,7 +33,7 @@ const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }>
 
 /** The panel for a selected clip: zoom moves, transform and volume, colour. */
 export default function ClipPanel({ assetId }: { assetId: string }) {
-  const { doc, update, assets, outputTime } = useEditor();
+  const { doc, update, assets, outputTime, runAction } = useEditor();
   const [tab, setTab] = useState<"quick" | "adjust" | "color">("quick");
 
   const asset = assets.find((a) => a.id === assetId);
@@ -133,6 +133,14 @@ export default function ClipPanel({ assetId }: { assetId: string }) {
               def={100}
               onCommit={(v) => setFx({ volume: v })}
             />
+            <button
+              className="btn ghost"
+              style={{ marginTop: 8, width: "100%", fontSize: 11.5 }}
+              title="Puts this clip's sound on the audio lane and mutes the clip, so it can be moved, trimmed, or deleted on its own. Ctrl+Shift+S does the same."
+              onClick={() => runAction("detachAudio")}
+            >
+              Detach audio
+            </button>
           </div>
         </div>
       )}

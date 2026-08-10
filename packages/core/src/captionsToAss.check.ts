@@ -92,6 +92,46 @@ eq(
 eq(kSum(kEvents[0]), 100, "k values sum to the 1s chunk duration in cs");
 eq(kSum(kEvents[1]), 170, "k values sum to the 1.7s chunk duration within rounding");
 
+// The animation chip is the karaoke gate: "none" silences an accent template,
+// "karaoke" fires without one, and only the chunk timing sets the \k budget.
+const secondary = (ass: string) => (ass.split("\n").find((l) => l.startsWith("Style: C,")) ?? "").split(",")[4];
+const oneChunk = [{ start: 0, end: 1, text: "one two" }];
+const noneTrendy = applyTemplate(emptyDoc(["a"]), "trendy");
+noneTrendy.captions.style.animation = "none";
+const noneAss = assFromDoc({ chunks: oneChunk, texts: [], captions: noneTrendy.captions });
+eq(noneAss.includes("\\k"), false, "none produces no karaoke tags even on an accent template");
+eq(secondary(noneAss), "&H00FFFFFF&", "none keeps SecondaryColour at the text color");
+
+const kChip = emptyDoc(["a"]);
+kChip.captions.style.animation = "karaoke";
+const kChipAss = assFromDoc({ chunks: oneChunk, texts: [], captions: kChip.captions });
+eq(kChipAss.includes("\\k"), true, "the karaoke chip fires without a template accent");
+eq(secondary(kChipAss), "&H00616FFF&", "the style accent becomes SecondaryColour");
+
+// A saved custom template is not in CAPTION_TEMPLATES; with no chip chosen
+// its own accent keeps karaoke instead of a lookup miss silencing it.
+const legacyCustom = emptyDoc(["a"]);
+legacyCustom.captions.template = "custom-1";
+eq(
+  assFromDoc({ chunks: oneChunk, texts: [], captions: legacyCustom.captions }).includes("\\k"),
+  true,
+  "a custom template with no animation set keeps its karaoke",
+);
+
+// The other chips map to real caption-level tags.
+const withAnim = (animation: string) => {
+  const d = emptyDoc(["a"]);
+  d.captions.style.animation = animation;
+  return assFromDoc({ chunks: [{ start: 0, end: 1, text: "one two three" }], texts: [], captions: d.captions });
+};
+eq(withAnim("fade").includes("\\fad(160,120)"), true, "fade emits \\fad per caption");
+eq(withAnim("pop").includes("\\fscx90\\fscy90\\t(0,120,\\fscx100\\fscy100)"), true, "pop scales in over 120ms");
+eq(withAnim("slideup").includes("\\move(540,1554,540,1536,0,140)"), true, "slide up moves from y+18 over 140ms");
+const typeEvents = withAnim("typewriter").split("\n").filter((l) => l.startsWith("Dialogue:"));
+eq(typeEvents.length, 3, "typewriter emits one event per word");
+eq(typeEvents[2]?.endsWith("one two three"), true, "typewriter's last event carries the whole chunk");
+eq(typeEvents[0]?.endsWith("one"), true, "typewriter starts from the first word");
+
 // Caption breaks override their chunk's text by index.
 const withBreak = assFromDoc({
   chunks,
