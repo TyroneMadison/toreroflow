@@ -40,6 +40,8 @@ export interface ReportPost {
   saves: number;
   reach: number;
   avgWatchSec: number | null;
+  /** Length of the video itself, which turns average watch into a percentage. */
+  durationSec: number | null;
   platforms: string[];
   byPlatform: Array<{ platform: string; views: number }>;
   /** Public link to the video, so the report can point at the real thing. */
@@ -432,12 +434,145 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       },
     },
     topContent: { eyebrow: "What worked", title: "Top Content", items: topContent },
+    videos: buildVideos(current),
+    videosSection: { eyebrow: "Every upload", title: "Video Breakdown" },
     plan: { eyebrow: "Next", title: "The Plan", items: planItems },
     footer: {
       contactHtml: `<b>${businessName}</b><br>hello@example.com · torerone.com<br>Report generated ${generatedAt.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
       note: "Short form content that performs",
     },
   };
+}
+
+/**
+ * One card per video for the report's Video breakdown tab.
+ *
+ * Everything in here is either measured or explicitly marked unmeasured.
+ * DMs are never served per post by any platform, so the pill says so instead
+ * of printing a zero the client would read as "nobody messaged". Reposts are
+ * folded into the share count by every platform that has them, so the two are
+ * one pill rather than one real number and one invented one. "Retention" is
+ * average watch over the video's length, which is the only retention any
+ * platform reports; there is no per-second curve to draw, so none is drawn.
+ */
+export interface ReportVideo {
+  title: string;
+  date: string;
+  platforms: string[];
+  thumb: string | null;
+  url: string | null;
+  views: string;
+  likes: string;
+  comments: string;
+  /** Shares and reposts as the platforms report them: one number. */
+  shares: string;
+  /** Null when no platform on this post has a save button that reports. */
+  saves: string | null;
+  /** Engagement as a percentage of views, e.g. "4.2%". Null below 1 view. */
+  engagement: string | null;
+  /** 0-100, average watch over length. Null when either side is unreported. */
+  watchPct: number | null;
+  avgWatch: string;
+  tips: string[];
+}
+
+/** Median of a list, 0 when empty. The middle video, not the average, so one
+ *  runaway hit does not make every other video read as a failure. */
+function median(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)]!;
+}
+
+/** Plain-words coaching per video, from its numbers against the period's. */
+function videoTips(p: ReportPost, medViews: number, avgEng: number): string[] {
+  const tips: string[] = [];
+  const eng = p.views > 0 ? ((p.likes + p.comments + p.shares) / p.views) * 100 : null;
+  const watchPct =
+    p.avgWatchSec && p.durationSec && p.durationSec > 0
+      ? Math.min(100, Math.round((p.avgWatchSec / p.durationSec) * 100))
+      : null;
+
+  if (medViews > 0 && p.views >= medViews * 2) {
+    tips.push(
+      `This one pulled ${(p.views / medViews).toFixed(1)}x your typical video this period. Whatever the format was, make it again before the moment passes.`,
+    );
+  } else if (medViews > 0 && p.views < medViews / 2) {
+    tips.push(
+      "This ran well under your usual reach. That is almost always the first three seconds: open on the payoff, not the setup.",
+    );
+  }
+
+  if (watchPct != null) {
+    if (watchPct >= 60) {
+      tips.push(
+        `Viewers stayed for ${watchPct}% of it on average, which is a strong hold. A longer cut of this idea would likely keep them too.`,
+      );
+    } else if (watchPct < 30) {
+      tips.push(
+        `The average viewer left before a third of the way in. Front-load the best moment and cut anything that waits to get going.`,
+      );
+    }
+  }
+
+  if (eng != null && avgEng > 0) {
+    if (eng >= avgEng * 1.5) {
+      tips.push(
+        "People interacted with this one well above your average. Pin a comment asking a question and it will climb further.",
+      );
+    } else if (eng < avgEng / 2 && p.views > 0) {
+      tips.push(
+        "Views arrived but few people acted on them. End with one direct ask, a question or a follow prompt, rather than letting it trail off.",
+      );
+    }
+  }
+
+  if (p.views > 0 && p.shares > p.likes && p.shares > 5) {
+    tips.push(
+      "It was shared more than it was liked, which is rare and valuable: people are sending it to someone. Formats that answer a specific question do this.",
+    );
+  }
+
+  return tips.slice(0, 3);
+}
+
+/** The Video breakdown tab: one honest card per video this period. */
+function buildVideos(current: ReportPost[]): ReportVideo[] {
+  const vids = current.filter((p) => p.mediaType !== "carousel");
+  const medViews = median(vids.map((p) => p.views));
+  const engs = vids
+    .filter((p) => p.views > 0)
+    .map((p) => ((p.likes + p.comments + p.shares) / p.views) * 100);
+  const avgEng = engs.length ? engs.reduce((a, b) => a + b, 0) / engs.length : 0;
+
+  return [...vids]
+    .sort((a, b) => b.views - a.views)
+    .map((p) => {
+      const eng = p.views > 0 ? ((p.likes + p.comments + p.shares) / p.views) * 100 : null;
+      const watchPct =
+        p.avgWatchSec && p.durationSec && p.durationSec > 0
+          ? Math.min(100, Math.round((p.avgWatchSec / p.durationSec) * 100))
+          : null;
+      return {
+        title: p.title,
+        date: new Date(p.publishedAt).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        platforms: p.platforms.map((x) => PLATFORM_NAME[x] ?? x),
+        thumb: p.thumbnailUrl ?? null,
+        url: p.url ?? null,
+        views: fmt(p.views),
+        likes: fmt(p.likes),
+        comments: fmt(p.comments),
+        shares: fmt(p.shares),
+        saves: reportsSaves(p.platforms as never) ? fmt(p.saves) : null,
+        engagement: eng != null ? `${eng.toFixed(1)}%` : null,
+        watchPct,
+        avgWatch: fmtDur(p.avgWatchSec),
+        tips: videoTips(p, medViews, avgEng),
+      };
+    });
 }
 
 /** Data-driven action items, used when nothing better is supplied. */

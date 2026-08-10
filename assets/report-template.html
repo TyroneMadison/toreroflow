@@ -363,6 +363,80 @@ body{
 .brand-logo{display:flex;align-items:center;justify-content:center;}
 .brand-logo svg{width:46px;height:46px;fill:#fff;filter:drop-shadow(0 2px 12px rgba(0,0,0,0.55));}
 .brand-logo.foot svg{width:32px;height:32px;}
+/* ---------- Video breakdown ---------- */
+.viewtabs{display:flex;gap:8px;margin-top:34px;}
+.viewtab{
+  font:inherit;cursor:pointer;font-size:12.5px;font-weight:600;letter-spacing:.3px;
+  padding:9px 20px;border-radius:999px;color:var(--muted);
+  background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);
+  transition:.16s;
+}
+.viewtab:hover{color:#fff;background:rgba(255,255,255,0.09);}
+.viewtab[aria-selected="true"]{color:#0b0b0e;background:#fff;border-color:#fff;}
+
+.vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start;}
+@media (max-width:900px){.vgrid{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:560px){.vgrid{grid-template-columns:1fr;}}
+
+/* The card: the thumbnail is the whole background, and the lower part of it
+   melts into a blurred frost the name and button sit on. */
+.vcard{position:relative;border-radius:28px;overflow:hidden;background:#101014;
+  border:1px solid rgba(255,255,255,0.10);}
+.vcard .vbg{position:absolute;inset:0;background-size:cover;background-position:center top;}
+.vcard .vfrost{position:absolute;inset:0;
+  -webkit-backdrop-filter:blur(26px) saturate(1.15);backdrop-filter:blur(26px) saturate(1.15);
+  -webkit-mask-image:linear-gradient(to bottom,transparent 30%,black 58%);
+  mask-image:linear-gradient(to bottom,transparent 30%,black 58%);}
+.vcard .vtint{position:absolute;inset:0;
+  background:linear-gradient(to bottom,rgba(8,8,10,0) 34%,rgba(8,8,10,0.38) 62%,rgba(8,8,10,0.62) 100%);}
+.vcard .vbody{position:relative;display:flex;flex-direction:column;justify-content:flex-end;
+  min-height:340px;padding:18px;text-align:center;}
+.vcard .vname{font-size:14.5px;font-weight:600;line-height:1.4;color:#fff;
+  text-shadow:0 1px 12px rgba(0,0,0,.55);margin-bottom:4px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.vcard .vmeta{font-size:10.5px;color:rgba(255,255,255,.75);margin-bottom:12px;}
+.vcard .vbtn{
+  font:inherit;cursor:pointer;display:block;width:100%;
+  padding:11px 0;border-radius:999px;font-size:12.5px;font-weight:700;letter-spacing:.4px;
+  color:#0b0b0e;background:rgba(255,255,255,0.86);border:1px solid rgba(255,255,255,0.4);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:.16s;
+}
+.vcard .vbtn:hover{background:#fff;}
+
+/* Expanded: the same card grows and the stats sit on the frosted thumbnail. */
+.vcard .vstats{display:none;position:relative;padding:4px 18px 20px;}
+.vcard.open .vstats{display:block;}
+.vcard.open .vfrost{-webkit-mask-image:linear-gradient(to bottom,transparent 6%,black 24%);
+  mask-image:linear-gradient(to bottom,transparent 6%,black 24%);}
+.vcard.open .vtint{background:linear-gradient(to bottom,rgba(8,8,10,0.05) 8%,rgba(8,8,10,0.55) 30%,rgba(8,8,10,0.78) 100%);}
+.vcard.open .vbody{min-height:200px;}
+
+.vpills{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px;}
+.vpill{border-radius:16px;padding:11px 14px;text-align:left;
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
+.vpill b{display:block;font-size:17px;font-weight:700;color:#fff;letter-spacing:.2px;}
+.vpill span{display:block;font-size:9.5px;letter-spacing:1.1px;text-transform:uppercase;
+  color:rgba(255,255,255,.62);margin-top:2px;}
+.vpill.na b{color:rgba(255,255,255,.45);font-weight:600;font-size:13px;}
+
+/* The watch dial: the only retention any platform reports, drawn honestly. */
+.vdial{display:flex;align-items:center;gap:16px;margin-top:12px;border-radius:18px;
+  padding:14px 16px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);}
+.vdial svg{flex:0 0 auto;}
+.vdial .dtxt{text-align:left;font-size:11px;line-height:1.55;color:rgba(255,255,255,.78);}
+.vdial .dtxt b{color:#fff;}
+
+.vtips{margin-top:12px;text-align:left;border-radius:18px;padding:14px 16px;
+  background:rgba(242,104,91,0.10);border:1px solid rgba(242,104,91,0.30);}
+.vtips .tt{font-size:9.5px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+  color:var(--coral-bright);margin-bottom:8px;}
+.vtips ul{margin:0;padding-left:16px;}
+.vtips li{font-size:11.5px;line-height:1.6;color:rgba(255,255,255,.85);margin-bottom:6px;}
+.vtips li:last-child{margin-bottom:0;}
+
+/* The web-only tab: a printed report stays the overview. */
+@media print{.viewtabs,#view-videos{display:none !important;}}
 </style>
 </head>
 <body>
@@ -680,6 +754,67 @@ body{
     return '<div class="section-head"><div class="eyebrow">' + eyebrow + '</div><h2 class="display">' + title + '</h2></div>';
   }
 
+  /* Escapes video titles, which are file names typed by humans. */
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* The watch ring: the one retention figure platforms actually report. */
+  function dialHTML(v) {
+    if (v.watchPct == null) {
+      return '<div class="vdial"><div class="dtxt">The platforms this went to do not report watch time for it, so no retention figure is shown rather than an invented one.</div></div>';
+    }
+    var r = 26, c = 2 * Math.PI * r;
+    var off = c * (1 - v.watchPct / 100);
+    return '<div class="vdial">' +
+      '<svg width="68" height="68" viewBox="0 0 68 68">' +
+      '<circle cx="34" cy="34" r="' + r + '" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="7"/>' +
+      '<circle cx="34" cy="34" r="' + r + '" fill="none" stroke="var(--coral)" stroke-width="7" stroke-linecap="round" ' +
+      'stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 34 34)"/>' +
+      '<text x="34" y="39" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">' + v.watchPct + '%</text>' +
+      '</svg>' +
+      '<div class="dtxt"><b>Retention.</b> The average viewer watched <b>' + v.watchPct + '%</b> of this video (' + v.avgWatch + ' of it), measured by the platforms themselves.</div>' +
+      '</div>';
+  }
+
+  function videoCardHTML(v, i) {
+    var pills =
+      '<div class="vpills">' +
+      '<div class="vpill"><b>' + v.views + '</b><span>Views</span></div>' +
+      '<div class="vpill"><b>' + (v.engagement || '-') + '</b><span>Engagement</span></div>' +
+      '<div class="vpill"><b>' + v.likes + '</b><span>Likes</span></div>' +
+      '<div class="vpill"><b>' + v.comments + '</b><span>Comments</span></div>' +
+      '<div class="vpill"><b>' + v.shares + '</b><span>Shares &amp; reposts</span></div>' +
+      (v.saves != null
+        ? '<div class="vpill"><b>' + v.saves + '</b><span>Saves</span></div>'
+        : '<div class="vpill na"><b>Instagram only</b><span>Saves</span></div>') +
+      '<div class="vpill na" style="grid-column:1 / -1;"><b>Not shared by any platform</b><span>DMs from this video</span></div>' +
+      '</div>';
+    var tips = v.tips && v.tips.length
+      ? '<div class="vtips"><div class="tt">How to beat this one</div><ul>' +
+        v.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul></div>'
+      : '';
+    return '<div class="vcard" data-vi="' + i + '">' +
+      (v.thumb ? '<div class="vbg" style="background-image:url(\'' + v.thumb + '\')"></div>' : '') +
+      '<div class="vfrost"></div><div class="vtint"></div>' +
+      '<div class="vbody">' +
+      '<div class="vname">' + esc(v.title) + '</div>' +
+      '<div class="vmeta">' + esc(v.date) + ' · ' + esc((v.platforms || []).join(', ')) + '</div>' +
+      '<button type="button" class="vbtn">Expand</button>' +
+      '</div>' +
+      '<div class="vstats">' + pills + dialHTML(v) + tips + '</div>' +
+      '</div>';
+  }
+
+  function videosHTML(data) {
+    var s = data.videosSection || {};
+    return '<div class="section" style="margin-top:34px;">' +
+      sectionHead(s.eyebrow || 'Every upload', s.title || 'Video Breakdown') +
+      '<div class="vgrid">' + data.videos.map(videoCardHTML).join('') + '</div></div>';
+  }
+
   function render(data) {
     if (!data) return;
     var r = data.report || {};
@@ -700,6 +835,18 @@ body{
         return '<div class="meta"><div class="k">' + m.k + '</div><div class="v">' + m.v + '</div></div>';
       }).join('') + '</div>';
     }
+
+    // The two views. Everything the report always showed stays the Overview;
+    // the per-video cards live behind their own tab so neither crowds the
+    // other. No videos this period means no tab bar at all.
+    var hasVideos = data.videos && data.videos.length;
+    if (hasVideos) {
+      html += '<div class="viewtabs" role="tablist">' +
+        '<button type="button" role="tab" class="viewtab" data-view="overview" aria-selected="true">Overview</button>' +
+        '<button type="button" role="tab" class="viewtab" data-view="videos" aria-selected="false">Video Breakdown</button>' +
+        '</div>';
+    }
+    html += '<div id="view-overview">';
 
     // Headline KPIs
     if (data.headline) {
@@ -740,8 +887,38 @@ body{
       '<div class="foot-note">' + (f.note || '') + '</div></div>';
     html += '</div>';
 
+    html += '</div>'; // /view-overview
+    if (hasVideos) {
+      html += '<div id="view-videos" style="display:none">' + videosHTML(data) + '</div>';
+    }
+
     document.getElementById('report').innerHTML = html;
   }
+
+  // One listener for the whole report, attached once: renderReport rewrites
+  // the body every period switch, so per-element handlers would be lost.
+  document.addEventListener('click', function (e) {
+    var tab = e.target.closest ? e.target.closest('.viewtab') : null;
+    if (tab) {
+      var view = tab.getAttribute('data-view');
+      var ov = document.getElementById('view-overview');
+      var vv = document.getElementById('view-videos');
+      if (!ov || !vv) return;
+      ov.style.display = view === 'overview' ? '' : 'none';
+      vv.style.display = view === 'videos' ? '' : 'none';
+      var tabs = document.querySelectorAll('.viewtab');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].setAttribute('aria-selected', tabs[i] === tab ? 'true' : 'false');
+      }
+      return;
+    }
+    var btn = e.target.closest ? e.target.closest('.vbtn') : null;
+    if (btn) {
+      var card = btn.closest('.vcard');
+      var open = card.classList.toggle('open');
+      btn.textContent = open ? 'Close' : 'Expand';
+    }
+  });
 
   // Expose for live re-render from your app: window.renderReport(dataObject)
   window.renderReport = render;
