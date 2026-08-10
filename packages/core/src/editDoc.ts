@@ -128,7 +128,14 @@ export interface AudioItem {
   at: number;
   dur: number;
   volume: number;
-  kind: "music" | "voiceover";
+  kind: "music" | "voiceover" | "detached";
+  /**
+   * Where in the SOURCE file this item starts, in seconds. Absent means 0,
+   * which every item before detached audio existed implicitly was. Detaching
+   * a clip's sound has to carry the clip's own offset or a trimmed clip's
+   * audio would restart from the beginning of the take.
+   */
+  srcIn?: number;
 }
 
 export interface ZoomItem {
@@ -488,6 +495,43 @@ export function removeCutsOverlapping(doc: EditDoc, assetId: string, range: CutR
     (c) => !(c.start < range.end && c.end > range.start),
   );
   return withCuts(doc, assetId, list);
+}
+
+/**
+ * Grow or shrink the visible tail of a clip by moving the start of its
+ * end-touching cut.
+ *
+ * Trimming only ever added cuts, so a clip could be shortened and never
+ * lengthened back: the trim handle had nowhere to go but left. The tail cut is
+ * the one whose end reaches the source's end; sliding its start right restores
+ * footage, sliding it left removes more, and restoring everything drops the
+ * cut entirely. Interior cuts (removed words, splits) are untouched, so
+ * re-lengthening a clip never resurrects words the operator deleted.
+ *
+ * No end-touching cut and a negative delta means "start one"; a positive
+ * delta with no tail cut is a no-op because there is nothing to restore.
+ */
+export function adjustTailCut(
+  doc: EditDoc,
+  assetId: string,
+  deltaSec: number,
+  duration: number,
+): EditDoc {
+  const existing = doc.cuts[assetId] ?? [];
+  const EPS = 0.001;
+  const tail = existing.find((c) => c.end >= duration - EPS);
+  if (!tail) {
+    if (deltaSec >= 0) return doc;
+    return addCut(doc, assetId, { start: duration + deltaSec, end: duration }, duration);
+  }
+  const newStart = tail.start + deltaSec;
+  const rest = existing.filter((c) => c !== tail);
+  if (newStart >= duration - EPS) return withCuts(doc, assetId, normalizeCuts(rest, duration));
+  return withCuts(
+    doc,
+    assetId,
+    normalizeCuts([...rest, { start: Math.max(0, newStart), end: duration }], duration),
+  );
 }
 
 /**

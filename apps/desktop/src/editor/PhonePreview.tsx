@@ -25,7 +25,7 @@ import { useEditor, type EditAssetInfo } from "./StudioEditor";
 import "./PhonePreview.css";
 
 /** Stage width in px; must match .pv-screen in PhonePreview.css. */
-const STAGE_W = 243;
+const STAGE_W = 300;
 /** The render target is 1080 wide, so on-stage text scales down by this. */
 const TEXT_SCALE = STAGE_W / 1080;
 
@@ -527,6 +527,7 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
             </div>
           )}
           <div className="pv-notch" />
+          <div className="pv-home" />
         </div>
 
         <div className="pv-transport">
@@ -586,6 +587,7 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
           }}
         >
           <div className="pv-scrub-trough" ref={troughRef}>
+            <div className="pv-scrub-fill" style={{ width: `${pct}%` }} />
             <div
               className="pv-scrub-dot"
               style={{ left: `${pct}%`, transform: "translate(-50%,-50%)" }}
