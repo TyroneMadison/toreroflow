@@ -382,9 +382,26 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
             profileData?.username ?? a.username ?? a.displayName ?? a.name ?? a.platform;
           const avatarUrl = profileData?.profilePicture ?? null;
           const displayName = a.displayName ?? profileData?.displayName ?? null;
-          const existing = await prisma.socialAccount.findFirst({
-            where: { clientId: client.id, platform, deletedAt: null },
-          });
+          /*
+           * Match on the provider's account id, not on the platform. Matching
+           * by platform meant a second Facebook page silently overwrote the
+           * first: the sync found "the client's facebook row" and updated it,
+           * and the brand could never hold two pages at once. The platform
+           * fallback only catches legacy rows connected before provider ids
+           * were stored, and only when they have no id to disagree with.
+           */
+          const existing =
+            (await prisma.socialAccount.findFirst({
+              where: { clientId: client.id, providerAccountId: a._id, deletedAt: null },
+            })) ??
+            (await prisma.socialAccount.findFirst({
+              where: {
+                clientId: client.id,
+                platform,
+                providerAccountId: null,
+                deletedAt: null,
+              },
+            }));
           const account = existing
             ? await prisma.socialAccount.update({
                 where: { id: existing.id },

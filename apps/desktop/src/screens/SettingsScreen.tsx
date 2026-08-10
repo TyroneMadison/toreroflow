@@ -380,34 +380,67 @@ function ProfileCard({
             </p>
           )}
           {PLATFORMS.map((platform) => {
-            const account = client.accounts.find(
+            // Every connected account on this platform gets its own row, so a
+            // brand with two Facebook pages can see both and disconnect either.
+            // "find" here is how the second page used to be invisible.
+            const platformAccounts = client.accounts.filter(
               (a) => a.platform === platform && a.status === "connected",
             );
-            const key = account ? account.id : `${client.id}:${platform}`;
-            const busy = busyKey === key;
-            return (
-              <div className="connect-row" key={platform}>
-                <Pf p={PF_ID[platform]} />
-                <div className="cinfo">
-                  <b>{PLATFORM_LABELS[platform]}</b>
-                  {/* Handle truncates rather than growing: @examplecreator
-                      used to push straight through the Disconnect button. */}
-                  <span title={account ? `@${account.handle}` : undefined}>
-                    <i className={`livedot ${account ? "on" : "off"}`} />
-                    {account ? `@${account.handle}` : "not connected"}
-                  </span>
-                </div>
-                {account ? (
-                  <button className="dangerbtn" disabled={busy} onClick={() => onDisconnect(account.id)}>
-                    {busy ? "…" : "Disconnect"}
-                  </button>
-                ) : (
+            if (platformAccounts.length === 0) {
+              const key = `${client.id}:${platform}`;
+              const busy = busyKey === key;
+              return (
+                <div className="connect-row" key={platform}>
+                  <Pf p={PF_ID[platform]} />
+                  <div className="cinfo">
+                    <b>{PLATFORM_LABELS[platform]}</b>
+                    <span>
+                      <i className="livedot off" />
+                      not connected
+                    </span>
+                  </div>
                   <button className="cbtn" disabled={busy} onClick={() => onConnect(platform)}>
                     {busy ? "…" : "Connect"}
                   </button>
-                )}
-              </div>
-            );
+                </div>
+              );
+            }
+            return platformAccounts.map((account, i) => {
+              const busy = busyKey === account.id;
+              return (
+                <div className="connect-row" key={account.id}>
+                  <Pf p={PF_ID[platform]} />
+                  <div className="cinfo">
+                    <b>{PLATFORM_LABELS[platform]}</b>
+                    {/* Handle truncates rather than growing: @examplecreator
+                        used to push straight through the Disconnect button. */}
+                    <span title={`@${account.handle}`}>
+                      <i className="livedot on" />@{account.handle}
+                    </span>
+                  </div>
+                  {/* One "add another" per platform, on the last row, so a
+                      second page of the same platform is a first-class thing
+                      rather than something Zernio does behind the app's back. */}
+                  {i === platformAccounts.length - 1 && (
+                    <button
+                      className="cbtn"
+                      title={`Connect another ${PLATFORM_LABELS[platform]} account`}
+                      disabled={busyKey === `${client.id}:${platform}`}
+                      onClick={() => onConnect(platform)}
+                    >
+                      + Add
+                    </button>
+                  )}
+                  <button
+                    className="dangerbtn"
+                    disabled={busy}
+                    onClick={() => onDisconnect(account.id)}
+                  >
+                    {busy ? "…" : "Disconnect"}
+                  </button>
+                </div>
+              );
+            });
           })}
         </div>
       </div>

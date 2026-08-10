@@ -43,7 +43,7 @@ export interface ReportPost {
   /** Length of the video itself, which turns average watch into a percentage. */
   durationSec: number | null;
   platforms: string[];
-  byPlatform: Array<{ platform: string; views: number }>;
+  byPlatform: Array<{ platform: string; views: number; accountId?: string }>;
   /** Public link to the video, so the report can point at the real thing. */
   url?: string | null;
   /** Thumbnail URL; inlined as a data URI before publishing. */
@@ -51,6 +51,8 @@ export interface ReportPost {
 }
 
 export interface ReportAccount {
+  /** SocialAccount id, which is what tells two pages on one platform apart. */
+  id?: string;
   platform: string;
   handle: string;
   displayName: string | null;
@@ -247,21 +249,28 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       : []),
   ];
 
-  /* ---- per-platform sections ---- */
-  const platformsPresent = [...new Set(accounts.map((a) => a.platform))];
-  const platforms = platformsPresent.map((platform) => {
-    const account = accounts.find((a) => a.platform === platform)!;
+  /* ---- per-account sections ----
+     One card per connected account, not per platform. With one Facebook the
+     two are the same thing; with two, a per-platform card would put the first
+     page's handle over both pages' numbers, which is a lie with a byline.
+     Posts that never learned their account only count toward a platform with
+     a single account, where attribution is not in question. */
+  const platforms = accounts.map((account) => {
+    const platform = account.platform;
+    const multi = accounts.filter((x) => x.platform === platform).length > 1;
+    const mine = (b: { platform: string; views: number; accountId?: string }) =>
+      b.platform === platform && (!multi || b.accountId === account.id);
     const scoped = current
-      .filter((p) => p.byPlatform.some((b) => b.platform === platform))
+      .filter((p) => p.byPlatform.some(mine))
       .map((p) => ({
         ...p,
-        views: p.byPlatform.find((b) => b.platform === platform)?.views ?? 0,
+        views: p.byPlatform.find(mine)?.views ?? 0,
       }));
     const prevScoped = previous
-      .filter((p) => p.byPlatform.some((b) => b.platform === platform))
+      .filter((p) => p.byPlatform.some(mine))
       .map((p) => ({
         ...p,
-        views: p.byPlatform.find((b) => b.platform === platform)?.views ?? 0,
+        views: p.byPlatform.find(mine)?.views ?? 0,
       }));
 
     const pViews = sum(scoped, (p) => p.views);

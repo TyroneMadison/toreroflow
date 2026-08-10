@@ -47,7 +47,7 @@ export interface MergedPost {
   follows: number;
   avgWatchSec: number | null;
   durationSec: number | null;
-  byPlatform: Array<{ platform: string; views: number }>;
+  byPlatform: Array<{ platform: string; views: number; accountId?: string }>;
   /** True when the figures came from the platform rather than the provider. */
   lifetime?: boolean;
 }
@@ -133,6 +133,13 @@ export async function buildMergedPosts(
       .filter((a) => a.providerAccountId)
       .map((a) => [a.providerAccountId as string, a.platform]),
   );
+  // Provider account id to the app's own SocialAccount id, so a post entry
+  // can say WHICH Facebook it went to, not just that it went to Facebook.
+  const accountRowId = new Map(
+    client.socialAccounts
+      .filter((a) => a.providerAccountId)
+      .map((a) => [a.providerAccountId as string, a.id]),
+  );
 
   // Durations only exist for videos produced through the app.
   const targets = (await prisma.postTarget.findMany({
@@ -178,9 +185,11 @@ export async function buildMergedPosts(
       const platform =
         accountPlatform.get(e.accountId as string) ??
         (typeof e.platform === "string" ? e.platform : "unknown");
+      const rowId = accountRowId.get(e.accountId as string);
       return {
         platform,
         views: entryViews ?? (use.length === 1 ? views : Math.round(views / use.length)),
+        ...(rowId ? { accountId: rowId } : {}),
       };
     });
 
@@ -229,6 +238,7 @@ export async function buildMergedPosts(
     orderBy: { publishedAt: "desc" },
   })) as Array<{
     id: string;
+    socialAccountId: string;
     platform: string;
     platformVideoId: string;
     mediaType: string;
@@ -273,7 +283,7 @@ export async function buildMergedPosts(
         follows: v.follows,
         avgWatchSec: null,
         durationSec: v.durationSec,
-        byPlatform: [{ platform: v.platform, views: v.views }],
+        byPlatform: [{ platform: v.platform, views: v.views, accountId: v.socialAccountId }],
         lifetime: true,
       })),
     );

@@ -111,6 +111,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const businessName = agency?.legalName ?? agency?.name ?? "Torerone";
 
     const accounts: ReportAccount[] = client.socialAccounts.map((a) => ({
+      id: a.id,
       platform: a.platform,
       handle: a.handle,
       displayName: a.displayName,

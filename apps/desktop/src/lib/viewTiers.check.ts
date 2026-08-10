@@ -111,6 +111,42 @@ const cutoff30 = now - 30 * DAY;
   );
 }
 
+/* Two accounts on one platform are two tabs with two sets of numbers. */
+{
+  const pageA: ClientPost = {
+    ...post("a", 0, 1, ["facebook"]),
+    byPlatform: [{ platform: "facebook", views: 9_000, accountId: "acc-a" }],
+  };
+  const pageB: ClientPost = {
+    ...post("b", 0, 1, ["facebook"]),
+    byPlatform: [{ platform: "facebook", views: 500, accountId: "acc-b" }],
+  };
+  // An older cached post that never learned which page it belongs to.
+  const orphan: ClientPost = {
+    ...post("o", 0, 1, ["facebook"]),
+    byPlatform: [{ platform: "facebook", views: 70 }],
+  };
+  const all = [pageA, pageB, orphan];
+  assert.equal(
+    scopeToPlatform(all, "facebook").length,
+    3,
+    "the platform-wide scope still sees every Facebook post",
+  );
+  const a = scopeToPlatform(all, "facebook", "acc-a");
+  assert.equal(a.length, 1, "an account tab sees only its own posts");
+  assert.equal(a[0]!.views, 9_000, "and ranks on that account's views");
+  assert.equal(
+    scopeToPlatform(all, "facebook", "acc-b")[0]!.views,
+    500,
+    "the second page is its own set of numbers, not a copy of the first",
+  );
+  assert.equal(
+    scopeToPlatform(all, "facebook", "acc-a").some((p) => p.id === "o"),
+    false,
+    "a post that cannot prove its account stays off account tabs",
+  );
+}
+
 /* An all-time selection counts everything as in range. */
 {
   const tier = buildTier(catalogue, 1_000_000, null, 0);

@@ -250,7 +250,25 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const connectedPlatformList = [
     ...new Set(accountsAll.map((a) => a.platform as string)),
   ];
-  const activePlatforms = tab === "all" ? connectedPlatformList : [tab];
+  // One tab per platform, until a platform has two connected accounts; then
+  // one tab per account, labeled by handle, because "Facebook" stops naming
+  // one thing the moment there are two Facebooks.
+  const platformTabs = connectedPlatformList.flatMap((p) => {
+    const accs = accountsAll.filter((a) => a.platform === p);
+    if (accs.length <= 1) {
+      return [{ key: p, platform: p, accountId: null as string | null, label: PLATFORM_LABELS[p as Platform] ?? p }];
+    }
+    return accs.map((a) => ({
+      key: `${p}::${a.id}`,
+      platform: p,
+      accountId: a.id as string | null,
+      label: `${PLATFORM_LABELS[p as Platform] ?? p} @${a.handle}`,
+    }));
+  });
+  const activeTab = platformTabs.find((t) => t.key === tab) ?? null;
+  const tabPlatform = activeTab?.platform ?? tab;
+  const tabAccountId = activeTab?.accountId ?? undefined;
+  const activePlatforms = tab === "all" ? connectedPlatformList : [tabPlatform];
 
   /** Oldest publish date the provider gave us, for honest "all time" labels. */
   const earliest = everyPost.reduce<string | null>(
@@ -262,16 +280,19 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const cutoff = rangeDays == null ? 0 : Date.now() - rangeDays * 86_400_000;
   const all = scopeToPlatform(
     everyPost.filter((p) => new Date(p.publishedAt).getTime() >= cutoff),
-    tab,
+    tabPlatform,
+    tabAccountId,
   );
 
   // The tier boards below rank the whole catalogue instead, following the
   // platform tab but never the range. They were built from `all`, so on the
   // default thirty day window a client with six million-view videos saw an
   // empty 1M+ club: the newest of those videos is nine months old.
-  const lifetime = scopeToPlatform(everyPost, tab);
+  const lifetime = scopeToPlatform(everyPost, tabPlatform, tabAccountId);
   const rangeLabel = rangeDays == null ? "all time" : `${rangeDays}d`;
-  const accounts = accountsAll.filter((a) => tab === "all" || a.platform === tab);
+  const accounts = accountsAll.filter(
+    (a) => tab === "all" || (tabAccountId ? a.id === tabAccountId : a.platform === tabPlatform),
+  );
   const ytAccounts = accounts.filter((a) => a.platform === "youtube");
   const otherAccounts = accounts.filter((a) => a.platform !== "youtube");
 
@@ -387,7 +408,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           <h2>Client Analytics</h2>
           <p>
             {selectedClient
-              ? `${selectedClient.name} · ${tab === "all" ? "all platforms" : (PLATFORM_LABELS[tab as Platform] ?? tab)} · ${
+              ? `${selectedClient.name} · ${tab === "all" ? "all platforms" : (activeTab?.label ?? tab)} · ${
                   rangeDays == null
                     ? earliest
                       ? `all history since ${fmtDate(earliest)}`
@@ -503,15 +524,15 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 >
                   Overall
                 </div>
-                {connectedPlatformList.map((p) => (
+                {platformTabs.map((t) => (
                   <div
-                    key={p}
-                    className={`antab${tab === p ? " on" : ""}`}
-                    style={tab === p ? { boxShadow: `inset 0 0 0 1px ${color(p)}` } : undefined}
-                    onClick={() => setTab(p)}
+                    key={t.key}
+                    className={`antab${tab === t.key ? " on" : ""}`}
+                    style={tab === t.key ? { boxShadow: `inset 0 0 0 1px ${color(t.platform)}` } : undefined}
+                    onClick={() => setTab(t.key)}
                   >
-                    <Pf p={PF_ID[p as Platform]} size="sm" />
-                    {PLATFORM_LABELS[p as Platform] ?? p}
+                    <Pf p={PF_ID[t.platform as Platform]} size="sm" />
+                    {t.label}
                   </div>
                 ))}
               </div>
@@ -742,7 +763,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       <div className="sub">
                         {tab === "all"
                           ? "Most recent videos across every platform"
-                          : `Most recent ${PLATFORM_LABELS[tab as Platform] ?? tab} videos`}
+                          : `Most recent ${activeTab?.label ?? tab} videos`}
                       </div>
                     </div>
                   </div>

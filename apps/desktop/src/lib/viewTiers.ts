@@ -29,15 +29,28 @@ export interface ViewTier {
 /**
  * Narrows posts to one platform and rescopes each post's numbers to it, so a
  * cross-posted video is ranked on the views it earned on that platform alone.
+ *
+ * With an accountId the narrowing goes one deeper, to one connected account.
+ * That is what makes two Facebook pages under one client two separate tabs
+ * rather than one pile: same platform, different account, different numbers.
+ * Entries that never learned their account (older cached posts) only match
+ * the platform-wide scope, so an account tab shows what is attributable and
+ * nothing it cannot prove.
  */
-export function scopeToPlatform(posts: ClientPost[], tab: string): ClientPost[] {
+export function scopeToPlatform(
+  posts: ClientPost[],
+  tab: string,
+  accountId?: string,
+): ClientPost[] {
   if (tab === "all") return posts;
+  const mine = (b: { platform: Platform; accountId?: string }) =>
+    b.platform === tab && (!accountId || b.accountId === accountId);
   return posts
-    .filter((p) => p.platforms.includes(tab as Platform))
+    .filter((p) => p.byPlatform.some(mine))
     .map((p) => ({
       ...p,
-      byPlatform: p.byPlatform.filter((b) => b.platform === tab),
-      views: p.byPlatform.find((b) => b.platform === tab)?.views ?? 0,
+      byPlatform: p.byPlatform.filter(mine),
+      views: p.byPlatform.find(mine)?.views ?? 0,
       platforms: [tab as Platform],
     }));
 }

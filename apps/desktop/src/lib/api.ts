@@ -395,7 +395,7 @@ export interface ClientPost {
   follows: number;
   avgWatchSec: number | null;
   durationSec: number | null;
-  byPlatform: Array<{ platform: Platform; views: number }>;
+  byPlatform: Array<{ platform: Platform; views: number; accountId?: string }>;
 }
 
 export interface Suggestion {
