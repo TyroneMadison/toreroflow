@@ -1,17 +1,11 @@
 import { useState } from "react";
-import type { ClipFx, ColorAdjust, ZoomItem } from "@toreroflow/core";
+import { DEFAULT_CLIP_FX, type ClipFx, type ColorAdjust, type ZoomItem } from "@toreroflow/core";
 import { api } from "../../lib/api";
+import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
 import { Chip, SliderRow, SubPills } from "./index";
 
-const DEFAULT_FX: ClipFx = {
-  zoom: 1,
-  x: 0,
-  y: 0,
-  rotate: 0,
-  volume: 100,
-  color: { b: 0, c: 0, s: 0, w: 0 },
-};
+const DEFAULT_FX: ClipFx = DEFAULT_CLIP_FX;
 
 const ZOOM_CARDS: Array<{ kind: ZoomItem["kind"]; title: string; sub: string }> = [
   { kind: "pushin", title: "Push in", sub: "Slow crop in or pull back" },
@@ -35,6 +29,7 @@ const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }>
 /** The panel for a selected clip: zoom moves, transform and volume, colour. */
 export default function ClipPanel({ assetId }: { assetId: string }) {
   const { doc, update, assets, outputTime, runAction, project, refreshAssets } = useEditor();
+  const toast = useToast();
   const [tab, setTab] = useState<"quick" | "adjust" | "color">("quick");
   const [isolating, setIsolating] = useState<"voice" | "instrumental" | null>(null);
 
@@ -45,7 +40,8 @@ export default function ClipPanel({ assetId }: { assetId: string }) {
       // The job runs at about the clip's own length; the drawer shows the
       // asset as processing the next time assets refresh.
       setTimeout(() => void refreshAssets().catch(() => {}), 1500);
-    } catch {
+    } catch (err) {
+      toast.fail("Could not start voice isolation", err);
       setIsolating(null);
       return;
     }
@@ -192,7 +188,7 @@ export default function ClipPanel({ assetId }: { assetId: string }) {
                 label={c.lab}
                 min={-100}
                 max={100}
-                value={fx.color[c.key]}
+                value={fx.color?.[c.key] ?? 0}
                 def={0}
                 onCommit={(v) => setColor(c.key, v)}
               />

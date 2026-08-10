@@ -161,6 +161,21 @@ export interface ClipFx {
   color: ColorAdjust;
 }
 
+/**
+ * The untouched clip. Every writer that conjures a clipFx entry starts from
+ * this, because a partial entry is a landmine: the renderer reads fx.color.b
+ * and a `{ volume: 100 }` shaped by hand typechecks its way into a render
+ * that dies with "cannot read properties of undefined".
+ */
+export const DEFAULT_CLIP_FX: ClipFx = {
+  zoom: 1,
+  x: 0,
+  y: 0,
+  rotate: 0,
+  volume: 100,
+  color: { b: 0, c: 0, s: 0, w: 0 },
+};
+
 export interface CaptionBreak {
   chunkIndex: number;
   text: string;

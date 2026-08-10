@@ -794,7 +794,7 @@ body{
       '</div>';
     var tips = v.tips && v.tips.length
       ? '<div class="vtips"><div class="tt">How to beat this one</div><ul>' +
-        v.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul></div>'
+        v.tips.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div>'
       : '';
     return '<div class="vcard" data-vi="' + i + '">' +
       (v.thumb ? '<div class="vbg" style="background-image:url(\'' + v.thumb + '\')"></div>' : '') +

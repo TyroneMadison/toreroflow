@@ -98,7 +98,43 @@ assert.ok(joined4.includes("enable='between(t,1,3.5)'"), "broll gated to its win
 assert.ok(joined4.includes("adelay=500"), "audio item delayed to its at");
 assert.ok(joined4.includes("volume=0.8"), "audio item volume applied");
 assert.ok(joined4.includes("amix=inputs=2"), "clip audio plus one item");
+assert.ok(joined4.includes("atrim=start=0:end=4"), "no srcIn means the take starts at 0");
 assert.equal(plan4.args.filter((a) => a === "-i").length, 3, "three unique inputs");
+
+// Detached clip audio carries a source offset; losing it would restart a
+// trimmed clip's sound from the top of the take, quietly out of sync.
+{
+  const plan5 = buildRenderPlan({
+    doc: {
+      ...ovDoc,
+      audio: [{ id: "d1", assetId: "m", at: 1, dur: 4, volume: 100, kind: "detached", srcIn: 2.5 }],
+    },
+    edl,
+    assets: [
+      ...assets,
+      { id: "b", kind: "clip", path: "C:\\store\\b.mp4", durationSec: 6, width: 1080, height: 1920 },
+      { id: "m", kind: "audio", path: "C:\\store\\m.mp3", durationSec: 30, width: 0, height: 0 },
+    ],
+    assPath: null,
+    out,
+  });
+  const joined5 = plan5.args.join(" ");
+  assert.ok(joined5.includes("atrim=start=2.5:end=6.5"), "srcIn shifts the audio trim window");
+}
+
+// A partial clipFx entry (an old doc, or a bug that shipped one) must not
+// take the whole render down; missing color reads as no adjustment.
+{
+  const plan6 = buildRenderPlan({
+    doc: { ...doc, clipFx: { a: { volume: 0 } as never } },
+    edl,
+    assets,
+    assPath: null,
+    out,
+  });
+  assert.ok(plan6.args.length > 0, "a color-less clipFx entry still plans");
+  assert.ok(plan6.args.join(" ").includes("volume=0"), "and its volume is honored");
+}
 
 // An empty edit refuses to plan.
 assert.throws(

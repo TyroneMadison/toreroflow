@@ -175,10 +175,10 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
   edl.forEach((seg, i) => {
     const idx = inputIdx(seg.assetId);
     const fx = doc.clipFx[seg.assetId];
-    const b = doc.color.b + (fx?.color.b ?? 0);
-    const c = doc.color.c + (fx?.color.c ?? 0);
-    const s = doc.color.s + (fx?.color.s ?? 0);
-    const w = doc.color.w + (fx?.color.w ?? 0);
+    const b = doc.color.b + (fx?.color?.b ?? 0);
+    const c = doc.color.c + (fx?.color?.c ?? 0);
+    const s = doc.color.s + (fx?.color?.s ?? 0);
+    const w = doc.color.w + (fx?.color?.w ?? 0);
 
     const v: string[] = [
       `trim=start=${n(seg.srcIn)}:end=${n(seg.srcOut)}`,

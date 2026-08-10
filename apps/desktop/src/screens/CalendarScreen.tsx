@@ -306,7 +306,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         {/* The same widget the upload screen carries, laid flat so the week
             still fits on screen below it. Hidden entirely when there is no
             history: an empty strip would just push the calendar down. */}
-        {bestTimePosts.length > 0 && (
+        {bestTimePosts.some((p) => p.byPlatform.some((b) => b.views > 0)) && (
           <div className="card glass btwide">
             <div className="btwide-head">
               <h3>

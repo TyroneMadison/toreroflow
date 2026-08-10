@@ -93,6 +93,19 @@ export async function embedThumbnails(
         else delete tp.thumb;
       }
     }
+
+    // The Video Breakdown cards: the thumbnail IS the card background, and an
+    // Instagram CDN link dies in about four days, so skipping these would rot
+    // every card on the permanent page while the sections above stayed fine.
+    const videos = payload.videos as Array<Record<string, unknown>> | undefined;
+    for (const v of videos ?? []) {
+      const raw = v.thumb;
+      if (typeof raw === "string" && raw.startsWith("http")) {
+        const data = await resolve(raw);
+        if (data) v.thumb = data;
+        else v.thumb = null;
+      }
+    }
   }
 
   log?.(`[reports] thumbnails embedded: ${embedded}, unavailable: ${failed}`);

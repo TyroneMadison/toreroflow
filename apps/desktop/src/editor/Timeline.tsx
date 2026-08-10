@@ -372,6 +372,30 @@ export default function Timeline() {
     return tail ? tail.end - tail.start : 0;
   };
 
+  /**
+   * How far LEFT the trim handle may go, in seconds: to the last interior cut
+   * and no further. Crossing one would merge it into the tail cut, and the
+   * merged cut has no memory of which part was deleted words; a later
+   * rightward drag would bring those words back. Stopping the handle at the
+   * boundary keeps every deletion a deletion. The small gap keeps
+   * normalizeCuts from fusing the two cuts when the handle is dropped
+   * exactly at the limit.
+   */
+  const trimLeftRoom = (assetId: string, vis: number): number => {
+    const duration = durations[assetId];
+    if (!(duration > 0)) return Math.max(0, vis - MIN_DUR);
+    const cuts = doc.cuts[assetId] ?? [];
+    const tail = cuts.find((c) => c.end >= duration - 0.001);
+    const interiorEnds = cuts
+      .filter((c) => c !== tail)
+      .map((c) => c.end)
+      .filter((e) => e < duration - 0.001);
+    if (!interiorEnds.length) return Math.max(0, vis - MIN_DUR);
+    const tailStart = tail ? tail.start : duration;
+    const run = tailStart - Math.max(...interiorEnds) - 0.05;
+    return Math.max(0, Math.min(vis - MIN_DUR, run));
+  };
+
   const onTrimDown = (e: ReactPointerEvent<HTMLDivElement>, assetId: string) => {
     e.stopPropagation();
     e.preventDefault();
@@ -386,7 +410,7 @@ export default function Timeline() {
     if (!trim || !(e.buttons & 1)) return;
     const dx = Math.min(
       tailHidden(trim.assetId) * pps,
-      Math.max(-(vis - MIN_DUR) * pps, e.clientX - trim.startX),
+      Math.max(-trimLeftRoom(trim.assetId, vis) * pps, e.clientX - trim.startX),
     );
     setTrim({ ...trim, dx });
   };

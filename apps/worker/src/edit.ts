@@ -162,6 +162,9 @@ export async function isolateVoice(
         mode,
         out_dir: scratch,
       }),
+      // Under undici's 300s first-byte ceiling, which the API's 4 minute clip
+      // cap keeps us inside; this just makes the giving-up explicit.
+      signal: AbortSignal.timeout(290_000),
     });
     if (!res.ok) {
       throw new Error(`captions /separate: ${res.status} ${(await res.text()).slice(0, 300)}`);

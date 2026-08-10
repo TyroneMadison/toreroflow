@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import {
+  DEFAULT_CLIP_FX,
   edlFromDoc,
   emptyDoc,
   locate,
@@ -351,7 +352,7 @@ function LoadedEditor({
           if (!sel) return;
           if (sel.kind === "clip") {
             update((x) => {
-              const fx = x.clipFx[sel.assetId] ?? { volume: 100 };
+              const fx = x.clipFx[sel.assetId] ?? DEFAULT_CLIP_FX;
               return {
                 ...x,
                 clipFx: {
@@ -409,7 +410,7 @@ function LoadedEditor({
             audio: [...x.audio, item],
             clipFx: {
               ...x.clipFx,
-              [assetId]: { ...(x.clipFx[assetId] ?? { volume: 100 }), volume: 0 },
+              [assetId]: { ...(x.clipFx[assetId] ?? DEFAULT_CLIP_FX), volume: 0 },
             },
           }));
           setSelection({ kind: "audio", id: item.id });

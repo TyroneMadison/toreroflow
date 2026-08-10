@@ -327,6 +327,18 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
           detail: "Voice isolation runs on a ready clip in this project.",
         });
       }
+      /*
+       * Separation runs at roughly realtime and the worker's fetch gives up
+       * waiting for headers at five minutes, so a longer clip would burn the
+       * full separation and then report a failure it did not have. Refusing
+       * up front names the ceiling instead of pretending there is none.
+       */
+      if ((asset.durationSec ?? 0) > 240) {
+        return reply.status(400).send({
+          error: "too long to separate",
+          detail: "Voice isolation handles clips up to 4 minutes. Split the clip first and isolate the part that needs it.",
+        });
+      }
       await enqueue("edit", { editAssetId: asset.id, job: "isolate", mode });
       return reply.status(202).send({ ok: true });
     },

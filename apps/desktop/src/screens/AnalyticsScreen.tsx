@@ -266,6 +266,14 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     }));
   });
   const activeTab = platformTabs.find((t) => t.key === tab) ?? null;
+  // A brand switch, or a platform growing its second account, can leave the
+  // selected key pointing at a tab that no longer exists; every figure on the
+  // screen would filter on a key nothing matches and render empty. Overall is
+  // always true, so it is where a dead key lands.
+  useEffect(() => {
+    if (tab !== "all" && data && !platformTabs.some((t) => t.key === tab)) setTab("all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, data, platformTabs.map((t) => t.key).join("|")]);
   const tabPlatform = activeTab?.platform ?? tab;
   const tabAccountId = activeTab?.accountId ?? undefined;
   const activePlatforms = tab === "all" ? connectedPlatformList : [tabPlatform];

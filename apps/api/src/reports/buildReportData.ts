@@ -547,7 +547,9 @@ function videoTips(p: ReportPost, medViews: number, avgEng: number): string[] {
 
 /** The Video breakdown tab: one honest card per video this period. */
 function buildVideos(current: ReportPost[]): ReportVideo[] {
-  const vids = current.filter((p) => p.mediaType !== "carousel");
+  // Videos only: carousels have their own card and a still image has no
+  // watch time for a "Video Breakdown" to break down.
+  const vids = current.filter((p) => p.mediaType !== "carousel" && p.mediaType !== "image");
   const medViews = median(vids.map((p) => p.views));
   const engs = vids
     .filter((p) => p.views > 0)
@@ -626,8 +628,11 @@ function derivePlanItems(
 
   const top = [...current].sort((a, b) => b.views - a.views)[0];
   if (top) {
+    // The one operator-typed string in this HTML; a filename with markup in
+    // it must read as a filename on the published page, not run as markup.
+    const safeTitle = top.title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     items.push(
-      `The best performer was <b>${top.title}</b>. Producing more in that format is the clearest signal in this month's data.`,
+      `The best performer was <b>${safeTitle}</b>. Producing more in that format is the clearest signal in this month's data.`,
     );
   }
 

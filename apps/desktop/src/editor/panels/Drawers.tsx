@@ -260,7 +260,18 @@ function DrawerBase({ tab, open, onClose, onTab }: DrawerProps & { tab: DrawerTa
                 {a.status !== "ready" ? ` ${a.status}` : ""}
               </span>
             </div>
-            <button className="pnl-chip" onClick={() => addAtPlayhead(a)}>
+            <button
+              className="pnl-chip"
+              disabled={a.status !== "ready"}
+              title={
+                a.status === "ready"
+                  ? undefined
+                  : a.status === "failed"
+                    ? "This one failed to process; delete it and try again"
+                    : "Still processing; it can go on the timeline once it is ready"
+              }
+              onClick={() => addAtPlayhead(a)}
+            >
               + Add at playhead
             </button>
             <button className="pnl-reset" onClick={() => void removeAsset(a)}>
