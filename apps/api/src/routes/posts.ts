@@ -8,6 +8,7 @@ import {
   INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
   youtubeTitleFor,
+  type Platform,
 } from "@toreroflow/core";
 import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
 import { env } from "../env";
@@ -57,17 +58,33 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "invalid scheduledAt" });
     }
 
-    const accounts = body.platforms.map((platform) => {
-      const account = asset.client.socialAccounts.find(
-        (a) => a.platform === platform && a.status === "connected",
-      );
-      return { platform, account };
-    });
-    const missing = accounts.filter((a) => !a.account).map((a) => a.platform);
+    /*
+     * Two ways to say where this goes. accountIds is the precise one: the
+     * picker sends the exact accounts ticked, which is what makes two pages
+     * on one platform two separate destinations. platforms alone is the
+     * older form, and its "first connected account per platform" resolution
+     * is kept for callers that predate accounts being distinguishable.
+     */
+    const accounts = body.accountIds
+      ? body.accountIds.map((id) => {
+          const account = asset.client.socialAccounts.find(
+            (a) => a.id === id && a.status === "connected",
+          );
+          return { platform: account?.platform as Platform, account };
+        })
+      : body.platforms.map((platform) => {
+          const account = asset.client.socialAccounts.find(
+            (a) => a.platform === platform && a.status === "connected",
+          );
+          return { platform, account };
+        });
+    const missing = accounts.filter((a) => !a.account);
     if (missing.length) {
-      return reply
-        .status(400)
-        .send({ error: `not connected: ${missing.join(", ")}` });
+      return reply.status(400).send({
+        error: body.accountIds
+          ? "an account in this schedule is not connected"
+          : `not connected: ${missing.map((a) => a.platform).join(", ")}`,
+      });
     }
 
     // Older rows carry {hook, caption} or a `title` that used to mean both

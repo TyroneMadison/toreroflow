@@ -56,9 +56,14 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       a.status === "connected" &&
       (!isCarousel || a.platform === "instagram" || a.platform === "tiktok"),
   );
-  const [platforms, setPlatforms] = useState<Platform[]>(
-    connected.map((a) => a.platform),
-  );
+  // The exact accounts ticked. Platform alone stopped being an address the
+  // day a client got a second page on the same platform.
+  const [accountIds, setAccountIds] = useState<string[]>(connected.map((a) => a.id));
+  const platforms = [
+    ...new Set(
+      connected.filter((a) => accountIds.includes(a.id)).map((a) => a.platform),
+    ),
+  ] as Platform[];
   const [when, setWhen] = useState(() =>
     localInputValue(new Date(Date.now() + 10 * 60_000)),
   );
@@ -156,9 +161,9 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     return Object.keys(body).length ? body : undefined;
   };
 
-  const toggle = (p: Platform) =>
-    setPlatforms((prev) =>
-      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
+  const toggle = (id: string) =>
+    setAccountIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
   /**
@@ -171,6 +176,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     try {
       await api.post(`/media/${asset.id}/schedule`, {
         platforms,
+        accountIds,
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
         instagram: instagramBody(),
         youtube: youtubeBody(),
@@ -236,12 +242,12 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         )}
         <div className="toggles" style={{ marginTop: 6 }}>
           {connected.map((account) => {
-            const on = platforms.includes(account.platform);
+            const on = accountIds.includes(account.id);
             return (
               <div
                 key={account.id}
                 className={`pt${on ? " on" : ""}`}
-                onClick={() => toggle(account.platform)}
+                onClick={() => toggle(account.id)}
               >
                 <Pf p={PF_ID[account.platform]} />
                 <div className="info">
@@ -548,7 +554,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         {/* Publishing is irreversible, so Post now asks once before firing. */}
         <button
           className={`btn ${confirmNow ? "danger" : "ghost"}`}
-          disabled={busy !== null || platforms.length === 0}
+          disabled={busy !== null || accountIds.length === 0}
           onClick={() => {
             if (confirmNow) void submit("now");
             else {
@@ -561,7 +567,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         </button>
         <button
           className="btn"
-          disabled={busy !== null || platforms.length === 0}
+          disabled={busy !== null || accountIds.length === 0}
           onClick={() => void submit("schedule")}
         >
           <svg>

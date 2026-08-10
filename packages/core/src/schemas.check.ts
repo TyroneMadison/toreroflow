@@ -43,4 +43,30 @@ assert.throws(
   "unknown platforms must be rejected",
 );
 
+/*
+ * accountIds carries the same weight with the same rules: each entry becomes
+ * a real upload to a real account, so a repeat collapses and an empty list is
+ * refused rather than read as "all of them". Absent stays absent, because the
+ * server's per-platform fallback must only run when the caller truly did not
+ * say which accounts.
+ */
+{
+  const withIds = schedulePostSchema.parse({
+    platforms: ["facebook"],
+    accountIds: ["acc-1", "acc-2", "acc-1"],
+    scheduledAt: at,
+  });
+  assert.deepEqual(withIds.accountIds, ["acc-1", "acc-2"], "a repeated account posts once");
+  assert.equal(
+    parse(["facebook"]).accountIds,
+    undefined,
+    "no ids sent means no ids parsed, not an empty list",
+  );
+  assert.throws(
+    () =>
+      schedulePostSchema.parse({ platforms: ["facebook"], accountIds: [], scheduledAt: at }),
+    "an empty account list must not be accepted",
+  );
+}
+
 console.log("schedule schema: all checks passed");

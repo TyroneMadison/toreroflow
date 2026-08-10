@@ -93,6 +93,19 @@ export const schedulePostSchema = z.object({
     .array(platformSchema)
     .min(1)
     .transform((list) => [...new Set(list)]),
+  /**
+   * The exact accounts chosen, when the picker knows them. Platforms alone
+   * cannot say WHICH Facebook when a client has two pages, and the server
+   * picking the first one is how the second page becomes unreachable. Each id
+   * once, same double-post reasoning as platforms. Optional so older callers
+   * and saved automations keep working; absent means one target per platform,
+   * resolved server-side as before.
+   */
+  accountIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .transform((list) => [...new Set(list)])
+    .optional(),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
