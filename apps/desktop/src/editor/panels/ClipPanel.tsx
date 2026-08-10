@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ClipFx, ColorAdjust, ZoomItem } from "@toreroflow/core";
+import { api } from "../../lib/api";
 import { useEditor } from "../StudioEditor";
 import { Chip, SliderRow, SubPills } from "./index";
 
@@ -33,8 +34,23 @@ const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }>
 
 /** The panel for a selected clip: zoom moves, transform and volume, colour. */
 export default function ClipPanel({ assetId }: { assetId: string }) {
-  const { doc, update, assets, outputTime, runAction } = useEditor();
+  const { doc, update, assets, outputTime, runAction, project, refreshAssets } = useEditor();
   const [tab, setTab] = useState<"quick" | "adjust" | "color">("quick");
+  const [isolating, setIsolating] = useState<"voice" | "instrumental" | null>(null);
+
+  const isolate = async (mode: "voice" | "instrumental") => {
+    setIsolating(mode);
+    try {
+      await api.post(`/edit-projects/${project.id}/isolate`, { assetId, mode });
+      // The job runs at about the clip's own length; the drawer shows the
+      // asset as processing the next time assets refresh.
+      setTimeout(() => void refreshAssets().catch(() => {}), 1500);
+    } catch {
+      setIsolating(null);
+      return;
+    }
+    setTimeout(() => setIsolating(null), 4000);
+  };
 
   const asset = assets.find((a) => a.id === assetId);
   const fx = doc.clipFx[assetId] ?? DEFAULT_FX;
@@ -141,6 +157,28 @@ export default function ClipPanel({ assetId }: { assetId: string }) {
             >
               Detach audio
             </button>
+          </div>
+          <div className="glass-sm pnl-card">
+            <b>Isolate voice</b>
+            <div className="sub">
+              Splits this clip's sound with AI. The result lands in the Audio
+              drawer in about the clip's own length; the clip itself is never
+              changed.
+            </div>
+            <div className="pnl-chiprow" style={{ marginTop: 8 }}>
+              <Chip
+                onClick={() => void isolate("voice")}
+                title="Keep the speech, drop music and background noise"
+              >
+                {isolating === "voice" ? "Queued…" : "Keep voice"}
+              </Chip>
+              <Chip
+                onClick={() => void isolate("instrumental")}
+                title="Drop the speech, keep music and background"
+              >
+                {isolating === "instrumental" ? "Queued…" : "Remove voice"}
+              </Chip>
+            </div>
           </div>
         </div>
       )}

@@ -1,3 +1,5 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 faster-whisper>=1.0
+# Voice isolation. Pulls torch, which is most of the install; CPU-only is fine.
+demucs>=4.0

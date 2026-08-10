@@ -124,6 +124,68 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
 }
 
 /**
+ * Split one clip's audio into voice or everything-but-voice, as a new asset.
+ *
+ * Demucs runs inside the captions service at roughly realtime on CPU, which
+ * is why this is a queued job rather than a request. The result lands in the
+ * project's Audio drawer as its own ready asset, so the operator places it
+ * like any other audio and the original clip is never modified.
+ */
+export async function isolateVoice(
+  editAssetId: string,
+  mode: "voice" | "instrumental",
+): Promise<void> {
+  const source = await prisma.editAsset.findUnique({
+    where: { id: editAssetId },
+    include: { project: true },
+  });
+  if (!source || source.kind !== "clip") return;
+
+  const dir = path.posix.dirname(source.storageKey);
+  const scratch = path.join(env.STORAGE_DIR, dir, "_separate");
+  const row = await prisma.editAsset.create({
+    data: {
+      projectId: source.projectId,
+      kind: "audio",
+      storageKey: "pending",
+      originalName: `${source.originalName} · ${mode === "voice" ? "voice only" : "no voice"}.mp3`,
+      status: "processing",
+    },
+  });
+
+  try {
+    const res = await fetch(`${env.CAPTIONS_URL}/separate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: path.join(env.STORAGE_DIR, source.storageKey),
+        mode,
+        out_dir: scratch,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`captions /separate: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    }
+    const { path: produced } = (await res.json()) as { path: string };
+
+    const storageKey = `${dir}/${row.id}-source.mp3`;
+    await fs.rename(produced, path.join(env.STORAGE_DIR, storageKey));
+    const meta = await probe(path.join(env.STORAGE_DIR, storageKey));
+    await prisma.editAsset.update({
+      where: { id: row.id },
+      data: { storageKey, durationSec: meta.durationSec, status: "ready" },
+    });
+    console.log(`[worker] isolated ${mode} for ${source.id} -> ${row.id}`);
+  } catch (error) {
+    console.error(`[worker] isolate ${mode} failed for ${editAssetId}:`, error);
+    await prisma.editAsset.update({ where: { id: row.id }, data: { status: "failed" } });
+    throw error;
+  } finally {
+    await fs.rm(scratch, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
  * Render one project's edit document to a finished video.
  *
  * The API flipped status to "rendering" before enqueueing; anything else on

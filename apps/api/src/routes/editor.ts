@@ -300,6 +300,39 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Voice isolation: split a clip's audio into voice or everything-but-voice.
+   *
+   * Queued, because Demucs runs at roughly realtime on CPU. The result lands
+   * in the project's Audio drawer as a new ready asset; the original clip is
+   * never touched, so a bad separation costs nothing but the wait.
+   */
+  app.post<{ Params: { id: string }; Body: { assetId?: string; mode?: string } }>(
+    "/edit-projects/:id/isolate",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      const { assetId, mode } = request.body ?? {};
+      if (mode !== "voice" && mode !== "instrumental") {
+        return reply.status(400).send({
+          error: "pick a side",
+          detail: "mode is voice (keep the speech) or instrumental (remove it).",
+        });
+      }
+      const asset = await prisma.editAsset.findFirst({
+        where: { id: assetId ?? "", projectId: project.id, kind: "clip", status: "ready" },
+      });
+      if (!asset) {
+        return reply.status(404).send({
+          error: "no such clip",
+          detail: "Voice isolation runs on a ready clip in this project.",
+        });
+      }
+      await enqueue("edit", { editAssetId: asset.id, job: "isolate", mode });
+      return reply.status(202).send({ ok: true });
+    },
+  );
+
+  /**
    * The finished render becomes a normal MediaAsset, so Upload and Schedule,
    * quota counts and retention sweeps all see it as any other upload.
    */

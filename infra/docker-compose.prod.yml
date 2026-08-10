@@ -83,9 +83,9 @@ services:
       dockerfile: infra/Dockerfile.captions
     restart: unless-stopped
     volumes:
-      # Read-only: it is handed an absolute path to a video the API stored and
-      # has no reason to write anything back.
-      - storage:/app/storage:ro
+      # Read-write since voice isolation: /separate writes its stems here for
+      # the worker to pick up. Transcription still only reads.
+      - storage:/app/storage
       # The whisper model, kept across rebuilds so it downloads once.
       - whispermodels:/app/models
     healthcheck:

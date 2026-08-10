@@ -12,7 +12,7 @@ import {
 } from "@toreroflow/db";
 import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
-import { processEditAsset, renderProject } from "./edit";
+import { isolateVoice, processEditAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
@@ -762,12 +762,14 @@ void work<{ clientId: string }>("insights", { concurrency: 1 }, async ({ clientI
 // One at a time, all three: each is ffmpeg or whisper on the same disk, and
 // two concurrent encodes finish later than two queued ones. The one queue
 // carries both jobs: asset processing (the default) and full renders.
-void work<{ editAssetId?: string; editProjectId?: string; job?: string }>(
+void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
   "edit",
   { concurrency: 1 },
   async (data) => {
     if (data.job === "render" && data.editProjectId) {
       await renderProject(data.editProjectId);
+    } else if (data.job === "isolate" && data.editAssetId) {
+      await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
     } else if (data.editAssetId) {
       await processEditAsset(data.editAssetId);
     }
