@@ -527,6 +527,28 @@ model ExternalVideo {
   /// until a non-zero value turns up. Stored from now so the history exists
   /// the day it starts working.
   follows         Int      @default(0)
+  /// Distinct from views and reach. Facebook only in practice: Meta deprecated
+  /// it for Instagram media created after 2 July 2024 and the value now
+  /// mirrors views there. Nullable because most rows will never have one.
+  impressions      Int?
+  /// Link and profile clicks. Facebook only; Instagram sends a flat 0.
+  clicks           Int?
+  /// Average seconds watched. Instagram only today. Stored rather than read
+  /// live, because a post that ages out of the provider's rolling window used
+  /// to lose its watch time permanently.
+  avgWatchSec      Float?
+  /// Total seconds watched across all viewers, replays included. The measured
+  /// figure, as opposed to views multiplied by an average.
+  totalWatchSec    Float?
+  /// The provider's own engagement percentage. Stored for comparison only; the
+  /// displayed figure stays our computation, because ours is defined.
+  engagementRate   Float?
+  /// When the provider last refreshed these numbers, so a report can say how
+  /// fresh it is.
+  metricsUpdatedAt DateTime?
+  /// Which source produced this row: zernio or youtube today. Phases 2 and 3
+  /// add instagram, tiktok and facebook without another migration.
+  source           String   @default("zernio")
   durationSec     Float?
   fetchedAt       DateTime @default(now())
   createdAt       DateTime @default(now())
@@ -555,6 +577,12 @@ model ExternalVideoMetric {
   saves           Int      @default(0)
   reach           Int      @default(0)
   follows         Int      @default(0)
+  impressions      Int?
+  clicks           Int?
+  avgWatchSec      Float?
+  totalWatchSec    Float?
+  engagementRate   Float?
+  metricsUpdatedAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
