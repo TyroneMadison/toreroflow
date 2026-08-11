@@ -64,6 +64,21 @@ export function reminderHtml(input: ReminderInput, fileUrl: string | null): stri
 </div>`;
 }
 
+/**
+ * The From header Resend wants.
+ *
+ * Resend takes either a bare address or "Name <address>". Angle brackets and
+ * spaces are hostile to every shell an operator pastes an env line into, so a
+ * bare address is accepted here and dressed with the agency name rather than
+ * demanding the quoted form in .env. Set the full "Name <address>" form if a
+ * different sender name is ever wanted; it passes through untouched.
+ */
+export function fromHeader(raw: string): string {
+  const from = raw.trim();
+  if (!from) return "";
+  return from.includes("<") ? from : `Torerone <${from}>`;
+}
+
 /** Sends the reminder. Throws with a plain reason so the target fails honestly. */
 export async function sendReminder(input: ReminderInput): Promise<void> {
   if (!env.RESEND_API_KEY || !env.REMINDER_FROM) {
@@ -79,7 +94,7 @@ export async function sendReminder(input: ReminderInput): Promise<void> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: env.REMINDER_FROM,
+      from: fromHeader(env.REMINDER_FROM),
       to: [input.toEmail],
       subject: `Post to ${input.platform} (@${input.handle}): ${input.videoName}`,
       html: reminderHtml(input, fileUrl),
