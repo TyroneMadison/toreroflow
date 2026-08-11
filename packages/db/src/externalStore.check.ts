@@ -2,7 +2,51 @@
 // wrong lifetime number into every board and report, and a broken day
 // bucket would either duplicate history or overwrite yesterday.
 import assert from "node:assert/strict";
-import { mapProviderEntry, utcDay } from "./externalStore";
+import { mapProviderEntry, providerDate, utcDay } from "./externalStore";
+
+/*
+ * providerDate: the zone test is anchored as a whole expression.
+ *
+ * The provider sends "2026-08-10 21:16:37" with no zone and means UTC, so the
+ * parse appends a Z unless the string already carries a marker. Written
+ * `/[Zz]|[+-]\d\d:?\d\d$/` the anchor binds only to the offset alternative, so
+ * any string with a z anywhere in it read as already zone-marked and lost the
+ * UTC assumption. A caption or an id in the value is enough to do it, and the
+ * result is a timestamp silently shifted by the machine's offset.
+ */
+{
+  assert.equal(
+    providerDate("2026-08-10 21:16:37")?.toISOString(),
+    "2026-08-10T21:16:37.000Z",
+    "a bare provider timestamp is UTC",
+  );
+  assert.equal(
+    providerDate("2026-08-10T21:16:37Z")?.toISOString(),
+    "2026-08-10T21:16:37.000Z",
+    "a trailing Z is left alone rather than doubled",
+  );
+  assert.equal(
+    providerDate("2026-08-10T21:16:37+02:00")?.toISOString(),
+    "2026-08-10T19:16:37.000Z",
+    "an explicit offset is honoured",
+  );
+  /*
+   * The shape the anchor exists for: a z that is not the zone marker. Stated
+   * plainly, because the unanchored version classified this as zone-marked and
+   * the only thing that stopped a timestamp shifted by the machine's offset was
+   * the parse failing afterwards. Nothing the provider sends today reaches the
+   * difference, so this pins the outcome rather than the classification: a
+   * value like this must come back as null and never as a local-time Date.
+   */
+  assert.equal(
+    providerDate("2026-08-10 21:16:37 zulu-ish"),
+    null,
+    "a z away from the end is not a zone marker and the value is not a timestamp either way",
+  );
+  assert.equal(providerDate(""), null, "an empty string is not a date");
+  assert.equal(providerDate(null), null, "a missing value is not a date");
+  assert.equal(providerDate("not-a-date"), null, "garbage is not a date");
+}
 
 /* utcDay: any time of day collapses to that UTC date at midnight. */
 {

@@ -386,7 +386,11 @@ export interface ClientPost {
   likes: number;
   comments: number;
   shares: number;
-  /** Instagram and TikTok only; every other platform has no save button. */
+  /**
+   * Instagram only in practice. YouTube and Facebook have no save button, and
+   * TikTok has one the provider has never reported. Ask reportsSaves() rather
+   * than trusting this to be a measurement.
+   */
   saves: number;
   reach: number;
   /**
