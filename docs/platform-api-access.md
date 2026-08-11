@@ -16,15 +16,16 @@ Work the sections in order. Section 0 blocks all three platforms.
 
 ### 0.1 A live privacy policy and terms page
 
-**Status: done.** Both are built and live at `/privacy` and `/terms`, linked
-from the site footer so a reviewer or a crawler can reach them without being
-told where to look.
-
-They are committed to hero-app but **not yet pushed or deployed**. The URLs
-have to actually resolve before you submit anything, so this deploys first.
+**Status: done and live, verified 2026-08-11.** Both render at the URLs below,
+linked from the site footer so a reviewer or a crawler reaches them without
+being told where to look.
 
 - `https://torerone.com/privacy`
 - `https://torerone.com/terms`
+
+Note for whoever ships the next website change: torerone.com does **not**
+auto-deploy. Netlify blocks builds from this repo, so the site is deployed with
+`npm run deploy` from hero-app. See the "push the update" memory for why.
 
 The policy names the real subprocessors and describes exactly which fields each
 API returns. That matters: a reviewer compares the policy against the
