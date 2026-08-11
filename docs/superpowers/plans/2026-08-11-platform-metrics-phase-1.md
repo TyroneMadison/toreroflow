@@ -54,7 +54,7 @@ Analytics tab later wants per-video sparklines, add it then.
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `type MetricName`, `METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>>`, `reportsMetric(metric: MetricName, platforms: readonly PlatformName[]): boolean`, `metricMeasurable(metric: MetricName, posts: readonly { platforms: readonly PlatformName[] }[]): boolean`. Existing `SAVES_REPORTED_BY`, `reportsSaves`, `savesMeasurable`, `followsMeasurable` keep working unchanged.
+- Produces: `type MetricName`, `METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>>`, `reportsMetric(metric: MetricName, platforms: readonly PlatformName[]): boolean`, `metricMeasurable(metric: MetricName, posts: readonly { platforms: readonly PlatformName[] }[]): boolean`, `sumReported(metric, entries, pick): number | null`, `ZERO_IS_UNMEASURED: ReadonlySet<MetricName>`. Existing `SAVES_REPORTED_BY`, `reportsSaves`, `savesMeasurable`, `followsMeasurable` keep working unchanged.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -64,7 +64,13 @@ Append to `packages/core/src/platformMetrics.check.ts`, above the final
 ```ts
 /* ---- the full matrix, measured 2026-08-11 over 800 posts ---- */
 
-import { METRIC_REPORTED_BY, metricMeasurable, reportsMetric } from "./platformMetrics";
+import {
+  METRIC_REPORTED_BY,
+  metricMeasurable,
+  reportsMetric,
+  sumReported,
+  ZERO_IS_UNMEASURED,
+} from "./platformMetrics";
 
 assert.ok(reportsMetric("views", ["tiktok"]), "every platform reports views");
 assert.ok(reportsMetric("shares", ["tiktok"]), "tiktok reports shares, 57 of 238");
@@ -105,6 +111,44 @@ assert.ok(!metricMeasurable("reach", []), "an empty period measures nothing");
 // the other.
 assert.equal(reportsMetric("saves", ["instagram"]), reportsSaves(["instagram"]), "agree on ig");
 assert.equal(reportsMetric("saves", ["tiktok"]), reportsSaves(["tiktok"]), "agree on tiktok");
+
+/* ---- totalling only over the platforms that report ---- */
+
+/*
+ * One video cross-posted to Instagram and Facebook. Instagram sends impressions
+ * mirroring its 12,000 views, Facebook sends its own 900. Asking reportsMetric
+ * of the post's platform list says yes, because Facebook is on it, and reading
+ * the post-level aggregate then prints 12,900 under a heading the client reads
+ * as a second real audience number. Only Facebook's 900 was ever measured.
+ */
+const crossPost = [
+  { platform: "instagram", impressions: 12_000, reach: 11_400, saves: 61, clicks: 0 },
+  { platform: "facebook", impressions: 900, reach: 850, saves: 0, clicks: 7 },
+];
+assert.equal(
+  sumReported("impressions", crossPost, (b) => b.impressions),
+  900,
+  "an instagram plus facebook post contributes only facebook's impressions",
+);
+assert.equal(sumReported("reach", crossPost, (b) => b.reach), 12_250, "both report reach");
+assert.equal(sumReported("saves", crossPost, (b) => b.saves), 61, "instagram alone reports saves");
+assert.equal(sumReported("clicks", crossPost, (b) => b.clicks), 7, "facebook alone reports clicks");
+assert.equal(
+  sumReported("impressions", [{ platform: "tiktok", impressions: 0 }], (b) => b.impressions),
+  null,
+  "a tiktok-only post has no impressions to report, and null is what prints a dash",
+);
+assert.equal(sumReported("reach", [], () => 1), null, "no entries at all measures nothing");
+
+/* ---- a zero that cannot be a result ---- */
+
+assert.ok(ZERO_IS_UNMEASURED.has("reach"), "a post with views cannot have reached nobody");
+assert.ok(ZERO_IS_UNMEASURED.has("avgWatch"), "a viewed video was not watched for zero seconds");
+assert.ok(ZERO_IS_UNMEASURED.has("totalWatch"), "same reasoning as avgWatch");
+assert.ok(!ZERO_IS_UNMEASURED.has("saves"), "plenty of posts genuinely earn no saves");
+assert.ok(!ZERO_IS_UNMEASURED.has("clicks"), "a post with no link genuinely gets no clicks");
+assert.ok(!ZERO_IS_UNMEASURED.has("comments"), "a quiet post genuinely gets no comments");
+assert.ok(!ZERO_IS_UNMEASURED.has("shares"), "nobody sharing it is a real result");
 ```
 
 Move the new `import` line to join the existing import block at the top of the
@@ -189,6 +233,23 @@ export const METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>> =
   follows: new Set(),
 };
 
+/**
+ * The metrics where a zero on a post that got views cannot be a result.
+ *
+ * A Reel with views was not watched for zero seconds by every viewer, and it
+ * did not reach nobody. When a provider sends a zero for one of these it has
+ * not computed the number, so it is unmeasured and has to render as absent.
+ *
+ * clicks, saves, comments and shares are deliberately absent. Those can
+ * genuinely be zero, and a zero IS the result. Only add a metric here when a
+ * zero is provably impossible alongside views.
+ */
+export const ZERO_IS_UNMEASURED: ReadonlySet<MetricName> = new Set<MetricName>([
+  "reach",
+  "avgWatch",
+  "totalWatch",
+]);
+
 /** True when at least one of a post's platforms reports this metric. */
 export function reportsMetric(
   metric: MetricName,
@@ -196,6 +257,38 @@ export function reportsMetric(
 ): boolean {
   const reporters = METRIC_REPORTED_BY[metric];
   return platforms.some((p) => reporters.has(p));
+}
+
+/**
+ * A metric totalled over only the platforms that report it, or null when none
+ * of the entries is on a reporting platform.
+ *
+ * A post-level aggregate cannot be used for this, and that is the whole point
+ * of the function. METRIC_REPORTED_BY answers two different questions with one
+ * shape. For most metrics an excluded platform sends nothing, so the aggregate
+ * happens to be right. For impressions it does not: Instagram sends the number
+ * on 275 of 279 posts and is excluded because the value mirrors views, not
+ * because it is missing. Asking "does ANY platform on this post report it" and
+ * then reading the post total therefore prints Instagram's views inside a
+ * Facebook impressions figure on a cross-post, and it looks plausible.
+ *
+ * Every total on every surface is built from the per-platform entries, which
+ * is the only place the honest number exists.
+ */
+export function sumReported<T extends { platform: PlatformName }>(
+  metric: MetricName,
+  entries: readonly T[],
+  pick: (entry: T) => number | null | undefined,
+): number | null {
+  const reporters = METRIC_REPORTED_BY[metric];
+  let total = 0;
+  let reported = false;
+  for (const entry of entries) {
+    if (!reporters.has(entry.platform)) continue;
+    reported = true;
+    total += pick(entry) ?? 0;
+  }
+  return reported ? total : null;
 }
 
 /**
@@ -444,7 +537,13 @@ after `follows?: number;`:
   /** Null when the platform does not report it. Never coerce to 0. */
   impressions?: number | null;
   clicks?: number | null;
-  /** Seconds. Converted from the provider's milliseconds in mapProviderEntry. */
+  /**
+   * Seconds. Converted from the provider's milliseconds in mapProviderEntry,
+   * which also turns a reported zero into null: a video with views was not
+   * watched for zero seconds by every viewer, so a zero here is a metric the
+   * provider never computed. See ZERO_IS_UNMEASURED in packages/core for the
+   * metrics this applies to and, more importantly, the ones it does not.
+   */
   avgWatchSec?: number | null;
   totalWatchSec?: number | null;
   engagementRate?: number | null;
@@ -459,7 +558,10 @@ Add this helper directly below the existing `num` function:
 /** The provider's "2026-08-10 21:16:37" to a Date, or null. */
 function providerDate(v: unknown): Date | null {
   if (typeof v !== "string" || !v.trim()) return null;
-  const d = new Date(v.replace(" ", "T") + (/[Zz]|[+-]\d\d:?\d\d$/.test(v) ? "" : "Z"));
+  // The zone test is anchored as a whole. Without the group the anchor binds
+  // only to the offset alternative, so any string with a z anywhere in it
+  // counts as zone-marked and loses its UTC assumption.
+  const d = new Date(v.replace(" ", "T") + (/([Zz]|[+-]\d\d:?\d\d)$/.test(v) ? "" : "Z"));
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -572,21 +674,22 @@ Append to `apps/api/src/analytics/mergedPosts.check.ts`, above its final
 ```ts
 /* ---- a stored row keeps the watch time it was captured with ---- */
 
-import { storedWatchSec } from "./mergedPosts";
-
 assert.equal(
-  storedWatchSec(12.5, null),
-  12.5,
-  "the live figure wins while the post is still inside the provider window",
-);
-assert.equal(
-  storedWatchSec(null, 9.25),
+  storedWatch(9.25),
   9.25,
   "a post that has aged out of the window keeps the watch time captured when it was visible",
 );
-assert.equal(storedWatchSec(null, null), null, "neither source measured it, so nothing is shown");
-assert.equal(storedWatchSec(0, 9.25), 9.25, "a zero live figure is not a measurement, so the store wins");
+assert.equal(storedWatch(null), null, "the store never measured it, so nothing is shown");
+assert.equal(
+  storedWatch(0),
+  null,
+  "a zero is a metric the provider never computed, not a video watched for zero seconds",
+);
+assert.equal(storedWatch(-1), null, "a negative is nonsense and reads as unmeasured too");
 ```
+
+Add `storedWatch` to the existing import at the top of the file rather than
+opening a second import statement mid-file.
 
 - [ ] **Step 2: Run the check to verify it fails**
 
@@ -594,7 +697,7 @@ assert.equal(storedWatchSec(0, 9.25), 9.25, "a zero live figure is not a measure
 pnpm --filter @toreroflow/api exec tsx src/analytics/mergedPosts.check.ts
 ```
 
-Expected: FAIL, `storedWatchSec` is not exported from `./mergedPosts`.
+Expected: FAIL, `storedWatch` is not exported from `./mergedPosts`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -602,19 +705,22 @@ In `apps/api/src/analytics/mergedPosts.ts`, add after `keepStoredRow`:
 
 ```ts
 /**
- * The watch time for a post, preferring the live provider figure.
+ * A stored watch time, or null when the store has nothing to say.
  *
- * Watch time used to be read only off the live post, so an Instagram video
- * that aged out of the provider's rolling window lost it permanently. The
- * store now captures it, and this is the one rule that decides between them:
- * live is fresher, the store covers what live no longer reaches. A zero counts
- * as unmeasured, because no video anyone published was watched for zero
- * seconds by every viewer.
+ * Watch time used to be read only off the live post, so an Instagram video that
+ * aged out of the provider's rolling window lost it permanently. The store now
+ * captures it, and this covers what the live window no longer reaches: a
+ * non-YouTube stored row only survives the merge when there was no live match,
+ * so there is never a second source here to prefer. Do not give this a `live`
+ * parameter, it would be structurally unreachable.
+ *
+ * All this does is scrub a non-positive value to null. No video anyone
+ * published was watched for zero seconds by every viewer, so a zero is a metric
+ * the provider did not compute rather than a measurement. Same rule as msToSec
+ * on the write path and ZERO_IS_UNMEASURED in packages/core.
  */
-export function storedWatchSec(live: number | null, stored: number | null): number | null {
-  if (live != null && live > 0) return live;
-  if (stored != null && stored > 0) return stored;
-  return null;
+export function storedWatch(stored: number | null): number | null {
+  return stored != null && stored > 0 ? stored : null;
 }
 ```
 
@@ -714,7 +820,8 @@ Extend the `external` query result type with the new columns:
 and replace the stored-row mapping's `avgWatchSec: null,` line and add the rest:
 
 ```ts
-        avgWatchSec: storedWatchSec(null, v.avgWatchSec),
+        avgWatchSec: storedWatch(v.avgWatchSec),
+        totalWatchSec: storedWatch(v.totalWatchSec),
         impressions: v.impressions,
         clicks: v.clicks,
         totalWatchSec: v.totalWatchSec,
@@ -736,8 +843,8 @@ and replace its `byPlatform` line with:
             reach: v.reach,
             impressions: v.impressions,
             clicks: v.clicks,
-            avgWatchSec: v.avgWatchSec,
-            totalWatchSec: v.totalWatchSec,
+            avgWatchSec: storedWatch(v.avgWatchSec),
+            totalWatchSec: storedWatch(v.totalWatchSec),
           },
         ],
 ```
@@ -804,6 +911,21 @@ assert.equal(seriesSummary([], "2026-08-01", "2026-08-01", "2026-08-31").added, 
 const clipped = seriesSummary(rows, "2026-08-01", "2026-08-03", "2026-08-31");
 assert.equal(clipped.added, 50, "only days inside the window count, 310 - 260");
 assert.equal(clipped.points.length, 2, "the 08-02 row is outside the window");
+
+/*
+ * Both bounds are inclusive, pinned with rows sitting exactly on them. Nothing
+ * in the fixture above touches an edge, so a regression to exclusive bounds
+ * would pass every other assertion in this file while silently dropping the
+ * first and last captured day of every report window.
+ */
+const edge = [
+  { capturedOn: "2026-08-03", views: 100 },
+  { capturedOn: "2026-08-05", views: 180 },
+  { capturedOn: "2026-08-07", views: 260 },
+];
+const inclusive = seriesSummary(edge, "2026-08-01", "2026-08-03", "2026-08-07");
+assert.equal(inclusive.points.length, 3, "a row captured on `from` or on `to` is inside the window");
+assert.equal(inclusive.added, 160, "260 - 100, so neither edge row was dropped from the delta");
 
 /*
  * The honesty rule. Daily capture began after most videos were published, so
@@ -891,9 +1013,11 @@ export function seriesSummary(
   const day = (iso: string) => iso.slice(0, 10);
   const lo = day(from);
   const hi = day(to);
+  // Both bounds are inclusive: a row captured on the first or last day of the
+  // window is inside it. filter() already returns a new array, so sorting it
+  // does not touch the caller's rows.
   const points = rows
     .filter((r) => r.capturedOn >= lo && r.capturedOn <= hi)
-    .slice()
     .sort((a, b) => (a.capturedOn < b.capturedOn ? -1 : 1));
 
   if (points.length < 2) {
@@ -940,10 +1064,11 @@ git commit -m "feat: the daily history finally gets a reader"
 **Files:**
 - Modify: `apps/api/src/reports/buildReportData.ts`
 - Create: `apps/api/src/reports/loadSeries.ts`
-- Modify: `apps/api/src/routes/reports.ts:156` and `:211`
+- Create: `apps/api/src/reports/buildReportData.check.ts`
+- Modify: `apps/api/src/routes/reports.ts:156` and `:211`, `apps/api/package.json`
 
 **Interfaces:**
-- Consumes: `reportsMetric` and `MetricName` from Task 1, `seriesSummary` and `DayPoint` from Task 5, the widened `MergedPost` from Task 4
+- Consumes: `reportsMetric`, `sumReported`, `ZERO_IS_UNMEASURED` and `MetricName` from Task 1, `seriesSummary` and `DayPoint` from Task 5, the widened `MergedPost` from Task 4
 - Produces: `ReportPost` gains `platformKey?: string | null`, `impressions?: number | null`, `clicks?: number | null`, `totalWatchSec?: number | null`, and its `byPlatform` widens to the `MergedPost` shape. `BuildReportInput` gains `series?: Map<string, DayPoint[]>`. `ReportVideo` gains `reach`, `impressions`, `clicks`, `totalWatch` (all `string | null`), `viewsAdded: string | null`, `viewsAddedLabel: string`, `spark: number[]`, and `byPlatform: Array<{ platform: string; stats: Array<{ label: string; value: string }> }>`. `loadSeries(prisma, clientId): Promise<Map<string, DayPoint[]>>`.
 
 **Note on shape:** `buildReportData` is synchronous and has no database access,
@@ -963,6 +1088,8 @@ In `apps/api/src/reports/buildReportData.ts`, replace the `byPlatform` line of
   clicks?: number | null;
   /** Total seconds watched across all viewers, measured rather than derived. */
   totalWatchSec?: number | null;
+  /** When the provider last refreshed these figures, ISO, or null. */
+  metricsUpdatedAt?: string | null;
   byPlatform: Array<{
     platform: string;
     views: number;
@@ -1056,7 +1183,7 @@ Replace the whole `buildVideos` function with:
 
 ```ts
 /** Seconds to "27m 32s", or "1m 05s", or "9s". */
-function fmtWatchTotal(sec: number): string {
+export function fmtWatchTotal(sec: number): string {
   const s = Math.round(sec);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -1066,24 +1193,45 @@ function fmtWatchTotal(sec: number): string {
 }
 
 /**
- * One metric on a card, or null when this post's platforms do not report it.
+ * One metric on a card, or null when it was never measured.
  *
  * Every optional figure goes through here, so the rule that an unmeasured
  * metric is absent rather than zero is applied in one place rather than at
- * each call site.
+ * each call site. Two things can make it absent: no platform on the card
+ * reports the metric at all, or the platform reports it and sent a zero that
+ * cannot be a result. Reach is the second kind, saves deliberately is not, so
+ * a post that genuinely earned no saves still prints "Saves 0". See
+ * ZERO_IS_UNMEASURED in packages/core.
  */
-function measured(
+export function measured(
   metric: MetricName,
   platforms: readonly string[],
   value: number | null,
 ): string | null {
   if (!reportsMetric(metric, platforms)) return null;
   if (value == null) return null;
+  if (value === 0 && ZERO_IS_UNMEASURED.has(metric)) return null;
   return fmt(value);
 }
 
+/**
+ * A post-level figure, totalled over only the platforms that report it.
+ *
+ * Reading the post's own aggregate here would fold in the platforms the metric
+ * is suppressed for, which for impressions means printing Instagram's views
+ * beside them under a second name. sumReported works off the per-platform
+ * entries, which is where the honest number is.
+ */
+function total(
+  metric: MetricName,
+  p: ReportPost,
+  pick: (b: ReportPost["byPlatform"][number]) => number | null,
+): string | null {
+  return measured(metric, p.platforms, sumReported(metric, p.byPlatform ?? [], pick));
+}
+
 /** The per-platform rows on a cross-posted video's card. */
-function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
+export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
   if (!p.byPlatform || p.byPlatform.length < 2) return [];
   return p.byPlatform.map((b) => {
     const only = [b.platform];
@@ -1146,10 +1294,10 @@ function buildVideos(
         likes: fmt(p.likes),
         comments: fmt(p.comments),
         shares: fmt(p.shares),
-        saves: measured("saves", p.platforms, p.saves),
-        reach: measured("reach", p.platforms, p.reach),
-        impressions: measured("impressions", p.platforms, p.impressions ?? null),
-        clicks: measured("clicks", p.platforms, p.clicks ?? null),
+        saves: total("saves", p, (b) => b.saves),
+        reach: total("reach", p, (b) => b.reach),
+        impressions: total("impressions", p, (b) => b.impressions),
+        clicks: total("clicks", p, (b) => b.clicks),
         totalWatch:
           reportsMetric("totalWatch", p.platforms) && p.totalWatchSec != null
             ? fmtWatchTotal(p.totalWatchSec)
@@ -1169,9 +1317,14 @@ function buildVideos(
 
 - [ ] **Step 4: Wire the builder in**
 
-Add `reportsMetric`, `seriesSummary`, `type MetricName` and `type DayPoint` to
-the existing `@toreroflow/core` import at the top of the file. Do not add a
-second import statement.
+Add `reportsMetric`, `seriesSummary`, `sumReported`, `ZERO_IS_UNMEASURED`,
+`type MetricName` and `type DayPoint` to the existing `@toreroflow/core` import
+at the top of the file. Do not add a second import statement.
+
+`fmtWatchTotal`, `measured`, `platformRows` and `lastRefreshed` are exported
+because they are non-trivial and client-facing, and
+`apps/api/src/reports/buildReportData.check.ts` pins them. Follow the precedent
+`mergedPosts.ts` set with `keepStoredRow`.
 
 Change the call site inside the returned object literal from
 `videos: buildVideos(current),` to:
@@ -1196,15 +1349,25 @@ import type { DayPoint } from "@toreroflow/core";
  *
  * ExternalVideoMetric has been accumulating a row per video per UTC day since
  * it shipped and this is its first reader.
+ *
+ * `since` is the earliest day the caller will actually render. It is not an
+ * optimisation to add later: the table grows by one row per video per day
+ * forever, which is already over 1,600 a day, and every row outside the report
+ * window would be materialised into the Map here only for seriesSummary to
+ * throw it away.
  */
 export async function loadSeries(
   prisma: {
     externalVideoMetric: { findMany(args: unknown): Promise<unknown[]> };
   },
   clientId: string,
+  since: Date,
 ): Promise<Map<string, DayPoint[]>> {
   const rows = (await prisma.externalVideoMetric.findMany({
-    where: { externalVideo: { socialAccount: { clientId, deletedAt: null } } },
+    where: {
+      externalVideo: { socialAccount: { clientId, deletedAt: null } },
+      capturedOn: { gte: since },
+    },
     select: {
       views: true,
       capturedOn: true,
@@ -1232,21 +1395,86 @@ export async function loadSeries(
 
 In `apps/api/src/routes/reports.ts`, add `import { loadSeries } from "../reports/loadSeries";`
 to the existing import block. Before each of the two `buildReportData({` calls
-(around lines 156 and 211), add:
+(around lines 156 and 211), add a bounded load and pass `series,` to each
+`buildReportData({ ... })` object literal.
+
+`generate` covers one period, so its bound is that period's start:
 
 ```ts
-    const series = await loadSeries(prisma, client.id);
+    const series = await loadSeries(prisma, clientId, period.start);
 ```
 
-using whatever the surrounding scope already calls the Prisma instance and the
-client row, and add `series,` to each `buildReportData({ ... })` object literal.
+`generateWeb` covers three months and four completed weeks at once, so pick the
+weeks first and bound by the oldest day any of those periods will render:
+
+```ts
+    const weeks = recentCompletedWeeks(WEEKS_ON_REPORT);
+    const oldestMonth = new Date(upTo.start.getFullYear(), upTo.start.getMonth() - 2, 1);
+    const since = new Date(
+      Math.min(oldestMonth.getTime(), ...weeks.map((w) => w.start.getTime())),
+    );
+    const series = await loadSeries(prisma, clientId, since);
+```
+
+then iterate `weeks` in the loop below rather than calling
+`recentCompletedWeeks` a second time.
 
 Also confirm the mapping from `MergedPost` to `ReportPost` in this file carries
 the new fields through. If the route spreads the merged post directly, nothing
 is needed. If it picks fields explicitly, add `platformKey`, `impressions`,
-`clicks`, `totalWatchSec` and the widened `byPlatform` to the picked set.
+`clicks`, `totalWatchSec`, `metricsUpdatedAt` and the widened `byPlatform` to
+the picked set.
 
-- [ ] **Step 7: Typecheck**
+- [ ] **Step 7: The footer's refresh line**
+
+`metricsUpdatedAt` reaches `MergedPost` and has to reach the page, which is the
+justification the column was added on. Add beside the other module helpers:
+
+```ts
+/**
+ * When the figures on this page were last pulled from the platforms, in plain
+ * words, or null when no post in the period carries a timestamp.
+ *
+ * The most recent refresh across the period, because that is the question a
+ * client is actually asking: how old is what I am looking at.
+ */
+export function lastRefreshed(rows: readonly ReportPost[]): string | null {
+  const times = rows
+    .map((p) => (p.metricsUpdatedAt ? new Date(p.metricsUpdatedAt).getTime() : NaN))
+    .filter((t) => !Number.isNaN(t));
+  if (!times.length) return null;
+  const d = new Date(Math.max(...times));
+  return `Figures last refreshed ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+}
+```
+
+and spread it into the returned `footer` object, omitted entirely when there is
+nothing to say:
+
+```ts
+      ...(lastRefreshed(current) ? { refreshed: lastRefreshed(current) } : {}),
+```
+
+- [ ] **Step 8: Cover the client-facing arithmetic**
+
+Create `apps/api/src/reports/buildReportData.check.ts` and append
+` && tsx src/reports/buildReportData.check.ts` to the `test` script in
+`apps/api/package.json`. Everything in this file renders on a page a paying
+client reads, so a wrong number is not a bug they report, it is a number they
+believe. It must pin at least:
+
+- `fmtWatchTotal` either side of both boundaries: 59 and 60 seconds, 3599 and
+  3600 seconds. `fmt` compacts above 10,000, so expect `11.7K` not `11,650`
+  where a total crosses that.
+- a post on `["instagram","facebook"]` whose Instagram entry carries impressions
+  mirroring its views: the card's `impressions` must be Facebook's figure alone.
+- a zero reach rendering as `null` while a zero clicks renders as `"0"`.
+- `platformRows` leaving impressions off the Instagram row and saves off the
+  Facebook row, rather than printing a zero for either.
+- `lastRefreshed` picking the newest stamp, and returning null when there is
+  none.
+
+- [ ] **Step 9: Typecheck**
 
 ```bash
 pnpm --filter @toreroflow/api typecheck
@@ -1255,10 +1483,10 @@ pnpm --filter @toreroflow/api test
 
 Expected: both clean.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add apps/api/src/reports/buildReportData.ts apps/api/src/reports/loadSeries.ts apps/api/src/routes/reports.ts
+git add apps/api/src/reports/buildReportData.ts apps/api/src/reports/buildReportData.check.ts apps/api/src/reports/loadSeries.ts apps/api/src/routes/reports.ts apps/api/package.json
 git commit -m "feat: a report card carries every number its platforms measured"
 ```
 
@@ -1319,7 +1547,11 @@ Replace `videoCardHTML` entirely:
     var span = hi - lo || 1;
     var d = pts.map(function (p, i) {
       var x = (i / (pts.length - 1)) * w;
-      var y = h - ((p - lo) / span) * h;
+      /* Inset by one stroke pixel top and bottom. Mapping to the full height
+         puts the series minimum exactly on y = h, where half of a 2px stroke
+         falls outside the viewBox and is clipped. That is the common case: a
+         video that stopped growing draws a flat line along that edge. */
+      var y = 1 + (h - 2) - ((p - lo) / span) * (h - 2);
       return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
     }).join(' ');
     var added = v.viewsAdded != null
@@ -1380,11 +1612,25 @@ The `pill` helper escapes both label and value, which is why the label reads
 `'Shares & reposts'` in plain text here rather than carrying an `&amp;` entity
 that would double-escape into `&amp;amp;`.
 
+Delete the `.vpill.na b` rule near line 434 in the same pass. Nothing emits that
+class once an unmeasured metric renders as no pill at all.
+
+In the footer block near line 941, render the refresh line the report data now
+carries, and add `.foot-refreshed{margin-top:16px;font-size:11px;color:var(--muted-2);}`
+beside the other footer rules:
+
+```js
+    if (f.refreshed) html += '<div class="foot-refreshed">' + esc(f.refreshed) + '</div>';
+```
+
 - [ ] **Step 3: Add the styles**
 
 After the `.vpill b{...}` rule near line 418, add:
 
 ```css
+/* The pill count varies from 4 to 10 now that unmeasured metrics are absent,
+   so an odd count would leave a half-width orphan on the last row. */
+.vpills .vpill:last-child:nth-child(odd){grid-column:1 / -1;}
 .vspark{margin-top:12px;}
 .vspark svg{width:100%;height:26px;display:block;}
 .vspark .sparklabel{font-size:10.5px;color:rgba(255,255,255,.72);margin-top:5px;}
@@ -1426,10 +1672,10 @@ git commit -m "feat: video cards show what was measured and say nothing about wh
 **Files:**
 - Create: `apps/desktop/src/lib/watchTime.ts`
 - Test: `apps/desktop/src/lib/watchTime.check.ts`
-- Modify: `apps/desktop/src/screens/AnalyticsScreen.tsx:307-352`, `apps/desktop/package.json`
+- Modify: `apps/desktop/src/screens/AnalyticsScreen.tsx:307-352`, `apps/desktop/src/lib/api.ts`, `apps/desktop/src/lib/viewTiers.check.ts`, `apps/desktop/package.json`
 
 **Interfaces:**
-- Consumes: `reportsMetric`, `metricMeasurable` from Task 1; the widened `MergedPost` from Task 4
+- Consumes: `reportsMetric`, `sumReported`, `ZERO_IS_UNMEASURED` from Task 1; the widened `MergedPost` from Task 4
 - Produces: `watchHours(posts): number | null` in `apps/desktop/src/lib/watchTime.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -1549,25 +1795,56 @@ Replace the reach line so an unmeasurable period dashes rather than showing a
 sum of zeros, and add the two new engagement figures:
 
 ```tsx
-  const totalReach = all.reduce((s, p) => s + p.reach, 0);
-  const reachMeasurable = metricMeasurable("reach", all);
-  const totalImpressions = all.reduce((s, p) => s + (p.impressions ?? 0), 0);
-  const impressionsMeasurable = metricMeasurable("impressions", all);
-  const totalClicks = all.reduce((s, p) => s + (p.clicks ?? 0), 0);
-  const clicksMeasurable = metricMeasurable("clicks", all);
+  /*
+   * Every optional figure below is totalled over the per-platform entries
+   * rather than the post-level fields, because a platform can be missing from
+   * METRIC_REPORTED_BY for two different reasons: it sends nothing, or it sends
+   * a number we suppress on purpose. Instagram impressions are the second kind,
+   * they mirror views, so summing the post totals of a period containing any
+   * Facebook post would print every Instagram view inside the Impressions box.
+   */
+  const perPlatform = all.flatMap((p) => p.byPlatform);
+  const totalSaves = sumReported("saves", perPlatform, (b) => b.saves);
+  const totalReach = sumReported("reach", perPlatform, (b) => b.reach);
+  const totalImpressions = sumReported("impressions", perPlatform, (b) => b.impressions);
+  const totalClicks = sumReported("clicks", perPlatform, (b) => b.clicks);
 
   const engagement = [
-    { label: "Saves", value: savablePosts.length ? fmt(totalSaves) : "-" },
+    { label: "Saves", value: shown("saves", totalSaves) },
     { label: "Comments", value: fmt(totalComments) },
     { label: "Shares", value: fmt(totalShares) },
-    { label: "Reach", value: reachMeasurable ? fmt(totalReach) : "-" },
-    { label: "Impressions", value: impressionsMeasurable ? fmt(totalImpressions) : "-" },
-    { label: "Link clicks", value: clicksMeasurable ? fmt(totalClicks) : "-" },
+    { label: "Reach", value: shown("reach", totalReach) },
+    { label: "Impressions", value: shown("impressions", totalImpressions) },
+    { label: "Link clicks", value: shown("clicks", totalClicks) },
   ];
 ```
 
-Add `metricMeasurable` to the existing `@toreroflow/core` import on line 2, and
+with `shown` beside the other formatters at the top of the file:
+
+```tsx
+/**
+ * A measured total, or a dash.
+ *
+ * Null means nothing in the period is on a platform that reports the metric.
+ * Zero means something is and it sent no number, which for reach is no more a
+ * result than a zero watch time: a post with views did not reach nobody. Saves
+ * and clicks are deliberately outside that rule, so a genuine zero still prints
+ * as 0 for them. See ZERO_IS_UNMEASURED in packages/core.
+ */
+function shown(metric: MetricName, total: number | null): string {
+  if (total == null || (total === 0 && ZERO_IS_UNMEASURED.has(metric))) return "-";
+  return fmt(total);
+}
+```
+
+Add `sumReported`, `ZERO_IS_UNMEASURED` and `type MetricName` to the existing
+`@toreroflow/core` import on line 2, and
 `import { watchHours } from "../lib/watchTime";` alongside the other lib imports.
+
+This needs `ClientPost.byPlatform` in `apps/desktop/src/lib/api.ts` to mirror
+`MergedPost.byPlatform` rather than staying `{ platform, views, accountId? }`.
+Widen it in the same step, and fill the new fields into the byPlatform fixtures
+in `apps/desktop/src/lib/viewTiers.check.ts`.
 
 - [ ] **Step 5: Run and commit**
 
@@ -1582,7 +1859,7 @@ pnpm --filter @toreroflow/desktop typecheck
 Expected: both clean.
 
 ```bash
-git add apps/desktop/src/lib/watchTime.ts apps/desktop/src/lib/watchTime.check.ts apps/desktop/src/screens/AnalyticsScreen.tsx apps/desktop/package.json
+git add apps/desktop/src/lib/watchTime.ts apps/desktop/src/lib/watchTime.check.ts apps/desktop/src/screens/AnalyticsScreen.tsx apps/desktop/src/lib/api.ts apps/desktop/src/lib/viewTiers.check.ts apps/desktop/package.json
 git commit -m "fix: watch time stops counting hours nobody measured"
 ```
 
