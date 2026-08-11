@@ -314,18 +314,23 @@ ALTER TABLE "ExternalVideoMetric" ADD COLUMN IF NOT EXISTS "engagementRate" DOUB
 ALTER TABLE "ExternalVideoMetric" ADD COLUMN IF NOT EXISTS "metricsUpdatedAt" TIMESTAMP(3);
 ```
 
-- [ ] **Step 3: Stop the API and worker, then apply**
+- [ ] **Step 3: Do NOT apply the migration by hand**
 
-On Windows `prisma generate` fails with EPERM while either process holds the
-client. Close the "Toreroflow API" and "Toreroflow worker" windows first.
+There is no local database to apply it to: Docker is not running and
+`DATABASE_URL` points at `localhost:5432`. Production applies pending
+migrations by itself, because `infra/api-entrypoint.sh` runs
+`prisma migrate deploy` every time the API container starts. So this migration
+lands on the next deploy with no manual step, and running `migrate:deploy` here
+would only produce a connection error.
 
-```bash
-pnpm --filter @toreroflow/db migrate:deploy
-```
-
-Expected: `1 migration found` and `Applying migration 20260811120000_metric_depth`.
+Write the SQL correctly and move on. Do not edit it after it has been deployed
+once: Prisma records a checksum and a changed file fails the next startup.
 
 - [ ] **Step 4: Regenerate the client and typecheck**
+
+`prisma generate` reads the schema and needs no database. On Windows it fails
+with EPERM while the API or worker holds the client, so close the "Toreroflow
+API" and "Toreroflow worker" windows first if they are open.
 
 ```bash
 pnpm --filter @toreroflow/db generate
@@ -1597,14 +1602,19 @@ pnpm -r test
 pnpm -r typecheck
 ```
 
-- [ ] **Live walk**
+- [ ] **Live walk, after deploy**
 
-Start the stack, open the app, and confirm on the Analytics tab that Watch time
-shows a smaller number than before and that a TikTok-only brand shows a dash
-rather than invented hours. Then regenerate one client report and open the
-Video Breakdown: no placeholder copy anywhere, an Instagram card dense with
-measured figures, a TikTok card sparse but with no empty slots, and a
-cross-posted video showing its per-platform split.
+The app is cloud-backed and there is no local stack, so this happens once the
+branch is deployed and the API container has applied the migration on startup.
+Until then the daily capture has written no rows for the new columns, so the
+sparkline and the period delta will correctly render as nothing.
+
+Confirm on the Analytics tab that Watch time shows a smaller number than before
+and that a TikTok-only brand shows a dash rather than invented hours. Then
+regenerate one client report and open the Video Breakdown: no placeholder copy
+anywhere, an Instagram card dense with measured figures, a TikTok card sparse
+but with no empty slots, and a cross-posted video showing its per-platform
+split.
 
 - [ ] **Tell Tyrone the watch time number dropped, and why.** It was overstated
   before. Finding that out from a client is worse than being told.
