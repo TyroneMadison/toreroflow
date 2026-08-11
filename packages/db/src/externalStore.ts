@@ -62,8 +62,8 @@ function num(item: Record<string, unknown>, ...names: string[]): number | null {
   return null;
 }
 
-/** The provider's "2026-08-10 21:16:37" to a Date, or null. */
-function providerDate(v: unknown): Date | null {
+/** The provider's "2026-08-10 21:16:37" to a Date, or null. Guards against values that already carry a zone marker. */
+export function providerDate(v: unknown): Date | null {
   if (typeof v !== "string" || !v.trim()) return null;
   const d = new Date(v.replace(" ", "T") + (/[Zz]|[+-]\d\d:?\d\d$/.test(v) ? "" : "Z"));
   return Number.isNaN(d.getTime()) ? null : d;

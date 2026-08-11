@@ -1,5 +1,6 @@
 import { decodeEscapes } from "@toreroflow/core";
 import type { ZernioProvider } from "@toreroflow/publishers";
+import { providerDate } from "@toreroflow/db";
 
 /**
  * One place that answers "what videos does this client have, and how did they
@@ -284,10 +285,10 @@ export async function buildMergedPosts(
         const t = num(m, "igReelsVideoViewTotalTime");
         return t != null && t > 0 ? t / 1000 : null;
       })(),
-      metricsUpdatedAt:
-        typeof m.lastUpdated === "string" && m.lastUpdated
-          ? new Date(m.lastUpdated.replace(" ", "T") + "Z").toISOString()
-          : null,
+      metricsUpdatedAt: (() => {
+        const parsed = providerDate(m.lastUpdated);
+        return parsed ? parsed.toISOString() : null;
+      })(),
       avgWatchSec: avgWatchSec && avgWatchSec > 0 ? avgWatchSec : null,
       durationSec:
         num(m, "duration", "videoDuration", "durationSec", "mediaDuration") ??
