@@ -310,4 +310,44 @@ assert.equal(bareRow.totalWatchSec, null, "tiktok sends no total watch time");
 assert.equal(bareRow.engagementRate, null, "absent engagement rate is null");
 assert.equal(bareRow.metricsUpdatedAt, null, "absent timestamp is null");
 
+/*
+ * Zero watch time on a viewed video is an uncomputed metric, not a
+ * measurement. Clicks and other counts can be genuinely zero, watch time
+ * cannot. A provider reporting zero watch metrics yields null, preventing
+ * false zero-retention claims on client reports for videos with views.
+ */
+{
+  const zeroWatchEntry = {
+    platformPostId: "ig-zero-watch",
+    analytics: {
+      views: 5000,
+      likes: 100,
+      igReelsAvgWatchTime: 0,
+      igReelsVideoViewTotalTime: 0,
+      clicks: 0,
+    },
+  };
+  const zeroWatchRow = mapProviderEntry(
+    { publishedAt: "2026-08-01T00:00:00.000Z" },
+    zeroWatchEntry,
+    { socialAccountId: "acct-3", platform: "instagram" as never },
+  );
+  assert.ok(zeroWatchRow, "an entry reporting zero watch time maps");
+  assert.equal(
+    zeroWatchRow.avgWatchSec,
+    null,
+    "zero average watch time becomes null, not zero: it is an uncomputed metric on a viewed video, not a measurement",
+  );
+  assert.equal(
+    zeroWatchRow.totalWatchSec,
+    null,
+    "zero total watch time becomes null, not zero, for the same reason",
+  );
+  assert.equal(
+    zeroWatchRow.clicks,
+    0,
+    "clicks: zero is stored as zero because click count can genuinely be zero, unlike watch time on a viewed video",
+  );
+}
+
 console.log("externalStore.check: all checks passed");

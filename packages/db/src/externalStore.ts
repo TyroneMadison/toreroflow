@@ -69,7 +69,16 @@ function providerDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Milliseconds to seconds, or null. The one place this conversion happens. */
+/**
+ * Milliseconds to seconds, or null. The one place this conversion happens.
+ *
+ * Absent or zero milliseconds both yield null. A provider reporting zero
+ * average watch time on a video with views means the metric is uncomputed,
+ * not measured. Storing null prevents client reports from claiming zero
+ * retention on a viewed video, which would be worse than showing nothing.
+ * Unlike clicks or saves (which can genuinely be zero), watch time on a
+ * viewed video cannot truly be zero.
+ */
 function msToSec(ms: number | null): number | null {
   return ms != null && ms > 0 ? ms / 1000 : null;
 }
