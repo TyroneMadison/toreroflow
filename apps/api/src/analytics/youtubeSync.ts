@@ -54,6 +54,7 @@ export async function syncYouTubeCatalogue(
           likes: v.likes,
           comments: v.comments,
           durationSec: v.durationSec,
+          source: "youtube",
         });
       }
       results.push({ handle: account.handle, channel: channelTitle, imported: videos.length });

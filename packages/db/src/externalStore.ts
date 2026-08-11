@@ -39,6 +39,16 @@ export interface ExternalVideoRow {
   saves?: number;
   reach?: number;
   follows?: number;
+  /** Null when the platform does not report it. Never coerce to 0. */
+  impressions?: number | null;
+  clicks?: number | null;
+  /** Seconds. Converted from the provider's milliseconds in mapProviderEntry. */
+  avgWatchSec?: number | null;
+  totalWatchSec?: number | null;
+  engagementRate?: number | null;
+  metricsUpdatedAt?: Date | null;
+  /** zernio or youtube. Defaults to zernio at the database. */
+  source?: string;
   durationSec: number | null;
 }
 
@@ -50,6 +60,18 @@ function num(item: Record<string, unknown>, ...names: string[]): number | null {
     if (typeof v === "string" && v !== "" && Number.isFinite(Number(v))) return Number(v);
   }
   return null;
+}
+
+/** The provider's "2026-08-10 21:16:37" to a Date, or null. */
+function providerDate(v: unknown): Date | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const d = new Date(v.replace(" ", "T") + (/[Zz]|[+-]\d\d:?\d\d$/.test(v) ? "" : "Z"));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Milliseconds to seconds, or null. The one place this conversion happens. */
+function msToSec(ms: number | null): number | null {
+  return ms != null && ms > 0 ? ms / 1000 : null;
 }
 
 /** The UTC calendar day a timestamp falls on, at midnight UTC. */
@@ -118,6 +140,13 @@ export function mapProviderEntry(
     saves: metric("saves", "saved", "savedCount"),
     reach: metric("reach"),
     follows: metric("follows", "followsCount", "followers_gained"),
+    impressions: num(em, "impressions"),
+    clicks: num(em, "clicks"),
+    avgWatchSec: msToSec(num(em, "igReelsAvgWatchTime")),
+    totalWatchSec: msToSec(num(em, "igReelsVideoViewTotalTime")),
+    engagementRate: num(em, "engagementRate"),
+    metricsUpdatedAt: providerDate(em.lastUpdated ?? pm.lastUpdated),
+    source: "zernio",
     durationSec: num(pm, "duration", "videoDuration", "durationSec", "mediaDuration"),
   };
 }
@@ -141,6 +170,15 @@ export async function upsertExternalVideo(
     saves: row.saves ?? 0,
     reach: row.reach ?? 0,
     follows: row.follows ?? 0,
+    // The nullable set passes through untouched. No ?? 0 here, ever: that
+    // would turn "this platform does not report it" into "it was zero".
+    impressions: row.impressions ?? null,
+    clicks: row.clicks ?? null,
+    avgWatchSec: row.avgWatchSec ?? null,
+    totalWatchSec: row.totalWatchSec ?? null,
+    engagementRate: row.engagementRate ?? null,
+    metricsUpdatedAt: row.metricsUpdatedAt ?? null,
+    source: row.source ?? "zernio",
     fetchedAt: now,
   };
   const video = await prisma.externalVideo.upsert({
@@ -150,6 +188,8 @@ export async function upsertExternalVideo(
   });
 
   const capturedOn = utcDay(now);
+  // ExternalVideoMetric has no source column: a day row is a measurement, and
+  // which pipe delivered it is a property of the video, not of the day.
   const metrics = {
     views: data.views,
     likes: data.likes,
@@ -158,6 +198,12 @@ export async function upsertExternalVideo(
     saves: data.saves,
     reach: data.reach,
     follows: data.follows,
+    impressions: data.impressions,
+    clicks: data.clicks,
+    avgWatchSec: data.avgWatchSec,
+    totalWatchSec: data.totalWatchSec,
+    engagementRate: data.engagementRate,
+    metricsUpdatedAt: data.metricsUpdatedAt,
   };
   await prisma.externalVideoMetric.upsert({
     where: { externalVideoId_capturedOn: { externalVideoId: video.id, capturedOn } },

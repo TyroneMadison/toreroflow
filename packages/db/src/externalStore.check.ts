@@ -248,4 +248,66 @@ import { mapProviderEntry, utcDay } from "./externalStore";
   assert.equal(row.mediaType, "video", "a post that says nothing is a video, the overwhelming case");
 }
 
+/* ---- the fields the app used to discard ---- */
+
+const depthEntry = {
+  platformPostId: "ig-depth-1",
+  analytics: {
+    views: 401,
+    impressions: 401,
+    reach: 306,
+    likes: 20,
+    comments: 0,
+    shares: 1,
+    saves: 2,
+    clicks: 0,
+    follows: 0,
+    igReelsAvgWatchTime: 4948,
+    igReelsVideoViewTotalTime: 1652782,
+    videoDurationSeconds: 13,
+    engagementRate: 5.74,
+    lastUpdated: "2026-08-10 21:16:37",
+  },
+};
+const depthPost = { publishedAt: "2026-08-01T00:00:00.000Z", content: "a reel" };
+const depthRow = mapProviderEntry(depthPost, depthEntry, {
+  socialAccountId: "acct-1",
+  platform: "instagram" as never,
+});
+
+assert.ok(depthRow, "the entry maps");
+assert.equal(depthRow.impressions, 401, "impressions are carried, not folded into views");
+assert.equal(depthRow.clicks, 0, "a reported zero is a zero, not an absence");
+assert.equal(depthRow.engagementRate, 5.74, "the provider figure is stored for comparison");
+
+/*
+ * Milliseconds to seconds, exactly once, here. 4948 ms on a 13 second video is
+ * 4.9 seconds and 38% retention. A missed conversion renders as 4,948 seconds,
+ * which is a 6,340% retention figure on a client's report.
+ */
+assert.equal(depthRow.avgWatchSec, 4.948, "average watch converts ms to seconds");
+assert.equal(depthRow.totalWatchSec, 1652.782, "total watch converts ms to seconds");
+assert.ok(
+  depthRow.metricsUpdatedAt instanceof Date && !Number.isNaN(depthRow.metricsUpdatedAt.getTime()),
+  "lastUpdated parses to a real date",
+);
+assert.equal(depthRow.source, "zernio", "a provider entry is labelled as one");
+
+/*
+ * Absent is not zero. A platform that never sends the field must yield null,
+ * because a 0 would be displayed as a measurement.
+ */
+const bareEntry = { platformPostId: "tt-1", analytics: { views: 900, likes: 12 } };
+const bareRow = mapProviderEntry(depthPost, bareEntry, {
+  socialAccountId: "acct-2",
+  platform: "tiktok" as never,
+});
+assert.ok(bareRow, "the tiktok entry maps");
+assert.equal(bareRow.impressions, null, "tiktok sends no impressions, so null not 0");
+assert.equal(bareRow.clicks, null, "tiktok sends no clicks");
+assert.equal(bareRow.avgWatchSec, null, "tiktok sends no watch time");
+assert.equal(bareRow.totalWatchSec, null, "tiktok sends no total watch time");
+assert.equal(bareRow.engagementRate, null, "absent engagement rate is null");
+assert.equal(bareRow.metricsUpdatedAt, null, "absent timestamp is null");
+
 console.log("externalStore.check: all checks passed");

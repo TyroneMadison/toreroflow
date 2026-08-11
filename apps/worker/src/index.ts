@@ -198,6 +198,7 @@ async function refreshYouTubeCatalogues(): Promise<void> {
           likes: v.likes,
           comments: v.comments,
           durationSec: v.durationSec,
+          source: "youtube",
         });
       }
       total += videos.length;
