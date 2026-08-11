@@ -27,6 +27,29 @@ const assert = {
 const DAY = 86_400_000;
 const now = Date.UTC(2026, 6, 26);
 
+/**
+ * One byPlatform entry. Every metric but views is absent: the tier boards rank
+ * on views alone, so filling the rest in would only be noise.
+ */
+const at = (
+  platform: ClientPost["platforms"][number],
+  views: number,
+  accountId?: string,
+): ClientPost["byPlatform"][number] => ({
+  platform,
+  views,
+  ...(accountId ? { accountId } : {}),
+  likes: null,
+  comments: null,
+  shares: null,
+  saves: null,
+  reach: null,
+  impressions: null,
+  clicks: null,
+  avgWatchSec: null,
+  totalWatchSec: null,
+});
+
 const post = (
   id: string,
   views: number,
@@ -52,7 +75,7 @@ const post = (
   totalWatchSec: null,
   avgWatchSec: null,
   durationSec: null,
-  byPlatform: platforms.map((p) => ({ platform: p, views })),
+  byPlatform: platforms.map((p) => at(p, views)),
 });
 
 /* A catalogue shaped like a real one: the big hits are old. */
@@ -98,10 +121,7 @@ const cutoff30 = now - 30 * DAY;
 {
   const cross: ClientPost = {
     ...post("x", 0, 1, ["youtube", "instagram"]),
-    byPlatform: [
-      { platform: "youtube", views: 1_200_000 },
-      { platform: "instagram", views: 4_000 },
-    ],
+    byPlatform: [at("youtube", 1_200_000), at("instagram", 4_000)],
   };
   const yt = scopeToPlatform([cross], "youtube");
   assert.equal(yt[0]!.views, 1_200_000, "YouTube tab ranks on YouTube views");
@@ -118,16 +138,16 @@ const cutoff30 = now - 30 * DAY;
 {
   const pageA: ClientPost = {
     ...post("a", 0, 1, ["facebook"]),
-    byPlatform: [{ platform: "facebook", views: 9_000, accountId: "acc-a" }],
+    byPlatform: [at("facebook", 9_000, "acc-a")],
   };
   const pageB: ClientPost = {
     ...post("b", 0, 1, ["facebook"]),
-    byPlatform: [{ platform: "facebook", views: 500, accountId: "acc-b" }],
+    byPlatform: [at("facebook", 500, "acc-b")],
   };
   // An older cached post that never learned which page it belongs to.
   const orphan: ClientPost = {
     ...post("o", 0, 1, ["facebook"]),
-    byPlatform: [{ platform: "facebook", views: 70 }],
+    byPlatform: [at("facebook", 70)],
   };
   const all = [pageA, pageB, orphan];
   assert.equal(

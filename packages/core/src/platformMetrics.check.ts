@@ -7,6 +7,8 @@ import {
   reportsMetric,
   SAVES_REPORTED_BY,
   savesMeasurable,
+  sumReported,
+  ZERO_IS_UNMEASURED,
 } from "./platformMetrics";
 
 /* ---- the platform list ---- */
@@ -102,5 +104,76 @@ assert.ok(!metricMeasurable("reach", []), "an empty period measures nothing");
 // the other.
 assert.equal(reportsMetric("saves", ["instagram"]), reportsSaves(["instagram"]), "agree on ig");
 assert.equal(reportsMetric("saves", ["tiktok"]), reportsSaves(["tiktok"]), "agree on tiktok");
+
+/* ---- totalling only over the platforms that report ---- */
+
+/*
+ * The exact case that shipped wrong. One video cross-posted to Instagram and
+ * Facebook: Instagram sends impressions mirroring its 12,000 views, Facebook
+ * sends its own 900. Asking reportsMetric of the post's platform list says yes,
+ * because Facebook is on it, and reading the post-level aggregate then prints
+ * 12,900 under a heading the client reads as a second real audience number.
+ * Only Facebook's 900 was ever an impressions measurement.
+ */
+const crossPost = [
+  { platform: "instagram", impressions: 12_000, reach: 11_400, saves: 61, clicks: 0 },
+  { platform: "facebook", impressions: 900, reach: 850, saves: 0, clicks: 7 },
+];
+assert.equal(
+  sumReported("impressions", crossPost, (b) => b.impressions),
+  900,
+  "an instagram plus facebook post contributes only facebook's impressions, never instagram's mirror of views",
+);
+assert.equal(
+  sumReported("reach", crossPost, (b) => b.reach),
+  12_250,
+  "both platforms report reach, so both count",
+);
+assert.equal(
+  sumReported("saves", crossPost, (b) => b.saves),
+  61,
+  "only instagram reports saves, so facebook's structural zero is not summed in",
+);
+assert.equal(
+  sumReported("clicks", crossPost, (b) => b.clicks),
+  7,
+  "only facebook reports clicks, so instagram's always-zero field is left out",
+);
+
+// No reporting platform means there is nothing to total, and null is what
+// makes a caller print a dash rather than a zero.
+assert.equal(
+  sumReported("impressions", [{ platform: "tiktok", impressions: 0 }], (b) => b.impressions),
+  null,
+  "a tiktok-only post has no impressions to report",
+);
+assert.equal(sumReported("reach", [], () => 1), null, "no entries at all measures nothing");
+
+// A reporting platform that sent nothing still counts as reporting: the total
+// is zero rather than absent, and the zero rule below decides what that means.
+assert.equal(
+  sumReported("reach", [{ platform: "instagram", reach: null }], (b) => b.reach),
+  0,
+  "the platform reports reach, it just sent no number for this post",
+);
+
+/* ---- a zero that cannot be a result ---- */
+
+/*
+ * Instagram reports reach on 275 of 279 posts, so about four posts a client-year
+ * arrive with a zero. A post with views did not reach nobody, so that zero is an
+ * uncomputed provider metric and has to read as absent. This is the same
+ * decision already made for watch time, generalised.
+ */
+assert.ok(ZERO_IS_UNMEASURED.has("reach"), "a post with views cannot have reached nobody");
+assert.ok(ZERO_IS_UNMEASURED.has("avgWatch"), "a viewed video was not watched for zero seconds");
+assert.ok(ZERO_IS_UNMEASURED.has("totalWatch"), "same reasoning as avgWatch");
+
+// The other half of the rule, and the more important half: these can genuinely
+// be zero, and printing 0 for them is the honest result rather than a lie.
+assert.ok(!ZERO_IS_UNMEASURED.has("saves"), "plenty of posts genuinely earn no saves");
+assert.ok(!ZERO_IS_UNMEASURED.has("clicks"), "a post with no link in it genuinely gets no clicks");
+assert.ok(!ZERO_IS_UNMEASURED.has("comments"), "a quiet post genuinely gets no comments");
+assert.ok(!ZERO_IS_UNMEASURED.has("shares"), "nobody sharing it is a real result");
 
 console.log("platformMetrics.check.ts: ok");

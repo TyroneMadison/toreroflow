@@ -405,7 +405,30 @@ export interface ClientPost {
   totalWatchSec: number | null;
   avgWatchSec: number | null;
   durationSec: number | null;
-  byPlatform: Array<{ platform: Platform; views: number; accountId?: string }>;
+  /**
+   * One entry per platform this post went to, carrying that platform's own
+   * figures. Mirrors MergedPost.byPlatform on the API.
+   *
+   * Every total on the Analytics screen is built from these rather than from
+   * the post-level fields above, because METRIC_REPORTED_BY excludes a platform
+   * for two different reasons: it sends nothing, or it sends a number we
+   * deliberately suppress. Instagram impressions are the second kind, so a
+   * post-level total would carry them into a figure labelled Impressions.
+   */
+  byPlatform: Array<{
+    platform: Platform;
+    views: number;
+    accountId?: string;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+    reach: number | null;
+    impressions: number | null;
+    clicks: number | null;
+    avgWatchSec: number | null;
+    totalWatchSec: number | null;
+  }>;
 }
 
 export interface Suggestion {

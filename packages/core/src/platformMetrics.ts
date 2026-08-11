@@ -131,6 +131,27 @@ export const METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>> =
   follows: new Set(),
 };
 
+/**
+ * The metrics where a zero on a post that got views cannot be a result.
+ *
+ * A Reel with views was not watched for zero seconds by every viewer, and it
+ * did not reach nobody. When a provider sends a zero for one of these it has
+ * not computed the number, so it is unmeasured and has to render as absent. The
+ * rule was already applied to watch time in msToSec and storedWatch; it is the
+ * same rule and it belongs here, once, where every surface can ask for it.
+ *
+ * clicks, saves, comments and shares are deliberately absent. Those can
+ * genuinely be zero, and a zero IS the result: roughly 94 Instagram posts a
+ * year carry no saves at all, and "Saves 0" is the honest thing to print for
+ * them. Only add a metric here when a zero is provably impossible alongside
+ * views.
+ */
+export const ZERO_IS_UNMEASURED: ReadonlySet<MetricName> = new Set<MetricName>([
+  "reach",
+  "avgWatch",
+  "totalWatch",
+]);
+
 /** True when at least one of a post's platforms reports this metric. */
 export function reportsMetric(
   metric: MetricName,
@@ -138,6 +159,38 @@ export function reportsMetric(
 ): boolean {
   const reporters = METRIC_REPORTED_BY[metric];
   return platforms.some((p) => reporters.has(p));
+}
+
+/**
+ * A metric totalled over only the platforms that report it, or null when none
+ * of the entries is on a reporting platform.
+ *
+ * A post-level aggregate cannot be used for this, and that is the whole point
+ * of the function. METRIC_REPORTED_BY answers two different questions with one
+ * shape. For most metrics an excluded platform sends nothing, so the aggregate
+ * happens to be right. For impressions it does not: Instagram sends the number
+ * on 275 of 279 posts and is excluded because the value mirrors views, not
+ * because it is missing. Asking "does ANY platform on this post report it" and
+ * then reading the post total therefore prints Instagram's views inside a
+ * Facebook impressions figure on a cross-post, and it looks plausible.
+ *
+ * The per-platform entries are the only place the honest number exists, so
+ * every total is built from them.
+ */
+export function sumReported<T extends { platform: PlatformName }>(
+  metric: MetricName,
+  entries: readonly T[],
+  pick: (entry: T) => number | null | undefined,
+): number | null {
+  const reporters = METRIC_REPORTED_BY[metric];
+  let total = 0;
+  let reported = false;
+  for (const entry of entries) {
+    if (!reporters.has(entry.platform)) continue;
+    reported = true;
+    total += pick(entry) ?? 0;
+  }
+  return reported ? total : null;
 }
 
 /**

@@ -145,6 +145,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       impressions: p.impressions,
       clicks: p.clicks,
       totalWatchSec: p.totalWatchSec,
+      metricsUpdatedAt: p.metricsUpdatedAt,
       byPlatform: p.byPlatform,
       url: p.url,
       thumbnailUrl: p.thumbnailUrl,
@@ -158,7 +159,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const inputs = await gatherInputs(clientId);
     if (!inputs) return null;
 
-    const series = await loadSeries(prisma, clientId);
+    const series = await loadSeries(prisma, clientId, period.start);
     const data = buildReportData({
       clientName: inputs.client.name,
       businessName: inputs.businessName,
@@ -214,9 +215,17 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const inputs = await gatherInputs(clientId);
     if (!inputs) return null;
 
+    // The weeks are picked before the series is loaded, because the oldest day
+    // any period on this page will render is what bounds the query.
+    const weeks = recentCompletedWeeks(WEEKS_ON_REPORT);
+    const oldestMonth = new Date(upTo.start.getFullYear(), upTo.start.getMonth() - 2, 1);
+    const since = new Date(
+      Math.min(oldestMonth.getTime(), ...weeks.map((w) => w.start.getTime())),
+    );
+
     // Loaded once and closed over: the same history feeds every period below,
     // so this is one query per report rather than one per period.
-    const series = await loadSeries(prisma, clientId);
+    const series = await loadSeries(prisma, clientId, since);
     const build = (start: Date, end: Date) =>
       buildReportData({
         clientName: inputs.client.name,
@@ -250,7 +259,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
      * three days of a seven day week understates everything in it with no way
      * for the reader to tell.
      */
-    for (const week of recentCompletedWeeks(WEEKS_ON_REPORT)) {
+    for (const week of weeks) {
       periods.push({
         label: weekLabel(week),
         key: weekKey(week),

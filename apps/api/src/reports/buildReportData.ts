@@ -18,6 +18,8 @@ import {
   reportsSaves,
   reportsMetric,
   seriesSummary,
+  sumReported,
+  ZERO_IS_UNMEASURED,
   type MetricName,
   type DayPoint,
 } from "@toreroflow/core";
@@ -56,6 +58,8 @@ export interface ReportPost {
   clicks?: number | null;
   /** Total seconds watched across all viewers, measured rather than derived. */
   totalWatchSec?: number | null;
+  /** When the provider last refreshed these figures, ISO, or null. */
+  metricsUpdatedAt?: string | null;
   byPlatform: Array<{
     platform: string;
     views: number;
@@ -157,6 +161,22 @@ function estimatedWatchSec(rows: ReportPost[], fallbackAvg: number | null): numb
 
 function monthLabel(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short" });
+}
+
+/**
+ * When the figures on this page were last pulled from the platforms, in plain
+ * words, or null when no post in the period carries a timestamp.
+ *
+ * The most recent refresh across the period, because that is the question a
+ * client is actually asking: how old is what I am looking at.
+ */
+export function lastRefreshed(rows: readonly ReportPost[]): string | null {
+  const times = rows
+    .map((p) => (p.metricsUpdatedAt ? new Date(p.metricsUpdatedAt).getTime() : NaN))
+    .filter((t) => !Number.isNaN(t));
+  if (!times.length) return null;
+  const d = new Date(Math.max(...times));
+  return `Figures last refreshed ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
 }
 
 export interface BuildReportInput {
@@ -482,6 +502,9 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
     footer: {
       contactHtml: `<b>${businessName}</b><br>hello@example.com · torerone.com<br>Report generated ${generatedAt.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`,
       note: "Short form content that performs",
+      // Omitted entirely when nothing in the period carries a timestamp: a
+      // line saying when the numbers were refreshed has to be true or absent.
+      ...(lastRefreshed(current) ? { refreshed: lastRefreshed(current) } : {}),
     },
   };
 }
@@ -594,7 +617,7 @@ function videoTips(p: ReportPost, medViews: number, avgEng: number): string[] {
 }
 
 /** Seconds to "27m 32s", or "1m 05s", or "9s". */
-function fmtWatchTotal(sec: number): string {
+export function fmtWatchTotal(sec: number): string {
   const s = Math.round(sec);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -604,24 +627,45 @@ function fmtWatchTotal(sec: number): string {
 }
 
 /**
- * One metric on a card, or null when this post's platforms do not report it.
+ * One metric on a card, or null when it was never measured.
  *
  * Every optional figure goes through here, so the rule that an unmeasured
  * metric is absent rather than zero is applied in one place rather than at
- * each call site.
+ * each call site. Two things can make it absent: no platform on the card
+ * reports the metric at all, or the platform reports it and sent a zero that
+ * cannot be a result. Reach is the second kind, saves deliberately is not, so
+ * a post that genuinely earned no saves still prints "Saves 0". See
+ * ZERO_IS_UNMEASURED in packages/core.
  */
-function measured(
+export function measured(
   metric: MetricName,
   platforms: readonly string[],
   value: number | null,
 ): string | null {
   if (!reportsMetric(metric, platforms)) return null;
   if (value == null) return null;
+  if (value === 0 && ZERO_IS_UNMEASURED.has(metric)) return null;
   return fmt(value);
 }
 
+/**
+ * A post-level figure, totalled over only the platforms that report it.
+ *
+ * Reading the post's own aggregate here would fold in the platforms the metric
+ * is suppressed for, which for impressions means printing Instagram's views
+ * beside them under a second name. sumReported works off the per-platform
+ * entries, which is where the honest number is.
+ */
+function total(
+  metric: MetricName,
+  p: ReportPost,
+  pick: (b: ReportPost["byPlatform"][number]) => number | null,
+): string | null {
+  return measured(metric, p.platforms, sumReported(metric, p.byPlatform ?? [], pick));
+}
+
 /** The per-platform rows on a cross-posted video's card. */
-function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
+export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
   if (!p.byPlatform || p.byPlatform.length < 2) return [];
   return p.byPlatform.map((b) => {
     const only = [b.platform];
@@ -684,10 +728,10 @@ function buildVideos(
         likes: fmt(p.likes),
         comments: fmt(p.comments),
         shares: fmt(p.shares),
-        saves: measured("saves", p.platforms, p.saves),
-        reach: measured("reach", p.platforms, p.reach),
-        impressions: measured("impressions", p.platforms, p.impressions ?? null),
-        clicks: measured("clicks", p.platforms, p.clicks ?? null),
+        saves: total("saves", p, (b) => b.saves),
+        reach: total("reach", p, (b) => b.reach),
+        impressions: total("impressions", p, (b) => b.impressions),
+        clicks: total("clicks", p, (b) => b.clicks),
         totalWatch:
           reportsMetric("totalWatch", p.platforms) && p.totalWatchSec != null
             ? fmtWatchTotal(p.totalWatchSec)

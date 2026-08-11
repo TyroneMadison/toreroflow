@@ -4,7 +4,7 @@
 // fresher and carries shares and watch time the store does not, so a
 // stored row that shadowed it would silently degrade the screen.
 import assert from "node:assert/strict";
-import { entryPlatformKey, keepStoredRow, storedWatchSec } from "./mergedPosts";
+import { buildMergedPosts, entryPlatformKey, keepStoredRow, storedWatch } from "./mergedPosts";
 
 assert.equal(keepStoredRow("youtube", true), true);
 assert.equal(keepStoredRow("youtube", false), true);
@@ -29,21 +29,19 @@ assert.equal(entryPlatformKey({ accountId: "za1" }, new Map([["za1", "instagram"
 /* ---- a stored row keeps the watch time it was captured with ---- */
 
 assert.equal(
-  storedWatchSec(12.5, null),
-  12.5,
-  "the live figure wins while the post is still inside the provider window",
-);
-assert.equal(
-  storedWatchSec(null, 9.25),
+  storedWatch(9.25),
   9.25,
   "a post that has aged out of the window keeps the watch time captured when it was visible",
 );
-assert.equal(storedWatchSec(null, null), null, "neither source measured it, so nothing is shown");
-assert.equal(storedWatchSec(0, 9.25), 9.25, "a zero live figure is not a measurement, so the store wins");
+assert.equal(storedWatch(null), null, "the store never measured it, so nothing is shown");
+assert.equal(
+  storedWatch(0),
+  null,
+  "a zero is a metric the provider never computed, not a video watched for zero seconds",
+);
+assert.equal(storedWatch(-1), null, "a negative is nonsense and reads as unmeasured too");
 
 /* ---- timestamp parsing: never throw, garbage yields null ---- */
-
-import { buildMergedPosts } from "./mergedPosts";
 
 // Verify that buildMergedPosts uses the same parser as providerDate and handles
 // zone-marked timestamps and garbage without throwing. A malformed timestamp

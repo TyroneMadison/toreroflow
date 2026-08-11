@@ -102,19 +102,21 @@ export function keepStoredRow(platform: string, hasLiveMatch: boolean): boolean 
 }
 
 /**
- * The watch time for a post, preferring the live provider figure.
+ * A stored watch time, or null when the store has nothing to say.
  *
- * Watch time used to be read only off the live post, so an Instagram video
- * that aged out of the provider's rolling window lost it permanently. The
- * store now captures it, and this is the one rule that decides between them:
- * live is fresher, the store covers what live no longer reaches. A zero counts
- * as unmeasured, because no video anyone published was watched for zero
- * seconds by every viewer.
+ * Watch time used to be read only off the live post, so an Instagram video that
+ * aged out of the provider's rolling window lost it permanently. The store now
+ * captures it, and this covers what the live window no longer reaches: a
+ * non-YouTube stored row only survives the merge when there was no live match,
+ * so there is never a second source here to prefer.
+ *
+ * All this does is scrub a non-positive value to null. No video anyone
+ * published was watched for zero seconds by every viewer, so a zero is a metric
+ * the provider did not compute rather than a measurement. Same rule as msToSec
+ * on the write path and ZERO_IS_UNMEASURED in packages/core.
  */
-export function storedWatchSec(live: number | null, stored: number | null): number | null {
-  if (live != null && live > 0) return live;
-  if (stored != null && stored > 0) return stored;
-  return null;
+export function storedWatch(stored: number | null): number | null {
+  return stored != null && stored > 0 ? stored : null;
 }
 
 /**
@@ -352,10 +354,10 @@ export async function buildMergedPosts(
         saves: v.saves,
         reach: v.reach,
         follows: v.follows,
-        avgWatchSec: storedWatchSec(null, v.avgWatchSec),
+        avgWatchSec: storedWatch(v.avgWatchSec),
         impressions: v.impressions,
         clicks: v.clicks,
-        totalWatchSec: v.totalWatchSec,
+        totalWatchSec: storedWatch(v.totalWatchSec),
         metricsUpdatedAt: v.metricsUpdatedAt ? v.metricsUpdatedAt.toISOString() : null,
         durationSec: v.durationSec,
         byPlatform: [
@@ -370,8 +372,8 @@ export async function buildMergedPosts(
             reach: v.reach,
             impressions: v.impressions,
             clicks: v.clicks,
-            avgWatchSec: v.avgWatchSec,
-            totalWatchSec: v.totalWatchSec,
+            avgWatchSec: storedWatch(v.avgWatchSec),
+            totalWatchSec: storedWatch(v.totalWatchSec),
           },
         ],
         lifetime: true,

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { followsMeasurable, metricMeasurable, reportsSaves } from "@toreroflow/core";
+import {
+  followsMeasurable,
+  reportsSaves,
+  sumReported,
+  ZERO_IS_UNMEASURED,
+  type MetricName,
+} from "@toreroflow/core";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
@@ -32,6 +38,20 @@ function fmt(n: number | null | undefined): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(Math.round(n * 10) / 10);
+}
+
+/**
+ * A measured total, or a dash.
+ *
+ * Null means nothing in the period is on a platform that reports the metric.
+ * Zero means something is and it sent no number, which for reach is no more a
+ * result than a zero watch time: a post with views did not reach nobody. Saves
+ * and clicks are deliberately outside that rule, so a genuine zero still prints
+ * as 0 for them. See ZERO_IS_UNMEASURED in packages/core.
+ */
+function shown(metric: MetricName, total: number | null): string {
+  if (total == null || (total === 0 && ZERO_IS_UNMEASURED.has(metric))) return "-";
+  return fmt(total);
 }
 
 function fmtDur(sec: number | null): string {
@@ -320,23 +340,20 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   /*
    * Engagement over the selected range.
    *
-   * Saves are counted only on the platforms that have the button. Instagram
-   * and TikTok do; YouTube, Facebook and Snapchat report a flat zero because
-   * there is nothing to report, and folding those into one total would make a
-   * real number look like a poor one.
+   * Every optional figure below is totalled over the per-platform entries
+   * rather than the post-level fields, because a platform can be missing from
+   * METRIC_REPORTED_BY for two different reasons: it sends nothing, or it sends
+   * a number we suppress on purpose. Instagram impressions are the second kind,
+   * they mirror views, so summing the post totals of a period containing any
+   * Facebook post would print every Instagram view inside the Impressions box.
    */
-  // Which platforms actually report a save is one question with one answer,
-  // and the client report has to give the same one. See packages/core.
-  const savablePosts = all.filter((p) => reportsSaves(p.platforms));
-  const totalSaves = savablePosts.reduce((s, p) => s + p.saves, 0);
+  const perPlatform = all.flatMap((p) => p.byPlatform);
+  const totalSaves = sumReported("saves", perPlatform, (b) => b.saves);
   const totalComments = all.reduce((s, p) => s + p.comments, 0);
   const totalShares = all.reduce((s, p) => s + p.shares, 0);
-  const totalReach = all.reduce((s, p) => s + p.reach, 0);
-  const reachMeasurable = metricMeasurable("reach", all);
-  const totalImpressions = all.reduce((s, p) => s + (p.impressions ?? 0), 0);
-  const impressionsMeasurable = metricMeasurable("impressions", all);
-  const totalClicks = all.reduce((s, p) => s + (p.clicks ?? 0), 0);
-  const clicksMeasurable = metricMeasurable("clicks", all);
+  const totalReach = sumReported("reach", perPlatform, (b) => b.reach);
+  const totalImpressions = sumReported("impressions", perPlatform, (b) => b.impressions);
+  const totalClicks = sumReported("clicks", perPlatform, (b) => b.clicks);
   /*
    * Followers gained is reported by nobody today. The provider carries the
    * field and has only ever sent zero, on every post of every platform, so a
@@ -347,12 +364,12 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const totalFollows = all.reduce((s, p) => s + p.follows, 0);
 
   const engagement = [
-    { label: "Saves", value: savablePosts.length ? fmt(totalSaves) : "-" },
+    { label: "Saves", value: shown("saves", totalSaves) },
     { label: "Comments", value: fmt(totalComments) },
     { label: "Shares", value: fmt(totalShares) },
-    { label: "Reach", value: reachMeasurable ? fmt(totalReach) : "-" },
-    { label: "Impressions", value: impressionsMeasurable ? fmt(totalImpressions) : "-" },
-    { label: "Link clicks", value: clicksMeasurable ? fmt(totalClicks) : "-" },
+    { label: "Reach", value: shown("reach", totalReach) },
+    { label: "Impressions", value: shown("impressions", totalImpressions) },
+    { label: "Link clicks", value: shown("clicks", totalClicks) },
   ];
 
   // Upload counts per trailing window, across every connected platform.
@@ -694,7 +711,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       rather than a gap.
                     </p>
                   )}
-                  {savablePosts.length === 0 && !loading && (
+                  {totalSaves === null && !loading && (
                     <p className="lnote" style={{ marginLeft: 0, marginTop: 6 }}>
                       Saves are counted on Instagram only. YouTube and Facebook have no save
                       button, and TikTok has one but has never reported the number, so counting
