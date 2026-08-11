@@ -416,6 +416,19 @@ body{
   background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
 .vpill b{display:block;font-size:17px;font-weight:700;color:#fff;letter-spacing:.2px;}
+.vspark{margin-top:12px;}
+.vspark svg{width:100%;height:26px;display:block;}
+.vspark .sparklabel{font-size:10.5px;color:rgba(255,255,255,.72);margin-top:5px;}
+.vspark .sparklabel b{color:#fff;font-weight:700;}
+.vsplit{margin-top:14px;}
+.vsplit .tt{font-size:10px;text-transform:uppercase;letter-spacing:.14em;
+  color:rgba(255,255,255,.55);margin-bottom:7px;}
+.vsrow{display:flex;gap:10px;align-items:baseline;padding:6px 0;
+  border-top:1px solid rgba(255,255,255,.08);}
+.vsname{flex:0 0 74px;font-size:11.5px;font-weight:600;color:#fff;}
+.vsstats{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10.5px;
+  color:rgba(255,255,255,.7);}
+.vsstats b{color:#fff;font-weight:700;}
 .vpill span{display:block;font-size:9.5px;letter-spacing:1.1px;text-transform:uppercase;
   color:rgba(255,255,255,.62);margin-top:2px;}
 .vpill.na b{color:rgba(255,255,255,.45);font-weight:600;font-size:13px;}
@@ -761,11 +774,11 @@ body{
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  /* The watch ring: the one retention figure platforms actually report. */
+  /* The watch ring, when a platform measured it. Nothing at all when none did:
+     a sentence explaining the absence appeared on every card of every report
+     and told a client nothing they could act on. */
   function dialHTML(v) {
-    if (v.watchPct == null) {
-      return '<div class="vdial"><div class="dtxt">The platforms this went to do not report watch time for it, so no retention figure is shown rather than an invented one.</div></div>';
-    }
+    if (v.watchPct == null) return '';
     var r = 26, c = 2 * Math.PI * r;
     var off = c * (1 - v.watchPct / 100);
     return '<div class="vdial">' +
@@ -779,18 +792,62 @@ body{
       '</div>';
   }
 
+  /* A metric pill, or nothing. Null means no platform on this post reports the
+     number, and an absent pill is the honest rendering of that. */
+  function pill(label, value) {
+    return value == null || value === '' ? ''
+      : '<div class="vpill"><b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>';
+  }
+
+  /* Views over time, from the daily capture. Two points is the minimum that
+     can honestly be called a line. */
+  function sparkHTML(v) {
+    var pts = v.spark || [];
+    if (pts.length < 2) return '';
+    var w = 100, h = 26;
+    var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts);
+    var span = hi - lo || 1;
+    var d = pts.map(function (p, i) {
+      var x = (i / (pts.length - 1)) * w;
+      var y = h - ((p - lo) / span) * h;
+      return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }).join(' ');
+    var added = v.viewsAdded != null
+      ? '<div class="sparklabel"><b>+' + esc(v.viewsAdded) + '</b> views ' + esc(v.viewsAddedLabel) + '</div>'
+      : '';
+    return '<div class="vspark">' +
+      '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+      '<path d="' + d + '" fill="none" stroke="var(--coral)" stroke-width="2" ' +
+      'vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>' + added + '</div>';
+  }
+
+  /* One row per platform, only when the video went to more than one. */
+  function splitHTML(v) {
+    var rows = v.byPlatform || [];
+    if (!rows.length) return '';
+    return '<div class="vsplit"><div class="tt">Per platform</div>' +
+      rows.map(function (r) {
+        return '<div class="vsrow"><div class="vsname">' + esc(r.platform) + '</div>' +
+          '<div class="vsstats">' + r.stats.map(function (s) {
+            return '<span><b>' + esc(s.value) + '</b> ' + esc(s.label) + '</span>';
+          }).join('') + '</div></div>';
+      }).join('') + '</div>';
+  }
+
   function videoCardHTML(v, i) {
     var pills =
       '<div class="vpills">' +
-      '<div class="vpill"><b>' + v.views + '</b><span>Views</span></div>' +
-      '<div class="vpill"><b>' + (v.engagement || '-') + '</b><span>Engagement</span></div>' +
-      '<div class="vpill"><b>' + v.likes + '</b><span>Likes</span></div>' +
-      '<div class="vpill"><b>' + v.comments + '</b><span>Comments</span></div>' +
-      '<div class="vpill"><b>' + v.shares + '</b><span>Shares &amp; reposts</span></div>' +
-      (v.saves != null
-        ? '<div class="vpill"><b>' + v.saves + '</b><span>Saves</span></div>'
-        : '<div class="vpill na"><b>Instagram only</b><span>Saves</span></div>') +
-      '<div class="vpill na" style="grid-column:1 / -1;"><b>Not shared by any platform</b><span>DMs from this video</span></div>' +
+      pill('Views', v.views) +
+      pill('Engagement', v.engagement) +
+      pill('Likes', v.likes) +
+      pill('Comments', v.comments) +
+      pill('Shares & reposts', v.shares) +
+      pill('Saves', v.saves) +
+      pill('Reach', v.reach) +
+      pill('Impressions', v.impressions) +
+      pill('Link clicks', v.clicks) +
+      pill('Total watched', v.totalWatch) +
       '</div>';
     var tips = v.tips && v.tips.length
       ? '<div class="vtips"><div class="tt">How to beat this one</div><ul>' +
@@ -804,7 +861,7 @@ body{
       '<div class="vmeta">' + esc(v.date) + ' · ' + esc((v.platforms || []).join(', ')) + '</div>' +
       '<button type="button" class="vbtn">Expand</button>' +
       '</div>' +
-      '<div class="vstats">' + pills + dialHTML(v) + tips + '</div>' +
+      '<div class="vstats">' + pills + sparkHTML(v) + dialHTML(v) + splitHTML(v) + tips + '</div>' +
       '</div>';
   }
 
