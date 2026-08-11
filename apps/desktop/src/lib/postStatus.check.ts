@@ -29,6 +29,7 @@ const expected: Record<PostStatus, Pick<StatusMeta, "movable" | "pulses" | "icon
   publishing: { movable: false, pulses: true, icon: "lock" },
   posted: { movable: false, pulses: false, icon: "lock" },
   failed: { movable: false, pulses: true, icon: "alert" },
+  reminded: { movable: false, pulses: false, icon: "lock" },
 };
 
 for (const status of ALL) {
@@ -64,7 +65,7 @@ assert.equal(POST_STATUS.scheduled.pulses, false, "scheduled must not pulse");
 // The legend reads in lifecycle order, and it maps this record directly.
 assert.equal(
   Object.keys(POST_STATUS).join(","),
-  "scheduled,publishing,posted,failed",
+  "scheduled,publishing,posted,failed,reminded",
   "legend order changed",
 );
 

@@ -14,3 +14,4 @@ export * from "./externalStore";
 export * from "./grounding";
 export * from "./queue";
 export * from "./secrets";
+export * from "./fileSigning";

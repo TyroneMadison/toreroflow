@@ -198,6 +198,30 @@ function ProfileCard({
 }) {
   const [open, setOpen] = useState(false);
   const [cover, setCover] = useState(false);
+  // The add-a-reminder-account form: platform + handle, no OAuth, because
+  // there is nothing to authorize on a personal profile.
+  const [remOpen, setRemOpen] = useState(false);
+  const [remPlatform, setRemPlatform] = useState<Platform>("facebook");
+  const [remHandle, setRemHandle] = useState("");
+  const [remBusy, setRemBusy] = useState(false);
+  const [remErr, setRemErr] = useState<string | null>(null);
+  const addReminder = async () => {
+    setRemBusy(true);
+    setRemErr(null);
+    try {
+      await api.post(`/clients/${client.id}/accounts/reminder`, {
+        platform: remPlatform,
+        handle: remHandle,
+      });
+      setRemOpen(false);
+      setRemHandle("");
+      onContactSaved();
+    } catch (e: unknown) {
+      setRemErr(e instanceof Error ? e.message : "could not add the account");
+    } finally {
+      setRemBusy(false);
+    }
+  };
   const [confirming, setConfirming] = useState(false);
   const [welcomeUrl, setWelcomeUrl] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
@@ -442,6 +466,52 @@ function ProfileCard({
               );
             });
           })}
+
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
+            {!remOpen ? (
+              <button
+                className="btn ghost"
+                style={{ fontSize: 11.5 }}
+                title="For personal profiles nothing can post to: at post time the client gets the video and caption by email and posts it themselves."
+                onClick={() => setRemOpen(true)}
+              >
+                + Add a reminder account (posts by hand)
+              </button>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <select
+                  className="field-in"
+                  style={{ width: 130 }}
+                  value={remPlatform}
+                  onChange={(e) => setRemPlatform(e.target.value as Platform)}
+                >
+                  {PLATFORMS.map((pf) => (
+                    <option key={pf} value={pf}>
+                      {PLATFORM_LABELS[pf]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="field-in"
+                  style={{ width: 180 }}
+                  placeholder="handle, e.g. caleb.concepcion"
+                  value={remHandle}
+                  maxLength={120}
+                  onChange={(e) => setRemHandle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && remHandle.trim()) void addReminder();
+                  }}
+                />
+                <button className="cbtn" disabled={remBusy || !remHandle.trim()} onClick={() => void addReminder()}>
+                  {remBusy ? "…" : "Add"}
+                </button>
+                <button className="btn ghost" style={{ fontSize: 11.5 }} onClick={() => setRemOpen(false)}>
+                  Cancel
+                </button>
+                {remErr && <span style={{ fontSize: 11.5, color: "var(--red)" }}>{remErr}</span>}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

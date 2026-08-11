@@ -20,6 +20,7 @@ import { runResearch } from "./research";
 import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
+import { sendReminder } from "./reminder";
 
 const prisma = getPrisma();
 
@@ -294,6 +295,32 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
 
     let remotePostId: string;
     let remoteUrl: string | undefined;
+
+    /*
+     * A reminder account never reaches a provider: the client gets the video
+     * and the words, and the tap is theirs. Terminal status is "reminded",
+     * not "posted", because the app only knows the package was delivered.
+     */
+    if (target.socialAccount.tokensEncrypted === "reminder") {
+      const toEmail = target.post.client.contactEmail;
+      if (!toEmail) throw new Error("this client has no contact email for reminders");
+      await sendReminder({
+        toEmail,
+        clientName: target.post.client.name,
+        platform: target.platform,
+        handle: target.socialAccount.handle,
+        videoName: asset?.originalName ?? "your video",
+        caption,
+        storageKey: asset?.sourceDeletedAt ? null : (asset?.storageKey ?? null),
+        scheduledAt: target.scheduledAt,
+      });
+      await prisma.postTarget.update({
+        where: { id: target.id },
+        data: { status: "reminded", publishedAt: new Date() },
+      });
+      console.log(`[worker] reminder sent for target ${target.id} to ${toEmail}`);
+      return;
+    }
 
     const viaZernio =
       zernio && target.socialAccount.tokensEncrypted === "provider:zernio";

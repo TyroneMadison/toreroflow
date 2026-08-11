@@ -113,6 +113,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         avatarUrl: a.avatarUrl,
         displayName: a.displayName,
         followers: a.metricSnapshots[0]?.followers ?? null,
+        // A reminder account cannot auto-post; the UI says so wherever it
+        // offers the account, or the operator finds out at publish time.
+        reminder: a.tokensEncrypted === "reminder",
       }));
       const known = accounts.filter((a) => a.followers != null);
       return {
@@ -400,6 +403,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
                 platform,
                 providerAccountId: null,
                 deletedAt: null,
+                // Reminder accounts also have no provider id, and are not
+                // legacy rows waiting to be claimed by an import.
+                NOT: { tokensEncrypted: "reminder" },
               },
             }));
           const account = existing
@@ -465,6 +471,63 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /** Disconnect: purge tokens and soft-delete the account row. */
+  /**
+   * A reminder account: a destination the app cannot post to and does not
+   * pretend it can.
+   *
+   * Personal profiles have no publishing API on any platform that matters
+   * here, and the tools that claim otherwise drive a logged-in browser
+   * session against the platform's terms, with the client's own account
+   * taking the ban risk. So this account type schedules like any other, and
+   * at post time the client gets the video and the words instead of the
+   * platform getting an API call. No OAuth, because there is nothing to
+   * authorize; the row exists so the picker, the calendar and the reports
+   * have a real account to hang the work on.
+   */
+  app.post<{ Params: { id: string }; Body: { platform?: string; handle?: string } }>(
+    "/clients/:id/accounts/reminder",
+    async (request, reply) => {
+      const client = await prisma.client.findFirst({
+        where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      });
+      if (!client) return reply.status(404).send(NOT_FOUND);
+
+      const platform = platformSchema.safeParse(request.body?.platform);
+      const handle = (request.body?.handle ?? "").trim().replace(/^@/, "");
+      if (!platform.success || !handle || handle.length > 120) {
+        return reply.status(400).send({
+          error: "a reminder account needs a platform and a handle",
+          detail: "The handle is how the account reads in the picker and on the calendar.",
+        });
+      }
+      if (!client.contactEmail) {
+        return reply.status(400).send({
+          error: "no contact email",
+          detail:
+            "Reminders go to the client's contact email, and this client does not have one yet. Add it on Settings first.",
+        });
+      }
+
+      const account = await prisma.socialAccount.create({
+        data: {
+          clientId: client.id,
+          platform: platform.data,
+          handle,
+          status: "connected",
+          // The custody marker every publish and sync decision branches on.
+          tokensEncrypted: "reminder",
+        },
+      });
+      return reply.status(201).send({
+        id: account.id,
+        platform: account.platform,
+        handle: account.handle,
+        status: account.status,
+        reminder: true,
+      });
+    },
+  );
+
   app.delete<{ Params: { id: string } }>("/accounts/:id", async (request, reply) => {
     const account = await prisma.socialAccount.findFirst({
       where: {

@@ -53,6 +53,13 @@ export const POST_STATUS: Record<PostStatus, StatusMeta> = {
     movable: false,
     icon: "alert",
   },
+  reminded: {
+    label: "Sent to client",
+    hint: "they post it by hand",
+    pulses: false,
+    movable: false,
+    icon: "lock",
+  },
 };
 
 /** The one drag rule. Every caller routes through this. */

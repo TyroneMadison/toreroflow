@@ -20,6 +20,18 @@ export const env = {
   MONID_API_KEY: process.env.MONID_API_KEY ?? "",
   /** Empty means lifetime YouTube refresh is skipped, not failed. */
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
+  /** Signs the /files links a reminder email carries; same secret as the API. */
+  JWT_SECRET: process.env.JWT_SECRET ?? "",
+  /**
+   * The base the client's browser can actually reach for those links,
+   * e.g. https://toreroflow-server.tail0aa167.ts.net. Empty means reminder
+   * emails go out without a download link and say to ask for the file.
+   */
+  PUBLIC_API_URL: (process.env.PUBLIC_API_URL ?? process.env.VITE_API_URL ?? "").replace(/\/+$/, ""),
+  /** Resend key for reminder delivery. Empty fails the target with a clear message. */
+  RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
+  /** The verified sender, e.g. "Torerone <hello@torerone.com>". */
+  REMINDER_FROM: process.env.REMINDER_FROM ?? "",
   /**
    * Days a posted video keeps its source file before the sweep clears it.
    *

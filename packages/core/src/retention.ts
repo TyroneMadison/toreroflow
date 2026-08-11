@@ -31,7 +31,7 @@ export const DEFAULT_RETENTION_DAYS = 7;
 export const DEFAULT_THUMB_RETENTION_DAYS = 30;
 
 export interface RetentionTarget {
-  status: "scheduled" | "publishing" | "posted" | "failed";
+  status: "scheduled" | "publishing" | "posted" | "failed" | "reminded";
   publishedAt: Date | null;
 }
 
@@ -57,7 +57,10 @@ export function sourceRetention(
 ): RetentionVerdict {
   if (!targets.length) return { deletable: false, reason: "never scheduled anywhere" };
 
-  const unfinished = targets.filter((t) => t.status !== "posted");
+  // "reminded" is as finished as this app can know: the package went out and
+  // its download link dies at exactly this retention window, so the file and
+  // the link expire together rather than the link outliving the file.
+  const unfinished = targets.filter((t) => t.status !== "posted" && t.status !== "reminded");
   if (unfinished.length) {
     const statuses = [...new Set(unfinished.map((t) => t.status))].sort().join(", ");
     return { deletable: false, reason: `still ${statuses} on ${unfinished.length} platform(s)` };

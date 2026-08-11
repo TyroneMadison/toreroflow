@@ -107,6 +107,8 @@ export interface AccountInfo {
   avatarUrl: string | null;
   displayName: string | null;
   followers: number | null;
+  /** True when this account only sends the client a reminder to post by hand. */
+  reminder?: boolean;
 }
 
 /** The registered company, as stored. Printed on every outgoing document. */
@@ -465,7 +467,7 @@ export interface PostTargetInfo {
   id: string;
   postId: string;
   platform: Platform;
-  status: "scheduled" | "publishing" | "posted" | "failed";
+  status: "scheduled" | "publishing" | "posted" | "failed" | "reminded";
   scheduledAt: string | null;
   publishedAt: string | null;
   error: string | null;

@@ -251,7 +251,24 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               >
                 <Pf p={PF_ID[account.platform]} />
                 <div className="info">
-                  <b>{SURFACE_LABEL[account.platform]}</b>
+                  <b>
+                    {SURFACE_LABEL[account.platform]}
+                    {account.reminder && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: ".8px",
+                          textTransform: "uppercase",
+                          color: "var(--amber)",
+                        }}
+                        title="This account cannot auto-post. At post time the client gets the video and caption by email and posts it themselves."
+                      >
+                        reminder
+                      </span>
+                    )}
+                  </b>
                   <span>@{account.handle}</span>
                 </div>
                 <div className="switch" />

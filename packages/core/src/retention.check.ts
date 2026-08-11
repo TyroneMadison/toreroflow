@@ -147,3 +147,27 @@ assert.ok(
 }
 
 console.log("retention.check.ts: ok");
+
+/* A reminded target is finished: its link and its file share one clock. */
+{
+  const sent = new Date("2026-08-01T12:00:00Z");
+  const v = sourceRetention(
+    [{ status: "reminded", publishedAt: sent }],
+    new Date("2026-08-09T12:00:00Z"),
+  );
+  if (!v.deletable) throw new Error("a week-old reminded target must release its file");
+  const early = sourceRetention(
+    [{ status: "reminded", publishedAt: sent }],
+    new Date("2026-08-05T12:00:00Z"),
+  );
+  if (early.deletable) throw new Error("a fresh reminder's file must outlive its download link");
+  const mixed = sourceRetention(
+    [
+      { status: "posted", publishedAt: sent },
+      { status: "reminded", publishedAt: sent },
+    ],
+    new Date("2026-08-09T12:00:00Z"),
+  );
+  if (!mixed.deletable) throw new Error("posted plus reminded is fully finished");
+  console.log("retention.check reminded cases: ok");
+}

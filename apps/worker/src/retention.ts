@@ -39,7 +39,7 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
       sourceDeletedAt: null,
       // A video nobody has posted anywhere cannot be past its window, so it is
       // not worth loading. Drafts and failures never reach this query.
-      posts: { some: { targets: { some: { status: "posted" } } } },
+      posts: { some: { targets: { some: { status: { in: ["posted", "reminded"] } } } } },
     },
     select: {
       id: true,
@@ -137,7 +137,7 @@ export async function sweepPostedThumbnails(now = new Date()): Promise<SweepResu
     where: {
       kind: { in: ["video", "carousel"] },
       thumbDeletedAt: null,
-      posts: { some: { targets: { some: { status: "posted" } } } },
+      posts: { some: { targets: { some: { status: { in: ["posted", "reminded"] } } } } },
     },
     select: {
       id: true,

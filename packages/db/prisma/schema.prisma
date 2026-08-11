@@ -53,6 +53,8 @@ enum PostTargetStatus {
   publishing
   posted
   failed
+  /// A reminder account: the package went to the client, the tap is theirs.
+  reminded
 }
 
 enum ScheduleSource {
