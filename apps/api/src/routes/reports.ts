@@ -142,9 +142,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       durationSec: p.durationSec,
       platforms: p.platforms,
       platformKey: p.platformKey,
-      impressions: p.impressions,
-      clicks: p.clicks,
-      totalWatchSec: p.totalWatchSec,
+      // No post-level impressions, clicks or totalWatchSec: the builder totals
+      // all three from byPlatform, because a post aggregate includes the
+      // platforms the metric is suppressed for. See ReportPost.
       metricsUpdatedAt: p.metricsUpdatedAt,
       byPlatform: p.byPlatform,
       url: p.url,

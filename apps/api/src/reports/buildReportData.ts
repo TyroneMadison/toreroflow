@@ -53,11 +53,14 @@ export interface ReportPost {
   platforms: string[];
   /** "platform:platformPostId", which is how a card finds its captured series. */
   platformKey?: string | null;
-  /** Null when no platform on this post reports it. Never 0 as a stand-in. */
-  impressions?: number | null;
-  clicks?: number | null;
-  /** Total seconds watched across all viewers, measured rather than derived. */
-  totalWatchSec?: number | null;
+  /*
+   * There are deliberately no post-level impressions, clicks or totalWatchSec
+   * fields here. Those are the aggregates the report used to read, and reading
+   * them is the bug this phase removed: a post total folds in the platforms a
+   * metric is suppressed for, which for impressions meant printing Instagram's
+   * views under a second heading. Every one of them is now totalled from
+   * byPlatform below, so the wrong number is not merely unused, it is absent.
+   */
   /** When the provider last refreshed these figures, ISO, or null. */
   metricsUpdatedAt?: string | null;
   byPlatform: Array<{
@@ -397,16 +400,19 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
   });
 
   /*
-   * Saves are counted on the platforms that have the button. Instagram and
-   * TikTok do; the rest report a flat zero because there is nothing to
-   * report, and a client seeing "Saves 0" beside real likes would read it as
-   * a bad month rather than a metric their platform does not keep. So the row
-   * appears only when a save-capable platform is in the period.
+   * Saves are counted on Instagram only. YouTube and Facebook have no save
+   * button, and TikTok has one but has never reported the number, so its posts
+   * would only contribute zeros. A client seeing "Saves 0" beside real likes
+   * would read it as a bad month rather than a metric their platform does not
+   * keep, so the row appears only when a save-reporting platform is in the
+   * period.
+   *
+   * The same rule the analytics screen applies, from the same place, so this
+   * document cannot quietly disagree with the screen it was generated from.
+   * See SAVES_REPORTED_BY in packages/core for the measurement behind it.
    */
-  // The same rule the analytics screen applies, from the same place, so this
-  // document cannot quietly disagree with the screen it was generated from.
-  // See packages/core for why TikTok is not on the list.
   const savable = current.filter((p) => reportsSaves(p.platforms));
+  const refreshed = lastRefreshed(current);
   const engRows = [
     { name: "Likes", value: sum(current, (p) => p.likes), color: "linear-gradient(90deg,#FF8A78,#E5473C)" },
     { name: "Comments", value: sum(current, (p) => p.comments), color: "linear-gradient(90deg,#8b7bff,#4ea8ff)" },
@@ -504,7 +510,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       note: "Short form content that performs",
       // Omitted entirely when nothing in the period carries a timestamp: a
       // line saying when the numbers were refreshed has to be true or absent.
-      ...(lastRefreshed(current) ? { refreshed: lastRefreshed(current) } : {}),
+      ...(refreshed ? { refreshed } : {}),
     },
   };
 }
@@ -636,16 +642,22 @@ export function fmtWatchTotal(sec: number): string {
  * cannot be a result. Reach is the second kind, saves deliberately is not, so
  * a post that genuinely earned no saves still prints "Saves 0". See
  * ZERO_IS_UNMEASURED in packages/core.
+ *
+ * Watch time passes fmtWatchTotal as the formatter. It is the same rule about
+ * the same kind of number, only rendered as "27m 32s" instead of "1,652", and
+ * the alternative was a fourth call site quietly keeping its own version of the
+ * rule.
  */
 export function measured(
   metric: MetricName,
   platforms: readonly string[],
   value: number | null,
+  format: (n: number) => string = fmt,
 ): string | null {
   if (!reportsMetric(metric, platforms)) return null;
   if (value == null) return null;
   if (value === 0 && ZERO_IS_UNMEASURED.has(metric)) return null;
-  return fmt(value);
+  return format(value);
 }
 
 /**
@@ -660,8 +672,9 @@ function total(
   metric: MetricName,
   p: ReportPost,
   pick: (b: ReportPost["byPlatform"][number]) => number | null,
+  format?: (n: number) => string,
 ): string | null {
-  return measured(metric, p.platforms, sumReported(metric, p.byPlatform ?? [], pick));
+  return measured(metric, p.platforms, sumReported(metric, p.byPlatform ?? [], pick), format);
 }
 
 /** The per-platform rows on a cross-posted video's card. */
@@ -672,8 +685,13 @@ export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
     const stats: Array<{ label: string; value: string }> = [
       { label: "Views", value: fmt(b.views) },
     ];
-    const add = (label: string, metric: MetricName, value: number | null) => {
-      const v = measured(metric, only, value);
+    const add = (
+      label: string,
+      metric: MetricName,
+      value: number | null,
+      format?: (n: number) => string,
+    ) => {
+      const v = measured(metric, only, value, format);
       if (v) stats.push({ label, value: v });
     };
     add("Likes", "likes", b.likes);
@@ -683,9 +701,7 @@ export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
     add("Reach", "reach", b.reach);
     add("Impressions", "impressions", b.impressions);
     add("Clicks", "clicks", b.clicks);
-    if (reportsMetric("totalWatch", only) && b.totalWatchSec != null) {
-      stats.push({ label: "Watched", value: fmtWatchTotal(b.totalWatchSec) });
-    }
+    add("Watched", "totalWatch", b.totalWatchSec, fmtWatchTotal);
     return { platform: PLATFORM_NAME[b.platform] ?? b.platform, stats };
   });
 }
@@ -732,10 +748,7 @@ function buildVideos(
         reach: total("reach", p, (b) => b.reach),
         impressions: total("impressions", p, (b) => b.impressions),
         clicks: total("clicks", p, (b) => b.clicks),
-        totalWatch:
-          reportsMetric("totalWatch", p.platforms) && p.totalWatchSec != null
-            ? fmtWatchTotal(p.totalWatchSec)
-            : null,
+        totalWatch: total("totalWatch", p, (b) => b.totalWatchSec, fmtWatchTotal),
         engagement: eng != null ? `${eng.toFixed(1)}%` : null,
         watchPct,
         avgWatch: fmtDur(p.avgWatchSec),

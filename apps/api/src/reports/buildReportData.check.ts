@@ -82,16 +82,25 @@ assert.equal(measured("reach", ["instagram"], null), null, "nothing measured mea
  * the matrix suppresses it. Reading the post-level aggregate because Facebook
  * is somewhere on the list printed 12,900 Impressions beside 12,400 Views, and
  * it looks plausible enough to ship. Only Facebook's 900 was ever measured.
+ *
+ * ReportPost no longer carries that 12,900 at all: the post-level impressions,
+ * clicks and totalWatchSec fields are gone, so the wrong number cannot be
+ * reached from here even by mistake. The byPlatform entries below are the whole
+ * input, and 900 is the only impressions figure in them.
  */
 const cross = post({
   title: "Cross-posted",
   views: 12_400,
   reach: 11_650,
-  impressions: 12_900,
-  clicks: 7,
   platforms: ["instagram", "facebook"],
   byPlatform: [
-    entry("instagram", { views: 12_000, impressions: 12_000, reach: 11_400, saves: 61 }),
+    entry("instagram", {
+      views: 12_000,
+      impressions: 12_000,
+      reach: 11_400,
+      saves: 61,
+      totalWatchSec: 1652,
+    }),
     entry("facebook", { views: 400, impressions: 900, reach: 250, clicks: 7 }),
   ],
 });
@@ -115,6 +124,11 @@ assert.equal(
 assert.equal(videos[0]!.reach, "11.7K", "both platforms report reach, so both count");
 assert.equal(videos[0]!.saves, "61", "saves come from instagram alone");
 assert.equal(videos[0]!.clicks, "7", "clicks come from facebook alone");
+assert.equal(
+  videos[0]!.totalWatch,
+  "27m 32s",
+  "watch time is totalled off byPlatform like the other four, not read off a post aggregate",
+);
 
 /*
  * IMPORTANT 4. MergedPost.reach is a non-nullable number defaulted to 0, so a
@@ -140,6 +154,56 @@ const zeroVideo = (zeroed.videos as Array<Record<string, unknown>>)[0]!;
 assert.equal(zeroVideo.reach, null, "a zero reach is unmeasured and renders as no pill at all");
 assert.equal(zeroVideo.clicks, "0", "a zero clicks is a real result and still prints");
 assert.equal(zeroVideo.saves, "0", "a post that genuinely earned no saves still prints Saves 0");
+assert.equal(
+  zeroVideo.impressions,
+  null,
+  "facebook reports impressions and supplied none for this post, so the card prints nothing rather than inventing a zero from the absence",
+);
+assert.equal(
+  zeroVideo.totalWatch,
+  null,
+  "no entry carried watch time, so the card says nothing about how long it was watched",
+);
+
+/*
+ * The zeros that cannot be results, at the surface a client reads.
+ *
+ * Impressions count every time the post was put on a screen, so a post with
+ * 400 views cannot have 0 of them, the same argument that put reach in the set.
+ * Watch time is the same: a video with views was not watched for zero seconds
+ * by everyone. Clicks and saves are deliberately outside the rule and their
+ * zeros still print.
+ */
+const impossible = buildReportData({
+  clientName: "A client",
+  businessName: "Torerone",
+  accounts: [],
+  posts: [
+    post({
+      title: "Zeros a provider never computed",
+      platforms: ["facebook", "instagram"],
+      byPlatform: [
+        entry("facebook", { views: 400, impressions: 0, clicks: 0 }),
+        entry("instagram", { views: 600, totalWatchSec: 0, saves: 0 }),
+      ],
+    }),
+  ],
+  periodStart: new Date("2026-08-01T00:00:00.000Z"),
+  periodEnd: new Date("2026-08-31T23:59:59.000Z"),
+});
+const impossibleVideo = (impossible.videos as Array<Record<string, unknown>>)[0]!;
+assert.equal(
+  impossibleVideo.impressions,
+  null,
+  "a post with 400 views was not shown zero times, so a zero impressions is an uncomputed metric",
+);
+assert.equal(
+  impossibleVideo.totalWatch,
+  null,
+  "a viewed video was not watched for zero seconds, and this is the first consumer that pins it rather than declaring it",
+);
+assert.equal(impossibleVideo.clicks, "0", "a post with no link genuinely got no clicks");
+assert.equal(impossibleVideo.saves, "0", "a post nobody saved genuinely earned no saves");
 
 /* ---- platformRows: each row answers only for its own platform ---- */
 
@@ -158,6 +222,31 @@ assert.equal(
   fb.stats.some((s) => s.label === "Saves"),
   false,
   "facebook has no save button, so the row leaves it out rather than printing a zero",
+);
+assert.equal(
+  ig.stats.find((s) => s.label === "Watched")?.value,
+  "27m 32s",
+  "watch time goes through the same measured() path as the other pills, formatted rather than counted",
+);
+assert.equal(
+  fb.stats.some((s) => s.label === "Watched"),
+  false,
+  "no platform but instagram reports watch time through the provider",
+);
+assert.equal(
+  platformRows(
+    post({
+      platforms: ["instagram", "facebook"],
+      byPlatform: [
+        entry("instagram", { views: 900, totalWatchSec: 0 }),
+        entry("facebook", { views: 100 }),
+      ],
+    }),
+  )
+    .find((r) => r.platform === "Instagram")!
+    .stats.some((s) => s.label === "Watched"),
+  false,
+  "a zero watch time on a viewed post is uncomputed, so the pill is absent rather than reading 0s",
 );
 assert.equal(
   platformRows(post({ byPlatform: [entry("instagram", { views: 5 })] })).length,
