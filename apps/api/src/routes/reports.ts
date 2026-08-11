@@ -35,6 +35,7 @@ import {
   type WebReportPeriod,
 } from "../reports/buildWebReport";
 import { embedThumbnails } from "../reports/embedThumbnails";
+import { loadSeries } from "../reports/loadSeries";
 import { NetlifyError, NetlifyPublisher } from "../reports/netlify";
 import { findBrowser, renderReportPdf } from "@toreroflow/media";
 import { setReportPageHooks } from "../reports/onboardHook";
@@ -140,6 +141,10 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       avgWatchSec: p.avgWatchSec,
       durationSec: p.durationSec,
       platforms: p.platforms,
+      platformKey: p.platformKey,
+      impressions: p.impressions,
+      clicks: p.clicks,
+      totalWatchSec: p.totalWatchSec,
       byPlatform: p.byPlatform,
       url: p.url,
       thumbnailUrl: p.thumbnailUrl,
@@ -153,6 +158,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const inputs = await gatherInputs(clientId);
     if (!inputs) return null;
 
+    const series = await loadSeries(prisma, clientId);
     const data = buildReportData({
       clientName: inputs.client.name,
       businessName: inputs.businessName,
@@ -160,6 +166,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       posts: inputs.posts,
       periodStart: period.start,
       periodEnd: period.end,
+      series,
     });
 
     // Chrome takes the document title as the PDF's metadata title, which is
@@ -207,6 +214,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const inputs = await gatherInputs(clientId);
     if (!inputs) return null;
 
+    // Loaded once and closed over: the same history feeds every period below,
+    // so this is one query per report rather than one per period.
+    const series = await loadSeries(prisma, clientId);
     const build = (start: Date, end: Date) =>
       buildReportData({
         clientName: inputs.client.name,
@@ -215,6 +225,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         posts: inputs.posts,
         periodStart: start,
         periodEnd: end,
+        series,
       });
 
     const periods: WebReportPeriod[] = [];

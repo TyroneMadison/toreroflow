@@ -14,7 +14,13 @@
  *    printing a zero the client would read as their result.
  */
 
-import { reportsSaves } from "@toreroflow/core";
+import {
+  reportsSaves,
+  reportsMetric,
+  seriesSummary,
+  type MetricName,
+  type DayPoint,
+} from "@toreroflow/core";
 
 export type Direction = "up" | "down" | "flat";
 
@@ -43,7 +49,27 @@ export interface ReportPost {
   /** Length of the video itself, which turns average watch into a percentage. */
   durationSec: number | null;
   platforms: string[];
-  byPlatform: Array<{ platform: string; views: number; accountId?: string }>;
+  /** "platform:platformPostId", which is how a card finds its captured series. */
+  platformKey?: string | null;
+  /** Null when no platform on this post reports it. Never 0 as a stand-in. */
+  impressions?: number | null;
+  clicks?: number | null;
+  /** Total seconds watched across all viewers, measured rather than derived. */
+  totalWatchSec?: number | null;
+  byPlatform: Array<{
+    platform: string;
+    views: number;
+    accountId?: string;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+    reach: number | null;
+    impressions: number | null;
+    clicks: number | null;
+    avgWatchSec: number | null;
+    totalWatchSec: number | null;
+  }>;
   /** Public link to the video, so the report can point at the real thing. */
   url?: string | null;
   /** Thumbnail URL; inlined as a data URI before publishing. */
@@ -150,11 +176,18 @@ export interface BuildReportInput {
   /** Action items for the plan section; falls back to derived ones. */
   planItems?: string[];
   generatedAt?: Date;
+  /**
+   * Captured daily history, keyed "platform:platformPostId". Loaded by the
+   * caller with loadSeries so this function stays synchronous and pure.
+   * Absent means no series, which every card handles by drawing nothing.
+   */
+  series?: Map<string, DayPoint[]>;
 }
 
 export function buildReportData(input: BuildReportInput): Record<string, unknown> {
   const { clientName, businessName, accounts, posts, periodStart, periodEnd } = input;
   const generatedAt = input.generatedAt ?? new Date();
+  const series = input.series ?? new Map<string, DayPoint[]>();
 
   const periodMs = periodEnd.getTime() - periodStart.getTime();
   const prevStart = new Date(periodStart.getTime() - periodMs - 1);
@@ -443,7 +476,7 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       },
     },
     topContent: { eyebrow: "What worked", title: "Top Content", items: topContent },
-    videos: buildVideos(current),
+    videos: buildVideos(current, series, periodStart.toISOString(), periodEnd.toISOString()),
     videosSection: { eyebrow: "Every upload", title: "Video Breakdown" },
     plan: { eyebrow: "Next", title: "The Plan", items: planItems },
     footer: {
@@ -456,13 +489,14 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
 /**
  * One card per video for the report's Video breakdown tab.
  *
- * Everything in here is either measured or explicitly marked unmeasured.
- * DMs are never served per post by any platform, so the pill says so instead
- * of printing a zero the client would read as "nobody messaged". Reposts are
- * folded into the share count by every platform that has them, so the two are
- * one pill rather than one real number and one invented one. "Retention" is
- * average watch over the video's length, which is the only retention any
- * platform reports; there is no per-second curve to draw, so none is drawn.
+ * Everything here is either measured or absent. A metric the card's platforms
+ * do not report is null and renders as nothing at all: not a zero, and no
+ * longer a sentence explaining the absence. The explanations were on every
+ * card of every report and taught a client nothing.
+ *
+ * "Retention" is average watch over the video's length, which is the only
+ * retention any platform we can reach reports. There is no per-second curve to
+ * draw, so none is drawn.
  */
 export interface ReportVideo {
   title: string;
@@ -477,11 +511,25 @@ export interface ReportVideo {
   shares: string;
   /** Null when no platform on this post has a save button that reports. */
   saves: string | null;
+  /** Null when no platform on this post reports it. */
+  reach: string | null;
+  impressions: string | null;
+  clicks: string | null;
+  /** Total time watched across all viewers, e.g. "27m 32s". */
+  totalWatch: string | null;
   /** Engagement as a percentage of views, e.g. "4.2%". Null below 1 view. */
   engagement: string | null;
   /** 0-100, average watch over length. Null when either side is unreported. */
   watchPct: number | null;
   avgWatch: string;
+  /** Views gained across the report window. Null with under two captured days. */
+  viewsAdded: string | null;
+  /** "this period" or "since we started tracking", per seriesSummary. */
+  viewsAddedLabel: string;
+  /** Raw view counts for the inline sparkline. Empty when there is no series. */
+  spark: number[];
+  /** One row per platform, for a video that went to more than one. */
+  byPlatform: Array<{ platform: string; stats: Array<{ label: string; value: string }> }>;
   tips: string[];
 }
 
@@ -545,8 +593,66 @@ function videoTips(p: ReportPost, medViews: number, avgEng: number): string[] {
   return tips.slice(0, 3);
 }
 
-/** The Video breakdown tab: one honest card per video this period. */
-function buildVideos(current: ReportPost[]): ReportVideo[] {
+/** Seconds to "27m 32s", or "1m 05s", or "9s". */
+function fmtWatchTotal(sec: number): string {
+  const s = Math.round(sec);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m < 60) return `${m}m ${String(r).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+/**
+ * One metric on a card, or null when this post's platforms do not report it.
+ *
+ * Every optional figure goes through here, so the rule that an unmeasured
+ * metric is absent rather than zero is applied in one place rather than at
+ * each call site.
+ */
+function measured(
+  metric: MetricName,
+  platforms: readonly string[],
+  value: number | null,
+): string | null {
+  if (!reportsMetric(metric, platforms)) return null;
+  if (value == null) return null;
+  return fmt(value);
+}
+
+/** The per-platform rows on a cross-posted video's card. */
+function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
+  if (!p.byPlatform || p.byPlatform.length < 2) return [];
+  return p.byPlatform.map((b) => {
+    const only = [b.platform];
+    const stats: Array<{ label: string; value: string }> = [
+      { label: "Views", value: fmt(b.views) },
+    ];
+    const add = (label: string, metric: MetricName, value: number | null) => {
+      const v = measured(metric, only, value);
+      if (v) stats.push({ label, value: v });
+    };
+    add("Likes", "likes", b.likes);
+    add("Comments", "comments", b.comments);
+    add("Shares", "shares", b.shares);
+    add("Saves", "saves", b.saves);
+    add("Reach", "reach", b.reach);
+    add("Impressions", "impressions", b.impressions);
+    add("Clicks", "clicks", b.clicks);
+    if (reportsMetric("totalWatch", only) && b.totalWatchSec != null) {
+      stats.push({ label: "Watched", value: fmtWatchTotal(b.totalWatchSec) });
+    }
+    return { platform: PLATFORM_NAME[b.platform] ?? b.platform, stats };
+  });
+}
+
+/** The Video breakdown tab: one card per video this period. */
+function buildVideos(
+  current: ReportPost[],
+  series: Map<string, DayPoint[]>,
+  from: string,
+  to: string,
+): ReportVideo[] {
   // Videos only: carousels have their own card and a still image has no
   // watch time for a "Video Breakdown" to break down.
   const vids = current.filter((p) => p.mediaType !== "carousel" && p.mediaType !== "image");
@@ -564,6 +670,7 @@ function buildVideos(current: ReportPost[]): ReportVideo[] {
         p.avgWatchSec && p.durationSec && p.durationSec > 0
           ? Math.min(100, Math.round((p.avgWatchSec / p.durationSec) * 100))
           : null;
+      const sum = seriesSummary(series.get(p.platformKey ?? "") ?? [], p.publishedAt, from, to);
       return {
         title: p.title,
         date: new Date(p.publishedAt).toLocaleDateString("en-US", {
@@ -577,10 +684,21 @@ function buildVideos(current: ReportPost[]): ReportVideo[] {
         likes: fmt(p.likes),
         comments: fmt(p.comments),
         shares: fmt(p.shares),
-        saves: reportsSaves(p.platforms as never) ? fmt(p.saves) : null,
+        saves: measured("saves", p.platforms, p.saves),
+        reach: measured("reach", p.platforms, p.reach),
+        impressions: measured("impressions", p.platforms, p.impressions ?? null),
+        clicks: measured("clicks", p.platforms, p.clicks ?? null),
+        totalWatch:
+          reportsMetric("totalWatch", p.platforms) && p.totalWatchSec != null
+            ? fmtWatchTotal(p.totalWatchSec)
+            : null,
         engagement: eng != null ? `${eng.toFixed(1)}%` : null,
         watchPct,
         avgWatch: fmtDur(p.avgWatchSec),
+        viewsAdded: sum.added != null ? fmt(sum.added) : null,
+        viewsAddedLabel: sum.sinceTracking ? "since we started tracking" : "this period",
+        spark: sum.points.map((pt) => pt.views),
+        byPlatform: platformRows(p),
         tips: videoTips(p, medViews, avgEng),
       };
     });
