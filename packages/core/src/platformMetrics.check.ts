@@ -149,12 +149,40 @@ assert.equal(
 );
 assert.equal(sumReported("reach", [], () => 1), null, "no entries at all measures nothing");
 
-// A reporting platform that sent nothing still counts as reporting: the total
-// is zero rather than absent, and the zero rule below decides what that means.
+/*
+ * The three cases the sum has to keep apart. Measured 2026-08-11 over the live
+ * provider account, 400 platform entries: every entry carried a full analytics
+ * object and no key was ever missing, so the middle case is not happening
+ * today. It is pinned anyway, because "never seen in 400 entries" is not
+ * "cannot happen", and the cost of it happening is a printed zero on a paying
+ * client's card where the real figure was never measured.
+ */
 assert.equal(
-  sumReported("reach", [{ platform: "instagram", reach: null }], (b) => b.reach),
+  sumReported("saves", [{ platform: "instagram", saves: 0 }], (b) => b.saves),
   0,
-  "the platform reports reach, it just sent no number for this post",
+  "a real zero arrives as 0 and still totals, so a post that genuinely earned no saves prints Saves 0",
+);
+assert.equal(
+  sumReported("saves", [{ platform: "instagram", saves: null }], (b) => b.saves),
+  null,
+  "the platform reports saves and sent none for this post, so nothing was measured and a 0 would be invented",
+);
+assert.equal(
+  sumReported("saves", [{ platform: "tiktok", saves: null }], (b) => b.saves),
+  null,
+  "no platform on the post reports saves at all, the case that already worked",
+);
+assert.equal(
+  sumReported(
+    "reach",
+    [
+      { platform: "instagram", reach: null },
+      { platform: "facebook", reach: 850 },
+    ],
+    (b) => b.reach,
+  ),
+  850,
+  "one entry supplying nothing does not drag the sum down, the entries that measured something still count",
 );
 
 /* ---- a zero that cannot be a result ---- */
@@ -166,6 +194,10 @@ assert.equal(
  * decision already made for watch time, generalised.
  */
 assert.ok(ZERO_IS_UNMEASURED.has("reach"), "a post with views cannot have reached nobody");
+assert.ok(
+  ZERO_IS_UNMEASURED.has("impressions"),
+  "an impression is every time the post hit a screen, so it is at least views: 400 views cannot be 0 impressions",
+);
 assert.ok(ZERO_IS_UNMEASURED.has("avgWatch"), "a viewed video was not watched for zero seconds");
 assert.ok(ZERO_IS_UNMEASURED.has("totalWatch"), "same reasoning as avgWatch");
 

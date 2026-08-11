@@ -148,6 +148,13 @@ export const METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>> =
  */
 export const ZERO_IS_UNMEASURED: ReadonlySet<MetricName> = new Set<MetricName>([
   "reach",
+  /*
+   * Impressions are only reported by Facebook here, and an impression is by
+   * definition every time the post was put on a screen, so it is greater than
+   * or equal to views. A post with 400 views cannot have been shown 0 times.
+   * Same quantity, same reasoning as reach beside it.
+   */
+  "impressions",
   "avgWatch",
   "totalWatch",
 ]);
@@ -176,6 +183,15 @@ export function reportsMetric(
  *
  * The per-platform entries are the only place the honest number exists, so
  * every total is built from them.
+ *
+ * An entry that supplies no value is skipped rather than counted as a zero.
+ * The three cases this keeps apart:
+ *  - a genuinely measured zero still totals and still prints, because a real
+ *    zero arrives as 0 and not as null
+ *  - a metric no platform on the post reports returns null, so the caller
+ *    prints nothing rather than a sum of structural zeros
+ *  - a metric the platform does report but did not supply for this post also
+ *    returns null, instead of a 0 that reads as a measurement
  */
 export function sumReported<T extends { platform: PlatformName }>(
   metric: MetricName,
@@ -187,8 +203,10 @@ export function sumReported<T extends { platform: PlatformName }>(
   let reported = false;
   for (const entry of entries) {
     if (!reporters.has(entry.platform)) continue;
+    const value = pick(entry);
+    if (value == null) continue;
     reported = true;
-    total += pick(entry) ?? 0;
+    total += value;
   }
   return reported ? total : null;
 }
