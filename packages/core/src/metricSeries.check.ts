@@ -27,6 +27,21 @@ assert.equal(clipped.added, 50, "only days inside the window count, 310 - 260");
 assert.equal(clipped.points.length, 2, "the 08-02 row is outside the window");
 
 /*
+ * Both bounds are inclusive, pinned with rows sitting exactly on them. Nothing
+ * in the fixture above touches an edge, so a regression to exclusive bounds
+ * would pass every other assertion in this file while silently dropping the
+ * first and last captured day of every report window.
+ */
+const edge = [
+  { capturedOn: "2026-08-03", views: 100 },
+  { capturedOn: "2026-08-05", views: 180 },
+  { capturedOn: "2026-08-07", views: 260 },
+];
+const inclusive = seriesSummary(edge, "2026-08-01", "2026-08-03", "2026-08-07");
+assert.equal(inclusive.points.length, 3, "a row captured on `from` or on `to` is inside the window");
+assert.equal(inclusive.added, 160, "260 - 100, so neither edge row was dropped from the delta");
+
+/*
  * The honesty rule. Daily capture began after most videos were published, so
  * for those the delta is views since we started watching, not views since it
  * went up. The flag drives a different label, so the number is never read as

@@ -42,7 +42,14 @@ export interface ExternalVideoRow {
   /** Null when the platform does not report it. Never coerce to 0. */
   impressions?: number | null;
   clicks?: number | null;
-  /** Seconds. Converted from the provider's milliseconds in mapProviderEntry. */
+  /**
+   * Seconds. Converted from the provider's milliseconds in mapProviderEntry,
+   * which also turns a reported zero into null: a video with views was not
+   * watched for zero seconds by every viewer, so a zero here is a metric the
+   * provider never computed. Reach follows the same rule at display time. See
+   * ZERO_IS_UNMEASURED in packages/core for the metrics this applies to and,
+   * more importantly, the ones it deliberately does not.
+   */
   avgWatchSec?: number | null;
   totalWatchSec?: number | null;
   engagementRate?: number | null;
@@ -65,7 +72,10 @@ function num(item: Record<string, unknown>, ...names: string[]): number | null {
 /** The provider's "2026-08-10 21:16:37" to a Date, or null. Guards against values that already carry a zone marker. */
 export function providerDate(v: unknown): Date | null {
   if (typeof v !== "string" || !v.trim()) return null;
-  const d = new Date(v.replace(" ", "T") + (/[Zz]|[+-]\d\d:?\d\d$/.test(v) ? "" : "Z"));
+  // The zone test is anchored as a whole. Written as `/[Zz]|[+-]\d\d:?\d\d$/`
+  // the anchor binds only to the offset alternative, so any string with a z
+  // anywhere in it counted as zone-marked and lost its UTC assumption.
+  const d = new Date(v.replace(" ", "T") + (/([Zz]|[+-]\d\d:?\d\d)$/.test(v) ? "" : "Z"));
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

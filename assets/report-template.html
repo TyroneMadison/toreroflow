@@ -338,6 +338,7 @@ body{
 .foot-bar .contact{font-size:12px;color:var(--muted);line-height:1.9;}
 .foot-bar .contact b{color:#fff;}
 .foot-note{font-size:10.5px;color:var(--muted-2);letter-spacing:1px;text-transform:uppercase;}
+.foot-refreshed{margin-top:16px;font-size:11px;color:var(--muted-2);}
 
 /* ---------- print ---------- */
 /* Zero page margin so the dark design reaches the paper edge. Anything
@@ -412,6 +413,9 @@ body{
 .vcard.open .vbody{min-height:200px;}
 
 .vpills{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px;}
+/* The pill count varies from 4 to 10 now that unmeasured metrics are absent,
+   so an odd count would leave a half-width orphan on the last row. */
+.vpills .vpill:last-child:nth-child(odd){grid-column:1 / -1;}
 .vpill{border-radius:16px;padding:11px 14px;text-align:left;
   background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);
   -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);}
@@ -431,7 +435,6 @@ body{
 .vsstats b{color:#fff;font-weight:700;}
 .vpill span{display:block;font-size:9.5px;letter-spacing:1.1px;text-transform:uppercase;
   color:rgba(255,255,255,.62);margin-top:2px;}
-.vpill.na b{color:rgba(255,255,255,.45);font-weight:600;font-size:13px;}
 
 /* The watch dial: the only retention any platform reports, drawn honestly. */
 .vdial{display:flex;align-items:center;gap:16px;margin-top:12px;border-radius:18px;
@@ -640,7 +643,8 @@ body{
   },
   "footer": {
     "contactHtml": "<b>Torerone</b><br>hello@torerone.com · torerone.com",
-    "note": "Short form content that performs"
+    "note": "Short form content that performs",
+    "refreshed": "Figures last refreshed 10 Aug"
   }
 }
 </script>
@@ -809,7 +813,11 @@ body{
     var span = hi - lo || 1;
     var d = pts.map(function (p, i) {
       var x = (i / (pts.length - 1)) * w;
-      var y = h - ((p - lo) / span) * h;
+      /* Inset by one stroke pixel top and bottom. Mapping to the full height
+         puts the series minimum exactly on y = h, where half of a 2px stroke
+         falls outside the viewBox and is clipped. That is the common case: a
+         video that stopped growing draws a flat line along that edge. */
+      var y = 1 + (h - 2) - ((p - lo) / span) * (h - 2);
       return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
     }).join(' ');
     var added = v.viewsAdded != null
@@ -942,6 +950,10 @@ body{
     html += '<div class="foot-bar"><div class="brand-logo foot">' + THUMB + '</div>' +
       '<div class="contact">' + (f.contactHtml || '') + '</div>' +
       '<div class="foot-note">' + (f.note || '') + '</div></div>';
+    // How old the numbers on this page are. Absent entirely when no post in the
+    // period carried a refresh timestamp, because a date that is not true is
+    // worse than no date.
+    if (f.refreshed) html += '<div class="foot-refreshed">' + esc(f.refreshed) + '</div>';
     html += '</div>';
 
     html += '</div>'; // /view-overview

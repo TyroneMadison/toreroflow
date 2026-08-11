@@ -42,9 +42,11 @@ export function seriesSummary(
   const day = (iso: string) => iso.slice(0, 10);
   const lo = day(from);
   const hi = day(to);
+  // Both bounds are inclusive: a row captured on the first or last day of the
+  // window is inside it. filter() already returns a new array, so sorting it
+  // does not touch the caller's rows.
   const points = rows
     .filter((r) => r.capturedOn >= lo && r.capturedOn <= hi)
-    .slice()
     .sort((a, b) => (a.capturedOn < b.capturedOn ? -1 : 1));
 
   if (points.length < 2) {
