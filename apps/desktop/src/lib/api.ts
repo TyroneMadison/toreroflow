@@ -395,6 +395,14 @@ export interface ClientPost {
    * it: a column of zeros reads as a result rather than a missing measurement.
    */
   follows: number;
+  /**
+   * Facebook only in practice, and null (never 0) when nothing measured it.
+   * See METRIC_REPORTED_BY in packages/core for which platform reports what.
+   */
+  impressions: number | null;
+  clicks: number | null;
+  /** Total seconds watched across all viewers, measured rather than derived. */
+  totalWatchSec: number | null;
   avgWatchSec: number | null;
   durationSec: number | null;
   byPlatform: Array<{ platform: Platform; views: number; accountId?: string }>;

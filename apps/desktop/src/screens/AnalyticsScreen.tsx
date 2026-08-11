@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { followsMeasurable, reportsSaves } from "@toreroflow/core";
+import { followsMeasurable, metricMeasurable, reportsSaves } from "@toreroflow/core";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
@@ -14,6 +14,7 @@ import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
 import { buildTier, scopeToPlatform, type ViewTier } from "../lib/viewTiers";
+import { watchHours } from "../lib/watchTime";
 import { useAppState } from "../state/AppState";
 
 const PLATFORM_COLOR: Record<Platform, string> = {
@@ -305,17 +306,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const otherAccounts = accounts.filter((a) => a.platform !== "youtube");
 
   const totalViews = all.reduce((s, p) => s + p.views, 0);
-  const fallbackWatch = data?.totals.avgWatchSec ?? null;
-  const watchSecKnown = all.some((p) => p.avgWatchSec != null) || fallbackWatch != null;
-  const watchHours = watchSecKnown
-    ? all.reduce((s, p) => s + p.views * (p.avgWatchSec ?? fallbackWatch ?? 0), 0) / 3600
-    : null;
+  const hoursWatched = watchHours(all);
   const subscribers = ytAccounts.reduce((s, a) => s + (a.followers ?? 0), 0);
   const followers = otherAccounts.reduce((s, a) => s + (a.followers ?? 0), 0);
 
   const kpis = [
     { label: "Views", value: fmt(all.length ? totalViews : (data?.totals.views ?? null)) },
-    { label: "Watch time · hrs", value: watchHours != null ? fmt(watchHours) : "-" },
+    { label: "Watch time · hrs", value: hoursWatched != null ? fmt(hoursWatched) : "-" },
     { label: "Subscribers", value: ytAccounts.length ? fmt(subscribers) : "-" },
     { label: "Followers", value: otherAccounts.length ? fmt(followers) : "-" },
   ];
@@ -335,6 +332,11 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const totalComments = all.reduce((s, p) => s + p.comments, 0);
   const totalShares = all.reduce((s, p) => s + p.shares, 0);
   const totalReach = all.reduce((s, p) => s + p.reach, 0);
+  const reachMeasurable = metricMeasurable("reach", all);
+  const totalImpressions = all.reduce((s, p) => s + (p.impressions ?? 0), 0);
+  const impressionsMeasurable = metricMeasurable("impressions", all);
+  const totalClicks = all.reduce((s, p) => s + (p.clicks ?? 0), 0);
+  const clicksMeasurable = metricMeasurable("clicks", all);
   /*
    * Followers gained is reported by nobody today. The provider carries the
    * field and has only ever sent zero, on every post of every platform, so a
@@ -348,7 +350,9 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     { label: "Saves", value: savablePosts.length ? fmt(totalSaves) : "-" },
     { label: "Comments", value: fmt(totalComments) },
     { label: "Shares", value: fmt(totalShares) },
-    { label: "Reach", value: totalReach > 0 ? fmt(totalReach) : "-" },
+    { label: "Reach", value: reachMeasurable ? fmt(totalReach) : "-" },
+    { label: "Impressions", value: impressionsMeasurable ? fmt(totalImpressions) : "-" },
+    { label: "Link clicks", value: clicksMeasurable ? fmt(totalClicks) : "-" },
   ];
 
   // Upload counts per trailing window, across every connected platform.
@@ -948,8 +952,8 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
             <div className="note">
               Views, rankings, and uploads pull live from every platform connected under{" "}
-              {selectedClient.name}; new platforms join automatically once connected. Watch time is
-              estimated where a platform doesn't report it. Export builds a branded PDF report.
+              {selectedClient.name}; new platforms join automatically once connected. Watch time
+              counts only the platforms that report it. Export builds a branded PDF report.
             </div>
           </>
         )}
