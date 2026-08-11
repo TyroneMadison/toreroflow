@@ -45,9 +45,35 @@ export interface MergedPost {
    * before presenting it as a measurement.
    */
   follows: number;
+  /** Null when no platform on this post reports it. Never 0 as a stand-in. */
+  impressions: number | null;
+  clicks: number | null;
+  /** Total seconds watched across all viewers, measured rather than derived. */
+  totalWatchSec: number | null;
+  /** When the provider last refreshed these figures, ISO, or null. */
+  metricsUpdatedAt: string | null;
   avgWatchSec: number | null;
   durationSec: number | null;
-  byPlatform: Array<{ platform: string; views: number; accountId?: string }>;
+  /**
+   * One entry per platform this post went to, carrying that platform's own
+   * figures rather than just its view count. A cross-posted video can now show
+   * what each platform actually did with it, and each entry is filtered
+   * through the capability matrix by its consumer.
+   */
+  byPlatform: Array<{
+    platform: string;
+    views: number;
+    accountId?: string;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+    reach: number | null;
+    impressions: number | null;
+    clicks: number | null;
+    avgWatchSec: number | null;
+    totalWatchSec: number | null;
+  }>;
   /** True when the figures came from the platform rather than the provider. */
   lifetime?: boolean;
 }
@@ -72,6 +98,22 @@ function num(item: Record<string, unknown>, ...names: string[]): number | null {
  */
 export function keepStoredRow(platform: string, hasLiveMatch: boolean): boolean {
   return platform === "youtube" || !hasLiveMatch;
+}
+
+/**
+ * The watch time for a post, preferring the live provider figure.
+ *
+ * Watch time used to be read only off the live post, so an Instagram video
+ * that aged out of the provider's rolling window lost it permanently. The
+ * store now captures it, and this is the one rule that decides between them:
+ * live is fresher, the store covers what live no longer reaches. A zero counts
+ * as unmeasured, because no video anyone published was watched for zero
+ * seconds by every viewer.
+ */
+export function storedWatchSec(live: number | null, stored: number | null): number | null {
+  if (live != null && live > 0) return live;
+  if (stored != null && stored > 0) return stored;
+  return null;
 }
 
 /**
@@ -186,10 +228,23 @@ export async function buildMergedPosts(
         accountPlatform.get(e.accountId as string) ??
         (typeof e.platform === "string" ? e.platform : "unknown");
       const rowId = accountRowId.get(e.accountId as string);
+      const ms = (name: string): number | null => {
+        const v = num(em, name);
+        return v != null && v > 0 ? v / 1000 : null;
+      };
       return {
         platform,
         views: entryViews ?? (use.length === 1 ? views : Math.round(views / use.length)),
         ...(rowId ? { accountId: rowId } : {}),
+        likes: num(em, "likes", "likeCount"),
+        comments: num(em, "comments", "commentCount"),
+        shares: num(em, "shares", "shareCount"),
+        saves: num(em, "saves", "saved", "savedCount"),
+        reach: num(em, "reach"),
+        impressions: num(em, "impressions"),
+        clicks: num(em, "clicks"),
+        avgWatchSec: ms("igReelsAvgWatchTime"),
+        totalWatchSec: ms("igReelsVideoViewTotalTime"),
       };
     });
 
@@ -223,6 +278,16 @@ export async function buildMergedPosts(
       saves: num(m, "saves", "saved", "savedCount") ?? 0,
       reach: num(m, "reach") ?? 0,
       follows: num(m, "follows", "followsCount", "followers_gained") ?? 0,
+      impressions: num(m, "impressions"),
+      clicks: num(m, "clicks"),
+      totalWatchSec: (() => {
+        const t = num(m, "igReelsVideoViewTotalTime");
+        return t != null && t > 0 ? t / 1000 : null;
+      })(),
+      metricsUpdatedAt:
+        typeof m.lastUpdated === "string" && m.lastUpdated
+          ? new Date(m.lastUpdated.replace(" ", "T") + "Z").toISOString()
+          : null,
       avgWatchSec: avgWatchSec && avgWatchSec > 0 ? avgWatchSec : null,
       durationSec:
         num(m, "duration", "videoDuration", "durationSec", "mediaDuration") ??
@@ -254,6 +319,11 @@ export async function buildMergedPosts(
     reach: number;
     follows: number;
     durationSec: number | null;
+    impressions: number | null;
+    clicks: number | null;
+    avgWatchSec: number | null;
+    totalWatchSec: number | null;
+    metricsUpdatedAt: Date | null;
   }>;
 
   if (external.length) {
@@ -281,9 +351,28 @@ export async function buildMergedPosts(
         saves: v.saves,
         reach: v.reach,
         follows: v.follows,
-        avgWatchSec: null,
+        avgWatchSec: storedWatchSec(null, v.avgWatchSec),
+        impressions: v.impressions,
+        clicks: v.clicks,
+        totalWatchSec: v.totalWatchSec,
+        metricsUpdatedAt: v.metricsUpdatedAt ? v.metricsUpdatedAt.toISOString() : null,
         durationSec: v.durationSec,
-        byPlatform: [{ platform: v.platform, views: v.views, accountId: v.socialAccountId }],
+        byPlatform: [
+          {
+            platform: v.platform,
+            views: v.views,
+            accountId: v.socialAccountId,
+            likes: v.likes,
+            comments: v.comments,
+            shares: v.shares,
+            saves: v.saves,
+            reach: v.reach,
+            impressions: v.impressions,
+            clicks: v.clicks,
+            avgWatchSec: v.avgWatchSec,
+            totalWatchSec: v.totalWatchSec,
+          },
+        ],
         lifetime: true,
       })),
     );

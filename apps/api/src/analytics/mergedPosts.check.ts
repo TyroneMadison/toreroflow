@@ -26,4 +26,21 @@ assert.equal(
 );
 assert.equal(entryPlatformKey({ accountId: "za1" }, new Map([["za1", "instagram"]])), null);
 
+/* ---- a stored row keeps the watch time it was captured with ---- */
+
+import { storedWatchSec } from "./mergedPosts";
+
+assert.equal(
+  storedWatchSec(12.5, null),
+  12.5,
+  "the live figure wins while the post is still inside the provider window",
+);
+assert.equal(
+  storedWatchSec(null, 9.25),
+  9.25,
+  "a post that has aged out of the window keeps the watch time captured when it was visible",
+);
+assert.equal(storedWatchSec(null, null), null, "neither source measured it, so nothing is shown");
+assert.equal(storedWatchSec(0, 9.25), 9.25, "a zero live figure is not a measurement, so the store wins");
+
 console.log("mergedPosts.check: all checks passed");
