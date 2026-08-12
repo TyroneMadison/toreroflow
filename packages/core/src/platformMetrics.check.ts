@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  entryReports,
+  metricMeasurableOn,
+  reportsMetricOn,
   followsMeasurable,
   metricMeasurable,
   METRIC_REPORTED_BY,
@@ -209,3 +212,91 @@ assert.ok(!ZERO_IS_UNMEASURED.has("comments"), "a quiet post genuinely gets no c
 assert.ok(!ZERO_IS_UNMEASURED.has("shares"), "nobody sharing it is a real result");
 
 console.log("platformMetrics.check.ts: ok");
+
+/* ---- row-aware reporting: a directly connected channel ---- */
+
+/*
+ * The whole point of directMetrics. METRIC_REPORTED_BY says YouTube reports no
+ * shares, no watch time and no follows, and that stays true for every channel
+ * nobody has authorized. A channel connected to YouTube's own Analytics API
+ * reports all three, and the difference lives on the row.
+ */
+const ytPlain = { platform: "youtube" };
+const ytDirect = {
+  platform: "youtube",
+  directMetrics: ["shares", "avgWatch", "totalWatch", "follows"],
+};
+
+for (const metric of ["shares", "avgWatch", "totalWatch", "follows"] as const) {
+  assert.ok(!entryReports(metric, ytPlain), `an unconnected youtube row must not claim ${metric}`);
+  assert.ok(entryReports(metric, ytDirect), `a connected youtube row does report ${metric}`);
+}
+
+// A connected channel does NOT gain metrics its API never sent.
+assert.ok(!entryReports("saves", ytDirect), "youtube has no save button, connected or not");
+assert.ok(
+  !entryReports("reach", ytDirect),
+  "a metric absent from directMetrics stays unreported even on a connected row",
+);
+
+// What the platform already reports still works with no directMetrics at all.
+assert.ok(entryReports("views", ytPlain), "platform-level truth is unchanged");
+assert.ok(entryReports("saves", { platform: "instagram" }), "instagram still reports saves");
+
+/* ---- the failure that would print a fabricated zero ---- */
+
+// Two youtube videos, one connected and one not. The connected one's shares
+// must total; the unconnected one must contribute nothing and, alone, print
+// nothing at all rather than 0.
+assert.equal(
+  sumReported("shares", [{ ...ytDirect, shares: 12 }], (e) => e.shares),
+  12,
+  "a connected channel's shares total",
+);
+assert.equal(
+  sumReported("shares", [{ ...ytPlain, shares: 0 }], (e) => e.shares),
+  null,
+  "an unconnected youtube row contributes nothing, so the total is absent not zero",
+);
+assert.equal(
+  sumReported("shares", [{ ...ytDirect, shares: 12 }, { ...ytPlain, shares: 0 }], (e) => e.shares),
+  12,
+  "a mixed post totals only the rows that actually measured it",
+);
+
+// follows is the item this was built for: an empty platform set, so it can
+// ONLY ever arrive from a directly connected row.
+assert.equal(METRIC_REPORTED_BY.follows.size, 0, "still no platform reports follows in general");
+assert.equal(
+  sumReported("follows", [{ ...ytDirect, follows: 37 }], (e) => e.follows),
+  37,
+  "subscribers gained arrives once the channel is connected",
+);
+assert.equal(
+  sumReported("follows", [{ platform: "instagram", follows: 0 }], (e) => e.follows),
+  null,
+  "an instagram reel reports no follows, so it prints nothing rather than 0",
+);
+
+/* ---- the set-level helpers ---- */
+
+assert.ok(
+  reportsMetricOn("follows", [ytPlain, ytDirect]),
+  "one connected row is enough for the metric to be worth showing",
+);
+assert.ok(!reportsMetricOn("follows", [ytPlain]), "no connected row means nothing to show");
+assert.ok(
+  metricMeasurableOn("follows", [{ platforms: ["youtube"], byPlatform: [ytDirect] }]),
+  "measurable across a set when a row measured it",
+);
+assert.ok(
+  !metricMeasurableOn("follows", [{ platforms: ["youtube"], byPlatform: [ytPlain] }]),
+  "not measurable when no row did",
+);
+// Falls back to the platform answer when a post carries no per-platform rows.
+assert.ok(
+  metricMeasurableOn("views", [{ platforms: ["youtube"], byPlatform: [] }]),
+  "a post with no entries still answers from its platforms",
+);
+
+console.log("platformMetrics.check.ts: row-aware checks ok");

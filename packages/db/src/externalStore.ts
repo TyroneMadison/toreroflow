@@ -281,13 +281,42 @@ export async function applyPlatformMetrics(
         platformVideoId: key.platformVideoId,
       },
     },
-    select: { id: true },
+    select: { id: true, directMetrics: true },
   });
   if (!existing) return false;
 
+  /*
+   * Record which metrics this source actually filled, on this row.
+   *
+   * The names are the MetricName vocabulary the display rules speak, not the
+   * column names, because the only consumer is the question "does this row
+   * report metric X". avgWatchSec becomes avgWatch for that reason.
+   *
+   * Unioned with whatever is already there rather than replaced: a second
+   * source filling different fields adds to what a row can report and must not
+   * silently retract another source's. A field the platform did not return for
+   * this video is absent from `fields` and so never claims to be measured.
+   */
+  const NAMES: Record<string, string> = {
+    shares: "shares",
+    saves: "saves",
+    reach: "reach",
+    follows: "follows",
+    impressions: "impressions",
+    clicks: "clicks",
+    avgWatchSec: "avgWatch",
+    totalWatchSec: "totalWatch",
+  };
+  const claimed = Object.entries(fields)
+    .filter(([, v]) => v !== undefined)
+    .map(([k]) => NAMES[k])
+    .filter((n): n is string => Boolean(n));
+
+  const directMetrics = [...new Set([...existing.directMetrics, ...claimed])].sort();
+
   const video = await prisma.externalVideo.update({
     where: { id: existing.id },
-    data: { ...fields, metricsUpdatedAt: now },
+    data: { ...fields, directMetrics, metricsUpdatedAt: now },
   });
 
   await prisma.externalVideoMetric.upsert({

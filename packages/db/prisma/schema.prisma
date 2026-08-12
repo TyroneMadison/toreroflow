@@ -586,6 +586,21 @@ model ExternalVideo {
   /// The provider's own engagement percentage. Stored for comparison only; the
   /// displayed figure stays our computation, because ours is defined.
   engagementRate   Float?
+  /// Which metrics on THIS row came from the platform's own API rather than
+  /// from the broker.
+  ///
+  /// Availability used to be a property of the platform: METRIC_REPORTED_BY
+  /// answered "does YouTube report shares" once, for every row. That stopped
+  /// being true the moment a channel could be connected directly. A connected
+  /// channel reports shares, watch time and subscribers gained; an unconnected
+  /// one on the same platform reports none of them, and flipping the platform
+  /// answer would print "Shares 0" on every channel nobody has authorized.
+  ///
+  /// So the answer moved onto the row, where it is a fact rather than a guess.
+  /// Written by applyPlatformMetrics from the fields it actually set, so a
+  /// metric the platform did not return for a given video does not claim to be
+  /// measured for it.
+  directMetrics    String[] @default([])
   /// When the provider last refreshed these numbers, so a report can say how
   /// fresh it is.
   metricsUpdatedAt DateTime?

@@ -74,6 +74,14 @@ export interface MergedPost {
     clicks: number | null;
     avgWatchSec: number | null;
     totalWatchSec: number | null;
+    /** Followers gained from this post on this platform. */
+    follows?: number | null;
+    /**
+     * MetricNames this row's own platform API filled in directly, so a
+     * connected channel can report what its platform does not report in
+     * general. See MetricEntry in packages/core.
+     */
+    directMetrics?: string[];
   }>;
   /** True when the figures came from the platform rather than the provider. */
   lifetime?: boolean;
@@ -327,6 +335,8 @@ export async function buildMergedPosts(
     avgWatchSec: number | null;
     totalWatchSec: number | null;
     metricsUpdatedAt: Date | null;
+    /** Which metrics the platform's own API filled on this row. */
+    directMetrics: string[];
   }>;
 
   if (external.length) {
@@ -374,6 +384,10 @@ export async function buildMergedPosts(
             clicks: v.clicks,
             avgWatchSec: storedWatch(v.avgWatchSec),
             totalWatchSec: storedWatch(v.totalWatchSec),
+            follows: v.follows,
+            // What this row's own platform API filled in, so a connected
+            // channel reports what the platform does not report in general.
+            directMetrics: v.directMetrics,
           },
         ],
         lifetime: true,

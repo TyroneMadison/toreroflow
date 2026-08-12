@@ -169,6 +169,62 @@ export function reportsMetric(
 }
 
 /**
+ * One platform's row on a post, and what its own API filled in directly.
+ *
+ * `directMetrics` is per row, not per platform, and that distinction is the
+ * whole reason it exists. METRIC_REPORTED_BY answers for a platform in general:
+ * it says YouTube does not report shares, which was true of every YouTube row
+ * in the app until a channel could be connected directly. Now a connected
+ * channel reports shares, watch time and subscribers gained while an
+ * unconnected channel on the same platform reports none of them, so the
+ * platform can no longer answer for the row.
+ *
+ * Widening METRIC_REPORTED_BY instead would print "Shares 0" and "Subscribers
+ * gained 0" on every channel nobody has authorized, which is the fabricated
+ * zero this whole module exists to prevent.
+ */
+export interface MetricEntry {
+  platform: PlatformName;
+  /** MetricNames this row's own platform API supplied. Absent means none. */
+  directMetrics?: readonly string[];
+}
+
+/**
+ * Whether THIS row reports the metric: either its platform reports it in
+ * general, or this particular row was filled from the platform's own API.
+ */
+export function entryReports(metric: MetricName, entry: MetricEntry): boolean {
+  if (METRIC_REPORTED_BY[metric].has(entry.platform)) return true;
+  return entry.directMetrics?.includes(metric) ?? false;
+}
+
+/**
+ * True when any entry on a post reports the metric, row awareness included.
+ *
+ * The row-aware counterpart to reportsMetric, for callers that hold the
+ * per-platform entries rather than only the platform names.
+ */
+export function reportsMetricOn(
+  metric: MetricName,
+  entries: readonly MetricEntry[],
+): boolean {
+  return entries.some((e) => entryReports(metric, e));
+}
+
+/**
+ * True when a metric is worth showing across a set of posts, row awareness
+ * included. The row-aware counterpart to metricMeasurable.
+ */
+export function metricMeasurableOn(
+  metric: MetricName,
+  posts: readonly { byPlatform?: readonly MetricEntry[]; platforms: readonly PlatformName[] }[],
+): boolean {
+  return posts.some((p) =>
+    p.byPlatform?.length ? reportsMetricOn(metric, p.byPlatform) : reportsMetric(metric, p.platforms),
+  );
+}
+
+/**
  * A metric totalled over only the platforms that report it, or null when none
  * of the entries is on a reporting platform.
  *
@@ -193,16 +249,17 @@ export function reportsMetric(
  *  - a metric the platform does report but did not supply for this post also
  *    returns null, instead of a 0 that reads as a measurement
  */
-export function sumReported<T extends { platform: PlatformName }>(
+export function sumReported<T extends MetricEntry>(
   metric: MetricName,
   entries: readonly T[],
   pick: (entry: T) => number | null | undefined,
 ): number | null {
-  const reporters = METRIC_REPORTED_BY[metric];
   let total = 0;
   let reported = false;
   for (const entry of entries) {
-    if (!reporters.has(entry.platform)) continue;
+    // Row-aware: a directly connected channel contributes its own figures even
+    // where the platform in general reports nothing.
+    if (!entryReports(metric, entry)) continue;
     const value = pick(entry);
     if (value == null) continue;
     reported = true;

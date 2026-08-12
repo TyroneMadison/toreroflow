@@ -18,6 +18,7 @@ import {
   buildProvenance,
   reportsSaves,
   reportsMetric,
+  reportsMetricOn,
   seriesSummary,
   sumReported,
   ZERO_IS_UNMEASURED,
@@ -78,6 +79,15 @@ export interface ReportPost {
     clicks: number | null;
     avgWatchSec: number | null;
     totalWatchSec: number | null;
+    /** Followers gained from this post on this platform. */
+    follows?: number | null;
+    /**
+     * MetricNames this row's own platform API supplied, so a directly
+     * connected channel reports what its platform does not report in general.
+     * Absent on broker rows, which is what keeps an unconnected channel's
+     * missing metrics absent rather than zero.
+     */
+    directMetrics?: string[];
   }>;
   /** Public link to the video, so the report can point at the real thing. */
   url?: string | null;
@@ -569,6 +579,16 @@ export interface ReportVideo {
   clicks: string | null;
   /** Total time watched across all viewers, e.g. "27m 32s". */
   totalWatch: string | null;
+  /**
+   * Followers gained from this video, or null when nothing measured it.
+   *
+   * Null on almost everything, and that is correct rather than a gap: no
+   * platform reports this through the broker, so it appears only on a channel
+   * connected directly to its own API. Today that is YouTube's
+   * subscribersGained. Instagram documents follows for feed posts and stories
+   * but not for Reels, and TikTok does not offer it at all.
+   */
+  follows: string | null;
   /** Engagement as a percentage of views, e.g. "4.2%". Null below 1 view. */
   engagement: string | null;
   /** 0-100, average watch over length. Null when either side is unreported. */
@@ -684,6 +704,26 @@ export function measured(
 }
 
 /**
+ * The row-aware `measured`.
+ *
+ * Same rule, asked of the per-platform entries rather than the platform names,
+ * so a directly connected channel prints the figures its own API returned even
+ * where the platform in general returns none. A channel nobody has authorized
+ * has no directMetrics, so it still prints nothing rather than a zero.
+ */
+function measuredOn(
+  metric: MetricName,
+  entries: readonly ReportPost["byPlatform"][number][],
+  value: number | null,
+  format: (n: number) => string = fmt,
+): string | null {
+  if (!reportsMetricOn(metric, entries)) return null;
+  if (value == null) return null;
+  if (value === 0 && ZERO_IS_UNMEASURED.has(metric)) return null;
+  return format(value);
+}
+
+/**
  * A post-level figure, totalled over only the platforms that report it.
  *
  * Reading the post's own aggregate here would fold in the platforms the metric
@@ -697,14 +737,18 @@ function total(
   pick: (b: ReportPost["byPlatform"][number]) => number | null,
   format?: (n: number) => string,
 ): string | null {
-  return measured(metric, p.platforms, sumReported(metric, p.byPlatform ?? [], pick), format);
+  const entries = p.byPlatform ?? [];
+  // Row-aware on both halves: sumReported totals only the entries that report
+  // the metric, and measuredOn decides whether to print at all from the same
+  // entries. Asking the platform names here instead would suppress a connected
+  // channel's real figures, which is the bug this pass exists to fix.
+  return measuredOn(metric, entries, sumReported(metric, entries, pick), format);
 }
 
 /** The per-platform rows on a cross-posted video's card. */
 export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
   if (!p.byPlatform || p.byPlatform.length < 2) return [];
   return p.byPlatform.map((b) => {
-    const only = [b.platform];
     const stats: Array<{ label: string; value: string }> = [
       { label: "Views", value: fmt(b.views) },
     ];
@@ -714,7 +758,9 @@ export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
       value: number | null,
       format?: (n: number) => string,
     ) => {
-      const v = measured(metric, only, value, format);
+      // Asked of this one entry, so each platform's row says what that
+      // platform actually measured for this video.
+      const v = measuredOn(metric, [b], value ?? null, format);
       if (v) stats.push({ label, value: v });
     };
     add("Likes", "likes", b.likes);
@@ -725,6 +771,7 @@ export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
     add("Impressions", "impressions", b.impressions);
     add("Clicks", "clicks", b.clicks);
     add("Watched", "totalWatch", b.totalWatchSec, fmtWatchTotal);
+    add("Followers gained", "follows", b.follows ?? null);
     return { platform: PLATFORM_NAME[b.platform] ?? b.platform, stats };
   });
 }
@@ -772,6 +819,7 @@ function buildVideos(
         impressions: total("impressions", p, (b) => b.impressions),
         clicks: total("clicks", p, (b) => b.clicks),
         totalWatch: total("totalWatch", p, (b) => b.totalWatchSec, fmtWatchTotal),
+        follows: total("follows", p, (b) => b.follows ?? null),
         engagement: eng != null ? `${eng.toFixed(1)}%` : null,
         watchPct,
         avgWatch: fmtDur(p.avgWatchSec),
