@@ -428,6 +428,12 @@ export interface ClientPost {
   avgWatchSec: number | null;
   durationSec: number | null;
   /**
+   * When the platform last refreshed this post's numbers. Null when no source
+   * carried a timestamp, which is why the provenance footer omits the date
+   * entirely rather than falling back to now.
+   */
+  metricsUpdatedAt: string | null;
+  /**
    * One entry per platform this post went to, carrying that platform's own
    * figures. Mirrors MergedPost.byPlatform on the API.
    *

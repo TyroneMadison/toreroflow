@@ -15,6 +15,7 @@
  */
 
 import {
+  buildProvenance,
   reportsSaves,
   reportsMetric,
   seriesSummary,
@@ -22,6 +23,7 @@ import {
   ZERO_IS_UNMEASURED,
   type MetricName,
   type DayPoint,
+  type Provenance,
 } from "@toreroflow/core";
 
 export type Direction = "up" | "down" | "flat";
@@ -512,7 +514,28 @@ export function buildReportData(input: BuildReportInput): Record<string, unknown
       // line saying when the numbers were refreshed has to be true or absent.
       ...(refreshed ? { refreshed } : {}),
     },
+    /*
+     * Where these numbers came from, what nobody publishes, and the links
+     * YouTube's terms require wherever its data is shown.
+     *
+     * Built from the same core module the app's own screens read, so a client
+     * comparing the page they were sent against the screen the operator is
+     * looking at cannot be told two different things. The date is the newest
+     * refresh across the period, or absent, on the same rule as the line above.
+     */
+    provenance: buildProvenance(
+      accounts.map((a) => a.platform),
+      newestRefresh(current),
+    ),
   };
+}
+
+/** The most recent moment any post in the period was refreshed, or null. */
+function newestRefresh(rows: readonly ReportPost[]): Date | null {
+  const times = rows
+    .map((p) => (p.metricsUpdatedAt ? new Date(p.metricsUpdatedAt).getTime() : NaN))
+    .filter((t) => !Number.isNaN(t));
+  return times.length ? new Date(Math.max(...times)) : null;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
+import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
 import { api, type AccountOverview, type OverviewClient } from "../lib/api";
 import { PF_ID } from "../lib/platforms";
@@ -193,6 +194,10 @@ export default function AccountOverviewScreen({
   }, [load, knownClients]);
 
   const clients = data?.clients ?? [];
+  /** Every connected platform on this screen, for the provenance footer. */
+  const overviewPlatforms = clients.flatMap((c) =>
+    c.platforms.filter((p) => p.status === "connected").map((p) => p.platform),
+  );
   const needing = clients.filter((c) => c.attention > 0).length;
   const anyRunning = clients.some((c) => isRunning(c.insight?.status));
 
@@ -248,6 +253,7 @@ export default function AccountOverviewScreen({
             ))}
           </div>
         )}
+        <DataProvenance platforms={overviewPlatforms} />
       </div>
     </section>
   );

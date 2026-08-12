@@ -30,4 +30,5 @@ export * from "./analysis";
 export * from "./ideaDedup";
 export * from "./platformMetrics";
 export * from "./metricSeries";
+export * from "./dataProvenance";
 export * as tokens from "./tokens";

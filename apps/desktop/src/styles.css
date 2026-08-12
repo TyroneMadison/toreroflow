@@ -1665,3 +1665,36 @@
 [data-theme="light"] .rownote{border-left-color:rgba(30,30,70,.2)}
 /* The bank balance figure on the at-a-glance card. */
 .act b.b{color:var(--info)}
+
+/* ---- where the numbers came from ----
+   Sits at the foot of every screen that shows platform stats. Built from
+   packages/core/src/dataProvenance.ts, which the client report page reads too,
+   so the two surfaces cannot claim different things. Colours are all variables,
+   so the light theme follows without a second block. */
+.prov{margin:22px 0 4px;padding:14px 16px;border-radius:var(--radius-sm);
+  background:var(--glass);border:1px solid var(--brd-soft);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.05)}
+.prov-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11.5px;color:var(--txt-2)}
+.prov-row b{color:var(--txt);font-weight:600}
+/* A steady dot, not a pulsing one. Pulsing is reserved for things in flight;
+   this only says the figures are pulled rather than typed in. */
+.prov-live{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);flex:0 0 auto}
+.prov-when{margin-left:auto;font-size:11px;color:var(--txt-3)}
+.prov-notes{margin-top:10px}
+.prov-toggle{display:inline-flex;align-items:center;gap:6px;background:none;border:none;padding:0;
+  font-size:11px;color:var(--txt-3);cursor:pointer;font-family:inherit;letter-spacing:.2px}
+.prov-toggle:hover{color:var(--txt-2)}
+.prov-caret{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid currentColor;transition:transform .18s ease}
+.prov-caret.open{transform:rotate(180deg)}
+.prov-notes ul{margin:8px 0 0;padding:0 0 0 16px;list-style:none}
+.prov-notes li{position:relative;font-size:11px;line-height:1.65;color:var(--txt-3);margin-bottom:5px}
+.prov-notes li::before{content:"";position:absolute;left:-12px;top:7px;width:4px;height:4px;
+  border-radius:50%;background:var(--txt-3);opacity:.6}
+.prov-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin-top:12px;padding-top:10px;border-top:1px solid var(--brd-soft)}
+.prov-brand{font-size:10.5px;letter-spacing:1.1px;text-transform:uppercase;color:var(--txt-3)}
+.prov-links{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap}
+.prov-links a{font-size:10.5px;color:var(--txt-3);text-decoration:none;border-bottom:1px solid var(--brd-soft)}
+.prov-links a:hover{color:var(--txt-2)}

@@ -75,6 +75,7 @@ const post = (
   totalWatchSec: null,
   avgWatchSec: null,
   durationSec: null,
+  metricsUpdatedAt: null,
   byPlatform: platforms.map((p) => at(p, views)),
 });
 

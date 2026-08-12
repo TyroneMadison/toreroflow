@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   followsMeasurable,
   reportsSaves,
@@ -7,6 +7,7 @@ import {
   type MetricName,
 } from "@toreroflow/core";
 import Pf from "../components/Pf";
+import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
 import {
   api,
@@ -304,6 +305,22 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     (min, p) => (min === null || p.publishedAt < min ? p.publishedAt : min),
     null,
   );
+
+  /**
+   * The most recent moment any platform refreshed a number on this screen.
+   *
+   * The newest rather than the oldest, because the line reads "last updated"
+   * and that is what it means. Null when nothing carried a timestamp at all, so
+   * the footer prints no date rather than implying the figures are current.
+   */
+  const lastRefreshedAt = useMemo(() => {
+    let newest = 0;
+    for (const post of everyPost) {
+      const t = post.metricsUpdatedAt ? new Date(post.metricsUpdatedAt).getTime() : 0;
+      if (Number.isFinite(t) && t > newest) newest = t;
+    }
+    return newest ? new Date(newest) : null;
+  }, [everyPost]);
 
   // Range and platform tab narrow every figure on the screen together.
   const cutoff = rangeDays == null ? 0 : Date.now() - rangeDays * 86_400_000;
@@ -972,6 +989,11 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
               {selectedClient.name}; new platforms join automatically once connected. Watch time
               counts only the platforms that report it. Export builds a branded PDF report.
             </div>
+
+            <DataProvenance
+              platforms={connectedPlatforms.map((a) => a.platform)}
+              refreshedAt={lastRefreshedAt}
+            />
           </>
         )}
       </div>

@@ -340,6 +340,32 @@ body{
 .foot-note{font-size:10.5px;color:var(--muted-2);letter-spacing:1px;text-transform:uppercase;}
 .foot-refreshed{margin-top:16px;font-size:11px;color:var(--muted-2);}
 
+/* where the numbers came from. Rendered on the overview AND on the video
+   breakdown, which is a separate view and would otherwise carry no source,
+   no date and no sender at all. */
+.prov{margin-top:26px;padding:16px 18px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(255,255,255,.02);}
+.prov-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12px;color:var(--muted);}
+.prov-row b{color:#fff;font-weight:700;}
+.prov-live{width:7px;height:7px;border-radius:50%;background:#3ddc97;
+  box-shadow:0 0 8px #3ddc97;flex:0 0 auto;}
+.prov-when{margin-left:auto;font-size:11px;color:var(--muted-2);}
+.prov-un{margin-top:13px;}
+.prov-un-h{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted-2);margin-bottom:7px;}
+.prov-un ul{margin:0;padding:0 0 0 15px;list-style:none;}
+.prov-un li{position:relative;font-size:11.5px;line-height:1.7;color:var(--muted);margin-bottom:5px;}
+.prov-un li:before{content:"";position:absolute;left:-12px;top:8px;width:4px;height:4px;
+  border-radius:50%;background:var(--coral);opacity:.75;}
+.prov-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin-top:14px;padding-top:11px;border-top:1px solid var(--line);}
+.prov-brand{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted-2);}
+.prov-links{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;}
+.prov-links a{font-size:10.5px;color:var(--muted-2);text-decoration:none;border-bottom:1px solid var(--line);}
+/* Printed reports keep the block: a PDF a client files away needs its source
+   and its date more than the screen does, not less. Links stop pretending to
+   be clickable on paper. */
+@media print{.prov{break-inside:avoid;}.prov-links a{border-bottom:none;}}
+
 /* ---------- print ---------- */
 /* Zero page margin so the dark design reaches the paper edge. Anything
    inside the @page margin is left unpainted by the browser, which is what
@@ -645,6 +671,19 @@ body{
     "contactHtml": "<b>Torerone</b><br>hello@torerone.com · torerone.com",
     "note": "Short form content that performs",
     "refreshed": "Figures last refreshed 10 Aug"
+  },
+  "provenance": {
+    "sources": "Instagram, TikTok and YouTube",
+    "refreshed": "10 August 2026",
+    "brand": { "name": "Torerone", "tagline": "Short form content that performs" },
+    "links": [
+      { "label": "YouTube Terms of Service", "href": "https://www.youtube.com/t/terms" },
+      { "label": "Google Privacy Policy", "href": "https://policies.google.com/privacy" }
+    ],
+    "unmeasured": [
+      { "text": "Direct messages caused by a video. No platform connects a message to the post that prompted it." },
+      { "text": "Second by second retention. Only YouTube measures a curve; everywhere else reports an average at best." }
+    ]
   }
 }
 </script>
@@ -877,7 +916,55 @@ body{
     var s = data.videosSection || {};
     return '<div class="section" style="margin-top:34px;">' +
       sectionHead(s.eyebrow || 'Every upload', s.title || 'Video Breakdown') +
-      '<div class="vgrid">' + data.videos.map(videoCardHTML).join('') + '</div></div>';
+      '<div class="vgrid">' + data.videos.map(videoCardHTML).join('') + '</div>' +
+      // The breakdown is a separate view, so the overview's footer never
+      // reaches it. A client who lands here and forwards it would otherwise
+      // hold a page of numbers with no source, no date and no sender on it.
+      provenanceHTML(data.provenance) + '</div>';
+  }
+
+  /**
+   * Where these numbers came from, on every view that shows numbers.
+   *
+   * The content is built in packages/core/src/dataProvenance.ts, the same
+   * module the app's own screens read, so this page and the operator's screen
+   * cannot make different claims about the same figures.
+   *
+   * The YouTube links are not decoration. YouTube's API Services Terms require
+   * any surface displaying their data to carry them, and this page is the one
+   * that leaves the building.
+   */
+  function provenanceHTML(p) {
+    if (!p || !p.sources) return '';
+    var html = '<div class="prov">';
+
+    html += '<div class="prov-row"><span class="prov-live"></span>' +
+      '<span>Live data from <b>' + esc(p.sources) + '</b></span>';
+    if (p.refreshed) html += '<span class="prov-when">Last updated ' + esc(p.refreshed) + '</span>';
+    html += '</div>';
+
+    if (p.unmeasured && p.unmeasured.length) {
+      html += '<div class="prov-un"><div class="prov-un-h">Not shown, because no platform reports it</div><ul>';
+      for (var i = 0; i < p.unmeasured.length; i++) {
+        html += '<li>' + esc(p.unmeasured[i].text) + '</li>';
+      }
+      html += '</ul></div>';
+    }
+
+    html += '<div class="prov-foot">';
+    var b = p.brand || {};
+    html += '<span class="prov-brand">' + esc(b.name || '') +
+      (b.tagline ? ' · ' + esc(b.tagline) : '') + '</span>';
+    if (p.links && p.links.length) {
+      html += '<span class="prov-links">';
+      for (var j = 0; j < p.links.length; j++) {
+        html += '<a href="' + esc(p.links[j].href) + '" target="_blank" rel="noopener noreferrer">' +
+          esc(p.links[j].label) + '</a>';
+      }
+      html += '</span>';
+    }
+    html += '</div></div>';
+    return html;
   }
 
   function render(data) {
@@ -954,6 +1041,7 @@ body{
     // period carried a refresh timestamp, because a date that is not true is
     // worse than no date.
     if (f.refreshed) html += '<div class="foot-refreshed">' + esc(f.refreshed) + '</div>';
+    html += provenanceHTML(data.provenance);
     html += '</div>';
 
     html += '</div>'; // /view-overview

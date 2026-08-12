@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Pf from "../components/Pf";
+import DataProvenance from "../components/DataProvenance";
 import { api, type ClientAnalytics } from "../lib/api";
 import { PF_ID } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
@@ -31,6 +32,15 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
   const { clients } = useAppState();
   const [metrics, setMetrics] = useState<Record<string, ClientAnalytics>>({});
   const [days, setDays] = useState<number>(30);
+
+  /** Every platform connected anywhere, since this screen spans all brands. */
+  const allPlatforms = useMemo(
+    () =>
+      clients.flatMap((c) =>
+        c.accounts.filter((a) => a.status === "connected").map((a) => a.platform),
+      ),
+    [clients],
+  );
 
   useEffect(() => {
     if (!clients.length) return;
@@ -175,6 +185,9 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
             Metrics populate automatically once analytics ingestion is live.
           </div>
         )}
+        {/* Every brand's platforms together: the dashboard is the one screen
+            that spans all of them, so its footer names the whole set. */}
+        <DataProvenance platforms={allPlatforms} />
       </div>
     </section>
   );
