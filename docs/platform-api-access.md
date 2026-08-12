@@ -177,6 +177,23 @@ Each channel owner authorizes once, through a link the app generates. For
 Caleb's channel that means he clicks it, picks the right Google account, clicks
 past the unverified warning, and approves. That is the whole client-side effort.
 
+**Status: built, 2026-08-12.** Settings, a client's card, the YouTube row: a
+"Direct data access" line underneath it with a Copy link button. The link is
+copied rather than opened, because the person who has to click it is the channel
+owner and not the operator; opening it here would authorize whichever channel
+this machine is signed into, which the callback then refuses by name.
+
+One thing still has to be set on the server before the link works:
+
+```
+OAUTH_REDIRECT_BASE=https://api.torerone.com
+```
+
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are already there. This one is
+new, and it is deliberately not `PUBLIC_API_URL`: that is the Tailscale Funnel
+address the desktop app talks to, and Google was told about the other host.
+Until it is set, the connect button answers 503 saying exactly this.
+
 ---
 
 ## 3. TikTok
@@ -253,18 +270,35 @@ Phase 1 is still being built.
 
 ## 5. What I build once each one lands
 
-The same shape for all three, because they all feed one store.
+The same shape for all three, because they all feed one store. **Google is
+built; Meta and TikTok reuse the same pieces.**
 
 **Per platform:**
 - An OAuth start and callback route under `/oauth/<platform>/`, storing the
   refresh token through the existing `packages/db/src/secrets.ts` encryption.
-  Nothing lands in plaintext and nothing lands in a config file.
-- A token refresh job, because all three expire on different clocks.
+  Nothing lands in plaintext and nothing lands in a config file. Done for
+  Google: `apps/api/src/routes/oauth.ts`, on a new `PlatformConnection` row.
+- ~~A token refresh job, because all three expire on different clocks.~~
+  **Not needed for Google, and probably not for the others.** An access token
+  lasts an hour, so it is minted from the refresh token at the moment it is
+  used and never stored. There is nothing for a job to keep alive.
 - A sync job that writes into the **same `ExternalVideo` rows Zernio already
   writes**, keyed on `(socialAccountId, platformVideoId)`. Both sources describe
   the same post with the same platform id, so there is nothing to reconcile.
+  Done for Google: `apps/worker/src/youtubeAnalytics.ts`, running after the
+  catalogue refresh that creates the rows.
 - A daily capture into `ExternalVideoMetric`, so history accumulates whichever
-  source produced it.
+  source produced it. Done, through `applyPlatformMetrics`.
+
+**Still to do, and it is what makes any of this visible:** the capability matrix
+in `packages/core/src/platformMetrics.ts` answers per platform, and the honest
+answer is now per row. A directly connected YouTube channel reports shares and
+watch time; an unconnected one does not, and adding `youtube` to those sets
+would print "Shares 0" for every channel nobody has authorized. So the numbers
+are being stored from today and the report does not show them yet. Subscribers
+gained is the exception: `followsMeasurable` asks the data rather than the
+platform list, so the Analytics screen starts showing it the day a real number
+lands, with no further change.
 
 **Shared, built once:**
 - Per-field precedence: the platform API wins for any field it reports, Zernio
