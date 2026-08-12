@@ -2,11 +2,21 @@
 #
 #   docker compose -f infra/docker-compose.prod.yml up -d
 #
-# Nothing here publishes a port to the internet. Postgres is reachable only
-# over the compose network; the API is bound to loopback and reached through
-# Tailscale, which terminates TLS and holds the certificate.
+# Postgres is reachable only over the compose network, and it stays that way.
 # On a fresh VPS with no firewall a published 5432 is found and attacked within
-# the hour, so the rule is that the open internet gets nothing at all.
+# the hour, so the data layer gets nothing from the open internet, ever.
+#
+# The API is a different case, and the comment here used to overstate it. It has
+# been publicly reachable the whole time: Tailscale Funnel serves it at
+# toreroflow-server.tail0aa167.ts.net, terminating TLS in tailscaled. The API is
+# bound to loopback so that tailscaled is the only thing that can reach it
+# directly, not because the API is private.
+#
+# Caddy, added 2026-08-11, is a second public door to that same already-public
+# API, on a name we own. It exists because OAuth redirect URIs go in front of
+# platform reviewers at Meta, Google and TikTok, and a .ts.net hostname reads as
+# a hobby project. Both doors lead to the same place behind the same auth, so
+# this widens the surface by a port, not by a capability.
 #
 # Every secret comes from infra/.env, which is not in this repository. See
 # infra/.env.example and DEPLOY.md.
@@ -125,8 +135,42 @@ services:
       # fresh deploy is exactly the thing that reads as a broken deploy.
       api: { condition: service_healthy }
 
+  # HTTPS for the API on our own domain, so an OAuth redirect URI can be
+  # https://api.torerone.com/... rather than a .ts.net hostname.
+  #
+  # Caddy requests and renews the Let's Encrypt certificate itself; there is no
+  # certbot and no renewal to forget. Two things it needs:
+  #
+  #   1. API_DOMAIN must resolve to this box BEFORE the container starts,
+  #      because the ACME challenge is answered on port 80. If it does not,
+  #      Caddy backs off and retries, and no certificate is served meanwhile.
+  #   2. The caddydata volume must persist. Let's Encrypt rate limits issuance
+  #      per domain per week, so throwing certificates away on every deploy is
+  #      how a deploy loop turns into a week-long outage.
+  #
+  # It reaches the API as api:4700 over the compose network, which is why the
+  # API's own loopback binding does not get in the way.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in infra/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      api: { condition: service_healthy }
+
 
 volumes:
   pgdata:
   storage:
   whispermodels:
+  # Holds the certificate and the ACME account key. Losing this means asking
+  # Let's Encrypt for a fresh certificate, which is rate limited.
+  caddydata:
+  caddyconfig:
