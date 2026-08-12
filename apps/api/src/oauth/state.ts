@@ -21,11 +21,21 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 
 /**
- * Long enough for a client to find the right Google account, read a consent
- * screen and click past the unverified-app warning. Short enough that a URL
- * left in a browser history is not a standing key.
+ * Seven days, the same as a signed file link and for the same reason: this is
+ * sent to a client, not used by the person who made it.
+ *
+ * The clock starts when the operator copies the link, not when the client
+ * opens it. A short expiry would have meant texting someone a link that dies
+ * before they get round to it, and "that link is not valid" is the least
+ * debuggable message an agency can send a client.
+ *
+ * Long is affordable here because the state grants nothing on its own. It names
+ * which account a successful authorization attaches to; the authority is
+ * Google's consent screen, and a stranger holding the state could at worst
+ * offer up read access to their own channel, which the channel check then
+ * refuses by name.
  */
-export const STATE_TTL_MS = 15 * 60 * 1000;
+export const STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface OAuthState {
   /** The workspace the authorization belongs to. */

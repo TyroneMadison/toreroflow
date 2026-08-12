@@ -11,7 +11,7 @@ import {
 } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
-import { signState, verifyState } from "../oauth/state";
+import { signState, STATE_TTL_MS, verifyState } from "../oauth/state";
 
 /**
  * Direct platform authorization, starting with Google for YouTube.
@@ -132,6 +132,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       return {
         authUrl: googleAuthUrl(creds, state),
         handle: account.handle,
+        /** The link is good for a week, so it can be sent and forgotten about. */
+        expiresInDays: Math.round(STATE_TTL_MS / (24 * 60 * 60 * 1000)),
         /*
          * Said plainly because the operator is about to send this to a client
          * and will be asked. The app is in production but unverified, which

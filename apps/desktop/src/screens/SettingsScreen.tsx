@@ -60,12 +60,15 @@ function DirectConnection({
   const copyLink = async () => {
     setBusy(true);
     try {
-      const { authUrl, expectWarning } = await api.post<{
+      const { authUrl, expectWarning, expiresInDays } = await api.post<{
         authUrl: string;
         expectWarning: string;
+        expiresInDays: number;
       }>(`/oauth/google/start/${accountId}`);
       await navigator.clipboard.writeText(authUrl);
-      toast.success(`Authorization link for @${handle} copied. ${expectWarning}`);
+      toast.success(
+        `Authorization link for @${handle} copied, good for ${expiresInDays} days. ${expectWarning}`,
+      );
     } catch (err) {
       toast.fail("Could not create the authorization link", err);
     } finally {
