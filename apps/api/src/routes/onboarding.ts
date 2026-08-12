@@ -142,8 +142,14 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
        * and this API is not reachable from a phone. So they are made here and
        * left somewhere static for the page to pick up by token.
        *
-       * Republished every time this runs, so pressing the button again is also
-       * how stale links get refreshed.
+       * Pressing the button again refreshes stale links, but only actually
+       * deploys when the bytes changed: NetlifyPublisher.publish skips a deploy
+       * whose files are already live, and Netlify bills per deploy rather than
+       * per file. This one call used to cost 15 credits every single press.
+       *
+       * Nothing here may carry a timestamp or any other value that varies per
+       * call. A "builtAt" field lived here, was read by nothing, and changed
+       * the file's hash on every press, which would defeat that skip entirely.
        */
       let connectPublished = false;
       const net = publisher();
@@ -155,7 +161,6 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
               [connectFilePath(token)]: JSON.stringify({
                 brand: client.name,
                 connect,
-                builtAt: new Date().toISOString(),
               }),
             });
             connectPublished = true;

@@ -34,10 +34,36 @@ export interface PublishResult {
   uploaded: number;
   preserved: number;
   url: string;
+  /**
+   * True when every file was already live byte for byte, so no deploy was made.
+   *
+   * Worth reporting rather than hiding, because "nothing was deployed" and
+   * "deployed successfully" are different facts and the caller sometimes wants
+   * to say which happened.
+   */
+  skipped?: boolean;
 }
 
 const sha1 = (buf: Buffer | string): string =>
   createHash("sha1").update(buf).digest("hex");
+
+/**
+ * Whether a set of files is already live, byte for byte.
+ *
+ * Pulled out of `publish` so it can be checked without a Netlify account,
+ * because it is the decision that either saves 15 credits or silently stops
+ * a client's report from updating. Those are very different failures and only
+ * one of them is visible, so the rule is pinned rather than trusted.
+ *
+ * An empty set counts as unchanged: there is nothing to deploy.
+ */
+export function alreadyLive(
+  existing: readonly NetlifyFile[],
+  additions: Record<string, string>,
+): boolean {
+  const live = new Map(existing.map((f) => [f.path, f.sha]));
+  return Object.entries(additions).every(([path, content]) => live.get(path) === sha1(content));
+}
 
 export class NetlifyPublisher {
   constructor(private readonly token: string) {}
@@ -199,6 +225,31 @@ export class NetlifyPublisher {
     const newShas = new Map<string, { sha: string; body: string }>();
     for (const [path, content] of Object.entries(additions)) {
       newShas.set(path, { sha: sha1(content), body: content });
+    }
+
+    /*
+     * Nothing to do when every file is already live, byte for byte.
+     *
+     * Netlify bills a production deploy per deploy, not per file, so a deploy
+     * that changes nothing costs exactly as much as one that rebuilds the site.
+     * That is not a detail: this account spent 945 of its 1000 monthly credits
+     * on 63 deploys to this site and was cut off mid-month, and a large share
+     * of those were republishing bytes that were already there. Copying a
+     * welcome link republished the connect file on every press.
+     *
+     * The shas are already computed on both sides for the manifest, so the
+     * comparison is free. An empty `additions` also lands here rather than
+     * deploying the existing manifest back to itself.
+     */
+    if (alreadyLive(existing, additions)) {
+      return {
+        deployId: "",
+        state: "skipped",
+        uploaded: 0,
+        preserved: existing.length,
+        url: await this.siteUrl(siteId),
+        skipped: true,
+      };
     }
 
     // Existing files first, then ours, so a report path replaces rather than

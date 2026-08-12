@@ -434,52 +434,111 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
    * which is why the page is written as a directory index rather than a bare
    * `.html` file.
    */
-  const publishFor = async (
-    client: { id: string; name: string; reportSlug: string | null },
-    period: { start: Date; end: Date },
-  ) => {
+  type PublishTarget = { id: string; name: string; reportSlug: string | null };
+
+  /**
+   * Publishes any number of clients in ONE Netlify deploy.
+   *
+   * The count matters more than it looks. Netlify bills a production deploy
+   * per deploy rather than per file, so publishing five clients one at a time
+   * costs five deploys for the same bytes. This account spent 945 of its 1000
+   * monthly credits on 63 deploys to this site and was cut off mid-month with
+   * 1.6 GB of traffic to its name, so the deploy count IS the bill.
+   *
+   * Pages are built first and deployed together. A client whose page fails to
+   * build is recorded against that client and the rest still go out, because
+   * one brand's bad data should not cost every other brand their update.
+   */
+  const publishMany = async (clients: PublishTarget[], period: { start: Date; end: Date }) => {
     if (!publisher) throw new Error("publishing is not configured");
-    const slug = await ensureReportSlug(prisma, client);
-    const built = await generateWeb(client.id, period);
-    if (!built) return null;
 
-    const result = await publisher.publish(env.NETLIFY_SITE_ID, {
-      [`/${slug}/index.html`]: built.html,
-    });
+    const built: Array<{ client: PublishTarget; slug: string; html: string; periods: unknown }> = [];
+    const failures: Array<{ client: PublishTarget; error: unknown }> = [];
+    for (const client of clients) {
+      try {
+        const slug = await ensureReportSlug(prisma, client);
+        const page = await generateWeb(client.id, period);
+        if (page) built.push({ client, slug, html: page.html, periods: page.periods });
+      } catch (error) {
+        failures.push({ client, error });
+      }
+    }
+    if (!built.length) {
+      if (failures.length) throw failures[0]!.error;
+      return { published: [], failures };
+    }
 
-    // One address, decided at onboarding and never changed: the public base
-    // plus the client's permanent slug. The Netlify site the files actually
-    // sit on is storage, and its address is never shown to anyone.
-    const url = reportUrlFor(slug, await publisher.siteUrl(env.NETLIFY_SITE_ID));
+    const additions: Record<string, string> = {};
+    for (const b of built) additions[`/${b.slug}/index.html`] = b.html;
+    const result = await publisher.publish(env.NETLIFY_SITE_ID, additions);
 
-    // The link is canonical, but that does not make it live. torerone.com
-    // answers 200 for every unknown path, so before the website's redirect is
-    // deployed this URL quietly serves the marketing homepage. Checked by
-    // comparing bytes rather than status, and reported rather than worked
-    // around, because silently handing back a different address is exactly
-    // the "lingering URL" this design is meant to remove.
-    const publicBaseServes = await servesExactly(url, built.html);
+    // One read for the whole batch rather than one per client.
+    const siteUrl = await publisher.siteUrl(env.NETLIFY_SITE_ID);
+    const publishedAt = new Date();
 
-    await prisma.client.update({
-      where: { id: client.id },
-      data: {
-        reportUrl: url,
-        reportPublishedAt: new Date(),
-        reportPublishedMonth: monthKey(period.start),
-      },
-    });
+    const published = [];
+    for (const b of built) {
+      // One address, decided at onboarding and never changed: the public base
+      // plus the client's permanent slug. The Netlify site the files actually
+      // sit on is storage, and its address is never shown to anyone.
+      const url = reportUrlFor(b.slug, siteUrl);
 
-    return {
-      url,
-      slug,
-      month: monthKey(period.start),
-      periods: built.periods,
-      /** Set when the permanent link is not being served yet. */
-      publicBaseWarning: publicBaseServes
-        ? null
-        : `${url} is not serving this report yet. Deploy the website so its /reports redirect goes live; the link itself is already correct and permanent.`,
-      deploy: { id: result.deployId, state: result.state, uploaded: result.uploaded, preserved: result.preserved },
-    };
+      // The link is canonical, but that does not make it live. torerone.com
+      // answers 200 for every unknown path, so before the website's redirect is
+      // deployed this URL quietly serves the marketing homepage. Checked by
+      // comparing bytes rather than status, and reported rather than worked
+      // around, because silently handing back a different address is exactly
+      // the "lingering URL" this design is meant to remove.
+      const publicBaseServes = await servesExactly(url, b.html);
+
+      await prisma.client.update({
+        where: { id: b.client.id },
+        data: {
+          reportUrl: url,
+          reportPublishedAt: publishedAt,
+          reportPublishedMonth: monthKey(period.start),
+        },
+      });
+
+      published.push({
+        clientId: b.client.id,
+        url,
+        slug: b.slug,
+        month: monthKey(period.start),
+        periods: b.periods,
+        /** Set when the permanent link is not being served yet. */
+        publicBaseWarning: publicBaseServes
+          ? null
+          : `${url} is not serving this report yet. Deploy the website so its /reports redirect goes live; the link itself is already correct and permanent.`,
+        deploy: {
+          id: result.deployId,
+          state: result.state,
+          uploaded: result.uploaded,
+          preserved: result.preserved,
+          /** True when the bytes were already live, so nothing was deployed. */
+          skipped: result.skipped === true,
+        },
+      });
+    }
+
+    return { published, failures };
+  };
+
+  /**
+   * Builds one client's report page and pushes it to its permanent path.
+   *
+   * The path never changes once assigned, so a link sent in January still
+   * shows July's numbers. Netlify serves `/<slug>/index.html` at `/<slug>`,
+   * which is why the page is written as a directory index rather than a bare
+   * `.html` file.
+   *
+   * One client is the batch of one, so there is a single publishing path and
+   * no chance of the two drifting.
+   */
+  const publishFor = async (client: PublishTarget, period: { start: Date; end: Date }) => {
+    const { published, failures } = await publishMany([client], period);
+    if (failures.length) throw failures[0]!.error;
+    return published[0] ?? null;
   };
 
   /** Takes a client's page off the site, for when they are offboarded. */
@@ -871,6 +930,9 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     // reports itself as one problem instead of one per brand.
     const publishingHealthy = await checkPublishingCredential(clients[0]?.agencyId ?? null);
 
+    /** Brands whose page needs the new month, published together at the end. */
+    const due: typeof clients = [];
+
     for (const client of clients) {
       if (canRenderPdf) {
         const existing = await prisma.clientReport.findUnique({
@@ -904,31 +966,56 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       // Only for clients already published at least once: putting a client's
       // numbers on the public web is a decision the operator makes explicitly,
       // never something a background timer does on its own.
+      //
+      // Collected rather than published here. Every one of these used to be its
+      // own Netlify deploy, so a month-end sweep over five brands cost five
+      // deploys for one month's numbers. They go out together below.
       if (!publisher || !client.reportPublishedAt) continue;
       if (client.reportPublishedMonth === stamp) continue;
-
-      const key = clientAlertKey(ALERT_KINDS.reportPublish, client.id);
       // A rejected credential fails every client identically. Reporting that
       // once as a credential problem beats one confusing alert per brand.
       if (!publishingHealthy) continue;
+      due.push(client);
+    }
 
-      try {
-        const published = await publishFor(client, period);
-        if (published) {
-          app.log.info(`[reports] republished ${client.name} at ${published.url} (${stamp})`);
-          await clearAlert(prisma, client.agencyId, key);
+    if (!due.length) return;
+
+    /*
+     * Every brand that needs the new month, in one deploy.
+     *
+     * A failure is reported per client exactly as it was before, so an alert
+     * still names the brand whose page is stale. The difference is only in how
+     * many deploys it took to get there.
+     */
+    const report = async (client: (typeof due)[number], error: unknown) => {
+      app.log.error({ err: error }, `month-end republish failed for ${client.name}`);
+      await raiseAlert(prisma, {
+        agencyId: client.agencyId,
+        key: clientAlertKey(ALERT_KINDS.reportPublish, client.id),
+        kind: ALERT_KINDS.reportPublish,
+        clientId: client.id,
+        message: `${client.name}'s report page is still showing ${monthName(monthStart(client.reportPublishedMonth))} and could not be updated. The link you have sent them is out of date.`,
+        detail: describeFailure(error),
+      });
+    };
+
+    try {
+      const { published, failures } = await publishMany(due, period);
+      for (const p of published) {
+        const client = due.find((c) => c.id === p.clientId);
+        app.log.info(
+          `[reports] republished ${client?.name ?? p.slug} at ${p.url} (${stamp})${p.deploy.skipped ? " [unchanged, no deploy]" : ""}`,
+        );
+        if (client) {
+          await clearAlert(prisma, client.agencyId, clientAlertKey(ALERT_KINDS.reportPublish, client.id));
         }
-      } catch (error) {
-        app.log.error({ err: error }, `month-end republish failed for ${client.name}`);
-        await raiseAlert(prisma, {
-          agencyId: client.agencyId,
-          key,
-          kind: ALERT_KINDS.reportPublish,
-          clientId: client.id,
-          message: `${client.name}'s report page is still showing ${monthName(monthStart(client.reportPublishedMonth))} and could not be updated. The link you have sent them is out of date.`,
-          detail: describeFailure(error),
-        });
       }
+      for (const f of failures) await report(f.client as (typeof due)[number], f.error);
+    } catch (error) {
+      // The deploy itself failed, which fails every brand in the batch
+      // identically. Each still gets its own alert, because each still has a
+      // client holding a stale link.
+      for (const client of due) await report(client, error);
     }
   };
 
