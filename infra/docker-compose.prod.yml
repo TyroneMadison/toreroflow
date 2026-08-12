@@ -150,14 +150,27 @@ services:
   #
   # It reaches the API as api:4700 over the compose network, which is why the
   # API's own loopback binding does not get in the way.
+  #
+  # The ports are bound to the PUBLIC addresses specifically, never to 0.0.0.0.
+  # tailscaled already listens on 443 on the tailnet addresses for Funnel, and a
+  # wildcard bind conflicts with any specific bind on the same port, so
+  # "443:443" fails with EADDRINUSE and takes the whole deploy down with it.
+  # Naming the public addresses lets the two coexist: Funnel keeps serving the
+  # .ts.net name, Caddy serves api.torerone.com.
+  #
+  # IPv6 is bound because an AAAA record exists for API_DOMAIN, and Let's
+  # Encrypt prefers IPv6 when it finds one. Listening on IPv4 alone would fail
+  # the ACME challenge even though the name resolves.
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in infra/.env}
     ports:
-      - "80:80"
-      - "443:443"
+      - "${PUBLIC_IPV4:?set PUBLIC_IPV4 in infra/.env}:80:80"
+      - "${PUBLIC_IPV4}:443:443"
+      - "[${PUBLIC_IPV6:?set PUBLIC_IPV6 in infra/.env}]:80:80"
+      - "[${PUBLIC_IPV6}]:443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
