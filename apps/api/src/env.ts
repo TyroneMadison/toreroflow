@@ -77,6 +77,29 @@ export interface Env {
    * all-time YouTube rankings stay unavailable rather than failing.
    */
   YOUTUBE_API_KEY: string;
+  /**
+   * Google OAuth client, for the YouTube Analytics API.
+   *
+   * A different product from YOUTUBE_API_KEY above and not a replacement for
+   * it: the key reads public catalogue data, this reads what only the channel
+   * owner can see (shares, watch time, subscribers gained). Empty means the
+   * connect endpoints answer 503 with guidance rather than producing a link
+   * that fails on Google's side.
+   */
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  /**
+   * The public origin OAuth redirects come back to, e.g.
+   * https://api.torerone.com. Must match what is registered in each platform's
+   * console character for character.
+   *
+   * Deliberately its own variable rather than reusing PUBLIC_API_URL, which is
+   * the Tailscale Funnel address the desktop app talks to. The two are
+   * different hosts for the same server, and the platforms only know about this
+   * one. No default: a fallback to the production domain would mean a laptop
+   * test binding a real client's credential on the live server.
+   */
+  OAUTH_REDIRECT_BASE: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
   /**
@@ -127,6 +150,9 @@ export const env: Env = {
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   REPO_ROOT: repoRoot,

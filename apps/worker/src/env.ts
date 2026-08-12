@@ -20,6 +20,17 @@ export const env = {
   MONID_API_KEY: process.env.MONID_API_KEY ?? "",
   /** Empty means lifetime YouTube refresh is skipped, not failed. */
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
+  /**
+   * The Google OAuth client, used here only to mint an hour-long access token
+   * from each channel's stored refresh token. Empty means the YouTube Analytics
+   * sync is skipped and the numbers stay exactly as the catalogue sync left
+   * them, rather than the job failing.
+   *
+   * No redirect URI: Google's refresh grant does not carry one, so this process
+   * never needs to know which domain the authorization came back to.
+   */
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
   /** Signs the /files links a reminder email carries; same secret as the API. */
   JWT_SECRET: process.env.JWT_SECRET ?? "",
   /**

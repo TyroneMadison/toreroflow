@@ -4,7 +4,12 @@ import UpdateCard from "../components/UpdateCard";
 import BusinessCard from "../components/BusinessCard";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import { api, type ClientAnalytics, type ClientSummary } from "../lib/api";
+import {
+  api,
+  type ClientAnalytics,
+  type ClientSummary,
+  type PlatformConnection,
+} from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { openExternal } from "../lib/external";
@@ -20,6 +25,95 @@ function fmt(n: number | null | undefined): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(Math.round(n));
+}
+
+/**
+ * The direct platform credential, alongside the publishing connection above it
+ * rather than instead of it.
+ *
+ * A separate row on purpose. "Connected" on the row above means the app can
+ * post there, which is a different fact from whether the channel owner has let
+ * us read the numbers only they can see, and one screen that blurred the two
+ * would make an unread channel look fully wired up.
+ *
+ * The link is copied rather than opened, because the person who has to click it
+ * is almost never the person looking at this screen. Caleb owns Caleb's
+ * channel; opening it here would authorize whatever channel the operator
+ * happens to be signed into, which the callback then refuses.
+ */
+function DirectConnection({
+  accountId,
+  handle,
+  connection,
+  configured,
+  onChanged,
+}: {
+  accountId: string;
+  handle: string;
+  connection: PlatformConnection | undefined;
+  configured: boolean;
+  onChanged(): void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const copyLink = async () => {
+    setBusy(true);
+    try {
+      const { authUrl, expectWarning } = await api.post<{
+        authUrl: string;
+        expectWarning: string;
+      }>(`/oauth/google/start/${accountId}`);
+      await navigator.clipboard.writeText(authUrl);
+      toast.success(`Authorization link for @${handle} copied. ${expectWarning}`);
+    } catch (err) {
+      toast.fail("Could not create the authorization link", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.del(`/oauth/connections/${accountId}`);
+      toast.success("Direct access removed. Posting is unaffected.");
+      onChanged();
+    } catch (err) {
+      toast.fail("Could not remove direct access", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revoked = connection?.status === "revoked";
+  return (
+    <div className="connect-row" style={{ paddingLeft: 34, opacity: 0.95 }}>
+      <div className="cinfo">
+        <b style={{ fontSize: 11.5 }}>Direct data access</b>
+        <span title={connection?.error ?? undefined}>
+          <i className={`livedot ${connection && !revoked ? "on" : "off"}`} />
+          {!configured
+            ? "not set up on this server"
+            : revoked
+              ? "access was withdrawn, send a fresh link"
+              : connection
+                ? `${connection.externalName ?? "channel"} · shares, watch time, subscribers gained`
+                : "not authorized, so shares and watch time stay blank"}
+        </span>
+      </div>
+      {configured && (
+        <button className="cbtn" disabled={busy} onClick={() => void copyLink()}>
+          {busy ? "…" : connection ? "Copy new link" : "Copy link"}
+        </button>
+      )}
+      {connection && (
+        <button className="dangerbtn" disabled={busy} onClick={() => void remove()}>
+          {busy ? "…" : "Remove"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -186,6 +280,9 @@ function ProfileCard({
   onDelete,
   busyKey,
   pending,
+  connections,
+  googleConfigured,
+  onConnectionsChanged,
 }: {
   client: ClientSummary;
   onConnect(platform: Platform): void;
@@ -195,6 +292,9 @@ function ProfileCard({
   onDelete(): void;
   busyKey: string | null;
   pending: boolean;
+  connections: Map<string, PlatformConnection>;
+  googleConfigured: boolean;
+  onConnectionsChanged(): void;
 }) {
   const [open, setOpen] = useState(false);
   const [cover, setCover] = useState(false);
@@ -432,36 +532,51 @@ function ProfileCard({
             return platformAccounts.map((account, i) => {
               const busy = busyKey === account.id;
               return (
-                <div className="connect-row" key={account.id}>
-                  <Pf p={PF_ID[platform]} />
-                  <div className="cinfo">
-                    <b>{PLATFORM_LABELS[platform]}</b>
-                    {/* Handle truncates rather than growing: @examplecreator
-                        used to push straight through the Disconnect button. */}
-                    <span title={`@${account.handle}`}>
-                      <i className="livedot on" />@{account.handle}
-                    </span>
-                  </div>
-                  {/* One "add another" per platform, on the last row, so a
-                      second page of the same platform is a first-class thing
-                      rather than something Zernio does behind the app's back. */}
-                  {i === platformAccounts.length - 1 && (
+                <div key={account.id}>
+                  <div className="connect-row">
+                    <Pf p={PF_ID[platform]} />
+                    <div className="cinfo">
+                      <b>{PLATFORM_LABELS[platform]}</b>
+                      {/* Handle truncates rather than growing: @examplecreator
+                          used to push straight through the Disconnect button. */}
+                      <span title={`@${account.handle}`}>
+                        <i className="livedot on" />@{account.handle}
+                      </span>
+                    </div>
+                    {/* One "add another" per platform, on the last row, so a
+                        second page of the same platform is a first-class thing
+                        rather than something Zernio does behind the app's back. */}
+                    {i === platformAccounts.length - 1 && (
+                      <button
+                        className="cbtn"
+                        title={`Connect another ${PLATFORM_LABELS[platform]} account`}
+                        disabled={busyKey === `${client.id}:${platform}`}
+                        onClick={() => onConnect(platform)}
+                      >
+                        + Add
+                      </button>
+                    )}
                     <button
-                      className="cbtn"
-                      title={`Connect another ${PLATFORM_LABELS[platform]} account`}
-                      disabled={busyKey === `${client.id}:${platform}`}
-                      onClick={() => onConnect(platform)}
+                      className="dangerbtn"
+                      disabled={busy}
+                      onClick={() => onDisconnect(account.id)}
                     >
-                      + Add
+                      {busy ? "…" : "Disconnect"}
                     </button>
+                  </div>
+                  {/* YouTube only for now: it is the one platform whose direct
+                      OAuth exists. Meta and TikTok get the same row when their
+                      apps are live. A reminder account is skipped, because there
+                      is no channel behind it to authorize. */}
+                  {platform === "youtube" && !account.reminder && (
+                    <DirectConnection
+                      accountId={account.id}
+                      handle={account.handle}
+                      connection={connections.get(account.id)}
+                      configured={googleConfigured}
+                      onChanged={onConnectionsChanged}
+                    />
                   )}
-                  <button
-                    className="dangerbtn"
-                    disabled={busy}
-                    onClick={() => onDisconnect(account.id)}
-                  >
-                    {busy ? "…" : "Disconnect"}
-                  </button>
                 </div>
               );
             });
@@ -526,10 +641,41 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState<string | null>(null);
   const autoSynced = useRef(new Set<string>());
+  const [connections, setConnections] = useState<Map<string, PlatformConnection>>(new Map());
+  const [googleConfigured, setGoogleConfigured] = useState(false);
 
   useEffect(() => {
     void getAutostart().then(setAutostartState);
   }, []);
+
+  /**
+   * Which accounts have a direct credential.
+   *
+   * Its own request rather than a field on the client list, because it answers
+   * a different question from "can we post here" and the two go stale on
+   * different clocks: publishing connections change when the operator connects
+   * one, these change when a client somewhere else clicks a link.
+   *
+   * A failure is silent and leaves the map empty, which renders as "not
+   * authorized" everywhere. That is the honest reading of not knowing, and this
+   * screen has plenty else to do.
+   */
+  const loadConnections = useRef(async () => {
+    try {
+      const res = await api.get<{
+        connections: PlatformConnection[];
+        googleConfigured: boolean;
+      }>("/oauth/connections");
+      setConnections(new Map(res.connections.map((c) => [c.socialAccountId, c])));
+      setGoogleConfigured(res.googleConfigured);
+    } catch {
+      // The rest of Settings works without this.
+    }
+  }).current;
+
+  useEffect(() => {
+    void loadConnections();
+  }, [loadConnections]);
 
   // Pull provider-side connections in automatically when Settings opens,
   // and again for any client that appears while it stays open. The latch is
@@ -579,6 +725,10 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             }
           }
           await refreshClients();
+          // A client authorizing happens on their machine, not this one, so
+          // there is nothing to poll for. Coming back to the window is the
+          // moment the operator is asking "did they do it yet".
+          await loadConnections();
         } finally {
           focusSyncing.current = false;
         }
@@ -586,7 +736,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [clients, refreshClients]);
+  }, [clients, refreshClients, loadConnections]);
 
   const toggleAutostart = async () => {
     if (autostart === null || autostartBusy) return;
@@ -744,6 +894,9 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                   onSync={() => void sync(client.id)}
                   onContactSaved={() => void refreshClients()}
                   onDelete={() => void removeClient(client.id)}
+                  connections={connections}
+                  googleConfigured={googleConfigured}
+                  onConnectionsChanged={() => void loadConnections()}
                 />
               ))}
             </div>

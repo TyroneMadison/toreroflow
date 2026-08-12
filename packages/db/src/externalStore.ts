@@ -232,6 +232,101 @@ export async function upsertExternalVideo(
 }
 
 /**
+ * Fields a direct platform API can fill in on a row that already exists.
+ *
+ * Every one is optional and an absent key means "this source said nothing",
+ * which is different from null. Null is a value here: it is how a source says
+ * a metric it does report was not measured for this video.
+ */
+export interface PlatformMetricFields {
+  shares?: number;
+  saves?: number;
+  reach?: number;
+  follows?: number;
+  impressions?: number | null;
+  clicks?: number | null;
+  avgWatchSec?: number | null;
+  totalWatchSec?: number | null;
+}
+
+/**
+ * Lay a direct platform API's numbers over a row another source created.
+ *
+ * The precedence rule from docs/platform-capability-map.md, in code: the
+ * platform's own API wins for any field it reports, and every field it says
+ * nothing about is left exactly as the other source wrote it. That is why this
+ * exists rather than another call to upsertExternalVideo, which writes a whole
+ * row: passing it a partial row would blank the title, the thumbnail, the URL
+ * and the duration that the catalogue sync is the only source for.
+ *
+ * It never creates. A video the catalogue sync has not seen is skipped, because
+ * a report entry carries an id and some numbers and nothing that could make a
+ * row anyone would want to look at. Returns false in that case, so a caller can
+ * count what it missed instead of assuming it landed.
+ *
+ * The day's metric row is rewritten from the merged result rather than from the
+ * overrides, keeping the invariant that a day row is a snapshot of the video row
+ * as it stood that day, whichever source last touched it.
+ */
+export async function applyPlatformMetrics(
+  prisma: PrismaClient,
+  key: { socialAccountId: string; platformVideoId: string },
+  fields: PlatformMetricFields,
+  now = new Date(),
+): Promise<boolean> {
+  const existing = await prisma.externalVideo.findUnique({
+    where: {
+      socialAccountId_platformVideoId: {
+        socialAccountId: key.socialAccountId,
+        platformVideoId: key.platformVideoId,
+      },
+    },
+    select: { id: true },
+  });
+  if (!existing) return false;
+
+  const video = await prisma.externalVideo.update({
+    where: { id: existing.id },
+    data: { ...fields, metricsUpdatedAt: now },
+  });
+
+  await prisma.externalVideoMetric.upsert({
+    where: {
+      externalVideoId_capturedOn: { externalVideoId: video.id, capturedOn: utcDay(now) },
+    },
+    create: {
+      externalVideoId: video.id,
+      capturedOn: utcDay(now),
+      views: video.views,
+      likes: video.likes,
+      comments: video.comments,
+      shares: video.shares,
+      saves: video.saves,
+      reach: video.reach,
+      follows: video.follows,
+      impressions: video.impressions,
+      clicks: video.clicks,
+      avgWatchSec: video.avgWatchSec,
+      totalWatchSec: video.totalWatchSec,
+      engagementRate: video.engagementRate,
+      metricsUpdatedAt: video.metricsUpdatedAt,
+    },
+    update: {
+      shares: video.shares,
+      saves: video.saves,
+      reach: video.reach,
+      follows: video.follows,
+      impressions: video.impressions,
+      clicks: video.clicks,
+      avgWatchSec: video.avgWatchSec,
+      totalWatchSec: video.totalWatchSec,
+      metricsUpdatedAt: video.metricsUpdatedAt,
+    },
+  });
+  return true;
+}
+
+/**
  * Persist every mappable entry of a provider analytics pull. Entries whose
  * accountId is not one of ours are skipped, so one global pull can be
  * attributed across every connected account in a single pass. Returns the

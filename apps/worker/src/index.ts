@@ -21,6 +21,7 @@ import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 import { sendReminder } from "./reminder";
+import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 
 const prisma = getPrisma();
 
@@ -823,6 +824,10 @@ void work(
     await ingestAnalytics();
     // Lifetime view counts keep climbing, so refresh them on the same beat.
     await refreshYouTubeCatalogues();
+    // Strictly after the catalogue refresh, which is what creates a video's row.
+    // This only lays owner-only numbers over rows that already exist, so running
+    // it first would silently skip every video published since yesterday.
+    await syncYouTubeAnalytics();
     // Checked daily, deletes on the week: a video posted the day after a
     // weekly sweep would otherwise sit for a fortnight, and "a week" should
     // mean a week rather than somewhere between one and two.
@@ -839,6 +844,7 @@ void scheduleCron("analytics", "0 4 * * *");
 void (async () => {
   await ingestAnalytics();
   await refreshYouTubeCatalogues();
+  await syncYouTubeAnalytics();
 })();
 
 /*

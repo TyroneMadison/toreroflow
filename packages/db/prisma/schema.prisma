@@ -305,8 +305,51 @@ model SocialAccount {
   postTargets     PostTarget[]
   metricSnapshots MetricSnapshot[]
   externalVideos  ExternalVideo[]
+  platformConnection PlatformConnection?
 
   @@index([clientId, platform])
+}
+
+/// A direct credential for the platform's own API, alongside the publishing
+/// provider rather than instead of it.
+///
+/// Deliberately NOT stored on SocialAccount.tokensEncrypted. That column is
+/// how the publish path decides where a video goes: "provider:zernio" means
+/// Zernio, "reminder" means email the client, anything else falls through to
+/// the dry-run publisher. Writing a Google refresh token there would have
+/// silently stopped every YouTube post from publishing, with the calendar
+/// still saying it had. The publishing identity and the reading credential are
+/// two different things and now live in two different places.
+///
+/// One row per account, so authorizing again replaces rather than stacks.
+model PlatformConnection {
+  id              String    @id @default(cuid())
+  socialAccountId String    @unique
+  platform        Platform
+  /// The platform's own id for whatever authorized: a YouTube channel id.
+  /// Checked against the account before the row is written, so a client who
+  /// picks the wrong Google account is told rather than silently bound.
+  externalId      String
+  /// The channel's own title, captured at authorization so the screen can name
+  /// what is connected without a live call.
+  externalName    String?
+  /// AES-256-GCM through packages/db/src/secrets.ts. A refresh token, never an
+  /// access token: access tokens last an hour, so they are minted on demand and
+  /// never stored at all.
+  refreshTokenEnc String
+  scopes          String[]  @default([])
+  /// active | revoked. A refresh that comes back invalid_grant sets revoked,
+  /// because the client withdrew consent and only a fresh authorization fixes it.
+  status          String    @default("active")
+  error           String?
+  lastSyncedAt    DateTime?
+  connectedAt     DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@index([platform, status])
 }
 
 model MediaAsset {

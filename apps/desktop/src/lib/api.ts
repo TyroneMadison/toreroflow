@@ -150,6 +150,24 @@ export interface TaxEstimateView {
   stateChosen: boolean;
 }
 
+/**
+ * A direct credential for a platform's own API, from GET /oauth/connections.
+ *
+ * Keyed by socialAccountId, and deliberately not folded into the account row it
+ * belongs to: an account can publish without one and read nothing, which is the
+ * state every account is in until its owner authorizes.
+ */
+export interface PlatformConnection {
+  socialAccountId: string;
+  platform: Platform;
+  externalName: string | null;
+  /** active | revoked. Revoked means the owner withdrew consent. */
+  status: string;
+  error: string | null;
+  lastSyncedAt: string | null;
+  connectedAt: string;
+}
+
 export interface ClientSummary {
   id: string;
   name: string;
