@@ -62,21 +62,35 @@ export const instagramOptionsSchema = z.object({
 export const INSTAGRAM_STORY_MAX_SECONDS = 60;
 
 /**
- * The longest video that can go out AS A REEL.
+ * How long a video may be and still be SENT as a reel.
  *
- * Not the longest video Instagram accepts, which is the distinction that cost
- * three days: a 106 second video was scheduled twice for a client, accepted
- * both times, and failed inside the provider both times with "Publishing
- * failed due to max retries reached". Every video that published was 64 to 80
- * seconds. The app was declaring every Instagram video a reel, so 90 seconds
- * was behaving like a hard ceiling when it is only the ceiling for reels.
+ * Three minutes, matching what Instagram's own app allows since January 2025,
+ * because the Reels tab is where the reach is and a video should get the best
+ * placement available to it.
  *
- * Over this, a video goes as a feed post instead, which takes far longer. The
- * cost is placement rather than publication: only 5 to 90 seconds at 9:16 is
- * eligible for the Reels tab, so a longer video reaches the profile and the
- * feed but not that tab.
+ * Whether Meta's API honours three minutes is genuinely unsettled. Every
+ * public source says the Content Publishing API still caps a reel at 90
+ * seconds, and one measurement on a real account agrees: a 106 second video
+ * was sent twice as contentType "reels" and both times Instagram created the
+ * container, left it at "awaiting-finalize", and never published it. Note the
+ * shape of that failure. It was not refused; it was accepted and abandoned,
+ * which is exactly why it went unnoticed for three days.
+ *
+ * So this is optimistic on purpose, and it is safe to be optimistic now for
+ * one reason: confirmPublishing watches what the platform actually did. If the
+ * reel stalls, the target fails visibly within the minute and the feed-post
+ * fallback republishes it. The day Meta raises the API limit this starts
+ * working with no change here.
  */
-export const INSTAGRAM_REEL_MAX_SECONDS = 90;
+export const INSTAGRAM_REEL_MAX_SECONDS = 180;
+
+/**
+ * The length past which a reel is not even attempted.
+ *
+ * Above this the Reels tab is not on offer at any limit, so the first attempt
+ * goes straight to a feed post rather than spending a failure to learn that.
+ */
+export const INSTAGRAM_REEL_ATTEMPT_CEILING = 180;
 
 /**
  * The longest video Instagram will take at all, as a feed post.

@@ -303,9 +303,23 @@ const igLong = buildPostExtras({
   coverUrl: null,
   durationSec: 106,
 });
+assert.equal(
+  igLong.platformSpecificData?.contentType,
+  "reels",
+  "106 seconds is tried AS A REEL first, because the Reels tab is the whole prize",
+);
+
+// After Instagram has actually refused it, the retry goes as a feed post.
+const igRetry = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 106,
+  instagramFeedPost: true,
+});
 assert.ok(
-  !igLong.platformSpecificData?.contentType,
-  "over 90 seconds must NOT be declared a reel, or Instagram refuses it outright",
+  !igRetry.platformSpecificData?.contentType,
+  "the fallback must NOT declare a reel, or it fails the same way twice",
 );
 
 const igShort = buildPostExtras({
@@ -324,8 +338,8 @@ assert.equal(
 const at = (d: number) =>
   buildPostExtras({ platform: "instagram", format: "short_form", coverUrl: null, durationSec: d })
     .platformSpecificData?.contentType;
-assert.equal(at(90), "reels", "exactly 90 is still a reel");
-assert.equal(at(90.5), undefined, "a fraction over is not");
+assert.equal(at(180), "reels", "three minutes is still tried as a reel");
+assert.equal(at(180.5), undefined, "past three minutes the Reels tab is not on offer at all");
 
 // No duration at all behaves as it always did, so nothing already scheduled
 // changes shape when this ships.
@@ -342,6 +356,7 @@ const igLongTrial = buildPostExtras({
   platform: "instagram",
   format: "short_form",
   coverUrl: null,
+  instagramFeedPost: true,
   durationSec: 200,
   instagram: { trial: true, collaborators: ["someone"], firstComment: "hi" },
 });

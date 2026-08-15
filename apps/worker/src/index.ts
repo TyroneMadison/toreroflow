@@ -294,6 +294,8 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         tiktok?: import("@toreroflow/publishers").TikTokScheduleOptions;
         youtubeTitle?: string;
         tiktokTitle?: string;
+        /** Set by the fallback after Instagram refused this as a reel. */
+        instagramFeedPost?: boolean;
       } | null) ?? {};
 
     let remotePostId: string;
@@ -363,6 +365,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         platform: target.platform as Platform,
         format: asset?.format ?? null,
         durationSec: asset?.durationSec ?? null,
+        instagramFeedPost: targetOptions.instagramFeedPost === true,
         coverUrl,
         carousel: isCarousel,
         caption,
@@ -398,6 +401,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         platform: target.platform as Platform,
         format: asset?.format ?? null,
         durationSec: asset?.durationSec ?? null,
+        instagramFeedPost: targetOptions.instagramFeedPost === true,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
         carousel: asset?.kind === "carousel" && drySlides.length > 0,
         caption,

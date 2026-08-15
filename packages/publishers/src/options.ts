@@ -65,6 +65,14 @@ export interface TargetOptionsInput {
    * app sent before this existed.
    */
   durationSec?: number | null;
+  /**
+   * Send this Instagram video as a feed post rather than a reel.
+   *
+   * Set by the fallback after a reel has actually been refused, so the second
+   * attempt takes the road that works. Not a preference: a reel is always tried
+   * first because the Reels tab is where the reach is.
+   */
+  instagramFeedPost?: boolean;
   instagram?: InstagramScheduleOptions | null;
   youtube?: YouTubeScheduleOptions | null;
   tiktok?: TikTokScheduleOptions | null;
@@ -135,7 +143,8 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
      * all.
      */
     const longForm =
-      input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS;
+      input.instagramFeedPost === true ||
+      (input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS);
     const psd: Record<string, unknown> = longForm ? {} : { contentType: "reels" };
     if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
     const ig = input.instagram;

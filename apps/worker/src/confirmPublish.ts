@@ -1,4 +1,4 @@
-import { getPrisma } from "@toreroflow/db";
+import { enqueue, getPrisma } from "@toreroflow/db";
 import type { ZernioProvider } from "@toreroflow/publishers";
 
 /**
@@ -145,6 +145,38 @@ export async function confirmPublishing(zernio: ZernioProvider | null): Promise<
 
       if (outcome === "failed") {
         const why = mine?.error ?? `the platform reported "${state}"`;
+
+        /*
+         * The extra pass.
+         *
+         * A reel that Instagram would not finish is republished as a feed post,
+         * once. Instagram takes an hour of video that way, so the choice is
+         * between a video on the profile without the Reels tab and no video at
+         * all, and the second is not a real option for a client who was
+         * promised a post.
+         *
+         * The reel is always attempted first, because the Reels tab is the
+         * whole reason to prefer one. This only runs after the platform has
+         * actually said no, so nothing is given up on a guess, and the flag
+         * makes it strictly once: a feed post that fails is simply failed.
+         */
+        const opts = (target.options as Record<string, unknown> | null) ?? {};
+        const alreadyRetried = opts.instagramFeedPost === true;
+        if (target.platform === "instagram" && !alreadyRetried) {
+          await prisma.postTarget.update({
+            where: { id: target.id },
+            data: {
+              status: "scheduled",
+              remotePostId: null,
+              error: `Instagram would not publish this as a reel (${why}). Retrying as a feed post.`,
+              options: { ...opts, instagramFeedPost: true } as never,
+            },
+          });
+          await enqueue("publish", { targetId: target.id }, { key: target.id });
+          console.log(`[worker] target ${target.id} reel refused, retrying as a feed post`);
+          continue;
+        }
+
         await prisma.postTarget.update({
           where: { id: target.id },
           data: { status: "failed", error: why.slice(0, 500) },
