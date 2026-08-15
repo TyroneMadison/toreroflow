@@ -336,6 +336,64 @@ export class ZernioProvider {
   }
 
   /**
+   * What actually happened to a post, per platform.
+   *
+   * createPost returning an id means the provider ACCEPTED the post, not that
+   * a platform published it. The two were treated as the same thing, and the
+   * gap is not academic: a client's Reel was accepted twice, failed inside the
+   * provider both times with "Publishing failed due to max retries reached",
+   * and the calendar showed Posted with a green tick for three days.
+   *
+   * Statuses seen in the wild: "published", "failed", "pending", "processing".
+   * Anything unrecognised is reported verbatim rather than mapped, so a new one
+   * shows up as itself instead of being quietly called a success.
+   */
+  async postStatus(remotePostId: string): Promise<{
+    status: string;
+    platforms: Array<{
+      platform: string;
+      accountId: string | null;
+      status: string;
+      error: string | null;
+      url: string | null;
+    }>;
+  }> {
+    const data = await this.request<Record<string, unknown>>(
+      "GET",
+      `/posts/${encodeURIComponent(remotePostId)}`,
+    );
+    const post = ((data.post ?? data) ?? {}) as Record<string, unknown>;
+    const entries = Array.isArray(post.platforms)
+      ? (post.platforms as Array<Record<string, unknown>>)
+      : [];
+    return {
+      status: typeof post.status === "string" ? post.status : "unknown",
+      platforms: entries.map((e) => {
+        // accountId arrives either as a bare id or as the populated account.
+        const acct = e.accountId;
+        const accountId =
+          typeof acct === "string"
+            ? acct
+            : typeof (acct as { _id?: unknown })?._id === "string"
+              ? ((acct as { _id: string })._id)
+              : null;
+        return {
+          platform: typeof e.platform === "string" ? e.platform : "unknown",
+          accountId,
+          status: typeof e.status === "string" ? e.status : "unknown",
+          error:
+            typeof e.errorMessage === "string"
+              ? e.errorMessage
+              : typeof e.error === "string"
+                ? e.error
+                : null,
+          url: typeof e.platformPostUrl === "string" ? e.platformPostUrl : null,
+        };
+      }),
+    };
+  }
+
+  /**
    * Accounts belonging to one profile. Uses the server-side filter when it
    * works; falls back to filtering on any profile field in the payload.
    */

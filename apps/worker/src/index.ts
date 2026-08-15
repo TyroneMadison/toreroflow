@@ -22,6 +22,7 @@ import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
+import { confirmPublishing } from "./confirmPublish";
 
 const prisma = getPrisma();
 
@@ -419,26 +420,46 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       remoteUrl = result.remoteUrl;
     }
 
+    /*
+     * Accepted is not published.
+     *
+     * This used to write "posted" the moment the provider returned an id,
+     * which is only ever a receipt for the request. The platform publishes
+     * afterwards and can refuse: a client's 106 second Reel was accepted twice,
+     * failed inside the provider both times, and the calendar read Posted with
+     * a green tick and a padlock for three days while the video was on no
+     * account anywhere.
+     *
+     * So a provider post stays "publishing" until reconcilePublishing hears
+     * back from the platform. The calendar already draws that state, pulsing,
+     * which is the honest picture: it IS in flight. A dry-run publish has no
+     * provider to ask and is done when it returns.
+     */
+    const confirmed = !viaZernio;
     await prisma.postTarget.update({
       where: { id: target.id },
       data: {
-        status: "posted",
+        status: confirmed ? "posted" : "publishing",
         remotePostId,
         remoteUrl,
-        publishedAt: new Date(),
+        ...(confirmed ? { publishedAt: new Date() } : {}),
         error: null,
       },
     });
-    const siblings = await prisma.postTarget.findMany({
-      where: { postId: target.postId },
-    });
-    if (siblings.every((s) => s.status === "posted")) {
-      await prisma.post.update({
-        where: { id: target.postId },
-        data: { status: "posted" },
+    if (confirmed) {
+      const siblings = await prisma.postTarget.findMany({
+        where: { postId: target.postId },
       });
+      if (siblings.every((s) => s.status === "posted")) {
+        await prisma.post.update({
+          where: { id: target.postId },
+          data: { status: "posted" },
+        });
+      }
     }
-    console.log(`[worker] target ${target.id} posted (${target.platform})`);
+    console.log(
+      `[worker] target ${target.id} ${confirmed ? "posted" : "accepted, awaiting the platform"} (${target.platform})`,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const finalAttempt = attemptsMade + 1 >= PUBLISH_ATTEMPTS;
@@ -861,6 +882,22 @@ void (async () => {
  * itself; Postgres has none, so the reader judges it by age instead and the
  * guarantee is the same.
  */
+/*
+ * Ask the platform whether the posts it accepted actually went up.
+ *
+ * Every 60 seconds, on a timer rather than a queue, because it is a handful of
+ * reads against posts that are already in flight and it needs to keep running
+ * whatever else is queued. A publish usually settles inside a minute, so the
+ * calendar moves from pulsing to posted while the operator is still looking at
+ * it, and a refusal turns red instead of never arriving.
+ */
+void confirmPublishing(zernio);
+setInterval(() => {
+  void confirmPublishing(zernio).catch((err: unknown) =>
+    console.error("[worker] confirm pass failed:", err),
+  );
+}, 60_000).unref();
+
 const HEARTBEAT_SECONDS = 30;
 
 const beat = () => {

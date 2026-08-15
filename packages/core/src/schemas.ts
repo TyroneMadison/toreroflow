@@ -61,6 +61,21 @@ export const instagramOptionsSchema = z.object({
 /** Instagram refuses stories longer than this. */
 export const INSTAGRAM_STORY_MAX_SECONDS = 60;
 
+/**
+ * The longest Reel that can be published through any API.
+ *
+ * The Instagram app takes far longer ones, which is exactly why this catches
+ * people out: a video that posts fine by hand is refused programmatically.
+ * Meta's Content Publishing API caps a REELS container at 90 seconds and has
+ * not moved as the app's own limit rose.
+ *
+ * Found the hard way. A 106 second video was scheduled twice for a client,
+ * accepted both times, and failed inside the provider both times with
+ * "Publishing failed due to max retries reached", while the app's calendar
+ * showed it as Posted. Every video that did publish was 64 to 80 seconds.
+ */
+export const INSTAGRAM_REEL_MAX_SECONDS = 90;
+
 export const tiktokOptionsSchema = z.object({
   /**
    * Let TikTok attach a recommended track to a photo carousel. TikTok picks
