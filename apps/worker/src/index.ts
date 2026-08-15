@@ -362,6 +362,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       const extras = buildPostExtras({
         platform: target.platform as Platform,
         format: asset?.format ?? null,
+        durationSec: asset?.durationSec ?? null,
         coverUrl,
         carousel: isCarousel,
         caption,
@@ -396,6 +397,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       const extras = buildPostExtras({
         platform: target.platform as Platform,
         format: asset?.format ?? null,
+        durationSec: asset?.durationSec ?? null,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
         carousel: asset?.kind === "carousel" && drySlides.length > 0,
         caption,

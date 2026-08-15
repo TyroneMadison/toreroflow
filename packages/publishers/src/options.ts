@@ -1,4 +1,4 @@
-import type { Platform } from "@toreroflow/core";
+import { INSTAGRAM_REEL_MAX_SECONDS, type Platform } from "@toreroflow/core";
 
 /**
  * Options the operator can pick at schedule time for an Instagram target.
@@ -59,6 +59,12 @@ export interface TargetOptionsInput {
   carousel?: boolean;
   /** The caption, needed only for TikTok photo posts (see below). */
   caption?: string | null;
+  /**
+   * Video length in seconds, which decides whether Instagram gets a reel or a
+   * feed post. Null or absent is treated as a reel, matching every video the
+   * app sent before this existed.
+   */
+  durationSec?: number | null;
   instagram?: InstagramScheduleOptions | null;
   youtube?: YouTubeScheduleOptions | null;
   tiktok?: TikTokScheduleOptions | null;
@@ -86,7 +92,9 @@ export interface BuiltPostExtras {
 /**
  * Maps a target's chosen options onto Zernio's exact request fields.
  *
- * Every Instagram video is declared a reel explicitly. YouTube Shorts never
+ * An Instagram video is declared a reel only when it is short enough to be
+ * one; longer videos go as feed posts, which is the difference between
+ * publishing and failing. YouTube Shorts never
  * get a thumbnail because YouTube's API refuses them; long-form does. TikTok
  * covers ride the provider's top-level settings object, which is safe here
  * because the worker publishes exactly one target per request.
@@ -112,11 +120,29 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
      */
     if (input.carousel) return out;
 
-    const psd: Record<string, unknown> = { contentType: "reels" };
+    /*
+     * A reel, unless the video is too long to be one.
+     *
+     * Declaring contentType "reels" is what pins Instagram to its 90 second
+     * limit. Omitting it sends the video as a feed post, which Instagram takes
+     * up to an hour of. This is the whole reason a 106 second video could not
+     * be published for three days: the app called everything a reel, so the
+     * reel limit read as Instagram's limit.
+     *
+     * Under the limit the reel is still the right call, and deliberately so:
+     * only 5 to 90 seconds at 9:16 is eligible for the Reels tab, which is
+     * where the reach is. Longer videos trade that placement for existing at
+     * all.
+     */
+    const longForm =
+      input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS;
+    const psd: Record<string, unknown> = longForm ? {} : { contentType: "reels" };
     if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
     const ig = input.instagram;
     if (ig) {
-      if (ig.trial) {
+      // Trials are a Reels feature. Sending them on a feed post is asking the
+      // provider to reject the whole thing over an option nobody can use here.
+      if (ig.trial && !longForm) {
         psd.trialParams = { graduationStrategy: ig.graduationStrategy ?? "MANUAL" };
       }
       const collaborators = (ig.collaborators ?? [])
@@ -129,7 +155,10 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
       if (ig.firstComment) psd.firstComment = ig.firstComment;
       if (ig.aiLabel) psd.isAiGenerated = true;
     }
-    out.platformSpecificData = psd;
+    // An empty object is not a declaration. A long-form video with no options
+    // sends nothing, exactly like a carousel, rather than an empty bag the
+    // provider has to interpret.
+    if (Object.keys(psd).length) out.platformSpecificData = psd;
     return out;
   }
 

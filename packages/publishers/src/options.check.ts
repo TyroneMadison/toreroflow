@@ -289,3 +289,82 @@ console.log("options builder: all checks passed");
   });
   assert.deepEqual(vid.tiktokSettings, { video_cover_image_url: "https://x/cover.jpg" });
 }
+
+/* ---- reel or feed post, decided by length ---- */
+
+/*
+ * The 106 second video that could not be published for three days. Declaring
+ * it a reel pins Instagram to 90 seconds; omitting contentType sends it as a
+ * feed post, which Instagram takes up to an hour of.
+ */
+const igLong = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 106,
+});
+assert.ok(
+  !igLong.platformSpecificData?.contentType,
+  "over 90 seconds must NOT be declared a reel, or Instagram refuses it outright",
+);
+
+const igShort = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 64,
+});
+assert.equal(
+  igShort.platformSpecificData?.contentType,
+  "reels",
+  "under 90 seconds stays a reel, which is what earns the Reels tab",
+);
+
+// The boundary, both sides of it.
+const at = (d: number) =>
+  buildPostExtras({ platform: "instagram", format: "short_form", coverUrl: null, durationSec: d })
+    .platformSpecificData?.contentType;
+assert.equal(at(90), "reels", "exactly 90 is still a reel");
+assert.equal(at(90.5), undefined, "a fraction over is not");
+
+// No duration at all behaves as it always did, so nothing already scheduled
+// changes shape when this ships.
+assert.equal(
+  buildPostExtras({ platform: "instagram", format: "short_form", coverUrl: null })
+    .platformSpecificData?.contentType,
+  "reels",
+  "an unknown duration stays a reel, matching every video sent before this",
+);
+
+// A trial is a Reels feature: sending it on a feed post asks the provider to
+// reject the whole post over an option that cannot apply.
+const igLongTrial = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 200,
+  instagram: { trial: true, collaborators: ["someone"], firstComment: "hi" },
+});
+assert.ok(!igLongTrial.platformSpecificData?.trialParams, "no trial params on a feed post");
+assert.deepEqual(
+  igLongTrial.platformSpecificData?.collaborators,
+  ["someone"],
+  "collaborators still ride a feed post",
+);
+assert.equal(igLongTrial.platformSpecificData?.firstComment, "hi", "so does a first comment");
+
+// A story is a story whatever the length: its own guard refuses over 60s well
+// before this, and it must never be quietly turned into a feed post.
+assert.equal(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    durationSec: 200,
+    instagram: { story: true },
+  }).platformSpecificData?.contentType,
+  "story",
+  "a story stays a story",
+);
+
+console.log("options builder: instagram length checks passed");

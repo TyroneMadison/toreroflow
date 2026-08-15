@@ -62,19 +62,30 @@ export const instagramOptionsSchema = z.object({
 export const INSTAGRAM_STORY_MAX_SECONDS = 60;
 
 /**
- * The longest Reel that can be published through any API.
+ * The longest video that can go out AS A REEL.
  *
- * The Instagram app takes far longer ones, which is exactly why this catches
- * people out: a video that posts fine by hand is refused programmatically.
- * Meta's Content Publishing API caps a REELS container at 90 seconds and has
- * not moved as the app's own limit rose.
+ * Not the longest video Instagram accepts, which is the distinction that cost
+ * three days: a 106 second video was scheduled twice for a client, accepted
+ * both times, and failed inside the provider both times with "Publishing
+ * failed due to max retries reached". Every video that published was 64 to 80
+ * seconds. The app was declaring every Instagram video a reel, so 90 seconds
+ * was behaving like a hard ceiling when it is only the ceiling for reels.
  *
- * Found the hard way. A 106 second video was scheduled twice for a client,
- * accepted both times, and failed inside the provider both times with
- * "Publishing failed due to max retries reached", while the app's calendar
- * showed it as Posted. Every video that did publish was 64 to 80 seconds.
+ * Over this, a video goes as a feed post instead, which takes far longer. The
+ * cost is placement rather than publication: only 5 to 90 seconds at 9:16 is
+ * eligible for the Reels tab, so a longer video reaches the profile and the
+ * feed but not that tab.
  */
 export const INSTAGRAM_REEL_MAX_SECONDS = 90;
+
+/**
+ * The longest video Instagram will take at all, as a feed post.
+ *
+ * Sixty minutes per the provider's own limits, which is far past anything this
+ * agency posts; it exists so a genuinely absurd file is refused with a sentence
+ * rather than dying inside the provider.
+ */
+export const INSTAGRAM_FEED_MAX_SECONDS = 60 * 60;
 
 export const tiktokOptionsSchema = z.object({
   /**

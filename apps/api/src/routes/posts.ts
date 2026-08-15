@@ -5,7 +5,7 @@ import {
   captionFor,
   carouselVerdict,
   decodeEscapes,
-  INSTAGRAM_REEL_MAX_SECONDS,
+  INSTAGRAM_FEED_MAX_SECONDS,
   INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
   youtubeTitleFor,
@@ -205,26 +205,22 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount);
 
     /*
-     * A Reel longer than the API allows is refused here rather than at publish.
+     * Only a genuinely absurd video is refused now.
      *
-     * The failure it prevents is the worst kind this app can produce: the
-     * provider accepts the post, the calendar says Posted, the retries run out
-     * somewhere inside their infrastructure hours later, and nothing anywhere
-     * says the client's video never went up. That happened twice with the same
-     * 106 second video before anyone noticed, which is also why publishTarget
-     * no longer calls a post "posted" until the platform confirms it.
-     *
-     * Refused for any Instagram target, story or not, because every Instagram
-     * video this app sends goes as contentType reels.
+     * Over 90 seconds it stops being a reel and goes as a feed post, which
+     * Instagram takes up to an hour of; buildPostExtras makes that call from
+     * the duration. The reel limit is a placement limit, not a publishing one,
+     * and treating it as the latter is what left a client's video unposted for
+     * three days.
      */
     if (
       igAccount &&
       asset.durationSec != null &&
-      asset.durationSec > INSTAGRAM_REEL_MAX_SECONDS
+      asset.durationSec > INSTAGRAM_FEED_MAX_SECONDS
     ) {
       return reply.status(400).send({
         error: "too long for Instagram",
-        detail: `Instagram only accepts Reels up to ${INSTAGRAM_REEL_MAX_SECONDS} seconds through its API and this video is ${Math.round(asset.durationSec)}. The Instagram app allows longer, but nothing can post it for you. Trim it under ${INSTAGRAM_REEL_MAX_SECONDS} seconds, or untick Instagram and post this one by hand.`,
+        detail: `Instagram stops at ${Math.round(INSTAGRAM_FEED_MAX_SECONDS / 60)} minutes and this video is ${Math.round(asset.durationSec / 60)}. Trim it, or untick Instagram.`,
       });
     }
 
