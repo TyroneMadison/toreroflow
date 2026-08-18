@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { sourceRetention } from "@toreroflow/core";
+import { longFormSourceRetention, sourceRetention } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "./env";
 
@@ -44,6 +44,8 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
     select: {
       id: true,
       kind: true,
+      format: true,
+      createdAt: true,
       storageKey: true,
       slideKeys: true,
       originalName: true,
@@ -60,7 +62,16 @@ export async function sweepPostedSources(now = new Date()): Promise<SweepResult>
     // second post has to satisfy both, or the file the second one still needs
     // would go with the first one's grace period.
     const targets = asset.posts.flatMap((p) => p.targets);
-    const verdict = sourceRetention(targets, now, env.RETENTION_DAYS);
+    /*
+     * Long-form runs on its own, shorter clock, from upload rather than last
+     * publish, because these files are why the disk fills (gigabytes against
+     * a reel's tens of megabytes). Both rules share the same settled test, so
+     * neither can ever delete a file a pending publish still needs.
+     */
+    const verdict =
+      asset.format === "long_form"
+        ? longFormSourceRetention(asset.createdAt, targets, now, env.LONGFORM_RETENTION_DAYS)
+        : sourceRetention(targets, now, env.RETENTION_DAYS);
     if (!verdict.deletable) {
       skipped += 1;
       continue;

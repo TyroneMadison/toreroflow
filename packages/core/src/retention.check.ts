@@ -171,3 +171,58 @@ console.log("retention.check.ts: ok");
   if (!mixed.deletable) throw new Error("posted plus reminded is fully finished");
   console.log("retention.check reminded cases: ok");
 }
+
+/*
+ * The long-form rule: five days from UPLOAD, held for pending publishes.
+ * Both failure directions cost real money here: deleting early breaks a
+ * client's scheduled post (Zernio uploads from this file), deleting late is
+ * gigabytes a video on a disk that fills from exactly these.
+ */
+import { longFormSourceRetention } from "./retention";
+
+{
+  const day = 24 * 60 * 60 * 1000;
+  const uploaded = new Date("2026-08-12T10:00:00.000Z");
+  const at = (days: number) => new Date(uploaded.getTime() + days * day);
+  const posted = (when: Date) => ({ status: "posted" as const, publishedAt: when });
+
+  // Posted on day one: the file still waits out the full five days from upload.
+  {
+    const targets = [posted(at(1))];
+    const early = longFormSourceRetention(uploaded, targets, at(4.9));
+    if (early.deletable) throw new Error("day 4.9 is inside the window");
+    const due = longFormSourceRetention(uploaded, targets, at(5));
+    if (!due.deletable) throw new Error("day five is the day");
+    // The clock that mattered was the upload's, not the publish's.
+    if (due.since.getTime() !== at(5).getTime()) throw new Error("since is the five-day mark");
+  }
+
+  // Scheduled past the window: the hold protects the publish, then the file
+  // goes the moment everything settles, with no second wait.
+  {
+    const pending = [{ status: "scheduled" as const, publishedAt: null }];
+    const held = longFormSourceRetention(uploaded, pending, at(9));
+    if (held.deletable) throw new Error("a pending publish holds the file at any age");
+
+    const late = [posted(at(8))];
+    const after = longFormSourceRetention(uploaded, late, at(8.01));
+    if (!after.deletable) throw new Error("once settled past day five, it goes at once");
+    if (after.since.getTime() !== at(8).getTime()) throw new Error("since is the settle time");
+  }
+
+  // A failed target keeps the source: the retry needs the file.
+  {
+    const mixed = [posted(at(1)), { status: "failed" as const, publishedAt: null }];
+    const held = longFormSourceRetention(uploaded, mixed, at(30));
+    if (held.deletable) throw new Error("a failure nobody cleared keeps the source");
+  }
+
+  // Never scheduled: not garbage, a draft. The literal five-day reading would
+  // delete work nobody has posted yet, so it deliberately does not apply.
+  {
+    const draft = longFormSourceRetention(uploaded, [], at(30));
+    if (draft.deletable) throw new Error("a draft is never swept");
+  }
+
+  console.log("retention.check: long-form additions passed");
+}

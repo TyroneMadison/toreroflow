@@ -1,7 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import { DEFAULT_RETENTION_DAYS, DEFAULT_THUMB_RETENTION_DAYS } from "@toreroflow/core";
+import {
+  DEFAULT_LONGFORM_RETENTION_DAYS,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_THUMB_RETENTION_DAYS,
+} from "@toreroflow/core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
@@ -51,6 +55,10 @@ export const env = {
    * treated as the default rather than obeyed.
    */
   RETENTION_DAYS: Math.max(1, Number(process.env.RETENTION_DAYS) || DEFAULT_RETENTION_DAYS),
+  LONGFORM_RETENTION_DAYS: Math.max(
+    1,
+    Number(process.env.LONGFORM_RETENTION_DAYS) || DEFAULT_LONGFORM_RETENTION_DAYS,
+  ),
   // Longer than the source window and floored well above it, because the
   // images are what every card draws and they cannot be rebuilt once the
   // source they came from has gone.

@@ -90,7 +90,13 @@ a finish-in-Studio list with a deep link on the published post) · **Impossible*
 5. **ToreIQ**: title/description/tags/thumbnail scoring from the client's own
    catalogue and analytics.
 6. **A/B thumbnails**: rotation + Analytics CTR readout.
-7. **Retention**: 5-day per-video source deletion on the server.
+7. **Retention**: 5-day per-video source deletion on the server. Delivered
+   with one deliberate bend: the clock runs from upload as asked, but a file a
+   still-pending publish needs is held until every target settles, because the
+   provider uploads from that file at publish time and deleting it on day five
+   with a post scheduled for day six breaks the post, not the disk. Never-
+   scheduled drafts are not swept at all; deleting unposted work is data loss,
+   not cleanup.
 
 ## Standing rule
 
