@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { fileLink } from "../files/link";
 import {
-  appendWatchNext,
   captionFor,
   carouselVerdict,
   decodeEscapes,
@@ -193,8 +192,6 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const youtubeCaption = appendWatchNext(youtubeBody, ytOptions?.relatedVideoUrl);
-
     /*
      * "Also share to my story" is a second Instagram post, not a setting on
      * the reel: Instagram treats them as different things and gives a story
@@ -245,7 +242,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             platform,
             caption:
               platform === "youtube"
-                ? youtubeCaption
+                ? youtubeBody
                 : captionOverride || captionFor(platform, draft),
             hashtags,
             scheduledAt,

@@ -88,8 +88,7 @@ assert.deepEqual(buildPostExtras({ platform: "tiktok", format: "short_form", cov
 assert.deepEqual(buildPostExtras({ platform: "facebook", format: "short_form", coverUrl: null }), {});
 assert.deepEqual(buildPostExtras({ platform: "snapchat", format: null, coverUrl: null }), {});
 
-// YouTube with every option set: aiLabel becomes containsSyntheticMedia,
-// relatedVideoUrl never reaches the wire (the route consumes it).
+// YouTube with every option set: aiLabel becomes containsSyntheticMedia.
 const ytFull = buildPostExtras({
   platform: "youtube",
   format: "short_form",
@@ -102,7 +101,6 @@ const ytFull = buildPostExtras({
     categoryId: "2",
     playlistId: "PLabc123",
     aiLabel: true,
-    relatedVideoUrl: "https://www.youtube.com/watch?v=abc123",
   },
 });
 assert.deepEqual(ytFull.platformSpecificData, {

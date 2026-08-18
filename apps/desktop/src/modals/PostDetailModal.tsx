@@ -43,12 +43,13 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   /*
    * The Studio edit page for a published YouTube video.
    *
-   * The one thing the app genuinely cannot do for YouTube is pin a Short's
-   * "Related video": the field is absent from Google's own videos resource and
-   * from the provider, so no tool anywhere can set it. The schedule modal puts
-   * a "Watch next" link in the description, which is the closest an API can
-   * get, and this is the rest of the answer. Setting it by hand takes two
-   * clicks from here instead of finding the video in a channel of hundreds.
+   * A Short's "Related video" pin is absent from Google's videos resource and
+   * from the provider, so no tool can set it. The schedule modal used to offer
+   * a picker that wrote a link into the description instead, which was close
+   * enough to the real thing to be mistaken for it and was removed for exactly
+   * that reason. This is what is left, and it is honest: the pin is set by
+   * hand, and from here that is two clicks rather than a hunt through a
+   * channel of hundreds.
    */
   const studioUrl =
     target.platform === "youtube" && target.status === "posted" && target.remotePostId
@@ -164,8 +165,8 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
         {studioUrl && (
           <div className="pdstudio">
             <div className="what">
-              YouTube's Related video pin has no API, on any tool. The description carries a
-              "Watch next" link instead; to pin the video itself, set it here.
+              YouTube's Related video pin has no API, on any tool. If this Short should point at
+              another video, set it here.
             </div>
             <a className="btn ghost" href={studioUrl} target="_blank" rel="noreferrer">
               Open in YouTube Studio

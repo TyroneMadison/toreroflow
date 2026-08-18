@@ -9,7 +9,6 @@ import {
   videoLabel,
   type AudioCatalog,
   type AudioTrack,
-  type CatalogueVideo,
   type MediaAssetInfo,
   type YouTubePlaylistInfo,
 } from "../lib/api";
@@ -101,11 +100,6 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [ytFirstComment, setYtFirstComment] = useState("");
   const [ytCategoryId, setYtCategoryId] = useState("");
   const [ytPlaylistId, setYtPlaylistId] = useState("");
-  const [ytRelated, setYtRelated] = useState<CatalogueVideo | null>(null);
-  const [ytPickerOpen, setYtPickerOpen] = useState(false);
-  const [ytSearch, setYtSearch] = useState("");
-  const [ytCatalogue, setYtCatalogue] = useState<CatalogueVideo[] | null>(null);
-  const [ytCatalogueFailed, setYtCatalogueFailed] = useState(false);
   const [ytPlaylists, setYtPlaylists] = useState<YouTubePlaylistInfo[] | null>(null);
 
   // The reel options make no sense on a set of images, so a carousel shows
@@ -128,26 +122,17 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const tkCarousel = isCarousel && platforms.includes("tiktok");
   const [tkAutoMusic, setTkAutoMusic] = useState(false);
 
-  // Catalogue and playlists load once, the first time the section shows.
-  // Quiet failures: the operator can always schedule without either.
+  // Playlists load once, the first time the YouTube section shows. A quiet
+  // failure: the operator can always schedule without one.
   useEffect(() => {
-    if (!ytSelected || !selectedClient || ytCatalogue !== null) return;
-    api
-      .get<{ videos: CatalogueVideo[] }>(
-        `/clients/${selectedClient.id}/external/youtube/videos`,
-      )
-      .then((r) => setYtCatalogue(r.videos))
-      .catch(() => {
-        setYtCatalogue([]);
-        setYtCatalogueFailed(true);
-      });
+    if (!ytSelected || !selectedClient || ytPlaylists !== null) return;
     api
       .get<{ playlists: YouTubePlaylistInfo[] }>(
         `/clients/${selectedClient.id}/external/youtube/playlists`,
       )
       .then((r) => setYtPlaylists(r.playlists))
       .catch(() => setYtPlaylists([]));
-  }, [ytSelected, selectedClient, ytCatalogue]);
+  }, [ytSelected, selectedClient, ytPlaylists]);
 
   /*
    * The catalog loads when the picker opens and again as the operator types.
@@ -242,10 +227,6 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     if (ytCategoryId) body.categoryId = ytCategoryId;
     if (ytPlaylistId) body.playlistId = ytPlaylistId;
     if (ytAiLabel) body.aiLabel = true;
-    if (ytRelated) {
-      body.relatedVideoUrl =
-        ytRelated.url ?? `https://www.youtube.com/watch?v=${ytRelated.platformVideoId}`;
-    }
     return Object.keys(body).length ? body : undefined;
   };
 
@@ -707,82 +688,6 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               value={ytFirstComment}
               onChange={(e) => setYtFirstComment(e.target.value)}
             />
-            <label className="flabel" style={{ marginTop: 12 }}>
-              Watch next link
-              <span className="hint">
-                puts a link to this video at the end of the description. It does NOT set YouTube's
-                own "Related video" pin: that field is absent from Google's API and from every
-                tool, so it stays a manual step in Studio. The calendar links straight there once
-                this publishes.
-              </span>
-            </label>
-            {ytRelated ? (
-              <div className="igrow">
-                <span
-                  className="revtoggle on"
-                  title="Remove the related video"
-                  onClick={() => setYtRelated(null)}
-                >
-                  {ytRelated.title.slice(0, 48)} ✕
-                </span>
-              </div>
-            ) : (
-              <>
-                <span className="revtoggle" onClick={() => setYtPickerOpen((v) => !v)}>
-                  {ytPickerOpen ? "Close list" : "Choose a video"}
-                </span>
-                {ytPickerOpen && (
-                  <div style={{ marginTop: 8 }}>
-                    <input
-                      className="field-in"
-                      placeholder="Search the channel's videos"
-                      value={ytSearch}
-                      onChange={(e) => setYtSearch(e.target.value)}
-                    />
-                    <div style={{ maxHeight: 210, overflowY: "auto", marginTop: 6 }}>
-                      {ytCatalogueFailed && (
-                        <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
-                          Could not load the catalogue. Try a refresh on Analytics first.
-                        </p>
-                      )}
-                      {(ytCatalogue ?? [])
-                        .filter((v) =>
-                          v.title.toLowerCase().includes(ytSearch.trim().toLowerCase()),
-                        )
-                        .slice(0, 30)
-                        .map((v) => (
-                          <div
-                            key={v.platformVideoId}
-                            className="rrow"
-                            style={{ cursor: "pointer" }}
-                            onClick={() => {
-                              setYtRelated(v);
-                              setYtPickerOpen(false);
-                            }}
-                          >
-                            {v.thumbnailUrl && (
-                              <img
-                                src={v.thumbnailUrl}
-                                alt=""
-                                style={{
-                                  width: 42,
-                                  height: 24,
-                                  objectFit: "cover",
-                                  borderRadius: 4,
-                                }}
-                              />
-                            )}
-                            <span className="t">{v.title}</span>
-                            <span className="v">
-                              {v.views >= 1000 ? `${Math.round(v.views / 1000)}K` : v.views}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
           </div>
         )}
 

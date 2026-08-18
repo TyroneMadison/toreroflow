@@ -123,7 +123,6 @@ export const youtubeOptionsSchema = z.object({
   categoryId: z.string().max(10).optional(),
   playlistId: z.string().max(60).optional(),
   aiLabel: z.boolean().optional(),
-  relatedVideoUrl: z.string().url().max(300).optional(),
 });
 
 export const schedulePostSchema = z.object({

@@ -37,12 +37,7 @@ export interface InstagramScheduleOptions {
   story?: boolean;
 }
 
-/**
- * Options the operator can pick at schedule time for a YouTube target.
- * relatedVideoUrl is consumed by the schedule route (it becomes a link at
- * the end of the description) and never reaches the wire, so it has no
- * mapping below.
- */
+/** Options the operator can pick at schedule time for a YouTube target. */
 export interface YouTubeScheduleOptions {
   visibility?: "public" | "unlisted" | "private";
   madeForKids?: boolean;
@@ -50,7 +45,6 @@ export interface YouTubeScheduleOptions {
   categoryId?: string;
   playlistId?: string;
   aiLabel?: boolean;
-  relatedVideoUrl?: string;
 }
 
 /** Options the operator can pick at schedule time for a TikTok target. */
