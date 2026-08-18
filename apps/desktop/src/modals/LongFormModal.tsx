@@ -25,7 +25,14 @@ import {
   type CommentChoices,
   type EndScreenChoice,
 } from "../lib/youtube";
-import { scheduleTimeError } from "@toreroflow/core";
+import {
+  bestHoursFor,
+  channelTopWords,
+  scheduleTimeError,
+  scoreUpload,
+  sectionBadge,
+  suggestTags,
+} from "@toreroflow/core";
 import { useAppState } from "../state/AppState";
 
 interface LongFormModalProps {
@@ -153,6 +160,49 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const tagPool = tags.join(",").length;
+
+  /*
+   * ToreIQ. Recomputed on every keystroke on purpose: the engine is pure
+   * arithmetic over a few strings, cheaper than the render around it, and a
+   * score that lags what is on screen teaches operators to distrust it.
+   * History comes from the same posts the best-times widget already fetched,
+   * so the whole thing costs zero extra requests.
+   */
+  const ytHistory = useMemo(
+    () => bestTimePosts.filter((p) => p.platforms.includes("youtube")),
+    [bestTimePosts],
+  );
+  const topWords = useMemo(() => channelTopWords(ytHistory), [ytHistory]);
+  const bestHours = useMemo(() => bestHoursFor(ytHistory), [ytHistory]);
+  const [iqOpen, setIqOpen] = useState(false);
+  const iq = useMemo(
+    () =>
+      scoreUpload({
+        title,
+        description,
+        tags,
+        hasCustomThumbnail: thumbName !== null || asset.coverOffsetMs != null,
+        categorySet: categoryId !== "",
+        languageSet: language !== "",
+        playlistSet: playlistId !== "",
+        scheduledHour: new Date(when).getHours(),
+        bestHours,
+        channelTopWords: topWords,
+      }),
+    [title, description, tags, thumbName, asset.coverOffsetMs, categoryId, language, playlistId, when, bestHours, topWords],
+  );
+  const iqBadge = (key: "title" | "description" | "tags") => {
+    const section = iq.sections.find((x) => x.key === key);
+    if (!section || section.max === 0) return null;
+    const value = sectionBadge(section);
+    const tone = value >= 80 ? "g" : value >= 50 ? "a" : "r";
+    return <i className={`tiq ${tone}`}>{value}</i>;
+  };
+  const tagIdeas = useMemo(
+    () => suggestTags(title, description, topWords, tags),
+    [title, description, topWords, tags],
+  );
+
   const certRating: "safe" | "limited" = certFlags.length ? "limited" : "safe";
   /** Answering means flagging something or explicitly saying none applies. */
   const certAnswered = certNone || certFlags.length > 0;
@@ -332,11 +382,20 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           },
     );
     rows.push({
+      ok: iq.total >= 80 ? true : null,
+      text:
+        iq.total >= 80
+          ? `ToreIQ ${iq.total}: packaged to perform.`
+          : `ToreIQ ${iq.total}. Worth a look before publishing: ${
+              iq.sections.flatMap((x) => x.findings).find((f) => !f.ok)?.text ?? ""
+            }`,
+    });
+    rows.push({
       ok: null,
       text: "Copyright and monetization checks run on YouTube's side after upload; no API can run them earlier. Anything they flag appears in Studio.",
     });
     return rows;
-  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length, captionsInfo]);
+  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length, captionsInfo, iq]);
 
   const checksBlock = checks.some((c) => c.ok === false);
 
@@ -457,8 +516,63 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
                 />
               </>
             )}
+            <div className="tiqcard">
+              <svg className="tiqdial" viewBox="0 0 44 44">
+                <circle className="bg" cx="22" cy="22" r="19" />
+                <circle
+                  className={`fg ${iq.grade}`}
+                  cx="22"
+                  cy="22"
+                  r="19"
+                  strokeDasharray={`${(iq.total / 100) * 119.4} 119.4`}
+                  transform="rotate(-90 22 22)"
+                />
+                <text x="22" y="27" textAnchor="middle">
+                  {iq.total}
+                </text>
+              </svg>
+              <div className="tiqmeta">
+                <b>ToreIQ</b>
+                <span>
+                  {iq.total >= 80
+                    ? "This upload is packaged to perform."
+                    : (iq.sections.flatMap((x) => x.findings).find((f) => !f.ok)?.text ??
+                      "Scoring what is on screen.")}
+                </span>
+              </div>
+              <span className="revtoggle" onClick={() => setIqOpen((v) => !v)}>
+                {iqOpen ? "Hide breakdown" : "Breakdown"}
+              </span>
+            </div>
+            {iqOpen && (
+              <div className="tiqbreak">
+                {iq.sections.map((section) => (
+                  <div key={section.key} className="tiqsection">
+                    <div className="head">
+                      <b>{section.label}</b>
+                      <span>
+                        {section.score}/{section.max}
+                      </span>
+                    </div>
+                    {section.findings.map((f, i) => (
+                      <div key={i} className={`line${f.ok ? " ok" : ""}`}>
+                        {f.ok ? "✓" : "•"} {f.text}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <p className="lnote" style={{ marginTop: 8 }}>
+                  Scored from YouTube's documented search behavior and this channel's own
+                  catalogue: what its top quarter of videos says and when they went out. Signals
+                  that cannot be measured for this channel are left out of the score entirely,
+                  never assumed.
+                </p>
+              </div>
+            )}
+
             <label className="flabel" style={{ marginTop: ytAccounts.length > 1 ? 12 : 0 }}>
               Title<span className="hint">{title.length}/100</span>
+              {iqBadge("title")}
             </label>
             <input
               className="field-in"
@@ -469,6 +583,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
             />
             <label className="flabel" style={{ marginTop: 12 }}>
               Description<span className="hint">{description.length}/5,000</span>
+              {iqBadge("description")}
             </label>
             <textarea
               className="field-in lfdesc"
@@ -486,6 +601,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
                 <span className="hint">
                   {tags.length ? `${tags.length} · ${tagPool}/${TAG_POOL_MAX}` : "optional"}
                 </span>
+                {iqBadge("tags")}
               </span>
             </div>
             {showTags && (
@@ -512,6 +628,20 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
                     {tags.map((t) => (
                       <span className="kw" key={t} onClick={() => setTags((prev) => prev.filter((x) => x !== t))}>
                         {t} ✕
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {tagIdeas.length > 0 && (
+                  <div className="lftags" style={{ marginTop: 8 }}>
+                    {tagIdeas.map((idea) => (
+                      <span
+                        key={idea.tag}
+                        className={`kw tiq-${idea.score >= 80 ? "g" : idea.score >= 50 ? "a" : "r"}`}
+                        title="Add this tag"
+                        onClick={() => addTags(idea.tag)}
+                      >
+                        <b>{idea.score}</b> {idea.tag} +
                       </span>
                     ))}
                   </div>

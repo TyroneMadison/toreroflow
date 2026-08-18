@@ -1831,3 +1831,36 @@
   background:#000;object-fit:contain}
 .lfelmeta b{display:block;font-size:13px;margin-top:4px}
 .lfelmeta span{display:block;font-size:11.5px;color:var(--txt-3);margin-top:3px}
+
+/* ---- ToreIQ ---- */
+.tiq{margin-left:auto;font-style:normal;font-size:12px;font-weight:800;padding:1px 7px;
+  border-radius:10px}
+.tiq.g{color:#7ddb8a;background:rgba(125,219,138,.12)}
+.tiq.a{color:#ffc46b;background:rgba(255,196,107,.12)}
+.tiq.r{color:#ff8080;background:rgba(255,128,128,.12)}
+.tiqcard{display:flex;align-items:center;gap:13px;padding:11px 14px;border-radius:14px;
+  background:var(--glass);border:1px solid var(--brd-soft);margin-bottom:14px;
+  backdrop-filter:blur(18px) saturate(1.3)}
+.tiqdial{width:44px;height:44px;flex:0 0 auto}
+.tiqdial circle{fill:none;stroke-width:4}
+.tiqdial .bg{stroke:var(--glass-2)}
+.tiqdial .fg{stroke-linecap:round;transition:stroke-dasharray .4s ease}
+.tiqdial .fg.green{stroke:#7ddb8a}
+.tiqdial .fg.amber{stroke:#ffc46b}
+.tiqdial .fg.red{stroke:#ff8080}
+.tiqdial text{fill:var(--txt);font-size:13px;font-weight:800}
+.tiqmeta{flex:1;min-width:0}
+.tiqmeta b{display:block;font-size:12.5px}
+.tiqmeta span{display:block;font-size:11.5px;color:var(--txt-3);margin-top:2px;line-height:1.4}
+.tiqbreak{margin:-6px 0 14px;padding:12px 14px;border-radius:14px;background:var(--glass);
+  border:1px solid var(--brd-soft)}
+.tiqsection{margin-top:8px}
+.tiqsection:first-child{margin-top:0}
+.tiqsection .head{display:flex;justify-content:space-between;font-size:12px}
+.tiqsection .head span{color:var(--txt-3);font-weight:700}
+.tiqsection .line{font-size:11.5px;line-height:1.5;color:var(--txt-2);margin-top:2px}
+.tiqsection .line.ok{color:var(--txt-3)}
+.lftags .kw b{font-weight:800;margin-right:2px}
+.lftags .kw.tiq-g{color:#7ddb8a;background:rgba(125,219,138,.1);border-color:rgba(125,219,138,.3)}
+.lftags .kw.tiq-a{color:#ffc46b}
+.lftags .kw.tiq-r{color:#ff8080;background:rgba(255,128,128,.1);border-color:rgba(255,128,128,.3)}

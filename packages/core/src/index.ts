@@ -31,6 +31,7 @@ export * from "./ideaDedup";
 export * from "./platformMetrics";
 export * from "./publishFailure";
 export * from "./scheduleTime";
+export * from "./toreiq";
 export * from "./metricSeries";
 export * from "./dataProvenance";
 export * as tokens from "./tokens";
