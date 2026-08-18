@@ -247,6 +247,14 @@ export interface PlatformMetricFields {
   clicks?: number | null;
   avgWatchSec?: number | null;
   totalWatchSec?: number | null;
+  /**
+   * DMs a comment-to-DM campaign sent for this video, and link opens among
+   * them. Not a platform metric: no platform models a DM as belonging to a
+   * post, so this arrives from a campaign scoped to one, and only videos that
+   * had a campaign ever carry it.
+   */
+  dms?: number | null;
+  dmClicks?: number | null;
 }
 
 /**
@@ -306,6 +314,9 @@ export async function applyPlatformMetrics(
     clicks: "clicks",
     avgWatchSec: "avgWatch",
     totalWatchSec: "totalWatch",
+    dms: "dms",
+    // Deliberately absent: dmClicks has no MetricName of its own. It is a
+    // detail of the dms figure, shown beside it, never totalled on its own.
   };
   const claimed = Object.entries(fields)
     .filter(([, v]) => v !== undefined)

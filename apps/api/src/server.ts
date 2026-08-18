@@ -19,6 +19,7 @@ import { onboardingRoutes } from "./routes/onboarding";
 import { bankRoutes } from "./routes/bank";
 import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
+import { dmCampaignRoutes } from "./routes/dmCampaigns";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
 import { reportRoutes } from "./routes/reports";
@@ -153,6 +154,7 @@ export async function buildServer(
   await app.register(onboardingRoutes);
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
+  await app.register(dmCampaignRoutes);
   await app.register(mediaRoutes);
   await app.register(postRoutes);
   await app.register(reportRoutes);

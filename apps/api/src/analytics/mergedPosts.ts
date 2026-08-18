@@ -49,6 +49,14 @@ export interface MergedPost {
   /** Null when no platform on this post reports it. Never 0 as a stand-in. */
   impressions: number | null;
   clicks: number | null;
+  /**
+   * DMs a comment-to-DM campaign sent for this video, and link opens among
+   * them. Null on every video nobody ran a campaign on, which is most of
+   * them: no platform reports DMs per post, so this is only ever present
+   * where a campaign was scoped to one.
+   */
+  dms: number | null;
+  dmClicks: number | null;
   /** Total seconds watched across all viewers, measured rather than derived. */
   totalWatchSec: number | null;
   /** When the provider last refreshed these figures, ISO, or null. */
@@ -289,6 +297,17 @@ export async function buildMergedPosts(
       saves: num(m, "saves", "saved", "savedCount") ?? 0,
       reach: num(m, "reach") ?? 0,
       follows: num(m, "follows", "followsCount", "followers_gained") ?? 0,
+      /*
+       * Always null on a provider-sourced post, and not a gap.
+       *
+       * A DM count reaches a video by way of a campaign scoped to it, which
+       * syncDmStats writes onto the stored ExternalVideo row. A post read live
+       * from the provider's own feed has no campaign attached and no field to
+       * read, so it reports nothing rather than a zero that would read as a
+       * campaign nobody responded to.
+       */
+      dms: null,
+      dmClicks: null,
       impressions: num(m, "impressions"),
       clicks: num(m, "clicks"),
       totalWatchSec: (() => {
@@ -334,6 +353,8 @@ export async function buildMergedPosts(
     clicks: number | null;
     avgWatchSec: number | null;
     totalWatchSec: number | null;
+    dms: number | null;
+    dmClicks: number | null;
     metricsUpdatedAt: Date | null;
     /** Which metrics the platform's own API filled on this row. */
     directMetrics: string[];
@@ -367,6 +388,8 @@ export async function buildMergedPosts(
         avgWatchSec: storedWatch(v.avgWatchSec),
         impressions: v.impressions,
         clicks: v.clicks,
+        dms: v.dms,
+        dmClicks: v.dmClicks,
         totalWatchSec: storedWatch(v.totalWatchSec),
         metricsUpdatedAt: v.metricsUpdatedAt ? v.metricsUpdatedAt.toISOString() : null,
         durationSec: v.durationSec,
@@ -385,6 +408,8 @@ export async function buildMergedPosts(
             avgWatchSec: storedWatch(v.avgWatchSec),
             totalWatchSec: storedWatch(v.totalWatchSec),
             follows: v.follows,
+            dms: v.dms,
+            dmClicks: v.dmClicks,
             // What this row's own platform API filled in, so a connected
             // channel reports what the platform does not report in general.
             directMetrics: v.directMetrics,

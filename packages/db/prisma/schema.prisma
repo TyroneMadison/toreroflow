@@ -586,6 +586,16 @@ model ExternalVideo {
   /// The provider's own engagement percentage. Stored for comparison only; the
   /// displayed figure stays our computation, because ours is defined.
   engagementRate   Float?
+  /// DMs sent by a comment-to-DM campaign scoped to this video, and how many
+  /// of those had their tracked link opened.
+  ///
+  /// Nullable rather than defaulting to zero: no platform reports DMs per
+  /// video, so a video with no campaign has no figure, which is a different
+  /// fact from a campaign that ran and reached nobody. Only the second is a
+  /// result. Written by syncDmStats, which also adds "dms" to directMetrics so
+  /// every surface reading the row knows the number is real.
+  dms              Int?
+  dmClicks         Int?
   /// Which metrics on THIS row came from the platform's own API rather than
   /// from the broker.
   ///

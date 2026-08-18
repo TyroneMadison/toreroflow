@@ -278,3 +278,59 @@ assert.equal(
 );
 
 console.log("buildReportData.check.ts: ok");
+
+/*
+ * Comment-to-DM counts on the video breakdown.
+ *
+ * Three states that must stay distinct, and the middle one is the whole reason
+ * the column is nullable. No platform reports DMs per post, so the number only
+ * exists where a campaign was scoped to a video and syncDmStats wrote it onto
+ * the row alongside "dms" in directMetrics.
+ */
+const dmVideos = (over: Record<string, unknown>) =>
+  (
+    buildReportData({
+      clientName: "A client",
+      businessName: "Torerone",
+      accounts: [],
+      posts: [
+        post({
+          platforms: ["instagram"],
+          byPlatform: [entry("instagram", over)],
+        }),
+      ],
+      periodStart: new Date("2026-08-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-08-31T23:59:59.000Z"),
+    }).videos as Array<Record<string, unknown>>
+  )[0]!;
+
+// A campaign ran and pulled 12 DMs, 5 of which opened the link.
+{
+  const v = dmVideos({ dms: 12, dmClicks: 5, directMetrics: ["dms"] });
+  assert.equal(v.dms, "12", "a campaigned video prints its DMs");
+  assert.equal(v.dmClicks, "5", "and its link opens");
+}
+
+// No campaign: absent, never zero. A zero here would read to a client as a
+// campaign that reached nobody, on a video that never had one.
+{
+  const v = dmVideos({});
+  assert.equal(v.dms, null, "a video with no campaign reports nothing");
+  assert.equal(v.dmClicks, null, "and no click figure either");
+}
+
+// A campaign that ran and got nobody. This zero IS the measurement and has to
+// print, which is exactly why dmsMeasurable tests for null rather than for > 0.
+{
+  const v = dmVideos({ dms: 0, dmClicks: 0, directMetrics: ["dms"] });
+  assert.equal(v.dms, "0", "a campaign nobody triggered still reports its zero");
+}
+
+// Tracking off: the sends are real, the click figure never existed.
+{
+  const v = dmVideos({ dms: 7, dmClicks: null, directMetrics: ["dms"] });
+  assert.equal(v.dms, "7");
+  assert.equal(v.dmClicks, null, "an untracked campaign has no denominator to print");
+}
+
+console.log("buildReportData.check: dm-per-video checks passed");

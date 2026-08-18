@@ -1704,3 +1704,46 @@
 .prov-links{margin-left:auto;display:flex;gap:12px;flex-wrap:wrap}
 .prov-links a{font-size:10.5px;color:var(--txt-3);text-decoration:none;border-bottom:1px solid var(--brd-soft)}
 .prov-links a:hover{color:var(--txt-2)}
+
+/* ---- DM campaigns (Workflows tab) ---- */
+.dmsec{margin-top:26px}
+.dmhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dmhead h3{margin:0}
+.dmform{margin-top:14px;padding:16px;border-radius:16px;background:var(--glass);
+  border:1px solid var(--brd-soft);backdrop-filter:blur(18px) saturate(1.3)}
+.dmform textarea.field-in{resize:vertical;min-height:70px;font-family:inherit}
+.dmgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dmcard{margin-top:12px;padding:14px 16px;border-radius:16px;background:var(--glass);
+  border:1px solid var(--brd-soft);backdrop-filter:blur(18px) saturate(1.3)}
+.dmtop{display:flex;align-items:center;gap:10px}
+.dmname{flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dmwords{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
+.dmwords .kw{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;
+  color:#ffc46b;background:rgba(255,196,107,.12);border:1px solid rgba(255,196,107,.3)}
+.dmscope{font-size:11.5px;color:var(--txt-3)}
+.dmstats{display:flex;flex-wrap:wrap;gap:18px;margin-top:12px}
+.dmstats div{display:flex;flex-direction:column;gap:1px}
+.dmstats b{font-size:16px;font-weight:800;line-height:1.1}
+.dmstats span{font-size:11px;color:var(--txt-3)}
+.dmstats .bad b{color:#ff8080}
+.dmlogs{margin-top:10px;max-height:230px;overflow-y:auto}
+.dmlogs .v.bad{color:#ff8080}
+
+/* ---- DM inbox ---- */
+.dmav{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:0 0 auto;
+  border:1px solid var(--brd-soft)}
+.dmav-blank{background:var(--glass-2)}
+.dmlast{margin-top:8px;font-size:12px;color:var(--txt-3);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.dmthread{margin-top:12px;max-height:300px;overflow-y:auto;display:flex;
+  flex-direction:column;gap:7px}
+.dmmsg{max-width:78%;padding:8px 12px;border-radius:14px;font-size:12.5px;
+  line-height:1.45;word-break:break-word}
+.dmmsg.incoming{align-self:flex-start;background:var(--glass-2);
+  border:1px solid var(--brd-soft);border-bottom-left-radius:5px}
+.dmmsg.outgoing{align-self:flex-end;color:#1a1205;background:#ffc46b;
+  border-bottom-right-radius:5px;font-weight:600}
+.dmmsg .dmatt{display:block;max-width:100%;border-radius:10px;margin-top:6px}
+.dmreply{display:flex;gap:8px;margin-top:10px}
+.dmreply .field-in{flex:1}

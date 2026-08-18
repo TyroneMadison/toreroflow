@@ -7,7 +7,7 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "start": "tsx src/index.ts",
-    "test": "tsx src/reminder.check.ts && tsx src/confirmPublish.check.ts"
+    "test": "tsx src/reminder.check.ts && tsx src/confirmPublish.check.ts && tsx src/dmStats.check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.114.0",

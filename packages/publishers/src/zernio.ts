@@ -191,6 +191,178 @@ export function historyWindows(today: Date, maxWindows = 10): HistoryWindow[] {
   return windows;
 }
 
+/** One inline button inside an auto-DM. Meta renders at most three. */
+export interface DmButton {
+  /** `phone` is Facebook only; Instagram refuses it. */
+  type: "url" | "postback" | "phone";
+  /** 20 characters max, enforced by Meta rather than by us. */
+  title: string;
+  url?: string;
+  payload?: string;
+  phone?: string;
+}
+
+/**
+ * What an automation has done. Zernio reports this under two different shapes:
+ * the list endpoint sends the full set, while create/get send a three-field
+ * summary with different names. Both are normalized by automationStats below,
+ * because a screen that reads `triggered` off a create response would show a
+ * blank counter that looks like a broken automation rather than a fresh one.
+ */
+export interface AutomationStats {
+  triggered: number;
+  dmsSent: number;
+  dmsFailed: number;
+  uniqueContacts: number;
+  /** CTR denominator: DMs that carried a tracked link, not every DM sent. */
+  trackedSends: number;
+  linkClicks: number;
+  uniqueClicks: number;
+  /** Messenger only. Instagram emits no delivery receipt, so this stays 0 there. */
+  delivered: number;
+  read: number;
+}
+
+/** A comment-to-DM automation, as Zernio holds it. */
+export interface CommentAutomation {
+  id: string;
+  name: string;
+  platform: "instagram" | "facebook";
+  trigger: "comment" | "story_reply";
+  accountId: string | null;
+  /** The platform's own media id. Null for an automation covering every post. */
+  platformPostId: string | null;
+  postTitle: string | null;
+  keywords: string[];
+  matchMode: "exact" | "contains" | "word";
+  excludeKeywords: string[];
+  dmMessage: string;
+  buttons: DmButton[];
+  commentReply: string | null;
+  /** Whether the keywords also answer someone who DMs them instead of commenting. */
+  alsoMatchInDms: boolean;
+  linkTracking: boolean;
+  isActive: boolean;
+  stats: AutomationStats;
+  createdAt: string | null;
+}
+
+/** One trigger, and what became of the DM it was supposed to send. */
+export interface AutomationLog {
+  id: string;
+  commenterId: string | null;
+  commenterName: string | null;
+  commentText: string | null;
+  /** Which door fired. Absent on rows written before Zernio added the field. */
+  source: "comment" | "story_reply" | "dm" | null;
+  status: "pending" | "sent" | "failed" | "skipped" | "gated";
+  error: string | null;
+  createdAt: string | null;
+}
+
+export interface InboxConversation {
+  id: string;
+  platform: string;
+  accountId: string;
+  accountUsername: string | null;
+  participantId: string | null;
+  participantName: string | null;
+  participantPicture: string | null;
+  lastMessage: string | null;
+  updatedTime: string | null;
+  unreadCount: number;
+  /** Instagram only, and only once the participant has messaged the account. */
+  instagramProfile: {
+    isFollower?: boolean;
+    isFollowing?: boolean;
+    followerCount?: number;
+    isVerified?: boolean;
+  } | null;
+}
+
+export interface InboxMessage {
+  id: string;
+  message: string;
+  senderId: string | null;
+  senderName: string | null;
+  direction: "incoming" | "outgoing";
+  createdAt: string | null;
+  attachments: Array<{ type: string | null; url: string | null }>;
+}
+
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+const strs = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+/**
+ * Reads either stats shape Zernio sends.
+ *
+ * The list endpoint sends `triggered`/`dmsSent`/`dmsFailed` plus click and
+ * receipt counters; create and get send `totalTriggered`/`totalSent`/
+ * `totalFailed` and nothing else. The missing counters are reported as zero
+ * rather than guessed, and a fresh automation genuinely has none.
+ */
+export function automationStats(raw: unknown): AutomationStats {
+  const s = (raw ?? {}) as Record<string, unknown>;
+  return {
+    triggered: num(s.triggered ?? s.totalTriggered),
+    dmsSent: num(s.dmsSent ?? s.totalSent),
+    dmsFailed: num(s.dmsFailed ?? s.totalFailed),
+    uniqueContacts: num(s.uniqueContacts),
+    trackedSends: num(s.trackedSends),
+    linkClicks: num(s.linkClicks),
+    uniqueClicks: num(s.uniqueClicks),
+    delivered: num(s.delivered),
+    read: num(s.read),
+  };
+}
+
+/** Normalizes one automation, whichever endpoint it arrived from. */
+export function commentAutomation(raw: unknown): CommentAutomation {
+  const a = (raw ?? {}) as Record<string, unknown>;
+  return {
+    id: String(a.id ?? ""),
+    name: String(a.name ?? ""),
+    platform: a.platform === "facebook" ? "facebook" : "instagram",
+    trigger: a.trigger === "story_reply" ? "story_reply" : "comment",
+    accountId: str(a.accountId),
+    platformPostId: str(a.platformPostId),
+    postTitle: str(a.postTitle),
+    keywords: strs(a.keywords),
+    matchMode:
+      a.matchMode === "exact" || a.matchMode === "word" ? a.matchMode : "contains",
+    excludeKeywords: strs(a.excludeKeywords),
+    dmMessage: String(a.dmMessage ?? ""),
+    buttons: Array.isArray(a.buttons) ? (a.buttons as DmButton[]) : [],
+    commentReply: str(a.commentReply),
+    alsoMatchInDms: a.alsoMatchInDms === true,
+    // Zernio defaults link tracking on, so an absent field means on.
+    linkTracking: a.linkTracking !== false,
+    isActive: a.isActive !== false,
+    stats: automationStats(a.stats),
+    createdAt: str(a.createdAt),
+  };
+}
+
+/** What creating or updating an automation accepts. */
+export interface CommentAutomationInput {
+  profileId: string;
+  accountId: string;
+  name: string;
+  dmMessage: string;
+  keywords?: string[];
+  matchMode?: "exact" | "contains" | "word";
+  excludeKeywords?: string[];
+  platformPostId?: string;
+  postTitle?: string;
+  buttons?: DmButton[];
+  commentReply?: string;
+  alsoMatchInDms?: boolean;
+  linkTracking?: boolean;
+  clickTag?: string;
+}
+
 /**
  * Zernio unified publishing provider (docs.zernio.com).
  * Model: one Zernio "profile" per Toreroflow client; accounts OAuth-connect to
@@ -574,5 +746,200 @@ export class ZernioProvider {
       return accounts;
     }
     return tagged;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Comment-to-DM automations.
+  //
+  // Zernio runs these itself: it holds Meta's comment webhook, matches the
+  // keyword and sends the DM. Nothing here executes an automation, and there is
+  // no webhook for us to receive. We author them and read back what they did,
+  // which is why none of this is mirrored into our database.
+  // ---------------------------------------------------------------------------
+
+  /** Every automation on one client's profile, with its counters. */
+  async listCommentAutomations(profileId: string): Promise<CommentAutomation[]> {
+    const data = await this.request<{ automations?: unknown }>(
+      "GET",
+      `/comment-automations?profileId=${encodeURIComponent(profileId)}`,
+    );
+    return Array.isArray(data.automations) ? data.automations.map(commentAutomation) : [];
+  }
+
+  async createCommentAutomation(input: CommentAutomationInput): Promise<CommentAutomation> {
+    const data = await this.request<{ automation?: unknown }>(
+      "POST",
+      "/comment-automations",
+      input,
+    );
+    return commentAutomation(data.automation);
+  }
+
+  async updateCommentAutomation(
+    automationId: string,
+    patch: Partial<Omit<CommentAutomationInput, "profileId" | "accountId">> & {
+      isActive?: boolean;
+    },
+  ): Promise<CommentAutomation> {
+    const data = await this.request<{ automation?: unknown }>(
+      "PATCH",
+      `/comment-automations/${encodeURIComponent(automationId)}`,
+      patch,
+    );
+    return commentAutomation(data.automation);
+  }
+
+  async deleteCommentAutomation(automationId: string): Promise<void> {
+    await this.request("DELETE", `/comment-automations/${encodeURIComponent(automationId)}`);
+  }
+
+  /**
+   * Who triggered an automation and whether their DM arrived.
+   *
+   * This is the lead list: every row is a person who commented the keyword,
+   * with the handle needed to find them in the inbox.
+   */
+  async automationLogs(
+    automationId: string,
+    opts: { limit?: number; skip?: number } = {},
+  ): Promise<AutomationLog[]> {
+    const query = new URLSearchParams({ limit: String(Math.min(opts.limit ?? 50, 200)) });
+    if (opts.skip) query.set("skip", String(opts.skip));
+    const data = await this.request<{ logs?: unknown }>(
+      "GET",
+      `/comment-automations/${encodeURIComponent(automationId)}/logs?${query}`,
+    );
+    const rows = Array.isArray(data.logs) ? data.logs : [];
+    return rows.map((raw) => {
+      const l = (raw ?? {}) as Record<string, unknown>;
+      const source = l.source;
+      return {
+        id: String(l.id ?? ""),
+        commenterId: str(l.commenterId),
+        commenterName: str(l.commenterName),
+        commentText: str(l.commentText),
+        source:
+          source === "comment" || source === "story_reply" || source === "dm" ? source : null,
+        status: (str(l.status) ?? "sent") as AutomationLog["status"],
+        error: str(l.error),
+        createdAt: str(l.createdAt),
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inbox. Read-through: Zernio is the store, we never copy a thread locally.
+  // ---------------------------------------------------------------------------
+
+  /** Open threads on a profile, newest activity first. */
+  async conversations(
+    profileId: string,
+    opts: { platform?: string; accountId?: string; limit?: number } = {},
+  ): Promise<InboxConversation[]> {
+    const query = new URLSearchParams({
+      profileId,
+      limit: String(Math.min(opts.limit ?? 50, 100)),
+    });
+    if (opts.platform) query.set("platform", opts.platform);
+    if (opts.accountId) query.set("accountId", opts.accountId);
+    const data = await this.request<{ conversations?: unknown; data?: unknown }>(
+      "GET",
+      `/inbox/conversations?${query}`,
+    );
+    const rows = data.conversations ?? data.data;
+    if (!Array.isArray(rows)) return [];
+    return rows.map((raw) => {
+      const c = (raw ?? {}) as Record<string, unknown>;
+      const ig = (c.instagramProfile ?? null) as InboxConversation["instagramProfile"];
+      return {
+        id: String(c.id ?? ""),
+        platform: String(c.platform ?? ""),
+        accountId: String(c.accountId ?? ""),
+        accountUsername: str(c.accountUsername),
+        participantId: str(c.participantId),
+        participantName: str(c.participantName),
+        participantPicture: str(c.participantPicture),
+        lastMessage: str(c.lastMessage),
+        updatedTime: str(c.updatedTime),
+        unreadCount: num(c.unreadCount),
+        instagramProfile: ig && typeof ig === "object" ? ig : null,
+      };
+    });
+  }
+
+  /**
+   * One thread, oldest message first.
+   *
+   * Attachment URLs on Instagram and Facebook expire, so they are handed
+   * straight to the screen and never stored; attachmentUrl below re-reads one
+   * when an old message has to be drawn again.
+   */
+  async conversationMessages(
+    conversationId: string,
+    accountId: string,
+    limit = 50,
+  ): Promise<InboxMessage[]> {
+    const query = new URLSearchParams({ accountId, limit: String(Math.min(limit, 100)) });
+    const data = await this.request<{ messages?: unknown }>(
+      "GET",
+      `/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
+    );
+    const rows = Array.isArray(data.messages) ? data.messages : [];
+    return rows.map((raw) => {
+      const m = (raw ?? {}) as Record<string, unknown>;
+      const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+      return {
+        id: String(m.id ?? ""),
+        message: String(m.message ?? ""),
+        senderId: str(m.senderId),
+        senderName: str(m.senderName),
+        direction: m.direction === "outgoing" ? "outgoing" : "incoming",
+        createdAt: str(m.createdAt),
+        attachments: attachments.map((a) => {
+          const at = (a ?? {}) as Record<string, unknown>;
+          return { type: str(at.type), url: str(at.url) };
+        }),
+      };
+    });
+  }
+
+  /** Reply in a thread as the connected account. */
+  async sendMessage(
+    conversationId: string,
+    input: { accountId: string; message: string; buttons?: DmButton[] },
+  ): Promise<void> {
+    await this.request(
+      "POST",
+      `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`,
+      input,
+    );
+  }
+
+  /**
+   * A working URL for an attachment whose original has expired.
+   *
+   * Meta's media links die within days, so a thread reopened next week draws
+   * broken images unless each one is re-read at display time. Returns null when
+   * the attachment is gone rather than throwing, because one dead image should
+   * not take down the thread around it.
+   */
+  async attachmentUrl(
+    conversationId: string,
+    messageId: string,
+    index: number,
+    accountId: string,
+  ): Promise<string | null> {
+    try {
+      const data = await this.request<{ url?: unknown }>(
+        "GET",
+        `/inbox/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(
+          messageId,
+        )}/attachments/${index}?accountId=${encodeURIComponent(accountId)}&format=json`,
+      );
+      return str(data.url);
+    } catch (error) {
+      if (error instanceof ZernioError && error.status === 404) return null;
+      throw error;
+    }
   }
 }

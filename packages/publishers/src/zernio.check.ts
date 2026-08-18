@@ -2,7 +2,13 @@
 // rejected by the API, a gap between windows would silently lose posts,
 // and an unbounded walk would hammer the provider forever.
 import assert from "node:assert/strict";
-import { audioAssets, historyWindows, ZernioProvider } from "./zernio";
+import {
+  audioAssets,
+  automationStats,
+  commentAutomation,
+  historyWindows,
+  ZernioProvider,
+} from "./zernio";
 
 {
   const today = new Date(Date.UTC(2026, 6, 28)); // 2026-07-28
@@ -141,6 +147,59 @@ type AnalyticsStub = (
   assert.deepEqual(audioAssets([{ title: "no id" }, null, "junk"]), []);
   assert.deepEqual(audioAssets(null), []);
   assert.deepEqual(audioAssets({}), []);
+}
+
+// Guards the comment-automation normalizer. Zernio returns two different stats
+// shapes from two endpoints for the same object, and defaults several booleans
+// by omitting them, so reading the raw payload gives a screen that shows a live
+// automation as paused and a working automation as having sent nothing.
+{
+  // The list endpoint's shape.
+  const listed = commentAutomation({
+    id: "a1",
+    name: "Free guide",
+    platform: "instagram",
+    keywords: ["GUIDE"],
+    dmMessage: "here you go",
+    isActive: true,
+    stats: { triggered: 12, dmsSent: 11, dmsFailed: 1, uniqueContacts: 9, linkClicks: 4 },
+  });
+  assert.equal(listed.stats.triggered, 12);
+  assert.equal(listed.stats.dmsSent, 11);
+  assert.equal(listed.stats.linkClicks, 4);
+
+  // The create/get shape carries the same three counters under other names.
+  const created = commentAutomation({
+    id: "a1",
+    name: "Free guide",
+    dmMessage: "here you go",
+    stats: { totalTriggered: 12, totalSent: 11, totalFailed: 1 },
+  });
+  assert.equal(created.stats.triggered, 12, "totalTriggered fills in for triggered");
+  assert.equal(created.stats.dmsSent, 11, "totalSent fills in for dmsSent");
+  assert.equal(created.stats.dmsFailed, 1);
+  // Counters that shape does not carry are zero, not undefined: they render.
+  assert.equal(created.stats.linkClicks, 0);
+  assert.equal(created.stats.delivered, 0);
+
+  // Omitted booleans take Zernio's documented defaults, not JavaScript's.
+  assert.equal(created.isActive, true, "an automation is active unless told otherwise");
+  assert.equal(created.linkTracking, true, "link tracking defaults on");
+  assert.equal(created.alsoMatchInDms, false, "DM matching defaults off");
+  assert.equal(created.matchMode, "contains");
+  assert.equal(commentAutomation({ isActive: false }).isActive, false);
+  assert.equal(commentAutomation({ linkTracking: false }).linkTracking, false);
+
+  // An account-wide automation has no post, and that has to stay distinguishable
+  // from one bound to a post, because only the bound ones count on a video.
+  assert.equal(created.platformPostId, null);
+  assert.equal(commentAutomation({ platformPostId: "17900" }).platformPostId, "17900");
+
+  // Junk in never becomes junk out: the screen always gets arrays it can map.
+  assert.deepEqual(commentAutomation(null).keywords, []);
+  assert.deepEqual(commentAutomation({ keywords: "GUIDE" }).keywords, []);
+  assert.deepEqual(commentAutomation({ keywords: ["a", 3, null] }).keywords, ["a"]);
+  assert.deepEqual(automationStats(null).triggered, 0);
 }
 
 console.log("zernio.check: all checks passed");

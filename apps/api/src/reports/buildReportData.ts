@@ -81,6 +81,9 @@ export interface ReportPost {
     totalWatchSec: number | null;
     /** Followers gained from this post on this platform. */
     follows?: number | null;
+    /** DMs a comment-to-DM campaign sent for this post, and link opens. */
+    dms?: number | null;
+    dmClicks?: number | null;
     /**
      * MetricNames this row's own platform API supplied, so a directly
      * connected channel reports what its platform does not report in general.
@@ -589,6 +592,17 @@ export interface ReportVideo {
    * but not for Reels, and TikTok does not offer it at all.
    */
   follows: string | null;
+  /**
+   * DMs this video's comment-to-DM campaign sent, or null when it had none.
+   *
+   * Null on every video without a campaign, which is the honest answer: a DM
+   * is not something a platform measures per post, so the number exists only
+   * where we set one up to exist. A zero here means the campaign ran and
+   * nobody commented the keyword, which is a result and prints as one.
+   */
+  dms: string | null;
+  /** Link opens among those DMs. Null when the campaign tracked no link. */
+  dmClicks: string | null;
   /** Engagement as a percentage of views, e.g. "4.2%". Null below 1 view. */
   engagement: string | null;
   /** 0-100, average watch over length. Null when either side is unreported. */
@@ -772,6 +786,8 @@ export function platformRows(p: ReportPost): ReportVideo["byPlatform"] {
     add("Clicks", "clicks", b.clicks);
     add("Watched", "totalWatch", b.totalWatchSec, fmtWatchTotal);
     add("Followers gained", "follows", b.follows ?? null);
+    add("DMs sent", "dms", b.dms ?? null);
+    add("Link opens", "dms", b.dmClicks ?? null);
     return { platform: PLATFORM_NAME[b.platform] ?? b.platform, stats };
   });
 }
@@ -820,6 +836,8 @@ function buildVideos(
         clicks: total("clicks", p, (b) => b.clicks),
         totalWatch: total("totalWatch", p, (b) => b.totalWatchSec, fmtWatchTotal),
         follows: total("follows", p, (b) => b.follows ?? null),
+        dms: total("dms", p, (b) => b.dms ?? null),
+        dmClicks: total("dms", p, (b) => b.dmClicks ?? null),
         engagement: eng != null ? `${eng.toFixed(1)}%` : null,
         watchPct,
         avgWatch: fmtDur(p.avgWatchSec),

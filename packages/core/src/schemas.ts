@@ -166,3 +166,82 @@ export const updateWorkflowSchema = z.object({
   enabled: z.boolean().optional(),
 });
 export type UpdateWorkflowInput = z.infer<typeof updateWorkflowSchema>;
+
+/**
+ * An inline button on an auto-DM. Meta renders at most three.
+ *
+ * `url` is the whole point of a comment-to-DM campaign: someone comments the
+ * keyword and gets the link. `postback` fires a payload back at the webhook
+ * instead, and `phone` is Facebook only because Instagram refuses it.
+ */
+export const dmButtonSchema = z
+  .object({
+    type: z.enum(["url", "postback", "phone"]),
+    /** Meta truncates past 20; refusing is better than shipping a clipped label. */
+    title: z.string().min(1).max(20),
+    url: z.string().url().optional(),
+    payload: z.string().max(1000).optional(),
+    phone: z.string().max(40).optional(),
+  })
+  .refine((b) => b.type !== "url" || !!b.url, { message: "a url button needs a url" })
+  .refine((b) => b.type !== "postback" || !!b.payload, {
+    message: "a postback button needs a payload",
+  })
+  .refine((b) => b.type !== "phone" || !!b.phone, { message: "a phone button needs a number" });
+
+/**
+ * A comment-to-DM campaign.
+ *
+ * Instagram and Facebook only: Meta is the only platform exposing both the
+ * comment webhook and the DM send, so a campaign on any other account has
+ * nothing to listen to. The route refuses those rather than creating something
+ * that can never fire.
+ */
+export const dmCampaignSchema = z.object({
+  /** Our SocialAccount id; the route resolves the provider's. */
+  accountId: z.string().min(1),
+  name: z.string().min(1).max(120),
+  /** What the commenter receives. Meta's own ceiling is 1000 characters. */
+  dmMessage: z.string().min(1).max(1000),
+  /**
+   * At least one. Zernio rejects an empty list on an active automation, and
+   * a campaign with no keyword would answer every comment on the account.
+   */
+  keywords: z.array(z.string().min(1).max(60)).min(1).max(20),
+  matchMode: z.enum(["exact", "contains", "word"]).optional(),
+  excludeKeywords: z.array(z.string().min(1).max(60)).max(20).optional(),
+  /** The platform's own media id, to scope the campaign to one video. */
+  platformPostId: z.string().max(120).optional(),
+  postTitle: z.string().max(200).optional(),
+  buttons: z.array(dmButtonSchema).max(3).optional(),
+  /** A public reply left on the comment itself, alongside the DM. */
+  commentReply: z.string().max(2200).optional(),
+  /** Also answer people who DM the keyword rather than commenting it. */
+  alsoMatchInDms: z.boolean().optional(),
+  /** Wraps links so clicks are counted. On unless turned off. */
+  linkTracking: z.boolean().optional(),
+});
+export type DmCampaignInput = z.infer<typeof dmCampaignSchema>;
+
+/**
+ * A partial edit. accountId is absent because moving a campaign to a different
+ * account is not an edit: its counters belong to the account it ran on, and
+ * carrying them across would restate one account's results as another's.
+ */
+export const updateDmCampaignSchema = dmCampaignSchema
+  .partial()
+  .omit({ accountId: true })
+  .extend({ isActive: z.boolean().optional() });
+export type UpdateDmCampaignInput = z.infer<typeof updateDmCampaignSchema>;
+
+/**
+ * A manual reply in a DM thread.
+ *
+ * Short by Meta's own limit, and required rather than optional: an empty
+ * message would be a request to send nothing to a real person's inbox.
+ */
+export const inboxReplySchema = z.object({
+  accountId: z.string().min(1),
+  message: z.string().min(1).max(1000),
+});
+export type InboxReplyInput = z.infer<typeof inboxReplySchema>;

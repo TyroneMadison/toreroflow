@@ -67,6 +67,20 @@ export function followsMeasurable(posts: readonly { follows: number }[]): boolea
 }
 
 /**
+ * True when any post in this set had a comment-to-DM campaign on it.
+ *
+ * Asked of the data for the same reason followsMeasurable is, but with the
+ * opposite treatment of zero. A DM count of zero IS a measurement: the
+ * campaign ran and nobody commented the keyword, which is exactly the kind of
+ * thing an agency needs to see. What is not a measurement is the absence of a
+ * campaign, and that arrives as null. So this tests for a value at all, not
+ * for a value above zero.
+ */
+export function dmsMeasurable(posts: readonly { dms?: number | null }[]): boolean {
+  return posts.some((p) => p.dms != null);
+}
+
+/**
  * Every per-post metric the app can display, and which platforms actually
  * serve it.
  *
@@ -90,7 +104,8 @@ export type MetricName =
   | "clicks"
   | "avgWatch"
   | "totalWatch"
-  | "follows";
+  | "follows"
+  | "dms";
 
 const ALL = ["facebook", "instagram", "tiktok", "youtube"] as const;
 
@@ -129,6 +144,21 @@ export const METRIC_REPORTED_BY: Record<MetricName, ReadonlySet<PlatformName>> =
    * docs/platform-capability-map.md. Callers get false without a special case.
    */
   follows: new Set(),
+  /*
+   * Empty, and unlike the others it will stay empty forever.
+   *
+   * No platform reports DMs per video, because a DM is not a property of a
+   * video anywhere in Meta's data model. The number exists only where we made
+   * it exist: a comment-to-DM campaign scoped to one post counts its own
+   * triggers, so the video that campaign points at has a real figure and every
+   * other video on the same account has none.
+   *
+   * That is per row by construction, which is exactly what directMetrics is
+   * for. A platform entry here would put "DMs 0" on every video nobody ran a
+   * campaign on, and a client reading a zero next to a real number on the
+   * video above it would reasonably conclude the second video failed.
+   */
+  dms: new Set(),
 };
 
 /**

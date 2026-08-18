@@ -445,6 +445,14 @@ export interface ClientPost {
    */
   impressions: number | null;
   clicks: number | null;
+  /**
+   * DMs a comment-to-DM campaign sent for this video, and link opens among
+   * them. Null on every video that had no campaign, which is the normal case;
+   * a zero means the campaign ran and nobody commented the keyword, which is
+   * a result rather than a gap.
+   */
+  dms: number | null;
+  dmClicks: number | null;
   /** Total seconds watched across all viewers, measured rather than derived. */
   totalWatchSec: number | null;
   avgWatchSec: number | null;
@@ -478,6 +486,8 @@ export interface ClientPost {
     clicks: number | null;
     avgWatchSec: number | null;
     totalWatchSec: number | null;
+    dms?: number | null;
+    dmClicks?: number | null;
   }>;
 }
 
@@ -701,4 +711,90 @@ export async function uploadCarousel(
   const data: unknown = await res.json();
   if (!res.ok) throw new ApiError(res.status, data);
   return data as MediaAssetInfo;
+}
+
+/** One inline button on an auto-DM. Meta renders at most three. */
+export interface DmButton {
+  type: "url" | "postback" | "phone";
+  title: string;
+  url?: string;
+  payload?: string;
+  phone?: string;
+}
+
+/** What a campaign has done. Zero everywhere on a fresh one. */
+export interface DmCampaignStats {
+  triggered: number;
+  dmsSent: number;
+  dmsFailed: number;
+  uniqueContacts: number;
+  trackedSends: number;
+  linkClicks: number;
+  uniqueClicks: number;
+  /** Messenger only; Instagram emits no delivery receipt so this stays 0. */
+  delivered: number;
+  read: number;
+}
+
+export interface DmCampaign {
+  id: string;
+  name: string;
+  platform: "instagram" | "facebook";
+  trigger: "comment" | "story_reply";
+  accountId: string | null;
+  /** The platform's own media id, or null for a campaign covering the account. */
+  platformPostId: string | null;
+  postTitle: string | null;
+  keywords: string[];
+  matchMode: "exact" | "contains" | "word";
+  excludeKeywords: string[];
+  dmMessage: string;
+  buttons: DmButton[];
+  commentReply: string | null;
+  alsoMatchInDms: boolean;
+  linkTracking: boolean;
+  isActive: boolean;
+  stats: DmCampaignStats;
+  createdAt: string | null;
+}
+
+/** One person who triggered a campaign, and what became of their DM. */
+export interface DmCampaignLog {
+  id: string;
+  commenterId: string | null;
+  commenterName: string | null;
+  commentText: string | null;
+  source: "comment" | "story_reply" | "dm" | null;
+  status: "pending" | "sent" | "failed" | "skipped" | "gated";
+  error: string | null;
+  createdAt: string | null;
+}
+
+export interface InboxConversation {
+  id: string;
+  platform: string;
+  accountId: string;
+  accountUsername: string | null;
+  participantId: string | null;
+  participantName: string | null;
+  participantPicture: string | null;
+  lastMessage: string | null;
+  updatedTime: string | null;
+  unreadCount: number;
+  instagramProfile: {
+    isFollower?: boolean;
+    isFollowing?: boolean;
+    followerCount?: number;
+    isVerified?: boolean;
+  } | null;
+}
+
+export interface InboxMessage {
+  id: string;
+  message: string;
+  senderId: string | null;
+  senderName: string | null;
+  direction: "incoming" | "outgoing";
+  createdAt: string | null;
+  attachments: Array<{ type: string | null; url: string | null }>;
 }

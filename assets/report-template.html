@@ -899,6 +899,12 @@ body{
       // API. pill() drops a null, so every other video is unaffected rather
       // than showing a zero nobody measured.
       pill('Followers gained', v.follows) +
+      // Present only on a video that had a comment-to-DM campaign scoped to
+      // it. A zero here is a real result, the campaign ran and nobody
+      // commented the keyword, so it prints; every video without a campaign
+      // sends null and pill() drops it.
+      pill('DMs sent', v.dms) +
+      pill('Link opens', v.dmClicks) +
       '</div>';
     var tips = v.tips && v.tips.length
       ? '<div class="vtips"><div class="tt">How to beat this one</div><ul>' +

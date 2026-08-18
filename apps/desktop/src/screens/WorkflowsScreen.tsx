@@ -4,6 +4,8 @@ import { useToast } from "../components/Toasts";
 import { api, type WorkflowInfo } from "../lib/api";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
+import DmCampaigns from "../components/DmCampaigns";
+import DmInbox from "../components/DmInbox";
 
 export default function WorkflowsScreen() {
   const { selectedClient } = useAppState();
@@ -222,6 +224,8 @@ export default function WorkflowsScreen() {
             </div>
           </div>
         )}
+        {selectedClient && <DmCampaigns client={selectedClient} />}
+        {selectedClient && <DmInbox client={selectedClient} />}
       </div>
     </section>
   );

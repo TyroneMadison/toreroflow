@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   followsMeasurable,
+  dmsMeasurable,
   reportsSaves,
   sumReported,
   ZERO_IS_UNMEASURED,
@@ -379,6 +380,22 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
    */
   const followsReported = followsMeasurable(all);
   const totalFollows = all.reduce((s, p) => s + p.follows, 0);
+  /*
+   * DMs from comment-to-DM campaigns, summed over the videos that had one.
+   *
+   * Only campaigned videos contribute, and a video with a campaign that nobody
+   * triggered contributes its real zero. Videos without a campaign are skipped
+   * entirely rather than counted as zeros, which is what keeps the average
+   * honest when one video out of forty is running a campaign.
+   */
+  const dmsReported = dmsMeasurable(all);
+  const campaigned = all.filter((p) => p.dms != null);
+  const totalDms = campaigned.reduce((s, p) => s + (p.dms ?? 0), 0);
+  const totalDmClicks = campaigned.reduce(
+    (s, p) => (p.dmClicks == null ? s : s + p.dmClicks),
+    0,
+  );
+  const anyDmClicks = campaigned.some((p) => p.dmClicks != null);
 
   const engagement = [
     { label: "Saves", value: shown("saves", totalSaves) },
@@ -718,6 +735,18 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       <div className="ucount">
                         <div className="n">{loading ? "…" : fmt(totalFollows)}</div>
                         <div className="l">Followed</div>
+                      </div>
+                    )}
+                    {dmsReported && (
+                      <div className="ucount" title={`across ${campaigned.length} video${campaigned.length === 1 ? "" : "s"} running a campaign`}>
+                        <div className="n">{loading ? "…" : fmt(totalDms)}</div>
+                        <div className="l">DMs sent</div>
+                      </div>
+                    )}
+                    {dmsReported && anyDmClicks && (
+                      <div className="ucount">
+                        <div className="n">{loading ? "…" : fmt(totalDmClicks)}</div>
+                        <div className="l">Link opens</div>
                       </div>
                     )}
                   </div>

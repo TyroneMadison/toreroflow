@@ -72,6 +72,10 @@ const post = (
   follows: 0,
   impressions: null,
   clicks: null,
+  // Null, not zero: no campaign ran on these fixtures, and a zero would claim
+  // one did and reached nobody.
+  dms: null,
+  dmClicks: null,
   totalWatchSec: null,
   avgWatchSec: null,
   durationSec: null,

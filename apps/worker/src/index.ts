@@ -22,6 +22,7 @@ import { syncAllBanks, syncBankConnection } from "./bank";
 import { checkFilingReminders } from "./filing";
 import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
+import { syncDmStats } from "./dmStats";
 import { confirmPublishing } from "./confirmPublish";
 
 const prisma = getPrisma();
@@ -855,6 +856,10 @@ void work(
     // This only lays owner-only numbers over rows that already exist, so running
     // it first would silently skip every video published since yesterday.
     await syncYouTubeAnalytics();
+    // Same reason and same ordering as the line above: a comment-to-DM count
+    // is laid onto a video row that the catalogue sync already created, and it
+    // has to be on the row before a client report is built from it.
+    await syncDmStats();
     // Checked daily, deletes on the week: a video posted the day after a
     // weekly sweep would otherwise sit for a fortnight, and "a week" should
     // mean a week rather than somewhere between one and two.
@@ -872,6 +877,7 @@ void (async () => {
   await ingestAnalytics();
   await refreshYouTubeCatalogues();
   await syncYouTubeAnalytics();
+  await syncDmStats();
 })();
 
 /*
