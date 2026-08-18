@@ -766,13 +766,31 @@ export class ZernioProvider {
     return Array.isArray(data.automations) ? data.automations.map(commentAutomation) : [];
   }
 
+  /**
+   * Creates one, then re-reads it from the list before handing it back.
+   *
+   * Measured against the live API: the create response omits accountId and
+   * postTitle even when both were sent, while the list carries them. So the
+   * object create returns describes a campaign that looks account-less and
+   * unscoped, and anything trusting it would decide this campaign belongs to
+   * no video. syncDmStats reads the list and was never exposed, but a caller
+   * reasonably reading the create response would be, and that is the kind of
+   * difference nobody finds until a client's DM counts are quietly missing.
+   *
+   * One extra read on a rare action to make the return value mean what it says.
+   * Falls back to the create response if the re-read cannot find it, because a
+   * campaign that was created is still created.
+   */
   async createCommentAutomation(input: CommentAutomationInput): Promise<CommentAutomation> {
     const data = await this.request<{ automation?: unknown }>(
       "POST",
       "/comment-automations",
       input,
     );
-    return commentAutomation(data.automation);
+    const created = commentAutomation(data.automation);
+    if (!created.id) return created;
+    const listed = await this.listCommentAutomations(input.profileId);
+    return listed.find((c) => c.id === created.id) ?? created;
   }
 
   async updateCommentAutomation(

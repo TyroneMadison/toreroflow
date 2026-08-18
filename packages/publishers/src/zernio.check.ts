@@ -202,4 +202,56 @@ type AnalyticsStub = (
   assert.deepEqual(automationStats(null).triggered, 0);
 }
 
+/*
+ * The create and list responses are different shapes, measured live on
+ * 2026-08-18 against a real campaign: create omits accountId and postTitle
+ * even when both were sent, list carries them. createCommentAutomation
+ * re-reads from the list because of this; the normalizer still has to survive
+ * the thinner shape rather than throwing on it.
+ */
+{
+  const fromCreate = commentAutomation({
+    id: "6a83db83a1e2b4e17806e0da",
+    name: "A campaign",
+    platform: "instagram",
+    trigger: "comment",
+    platformPostId: "18072149957430774",
+    keywords: ["guide"],
+    matchMode: "exact",
+    dmMessage: "here you go",
+    linkTracking: true,
+    isActive: true,
+    stats: { totalTriggered: 0, totalSent: 0, totalFailed: 0 },
+  });
+  assert.equal(fromCreate.accountId, null, "create says nothing about the account");
+  assert.equal(fromCreate.postTitle, null, "nor the post title");
+  assert.equal(fromCreate.platformPostId, "18072149957430774", "but the scope is there");
+  assert.equal(fromCreate.stats.triggered, 0, "and the three-field stats shape reads");
+
+  const fromList = commentAutomation({
+    id: "6a83db83a1e2b4e17806e0da",
+    name: "A campaign",
+    platform: "instagram",
+    trigger: "comment",
+    accountId: "6a64ff84542d8bc5a6f94a9e",
+    platformPostId: "18072149957430774",
+    postTitle: "These two Corvettes are not the same",
+    keywords: ["guide"],
+    matchMode: "exact",
+    dmMessage: "here you go",
+    linkTracking: true,
+    isActive: true,
+    stats: { triggered: 4, dmsSent: 3, dmsFailed: 1, uniqueContacts: 3, linkClicks: 2 },
+  });
+  assert.equal(fromList.accountId, "6a64ff84542d8bc5a6f94a9e", "the list knows the account");
+  assert.equal(fromList.postTitle, "These two Corvettes are not the same");
+  assert.equal(fromList.stats.dmsSent, 3, "and the full stats shape reads too");
+  assert.equal(fromList.stats.linkClicks, 2);
+}
+
+// linkTracking defaults on, which is Zernio's own default, so an absent field
+// must not read as off and quietly drop a campaign's click figures.
+assert.equal(commentAutomation({ id: "x" }).linkTracking, true);
+assert.equal(commentAutomation({ id: "x", linkTracking: false }).linkTracking, false);
+
 console.log("zernio.check: all checks passed");
