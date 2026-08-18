@@ -5,7 +5,7 @@ import Pf from "../components/Pf";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { canMove, POST_STATUS } from "../lib/postStatus";
-import { explainPublishFailure } from "@toreroflow/core";
+import { explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
 
 interface PostDetailModalProps {
   target: PostTargetInfo;
@@ -59,6 +59,10 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
 
   const original = localValue(target.scheduledAt);
   const dirty = when !== original;
+  // Same staleness as the schedule modal: this one can sit open for a while
+  // with a card's existing time already behind, so moving it has to be judged
+  // against now rather than against what it was.
+  const whenError = editable ? scheduleTimeError(new Date(when)) : null;
   const thumb = fileUrl(target.thumbUrl);
 
   const save = async () => {
@@ -187,7 +191,10 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           {editable ? "Day and time" : "Scheduled for"}
         </label>
         {editable ? (
-          <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+          <>
+            <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+            {whenError && <div className="autherr">{whenError}</div>}
+          </>
         ) : (
           <div className="pdcaption">
             {target.scheduledAt
@@ -253,7 +260,12 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </button>
         )}
         {editable && (
-          <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
+          <button
+            className="btn"
+            disabled={!dirty || busy || whenError !== null}
+            title={whenError ?? undefined}
+            onClick={() => void save()}
+          >
             <svg>
               <use href="#i-check" />
             </svg>{" "}

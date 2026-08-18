@@ -142,9 +142,21 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
 
   const commit = (next: Date) => onChange(toValue(next));
 
+  /**
+   * Picking a day keeps the chosen time, unless that lands in the past.
+   *
+   * Selecting tomorrow at 9am and then coming back to today would otherwise
+   * commit 9am this morning: a moment the hour column now refuses to offer,
+   * arrived at through the calendar instead. Snapping to the floor keeps the
+   * two halves of the picker telling the same story.
+   */
   const pickDay = (day: number) => {
     const next = new Date(selected);
     next.setFullYear(viewMonth.getFullYear(), viewMonth.getMonth(), day);
+    if (minDate && next < minDate) {
+      const floorAt = new Date(minDate);
+      next.setHours(floorAt.getHours(), floorAt.getMinutes(), 0, 0);
+    }
     commit(next);
   };
 
@@ -174,8 +186,39 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
     0,
   ).getDate();
 
+  /*
+   * The earliest selectable moment, kept to the minute rather than flattened
+   * to the start of its day.
+   *
+   * This used to read setHours(0,0,0,0), which made the floor "today" instead
+   * of "now": every past day was greyed out and every past hour of today was
+   * offered. Picking 9am at 4pm produced a scheduled post the worker publishes
+   * the instant it is queued, which is how a video goes out unannounced.
+   */
   const floor = minDate ? new Date(minDate) : null;
-  if (floor) floor.setHours(0, 0, 0, 0);
+  /** The whole day is gone when even its last minute is behind the floor. */
+  const dayIsPast = (d: Date): boolean => {
+    if (!floor) return false;
+    const end = new Date(d);
+    end.setHours(23, 59, 59, 999);
+    return end < floor;
+  };
+  /** An hour on the selected day, judged by its last minute. */
+  const hourIsPast = (h24: number): boolean => {
+    if (!floor) return false;
+    const end = new Date(selected);
+    end.setHours(h24, 59, 59, 999);
+    return end < floor;
+  };
+  const minuteIsPast = (m: number): boolean => {
+    if (!floor) return false;
+    const at = new Date(selected);
+    at.setMinutes(m, 59, 999);
+    return at < floor;
+  };
+  /** A meridiem is gone only when all six of its hours are. */
+  const meridiemIsPast = (pm: boolean): boolean =>
+    Array.from({ length: 12 }, (_, i) => (i % 12) + (pm ? 12 : 0)).every(hourIsPast);
 
   const cells: Array<number | null> = [
     ...Array.from({ length: firstWeekday }, () => null),
@@ -257,7 +300,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
                     viewMonth.getMonth(),
                     day,
                   );
-                  const disabled = floor ? thisDay < floor : false;
+                  const disabled = dayIsPast(thisDay);
                   return (
                     <button
                       type="button"
@@ -282,6 +325,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
                     type="button"
                     key={h}
                     className={h === hour12 ? "on" : undefined}
+                    disabled={hourIsPast((h % 12) + (isPm ? 12 : 0))}
                     onClick={() => setHour12(h)}
                   >
                     {pad(h)}
@@ -294,6 +338,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
                     type="button"
                     key={m}
                     className={m === selected.getMinutes() ? "on" : undefined}
+                    disabled={minuteIsPast(m)}
                     onClick={() => setMinute(m)}
                   >
                     {pad(m)}
@@ -304,6 +349,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
                 <button
                   type="button"
                   className={!isPm ? "on" : undefined}
+                  disabled={meridiemIsPast(false)}
                   onClick={() => setMeridiem(false)}
                 >
                   AM
@@ -311,6 +357,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
                 <button
                   type="button"
                   className={isPm ? "on" : undefined}
+                  disabled={meridiemIsPast(true)}
                   onClick={() => setMeridiem(true)}
                 >
                   PM

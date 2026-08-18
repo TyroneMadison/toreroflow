@@ -30,6 +30,7 @@ export * from "./analysis";
 export * from "./ideaDedup";
 export * from "./platformMetrics";
 export * from "./publishFailure";
+export * from "./scheduleTime";
 export * from "./metricSeries";
 export * from "./dataProvenance";
 export * as tokens from "./tokens";

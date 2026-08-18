@@ -7,6 +7,7 @@ import {
   INSTAGRAM_FEED_MAX_SECONDS,
   INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
+  scheduleTimeError,
   youtubeTitleFor,
   type Platform,
 } from "@toreroflow/core";
@@ -54,8 +55,15 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const scheduledAt = new Date(body.scheduledAt);
-    if (Number.isNaN(scheduledAt.getTime())) {
-      return reply.status(400).send({ error: "invalid scheduledAt" });
+    /*
+     * A past time is not a harmless typo here. The publish worker runs a job
+     * whose moment has already gone as soon as it is queued, so scheduling for
+     * yesterday publishes to a client's account immediately, and that is not
+     * something an apology undoes.
+     */
+    const whenError = scheduleTimeError(scheduledAt);
+    if (whenError) {
+      return reply.status(400).send({ error: "invalid scheduledAt", detail: whenError });
     }
 
     /*
@@ -396,8 +404,13 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = (request.body ?? {}) as { scheduledAt?: string };
       const when = body.scheduledAt ? new Date(body.scheduledAt) : null;
-      if (!when || Number.isNaN(when.getTime())) {
-        return reply.status(400).send({ error: "invalid scheduledAt" });
+      // Same rule as scheduling, and it has to be repeated because dragging a
+      // card across the calendar reaches this route and never the other one.
+      const whenError = when
+        ? scheduleTimeError(when)
+        : "That is not a valid date and time.";
+      if (!when || whenError) {
+        return reply.status(400).send({ error: "invalid scheduledAt", detail: whenError });
       }
       const target = await prisma.postTarget.findFirst({
         where: {

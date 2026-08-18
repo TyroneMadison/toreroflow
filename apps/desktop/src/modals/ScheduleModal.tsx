@@ -14,7 +14,7 @@ import {
 } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
-import { INSTAGRAM_REEL_MAX_SECONDS } from "@toreroflow/core";
+import { INSTAGRAM_REEL_MAX_SECONDS, scheduleTimeError } from "@toreroflow/core";
 
 interface ScheduleModalProps {
   asset: MediaAssetInfo;
@@ -239,6 +239,16 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
    * Publishing immediately is the same call with the time set to now; the
    * API turns a non-future time into a zero delay on the publish job.
    */
+  /*
+   * Whether the chosen time is still in the future, judged on every render.
+   *
+   * A modal can sit open long enough for its own default to go stale: the
+   * picker opens at ten minutes out, the operator gets distracted, and the
+   * button now schedules a moment that has gone. "Post now" is unaffected,
+   * because it sends the present rather than this field.
+   */
+  const whenError = scheduleTimeError(new Date(when));
+
   const submit = async (mode: "schedule" | "now") => {
     setBusy(mode);
     setError(null);
@@ -296,6 +306,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       <div className="modal-body">
         <label className="flabel">Post at</label>
         <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+        {whenError && <div className="autherr">{whenError}</div>}
         <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
           Posts with the title saved on this video. Each platform publishes
           independently with automatic retries.
@@ -722,7 +733,8 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         </button>
         <button
           className="btn"
-          disabled={busy !== null || accountIds.length === 0}
+          disabled={busy !== null || accountIds.length === 0 || whenError !== null}
+          title={whenError ?? undefined}
           onClick={() => void submit("schedule")}
         >
           <svg>

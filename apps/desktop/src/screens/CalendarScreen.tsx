@@ -3,6 +3,7 @@ import BestTimes from "../components/BestTimes";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import { api, fileUrl, type ClientPost, type PostTargetInfo } from "../lib/api";
+import { scheduleTimeError } from "@toreroflow/core";
 import { holidayFor } from "../lib/holidays";
 import { PF_ID } from "../lib/platforms";
 import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
@@ -197,6 +198,17 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     when.setHours(oldWhen.getHours(), oldWhen.getMinutes(), 0, 0);
     // Dropping back onto the same day would be a pointless round trip.
     if (when.getTime() === oldWhen.getTime()) return;
+    /*
+     * Dragging is the third door into a scheduled time and the only one with
+     * no picker in front of it, so the same rule is applied here rather than
+     * left to the server's refusal. The card snaps back either way; saying why
+     * is the difference between a rule and a glitch.
+     */
+    const whenError = scheduleTimeError(when);
+    if (whenError) {
+      toast.error(whenError);
+      return;
+    }
     try {
       await api.patch(`/posts/targets/${id}/reschedule`, {
         scheduledAt: when.toISOString(),
