@@ -568,6 +568,15 @@ export interface PostTargetInfo {
   /** The platform's own id for a published post, and its public link. */
   remotePostId: string | null;
   remoteUrl: string | null;
+  /**
+   * The long-form wizard's afterlife: what a human still finishes in Studio,
+   * and where the automatic metadata application stands. Null on everything
+   * that never went through the wizard.
+   */
+  youtube?: {
+    studioTasks: string[];
+    enrich: { state: "applied" | "error" | "pending"; detail: string | null } | null;
+  } | null;
   caption: string | null;
   assetName: string;
   thumbUrl: string | null;

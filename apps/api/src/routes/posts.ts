@@ -12,6 +12,7 @@ import {
   type Platform,
 } from "@toreroflow/core";
 import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
+import { enrichFieldsFrom } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -370,6 +371,32 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
          */
         remotePostId: t.remotePostId,
         remoteUrl: t.remoteUrl,
+        /*
+         * The long-form wizard's afterlife, distilled for the calendar card:
+         * what a human still has to do in Studio, and where the automatic
+         * metadata application stands. Null for everything that never went
+         * through the wizard, which is every short-form post ever made.
+         */
+        youtube: (() => {
+          if (t.platform !== "youtube") return null;
+          const yt = ((t.options as Record<string, unknown> | null) ?? {}).youtube as
+            | Record<string, unknown>
+            | undefined;
+          if (!yt) return null;
+          const studioTasks = Array.isArray(yt.studioTasks)
+            ? (yt.studioTasks as string[]).filter((x) => typeof x === "string")
+            : [];
+          const wantsEnrich = enrichFieldsFrom(t.options) !== null;
+          const enrich = yt.enrichedAt
+            ? ({ state: "applied", detail: String(yt.enrichedAt) } as const)
+            : typeof yt.enrichError === "string"
+              ? ({ state: "error", detail: yt.enrichError } as const)
+              : wantsEnrich
+                ? ({ state: "pending", detail: null } as const)
+                : null;
+          if (!studioTasks.length && !enrich) return null;
+          return { studioTasks, enrich };
+        })(),
         // Captions saved before emoji decoding landed still hold literal
         // "\uXXXX" text; clean them on the way out.
         caption: t.caption ? decodeEscapes(t.caption) : t.caption,

@@ -159,7 +159,22 @@ export const youtubeOptionsSchema = z.object({
    * deep link, because recording a choice and silently not acting on it is
    * worse than not offering the choice.
    */
-  studioTasks: z.array(z.string().min(1).max(160)).max(30).optional(),
+  studioTasks: z.array(z.string().min(1).max(200)).max(30).optional(),
+  /**
+   * The ad-suitability self-rating, answered in the wizard.
+   *
+   * Google offers no API to submit this, so it exists for two honest jobs:
+   * it gates the wizard's own Schedule button (rate before you publish, the
+   * discipline Studio enforces), and it prints on the finish-in-Studio card
+   * so a monetized channel can carry the same answers over in one look.
+   */
+  selfCert: z
+    .object({
+      rating: z.enum(["safe", "limited"]),
+      /** The category keys the operator flagged; empty means none apply. */
+      flags: z.array(z.string().min(1).max(40)).max(20),
+    })
+    .optional(),
 });
 
 export const schedulePostSchema = z.object({

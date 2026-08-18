@@ -166,11 +166,36 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </div>
         </div>
 
+        {target.youtube && (target.youtube.studioTasks.length > 0 || target.youtube.enrich) && (
+          <div className="pdtasks">
+            {target.youtube.enrich && (
+              <div className={`pdenrich ${target.youtube.enrich.state}`}>
+                {target.youtube.enrich.state === "applied"
+                  ? "Tags, license and the other API-side settings were applied automatically."
+                  : target.youtube.enrich.state === "pending"
+                    ? "Tags, license and the other API-side settings apply within a minute of publishing."
+                    : target.youtube.enrich.detail}
+              </div>
+            )}
+            {target.youtube.studioTasks.length > 0 && (
+              <>
+                <div className="tt">Finish in Studio</div>
+                <ul>
+                  {target.youtube.studioTasks.map((task, i) => (
+                    <li key={i}>{task}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+
         {studioUrl && (
           <div className="pdstudio">
             <div className="what">
-              YouTube's Related video pin has no API, on any tool. If this Short should point at
-              another video, set it here.
+              {target.youtube?.studioTasks.length
+                ? "Everything on the list above is set on this video's own page in Studio."
+                : "YouTube's Related video pin has no API, on any tool. If this Short should point at another video, set it here."}
             </div>
             <a className="btn ghost" href={studioUrl} target="_blank" rel="noreferrer">
               Open in YouTube Studio

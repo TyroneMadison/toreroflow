@@ -13,7 +13,15 @@ import {
   type PlatformConnection,
   type YouTubePlaylistInfo,
 } from "../lib/api";
-import { YT_CATEGORIES, YT_LANGUAGES, ratioLabel } from "../lib/youtube";
+import {
+  AD_SUITABILITY,
+  buildStudioTasks,
+  COMMENT_DEFAULTS,
+  YT_CATEGORIES,
+  YT_LANGUAGES,
+  ratioLabel,
+  type CommentChoices,
+} from "../lib/youtube";
 import { scheduleTimeError } from "@toreroflow/core";
 import { useAppState } from "../state/AppState";
 
@@ -39,7 +47,7 @@ function localInputValue(d: Date): string {
  */
 const PHASES = [
   { id: "details", label: "Details", live: true },
-  { id: "suitability", label: "Ad suitability", live: false },
+  { id: "suitability", label: "Ad suitability", live: true },
   { id: "elements", label: "Video elements", live: false },
   { id: "checks", label: "Checks", live: true },
   { id: "visibility", label: "Visibility", live: true },
@@ -96,6 +104,24 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   const [embeddable, setEmbeddable] = useState(true);
   const [recordingDate, setRecordingDate] = useState("");
   const [language, setLanguage] = useState("");
+  // Studio-side settings: recorded here, executed by a human, per the
+  // capability map. Defaults are YouTube's own, so only deviations turn into
+  // finish-in-Studio tasks.
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [comments, setComments] = useState<CommentChoices>(COMMENT_DEFAULTS);
+  const [autoChapters, setAutoChapters] = useState(true);
+  const [featuredPlaces, setFeaturedPlaces] = useState(true);
+  const [autoConcepts, setAutoConcepts] = useState(true);
+  const [fundraiserUrl, setFundraiserUrl] = useState("");
+  const [collaborator, setCollaborator] = useState("");
+
+  // Ad suitability. Editable until scheduled; Studio's own once-only lock is
+  // explained on the phase rather than imitated, because our copy of the
+  // rating is not the one Google holds.
+  const [certFlags, setCertFlags] = useState<string[]>([]);
+  const [certNone, setCertNone] = useState(false);
+  const [certSubmitted, setCertSubmitted] = useState(false);
+
   const [thumbBusy, setThumbBusy] = useState(false);
   const [thumbName, setThumbName] = useState<string | null>(null);
   const [thumbPreview, setThumbPreview] = useState<string | null>(null);
@@ -112,6 +138,17 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const tagPool = tags.join(",").length;
+  const certRating: "safe" | "limited" = certFlags.length ? "limited" : "safe";
+  /** Answering means flagging something or explicitly saying none applies. */
+  const certAnswered = certNone || certFlags.length > 0;
+
+  const toggleFlag = (key: string) => {
+    setCertSubmitted(false);
+    setCertNone(false);
+    setCertFlags((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
   const whenError = scheduleTimeError(new Date(when));
 
   // Playlists and the best-times history load once, quietly. Scheduling must
@@ -247,12 +284,26 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
             },
       );
     }
+    rows.push(
+      certSubmitted
+        ? {
+            ok: true,
+            text:
+              certRating === "safe"
+                ? "Ad suitability rated: none of the categories apply."
+                : `Ad suitability rated: ${certFlags.length} categor${certFlags.length === 1 ? "y" : "ies"} flagged.`,
+          }
+        : {
+            ok: false,
+            text: "Ad suitability has not been rated. Go back to that phase and submit the rating.",
+          },
+    );
     rows.push({
       ok: null,
       text: "Copyright and monetization checks run on YouTube's side after upload; no API can run them earlier. Anything they flag appears in Studio.",
     });
     return rows;
-  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion]);
+  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length]);
 
   const checksBlock = checks.some((c) => c.ok === false);
 
@@ -266,12 +317,16 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
        * public, unlisted and private. Publishing private and saying what is
        * left to do is the honest mapping; publishing public and hoping is not.
        */
-      const studioTasks: string[] = [];
-      if (visibility === "members") {
-        studioTasks.push(
-          "Make this video members-only in Studio. The API can only publish public, unlisted or private, so it went up private.",
-        );
-      }
+      const studioTasks = buildStudioTasks({
+        membersOnly: visibility === "members",
+        selfCert: certSubmitted ? { rating: certRating, flags: certFlags } : null,
+        comments,
+        autoChapters,
+        featuredPlaces,
+        autoConcepts,
+        fundraiserUrl,
+        collaborator,
+      });
       await api.post(`/media/${asset.id}/schedule`, {
         platforms: ["youtube"],
         accountIds: [accountId],
@@ -291,6 +346,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           ...(language ? { defaultLanguage: language } : {}),
           ...(paidPromotion ? { paidPromotion: true } : {}),
           ...(studioTasks.length ? { studioTasks } : {}),
+          ...(certSubmitted ? { selfCert: { rating: certRating, flags: certFlags } } : {}),
         },
       });
       onScheduled();
@@ -548,6 +604,197 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
               through the channel's own YouTube connection right after the video publishes; the
               rest goes up with the video itself.
             </p>
+
+            <div className="igrow" style={{ marginTop: 12 }}>
+              <span
+                className={`revtoggle${studioOpen ? " on" : ""}`}
+                onClick={() => setStudioOpen((v) => !v)}
+              >
+                <span className="knob" />
+                Studio-side settings
+                <span className="hint">comments, chapters, fundraiser, collaborator</span>
+              </span>
+            </div>
+            {studioOpen && (
+              <>
+                <p className="lnote" style={{ marginTop: 8 }}>
+                  None of these have an API, on any tool. Your choices here become the
+                  finish-in-Studio list on the published post, two clicks from where a human
+                  sets them. YouTube's own defaults are preselected, so only what you change
+                  makes the list.
+                </p>
+                <div className="dmgrid" style={{ marginTop: 8 }}>
+                  <div>
+                    <label className="flabel">Comments</label>
+                    <Select
+                      value={comments.state}
+                      onChange={(v) => setComments((c) => ({ ...c, state: v as CommentChoices["state"] }))}
+                      aria-label="Comments"
+                      options={[
+                        { value: "on", label: "On" },
+                        { value: "paused", label: "Paused" },
+                        { value: "off", label: "Off" },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="flabel">Moderation</label>
+                    <Select
+                      value={comments.moderation}
+                      onChange={(v) =>
+                        setComments((c) => ({ ...c, moderation: v as CommentChoices["moderation"] }))
+                      }
+                      aria-label="Moderation"
+                      options={[
+                        { value: "basic", label: "Basic - hold potentially inappropriate" },
+                        { value: "none", label: "None - don't hold any" },
+                        { value: "strict", label: "Strict - hold a broader range" },
+                        { value: "holdAll", label: "Hold all comments" },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="flabel">Who can comment</label>
+                    <Select
+                      value={comments.who}
+                      onChange={(v) => setComments((c) => ({ ...c, who: v as CommentChoices["who"] }))}
+                      aria-label="Who can comment"
+                      options={[
+                        { value: "anyone", label: "Anyone" },
+                        { value: "subscribers", label: "Subscribers and members" },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <label className="flabel">Sort by</label>
+                    <Select
+                      value={comments.sort}
+                      onChange={(v) => setComments((c) => ({ ...c, sort: v as CommentChoices["sort"] }))}
+                      aria-label="Sort by"
+                      options={[
+                        { value: "top", label: "Top comments" },
+                        { value: "newest", label: "Newest first" },
+                      ]}
+                    />
+                  </div>
+                </div>
+                <div className="igrow" style={{ marginTop: 10 }}>
+                  <span
+                    className={`revtoggle${autoChapters ? " on" : ""}`}
+                    onClick={() => setAutoChapters((v) => !v)}
+                  >
+                    <span className="knob" />
+                    Automatic chapters
+                  </span>
+                  <span
+                    className={`revtoggle${featuredPlaces ? " on" : ""}`}
+                    onClick={() => setFeaturedPlaces((v) => !v)}
+                  >
+                    <span className="knob" />
+                    Featured places
+                  </span>
+                  <span
+                    className={`revtoggle${autoConcepts ? " on" : ""}`}
+                    onClick={() => setAutoConcepts((v) => !v)}
+                  >
+                    <span className="knob" />
+                    Automatic concepts
+                  </span>
+                </div>
+                <div className="dmgrid" style={{ marginTop: 10 }}>
+                  <div>
+                    <label className="flabel">
+                      Fundraiser link<span className="hint">optional</span>
+                    </label>
+                    <input
+                      className="field-in"
+                      placeholder="https://…"
+                      value={fundraiserUrl}
+                      onChange={(e) => setFundraiserUrl(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="flabel">
+                      Collaborator<span className="hint">optional</span>
+                    </label>
+                    <input
+                      className="field-in"
+                      placeholder="@handle or email"
+                      value={collaborator}
+                      onChange={(e) => setCollaborator(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {phase === "suitability" && (
+          <div className="lfphase">
+            <p className="lnote" style={{ marginTop: 0 }}>
+              Does your video contain any of the following, in the content, title, thumbnail or
+              keywords? Rate it carefully: on a monetized channel this decides which ads run.
+            </p>
+            {AD_SUITABILITY.map((q) => (
+              <div
+                key={q.key}
+                className={`lfcert${certFlags.includes(q.key) ? " on" : ""}${certNone ? " muted" : ""}`}
+                onClick={() => toggleFlag(q.key)}
+              >
+                <span className="box">{certFlags.includes(q.key) ? "✓" : ""}</span>
+                <span>
+                  <b>{q.title}</b>
+                  <i>{q.detail}</i>
+                </span>
+              </div>
+            ))}
+            <div className="igrow" style={{ marginTop: 12 }}>
+              <span
+                className={`revtoggle${certNone ? " on" : ""}`}
+                onClick={() => {
+                  setCertSubmitted(false);
+                  setCertNone((v) => {
+                    if (!v) setCertFlags([]);
+                    return !v;
+                  });
+                }}
+              >
+                <span className="knob" />
+                None of the above
+              </span>
+            </div>
+
+            {certSubmitted ? (
+              <div className={`lfrating ${certRating}`}>
+                <b>
+                  {certRating === "safe"
+                    ? "✓ Suitable for most advertisers"
+                    : "Limited or no ads likely"}
+                </b>
+                <span>
+                  {certRating === "safe"
+                    ? "Revenue sources on a monetized channel: ad revenue ✓ · YouTube Premium ✓ · merch and memberships ✓"
+                    : `${certFlags.length} categor${certFlags.length === 1 ? "y" : "ies"} flagged. YouTube Premium and merch revenue continue; ad revenue is reduced or off.`}
+                </span>
+              </div>
+            ) : (
+              <button
+                className="btn"
+                style={{ marginTop: 12 }}
+                disabled={!certAnswered}
+                title={certAnswered ? undefined : "Flag a category, or choose none of the above"}
+                onClick={() => setCertSubmitted(true)}
+              >
+                Submit rating
+              </button>
+            )}
+            <p className="lnote" style={{ marginTop: 10 }}>
+              Google offers no API for this rating, so it is not sent anywhere: it gates this
+              wizard's Schedule button and prints on the post's finish-in-Studio list. In Studio
+              itself a submitted rating cannot be changed, so carry these answers over exactly.
+              Here you can edit until you schedule.
+            </p>
           </div>
         )}
 
@@ -637,7 +884,16 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           </button>
         )}
         {stepIndex < liveOrder.length - 1 ? (
-          <button className="btn" disabled={ytAccounts.length === 0} onClick={next}>
+          <button
+            className="btn"
+            disabled={ytAccounts.length === 0 || (phase === "suitability" && !certSubmitted)}
+            title={
+              phase === "suitability" && !certSubmitted
+                ? "Submit the rating to continue"
+                : undefined
+            }
+            onClick={next}
+          >
             Next
           </button>
         ) : (
