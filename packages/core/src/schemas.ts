@@ -112,6 +112,8 @@ export const tiktokOptionsSchema = z.object({
    * toggle is the whole of what can honestly be offered.
    */
   autoAddMusic: z.boolean().optional(),
+  /** Deliver to the creator's TikTok inbox instead of publishing. */
+  draft: z.boolean().optional(),
 });
 
 export const youtubeOptionsSchema = z.object({

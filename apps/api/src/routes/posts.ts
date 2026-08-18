@@ -413,6 +413,87 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+
+  /**
+   * Put a failed target back on the queue, now.
+   *
+   * A retry moves scheduledAt to the present rather than keeping the time that
+   * already passed, because publishTarget refuses to run a job more than a
+   * minute ahead of its slot and the calendar should show when the video
+   * actually goes out. That is a deliberate difference from the boot-time
+   * re-queue, which leaves stale targets alone: this one is an operator
+   * standing there choosing to send it late.
+   *
+   * `tiktokDraft` retries into the client's TikTok inbox instead of publishing.
+   * It is the only same-day answer to TikTok's app-level daily cap, and it is
+   * an explicit choice rather than an automatic fallback: the provider does not
+   * document whether the inbox route escapes that cap, so guessing would spend
+   * a second failure to find out and look like the retry itself was broken.
+   */
+  app.post<{ Params: { id: string }; Body: { tiktokDraft?: boolean } }>(
+    "/posts/targets/:id/retry",
+    async (request, reply) => {
+      const target = await prisma.postTarget.findFirst({
+        where: {
+          id: request.params.id,
+          post: { client: { agencyId: request.user.agencyId } },
+        },
+        include: { post: { select: { id: true } } },
+      });
+      if (!target) return reply.status(404).send({ error: "target not found" });
+      /*
+       * Only a failed target may be retried, and "publishing" is excluded on
+       * purpose rather than by omission: that status means a container is in
+       * flight at the platform and confirmPublishing is still waiting on it.
+       * Re-queueing one is how a client gets the same video twice.
+       */
+      if (target.status !== "failed") {
+        return reply
+          .status(409)
+          .send({ error: `only failed posts can be retried; this one is ${target.status}` });
+      }
+
+      const draft = request.body?.tiktokDraft === true;
+      if (draft && target.platform !== "tiktok") {
+        return reply.status(400).send({ error: "the inbox route is TikTok only" });
+      }
+
+      const options = (target.options as Record<string, unknown> | null) ?? {};
+      const nextOptions = draft
+        ? {
+            ...options,
+            tiktok: { ...((options.tiktok as Record<string, unknown>) ?? {}), draft: true },
+          }
+        : options;
+
+      const when = new Date();
+      await prisma.postTarget.update({
+        where: { id: target.id },
+        data: {
+          status: "scheduled",
+          // Cleared so a second failure shows its own reason rather than the
+          // last one, which is what makes "it failed the same way" readable.
+          error: null,
+          scheduledAt: when,
+          options: nextOptions as never,
+        },
+      });
+
+      /*
+       * The post itself was marked failed when its last target gave up. Lift
+       * that only while something is in flight again; the remaining targets
+       * keep their own statuses and the next failure re-marks it.
+       */
+      await prisma.post.update({
+        where: { id: target.post.id },
+        data: { status: "scheduled" },
+      });
+
+      await reschedule("publish", { targetId: target.id }, target.id, when);
+      return { id: target.id, scheduledAt: when.toISOString(), tiktokDraft: draft };
+    },
+  );
+
   /**
    * Remove one scheduled target (a single platform) and its delayed job.
    * Several targets share a post, so the post itself only goes when its

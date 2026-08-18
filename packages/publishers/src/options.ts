@@ -60,6 +60,21 @@ export interface TikTokScheduleOptions {
    * the song; no API allows choosing one from their library.
    */
   autoAddMusic?: boolean;
+  /**
+   * Deliver to the creator's TikTok inbox instead of publishing.
+   *
+   * The escape from TikTok's app-level daily cap, which counts how many
+   * creators post through one publishing tool per day and is shared with every
+   * other agency using it. A video sent this way is waiting inside TikTok for
+   * the client to tap publish, which is a different bargain from a failed post
+   * and a much better one than a video that never went anywhere.
+   *
+   * Set deliberately by an operator retrying a capped post, never automatically.
+   * Whether the inbox route actually sidesteps the cap is documented by third
+   * parties and NOT by the provider, so an automatic fallback would be a guess
+   * that fails twice and reads as the fallback being broken.
+   */
+  draft?: boolean;
 }
 
 export interface TargetOptionsInput {
@@ -110,6 +125,11 @@ export interface BuiltPostExtras {
   contentOverride?: string;
 }
 
+/** 0-100, rounded. A volume outside the range is refused by Instagram. */
+function clampVolume(v: number): number {
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
 /**
  * Maps a target's chosen options onto Zernio's exact request fields.
  *
@@ -120,11 +140,6 @@ export interface BuiltPostExtras {
  * covers ride the provider's top-level settings object, which is safe here
  * because the worker publishes exactly one target per request.
  */
-/** 0-100, rounded. A volume outside the range is refused by Instagram. */
-function clampVolume(v: number): number {
-  return Math.max(0, Math.min(100, Math.round(v)));
-}
-
 export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   const out: BuiltPostExtras = {};
 
@@ -223,9 +238,10 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
       return out;
     }
 
-    if (input.coverUrl) {
-      out.tiktokSettings = { video_cover_image_url: input.coverUrl };
-    }
+    const settings: Record<string, unknown> = {};
+    if (input.coverUrl) settings.video_cover_image_url = input.coverUrl;
+    if (input.tiktok?.draft) settings.draft = true;
+    if (Object.keys(settings).length) out.tiktokSettings = settings;
     return out;
   }
 

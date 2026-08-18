@@ -5,6 +5,7 @@ import Pf from "../components/Pf";
 import { api, fileUrl, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { canMove, POST_STATUS } from "../lib/postStatus";
+import { explainPublishFailure } from "@toreroflow/core";
 
 interface PostDetailModalProps {
   target: PostTargetInfo;
@@ -29,6 +30,17 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [retried, setRetried] = useState(false);
+
+  /*
+   * Why it failed, and whether pressing anything can help.
+   *
+   * The raw provider string is kept below this rather than replaced: the
+   * explanation is for deciding what to do, and the original is what gets
+   * quoted to a platform's support when the explanation is not enough.
+   */
+  const failure = target.status === "failed" ? explainPublishFailure(target.error) : null;
+  const canRetry = failure !== null && failure.outlook !== "never" && !retried;
 
   const original = localValue(target.scheduledAt);
   const dirty = when !== original;
@@ -45,6 +57,28 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not reschedule");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Puts it back on the queue, right now.
+   *
+   * `draft` is the TikTok inbox route, offered only on that platform's daily
+   * cap. The modal closes on success because the target's status has changed
+   * underneath it and the calendar is the thing that shows what happened next.
+   */
+  const retry = async (draft = false) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/posts/targets/${target.id}/retry`, draft ? { tiktokDraft: true } : {});
+      setRetried(true);
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not retry");
     } finally {
       setBusy(false);
     }
@@ -101,7 +135,15 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
                 })}
               </div>
             )}
-            {target.error && <div className="autherr">{target.error}</div>}
+            {failure ? (
+              <div className="pdfail">
+                <div className="why">{failure.summary}</div>
+                <div className="what">{failure.advice}</div>
+                {target.error && <div className="raw">{target.error}</div>}
+              </div>
+            ) : (
+              target.error && <div className="autherr">{target.error}</div>
+            )}
           </div>
         </div>
 
@@ -165,6 +207,24 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
         <button className="btn ghost" onClick={onClose}>
           {editable ? "Cancel" : "Close"}
         </button>
+        {/*
+          The inbox route sits beside Retry rather than replacing it, because
+          the cap does lift at midnight and publishing straight to the account
+          is still the better outcome when the operator can wait for it.
+        */}
+        {failure?.tiktokDailyCap && !retried && (
+          <button className="btn ghost" disabled={busy} onClick={() => void retry(true)}>
+            {busy ? "Sending…" : "Send to TikTok inbox"}
+          </button>
+        )}
+        {canRetry && (
+          <button className="btn" disabled={busy} onClick={() => void retry()}>
+            <svg>
+              <use href="#i-check" />
+            </svg>{" "}
+            {busy ? "Retrying…" : failure?.outlook === "later" ? "Retry anyway" : "Retry now"}
+          </button>
+        )}
         {editable && (
           <button className="btn" disabled={!dirty || busy} onClick={() => void save()}>
             <svg>
