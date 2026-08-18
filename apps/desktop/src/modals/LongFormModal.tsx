@@ -7,7 +7,9 @@ import { useToast } from "../components/Toasts";
 import {
   api,
   fileUrl,
+  uploadCaptionFile,
   uploadCoverImage,
+  type CatalogueVideo,
   type ClientPost,
   type MediaAssetInfo,
   type PlatformConnection,
@@ -21,6 +23,7 @@ import {
   YT_LANGUAGES,
   ratioLabel,
   type CommentChoices,
+  type EndScreenChoice,
 } from "../lib/youtube";
 import { scheduleTimeError } from "@toreroflow/core";
 import { useAppState } from "../state/AppState";
@@ -48,7 +51,7 @@ function localInputValue(d: Date): string {
 const PHASES = [
   { id: "details", label: "Details", live: true },
   { id: "suitability", label: "Ad suitability", live: true },
-  { id: "elements", label: "Video elements", live: false },
+  { id: "elements", label: "Video elements", live: true },
   { id: "checks", label: "Checks", live: true },
   { id: "visibility", label: "Visibility", live: true },
 ] as const;
@@ -115,6 +118,18 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   const [fundraiserUrl, setFundraiserUrl] = useState("");
   const [collaborator, setCollaborator] = useState("");
 
+  // Video elements. Subtitles are the real half (captions.insert exists);
+  // end screens, the related pin and product tags are Studio checklist items.
+  const [captionsLang, setCaptionsLang] = useState("en");
+  const [captionsInfo, setCaptionsInfo] = useState<{ key: string; language: string; name: string } | null>(null);
+  const [captionsBusy, setCaptionsBusy] = useState(false);
+  const [endScreen, setEndScreen] = useState<EndScreenChoice>({ kind: "none" });
+  const [esPickerFor, setEsPickerFor] = useState<"end" | "related" | null>(null);
+  const [esSearch, setEsSearch] = useState("");
+  const [relatedTitle, setRelatedTitle] = useState("");
+  const [productTag, setProductTag] = useState("");
+  const [catalogue, setCatalogue] = useState<CatalogueVideo[] | null>(null);
+
   // Ad suitability. Editable until scheduled; Studio's own once-only lock is
   // explained on the phase rather than imitated, because our copy of the
   // rating is not the one Google holds.
@@ -169,6 +184,10 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       .get<{ connections: PlatformConnection[] }>(`/oauth/connections`)
       .then((r) => setConnections(r.connections))
       .catch(() => setConnections([]));
+    api
+      .get<{ videos: CatalogueVideo[] }>(`/clients/${selectedClient.id}/external/youtube/videos`)
+      .then((r) => setCatalogue(r.videos))
+      .catch(() => setCatalogue([]));
   }, [selectedClient]);
 
   const addTags = (raw: string) => {
@@ -189,6 +208,19 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       return next;
     });
     setTagInput("");
+  };
+
+  const pickCaptions = async (file: File) => {
+    setCaptionsBusy(true);
+    try {
+      const r = await uploadCaptionFile(asset.id, captionsLang, file);
+      const label = YT_LANGUAGES.find(([tag]) => tag === captionsLang)?.[1] ?? captionsLang;
+      setCaptionsInfo({ key: r.key, language: r.language, name: label });
+    } catch (err) {
+      toast.fail("Could not upload the subtitles", err);
+    } finally {
+      setCaptionsBusy(false);
+    }
   };
 
   const pickThumbnail = async (file: File) => {
@@ -264,7 +296,8 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       !embeddable ||
       recordingDate !== "" ||
       language !== "" ||
-      paidPromotion;
+      paidPromotion ||
+      captionsInfo !== null;
     if (enrichWanted) {
       const connected = connections?.some(
         (c) => c.socialAccountId === accountId && c.platform === "youtube" && c.status === "active",
@@ -303,7 +336,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       text: "Copyright and monetization checks run on YouTube's side after upload; no API can run them earlier. Anything they flag appears in Studio.",
     });
     return rows;
-  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length]);
+  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length, captionsInfo]);
 
   const checksBlock = checks.some((c) => c.ok === false);
 
@@ -326,6 +359,9 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         autoConcepts,
         fundraiserUrl,
         collaborator,
+        endScreen,
+        relatedVideoTitle: relatedTitle,
+        productTag,
       });
       await api.post(`/media/${asset.id}/schedule`, {
         platforms: ["youtube"],
@@ -347,6 +383,9 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           ...(paidPromotion ? { paidPromotion: true } : {}),
           ...(studioTasks.length ? { studioTasks } : {}),
           ...(certSubmitted ? { selfCert: { rating: certRating, flags: certFlags } } : {}),
+          ...(captionsInfo
+            ? { captions: { key: captionsInfo.key, language: captionsInfo.language, name: captionsInfo.name } }
+            : {}),
         },
       });
       onScheduled();
@@ -795,6 +834,166 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
               itself a submitted rating cannot be changed, so carry these answers over exactly.
               Here you can edit until you schedule.
             </p>
+          </div>
+        )}
+
+        {phase === "elements" && (
+          <div className="lfphase">
+            <div className="lfelrow">
+              <video
+                className="lfpreview"
+                src={fileUrl(asset.videoUrl) ?? undefined}
+                poster={fileUrl(asset.thumbUrl) ?? undefined}
+                controls
+                muted
+                playsInline
+                preload="metadata"
+              />
+              <div className="lfelmeta">
+                <b>{title || asset.name}</b>
+                <span>
+                  {asset.width && asset.height ? `${asset.width}x${asset.height} · ` : ""}
+                  {Math.round(asset.durationSec ?? 0)}s
+                </span>
+              </div>
+            </div>
+
+            <label className="flabel" style={{ marginTop: 14 }}>
+              Subtitles
+              <span className="hint">
+                .srt or .vtt; uploaded to the video through the channel's connection right after
+                publish
+              </span>
+            </label>
+            {captionsInfo ? (
+              <div className="igrow">
+                <span className="revtoggle on" onClick={() => setCaptionsInfo(null)}>
+                  {captionsInfo.name} subtitles ✕
+                </span>
+              </div>
+            ) : (
+              <div className="lfelrow" style={{ alignItems: "center" }}>
+                <div style={{ width: 220 }}>
+                  <Select
+                    value={captionsLang}
+                    onChange={setCaptionsLang}
+                    aria-label="Subtitle language"
+                    options={YT_LANGUAGES.map(([tag, label]) => ({ value: tag, label }))}
+                  />
+                </div>
+                <label className="revtoggle" style={{ cursor: "pointer" }}>
+                  {captionsBusy ? "Uploading…" : "Upload subtitles"}
+                  <input
+                    type="file"
+                    accept=".srt,.vtt"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void pickCaptions(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+
+            <label className="flabel" style={{ marginTop: 14 }}>
+              End screen
+              <span className="hint">no API on any tool; your pick becomes a Studio task</span>
+            </label>
+            <div className="igrow">
+              {(
+                [
+                  [{ kind: "none" }, "None"],
+                  [{ kind: "recent" }, "Most recent upload"],
+                  [{ kind: "bestForViewer" }, "Best for viewer"],
+                ] as Array<[EndScreenChoice, string]>
+              ).map(([choice, label]) => (
+                <span
+                  key={label}
+                  className={`revtoggle${endScreen.kind === choice.kind ? " on" : ""}`}
+                  onClick={() => setEndScreen(choice)}
+                >
+                  {label}
+                </span>
+              ))}
+              <span
+                className={`revtoggle${endScreen.kind === "video" ? " on" : ""}`}
+                onClick={() => setEsPickerFor(esPickerFor === "end" ? null : "end")}
+              >
+                {endScreen.kind === "video" ? `"${endScreen.title.slice(0, 32)}" ✕` : "A specific video"}
+              </span>
+            </div>
+
+            <label className="flabel" style={{ marginTop: 14 }}>
+              Related video
+              <span className="hint">
+                the pin has no API anywhere; picking one here puts it on the Studio list
+              </span>
+            </label>
+            {relatedTitle ? (
+              <div className="igrow">
+                <span className="revtoggle on" onClick={() => setRelatedTitle("")}>
+                  {relatedTitle.slice(0, 44)} ✕
+                </span>
+              </div>
+            ) : (
+              <span
+                className="revtoggle"
+                onClick={() => setEsPickerFor(esPickerFor === "related" ? null : "related")}
+              >
+                {esPickerFor === "related" ? "Close list" : "Choose from the channel"}
+              </span>
+            )}
+
+            {esPickerFor && (
+              <div style={{ marginTop: 8 }}>
+                <input
+                  className="field-in"
+                  placeholder="Search the channel's videos"
+                  value={esSearch}
+                  onChange={(e) => setEsSearch(e.target.value)}
+                />
+                <div style={{ maxHeight: 190, overflowY: "auto", marginTop: 6 }}>
+                  {catalogue === null && <p className="lnote">Loading the catalogue…</p>}
+                  {catalogue?.length === 0 && (
+                    <p className="lnote">No catalogue for this channel yet.</p>
+                  )}
+                  {(catalogue ?? [])
+                    .filter((v) => v.title.toLowerCase().includes(esSearch.trim().toLowerCase()))
+                    .slice(0, 30)
+                    .map((v) => (
+                      <div
+                        key={v.platformVideoId}
+                        className="rrow"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          if (esPickerFor === "end") setEndScreen({ kind: "video", title: v.title });
+                          else setRelatedTitle(v.title);
+                          setEsPickerFor(null);
+                        }}
+                      >
+                        <span className="t">{v.title}</span>
+                        <span className="v">
+                          {v.views >= 1000 ? `${Math.round(v.views / 1000)}K` : v.views}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <label className="flabel" style={{ marginTop: 14 }}>
+              Tag a product
+              <span className="hint">optional; lands on the Studio list</span>
+            </label>
+            <input
+              className="field-in"
+              placeholder="Product name or link"
+              maxLength={120}
+              value={productTag}
+              onChange={(e) => setProductTag(e.target.value)}
+            />
           </div>
         )}
 

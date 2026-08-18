@@ -175,6 +175,19 @@ export const youtubeOptionsSchema = z.object({
       flags: z.array(z.string().min(1).max(40)).max(20),
     })
     .optional(),
+  /**
+   * A subtitle track, uploaded to our storage at schedule time and laid onto
+   * the video through captions.insert once the publish confirms. The key
+   * points inside STORAGE_DIR; the language is BCP-47 and doubles as the
+   * track's display name via the wizard's language list.
+   */
+  captions: z
+    .object({
+      key: z.string().min(1).max(300),
+      language: z.string().min(1).max(12),
+      name: z.string().max(60).optional(),
+    })
+    .optional(),
 });
 
 export const schedulePostSchema = z.object({

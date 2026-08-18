@@ -801,6 +801,41 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     return assetView(updated);
   });
 
+  /**
+   * A subtitle file for the long-form wizard, parked in the asset's own
+   * folder until the enrichment job hands it to captions.insert after the
+   * publish confirms. SRT and VTT only, which is what YouTube accepts and
+   * what every captioning tool exports.
+   */
+  app.post<{ Params: { id: string }; Querystring: { language?: string } }>(
+    "/media/:id/captions",
+    async (request, reply) => {
+      const asset = await prisma.mediaAsset.findFirst({
+        where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      });
+      if (!asset) return reply.status(404).send({ error: "asset not found" });
+      const language = (request.query.language ?? "").trim();
+      if (!/^[a-zA-Z0-9-]{2,12}$/.test(language)) {
+        return reply.status(400).send({ error: "a valid language tag is required" });
+      }
+      const file = await request.file();
+      if (!file) return reply.status(400).send({ error: "no file uploaded" });
+      const original = (file.filename ?? "").toLowerCase();
+      const ext = original.endsWith(".vtt") ? ".vtt" : original.endsWith(".srt") ? ".srt" : null;
+      if (!ext) {
+        return reply.status(400).send({ error: "subtitles must be an .srt or .vtt file" });
+      }
+      // One track per language: a re-pick overwrites rather than accumulating.
+      const key = `${asset.clientId}/${asset.id}/captions-${language}${ext}`;
+      await pipeline(file.file, createWriteStream(path.join(env.STORAGE_DIR, key)));
+      if (file.file.truncated) {
+        await fs.rm(path.join(env.STORAGE_DIR, key), { force: true });
+        return reply.status(413).send({ error: "file too large" });
+      }
+      return { key, language };
+    },
+  );
+
   /** Back to the automatic thumbnail. */
   app.delete<{ Params: { id: string } }>("/media/:id/cover", async (request, reply) => {
     const asset = await prisma.mediaAsset.findFirst({

@@ -134,6 +134,13 @@ export const COMMENT_DEFAULTS: CommentChoices = {
   sort: "top",
 };
 
+/** What the end screen should feature. "none" is YouTube's own default. */
+export type EndScreenChoice =
+  | { kind: "none" }
+  | { kind: "recent" }
+  | { kind: "bestForViewer" }
+  | { kind: "video"; title: string };
+
 export interface StudioChoiceInput {
   membersOnly: boolean;
   selfCert: { rating: "safe" | "limited"; flags: string[] } | null;
@@ -143,6 +150,10 @@ export interface StudioChoiceInput {
   autoConcepts: boolean;
   fundraiserUrl: string;
   collaborator: string;
+  /** Video elements. All Studio-side: end screens and cards have no API. */
+  endScreen?: EndScreenChoice;
+  relatedVideoTitle?: string;
+  productTag?: string;
 }
 
 /**
@@ -195,6 +206,22 @@ export function buildStudioTasks(input: StudioChoiceInput): string[] {
   }
   if (input.collaborator.trim()) {
     tasks.push(`Invite ${input.collaborator.trim()} as a collaborator.`);
+  }
+  const es = input.endScreen;
+  if (es && es.kind !== "none") {
+    tasks.push(
+      es.kind === "recent"
+        ? "Add an end screen featuring the channel's most recent upload."
+        : es.kind === "bestForViewer"
+          ? 'Add an end screen set to "best for viewer".'
+          : `Add an end screen featuring "${es.title}".`,
+    );
+  }
+  if (input.relatedVideoTitle?.trim()) {
+    tasks.push(`Pin "${input.relatedVideoTitle.trim()}" as the related video.`);
+  }
+  if (input.productTag?.trim()) {
+    tasks.push(`Tag the product: ${input.productTag.trim()}.`);
   }
   return tasks;
 }

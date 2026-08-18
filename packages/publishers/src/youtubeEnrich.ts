@@ -208,3 +208,74 @@ export async function applyVideoMetadata(
   });
   return parts;
 }
+
+/**
+ * Upload one subtitle track to a published video via captions.insert.
+ *
+ * A multipart/related body built by hand, because that is the whole protocol:
+ * one JSON part naming the video, language and track name, one binary part
+ * carrying the SRT or VTT. isDraft false, so the track is live the moment it
+ * lands rather than waiting in Studio for a publish click nobody knows about.
+ *
+ * Replace-over-insert: a track for a language that already has one errors
+ * with 409, which the caller treats as applied, because the state the
+ * operator asked for (this language has subtitles) is the state the video is
+ * in. Zernio never writes captions, so in practice this only happens when the
+ * enrichment itself ran twice.
+ */
+export async function uploadCaption(
+  accessToken: string,
+  videoId: string,
+  language: string,
+  trackName: string,
+  fileBody: Uint8Array,
+): Promise<void> {
+  const boundary = `tf-caption-${Math.random().toString(36).slice(2)}`;
+  const metadata = JSON.stringify({
+    snippet: { videoId, language, name: trackName, isDraft: false },
+  });
+  const encoder = new TextEncoder();
+  const head = encoder.encode(
+    `--${boundary}
+content-type: application/json; charset=utf-8
+
+${metadata}
+` +
+      `--${boundary}
+content-type: application/octet-stream
+
+`,
+  );
+  const tail = encoder.encode(`
+--${boundary}--
+`);
+  const payload = new Uint8Array(head.length + fileBody.length + tail.length);
+  payload.set(head, 0);
+  payload.set(fileBody, head.length);
+  payload.set(tail, head.length + fileBody.length);
+
+  const res = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/captions?uploadType=multipart&part=snippet`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": `multipart/related; boundary=${boundary}`,
+      },
+      body: payload,
+    },
+  );
+  if (res.status === 409) return; // the language already has a track; see above
+  if (!res.ok) {
+    const text = await res.text();
+    const message =
+      (() => {
+        try {
+          return (JSON.parse(text) as { error?: { message?: string } }).error?.message;
+        } catch {
+          return null;
+        }
+      })() ?? text.slice(0, 200);
+    throw new GoogleAuthError(res.status, message, res.status === 401 || res.status === 403);
+  }
+}

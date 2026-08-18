@@ -607,6 +607,17 @@ export async function uploadMedia(clientId: string, file: File): Promise<MediaAs
   return data as MediaAssetInfo;
 }
 
+/** Park a subtitle file with the asset; the enrichment applies it after publish. */
+export async function uploadCaptionFile(
+  assetId: string,
+  language: string,
+  file: File,
+): Promise<{ key: string; language: string }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  return api.postForm(`/media/${assetId}/captions?language=${encodeURIComponent(language)}`, form);
+}
+
 export async function uploadCoverImage(assetId: string, file: File): Promise<MediaAssetInfo> {
   const form = new FormData();
   form.append("file", file, file.name);

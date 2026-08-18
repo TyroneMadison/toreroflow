@@ -1824,3 +1824,10 @@
 .pdenrich.applied{color:#7ddb8a;background:rgba(125,219,138,.09)}
 .pdenrich.pending{color:var(--txt-3);background:var(--glass-2)}
 .pdenrich.error{color:#ffc46b;background:rgba(255,196,107,.09)}
+
+/* ---- Video elements (long-form wizard) ---- */
+.lfelrow{display:flex;gap:14px;align-items:flex-start}
+.lfpreview{width:240px;max-height:135px;border-radius:12px;border:1px solid var(--brd-soft);
+  background:#000;object-fit:contain}
+.lfelmeta b{display:block;font-size:13px;margin-top:4px}
+.lfelmeta span{display:block;font-size:11.5px;color:var(--txt-3);margin-top:3px}

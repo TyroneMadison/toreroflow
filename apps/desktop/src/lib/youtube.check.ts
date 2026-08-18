@@ -75,6 +75,30 @@ assert.equal(buildStudioTasks(allDefaults).length, 0, "defaults are not tasks");
   assert.ok(tasks[0]!.includes("none of the categories"), "and says none apply");
 }
 
+// The video-elements choices, none of which have an API, all reach the list.
+{
+  const tasks = buildStudioTasks({
+    ...allDefaults,
+    endScreen: { kind: "video", title: "Morning Ride + a V6 Camaro review" },
+    relatedVideoTitle: "Sell me this Pen pt. 4",
+    productTag: "Detailing kit",
+  });
+  assert.equal(tasks.length, 3, "three element choices, three tasks");
+  assert.ok(tasks.some((t) => t.includes("Morning Ride")), "the end screen names its video");
+  assert.ok(tasks.some((t) => t.includes("Sell me this Pen")), "the related pin names its video");
+  assert.ok(tasks.some((t) => t.includes("Detailing kit")), "the product tag carries through");
+}
+{
+  const tasks = buildStudioTasks({ ...allDefaults, endScreen: { kind: "recent" } });
+  assert.equal(tasks.length, 1, "recent-upload end screen is one task");
+  assert.ok(tasks[0]!.includes("most recent upload"), "and says which kind");
+}
+assert.equal(
+  buildStudioTasks({ ...allDefaults, endScreen: { kind: "none" } }).length,
+  0,
+  "an end screen left at none is not work",
+);
+
 // Routing: shape decides, duration is only the fallback.
 assert.equal(isHorizontal({ width: 1920, height: 1080, format: "short_form", kind: "video" }), true, "16:9 is long-form whatever the length");
 assert.equal(isHorizontal({ width: 1080, height: 1920, format: "long_form", kind: "video" }), false, "a long vertical stays with the reel scheduler");

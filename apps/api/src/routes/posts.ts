@@ -386,7 +386,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           const studioTasks = Array.isArray(yt.studioTasks)
             ? (yt.studioTasks as string[]).filter((x) => typeof x === "string")
             : [];
-          const wantsEnrich = enrichFieldsFrom(t.options) !== null;
+          const wantsEnrich = enrichFieldsFrom(t.options) !== null || Boolean(yt.captions);
           const enrich = yt.enrichedAt
             ? ({ state: "applied", detail: String(yt.enrichedAt) } as const)
             : typeof yt.enrichError === "string"

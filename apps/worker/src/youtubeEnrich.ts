@@ -1,9 +1,12 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { decryptSecret, getPrisma } from "@toreroflow/db";
 import {
   accessTokenFrom,
   applyVideoMetadata,
   enrichFieldsFrom,
   GoogleAuthError,
+  uploadCaption,
   videoIdFromUrl,
 } from "@toreroflow/publishers";
 import { env } from "./env";
@@ -64,7 +67,19 @@ export async function enrichYouTubeTarget(
   if (yt.enrichedAt || yt.enrichError) return { targetId, outcome: "nothing" };
 
   const fields = enrichFieldsFrom(options);
-  if (!fields) return { targetId, outcome: "nothing" };
+  /*
+   * The subtitle track rides beside the metadata rather than inside it: it is
+   * its own API (captions.insert), its own file on disk, and a video can have
+   * either without the other.
+   */
+  const captions =
+    yt.captions &&
+    typeof yt.captions === "object" &&
+    typeof (yt.captions as Record<string, unknown>).key === "string" &&
+    typeof (yt.captions as Record<string, unknown>).language === "string"
+      ? (yt.captions as { key: string; language: string; name?: string })
+      : null;
+  if (!fields && !captions) return { targetId, outcome: "nothing" };
 
   const writeState = async (patch: Record<string, unknown>) => {
     await prisma.postTarget.update({
@@ -99,7 +114,34 @@ export async function enrichYouTubeTarget(
       { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
       decryptSecret(connection.refreshTokenEnc),
     );
-    const parts = await applyVideoMetadata(accessToken, videoId, fields);
+    const parts = fields ? await applyVideoMetadata(accessToken, videoId, fields) : [];
+    if (captions) {
+      /*
+       * A missing file is terminal, not weather: nothing regrows it, and
+       * retrying nightly for a fortnight would log the same absence fourteen
+       * times. The metadata half still applied, so the state says exactly
+       * which half needs a human.
+       */
+      let body: Uint8Array;
+      try {
+        body = await fs.readFile(path.join(env.STORAGE_DIR, captions.key));
+      } catch {
+        await writeState({
+          enrichedAt: new Date().toISOString(),
+          enrichApplied: parts,
+          enrichError: `The subtitle file (${captions.language}) is gone from storage; upload it by hand in Studio.`,
+        });
+        return { targetId, outcome: "error", detail: "caption file missing" };
+      }
+      await uploadCaption(
+        accessToken,
+        videoId,
+        captions.language,
+        captions.name ?? captions.language,
+        body,
+      );
+      parts.push("captions");
+    }
     await writeState({ enrichedAt: new Date().toISOString(), enrichApplied: parts });
     console.log(`[worker] enriched youtube target ${target.id} (${parts.join(", ") || "nothing to change"})`);
     return { targetId, outcome: "applied", detail: parts.join(",") };
