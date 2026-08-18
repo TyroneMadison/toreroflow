@@ -5,7 +5,16 @@
  * still pick 9am, and the worker publishes a past-dated job the moment it is
  * queued. The boundaries below are exactly where that went wrong.
  */
-import assert from "node:assert/strict";
+/** Local so the file stays part of the app's typecheck without pulling in node types. */
+const assert = {
+  equal(actual: unknown, expected: unknown, message: string) {
+    if (actual !== expected) {
+      throw new Error(`${message}
+  expected: ${String(expected)}
+  actual:   ${String(actual)}`);
+    }
+  },
+};
 
 /** Mirrors the predicates in GlassDateTime. */
 const dayIsPast = (d: Date, floor: Date) => {
@@ -61,7 +70,7 @@ assert.equal(pmGone, false, "the afternoon has not");
 // Just before midnight, the day itself is still not past: 23:59 is schedulable.
 const late = new Date(2026, 7, 18, 23, 59, 0, 0);
 assert.equal(dayIsPast(new Date(2026, 7, 18), late), false, "the last minute still counts");
-assert.equal(minuteIsPast(late, 59, late), false);
-assert.equal(minuteIsPast(late, 58, late), true);
+assert.equal(minuteIsPast(late, 59, late), false, "23:59 itself is still selectable");
+assert.equal(minuteIsPast(late, 58, late), true, "23:58 has gone");
 
 console.log("datePicker.check: all checks passed");
