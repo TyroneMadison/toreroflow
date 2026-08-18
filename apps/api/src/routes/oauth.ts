@@ -269,11 +269,22 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           update: row,
         });
 
+        /*
+         * This sentence is a promise to a client, so it has to track the
+         * scopes. It used to say nothing here can change anything, which was
+         * true of the read-only grant and stopped being true the day
+         * youtube.force-ssl joined it for the long-form work. The claim is
+         * now about what the app does, stated in both directions: what the
+         * connection is for, and the two things it will never do.
+         */
         return html(
           200,
           true,
           "Connected",
-          `${channel.title || "Your channel"} is connected. You can close this page. Nothing here can post, change or delete anything on your channel.`,
+          `${channel.title || "Your channel"} is connected. You can close this page. ` +
+            "This lets Toreroflow read your channel's stats and keep your videos' details " +
+            "(tags, subtitles, thumbnails) up to date. It never uploads new videos and never " +
+            "deletes anything.",
         );
       } catch (error) {
         request.log.error(error, "google oauth callback failed");
