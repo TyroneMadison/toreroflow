@@ -708,10 +708,12 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               onChange={(e) => setYtFirstComment(e.target.value)}
             />
             <label className="flabel" style={{ marginTop: 12 }}>
-              Related video
+              Watch next link
               <span className="hint">
-                adds a "Watch next" link at the end of the description. YouTube's own Related video
-                pin has no API, so that one is still a manual step in Studio.
+                puts a link to this video at the end of the description. It does NOT set YouTube's
+                own "Related video" pin: that field is absent from Google's API and from every
+                tool, so it stays a manual step in Studio. The calendar links straight there once
+                this publishes.
               </span>
             </label>
             {ytRelated ? (

@@ -1757,3 +1757,9 @@
 .pdfail .raw{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,111,97,.22);
   font-size:11px;line-height:1.45;color:var(--txt-3);font-family:ui-monospace,monospace;
   word-break:break-word}
+
+/* The manual path for what no API can set (YouTube's Related video pin). */
+.pdstudio{margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--glass);
+  border:1px solid var(--brd-soft);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pdstudio .what{flex:1;min-width:180px;font-size:12px;line-height:1.5;color:var(--txt-3)}
+.pdstudio .btn{text-decoration:none;flex:0 0 auto}

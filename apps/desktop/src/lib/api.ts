@@ -562,6 +562,9 @@ export interface PostTargetInfo {
   scheduledAt: string | null;
   publishedAt: string | null;
   error: string | null;
+  /** The platform's own id for a published post, and its public link. */
+  remotePostId: string | null;
+  remoteUrl: string | null;
   caption: string | null;
   assetName: string;
   thumbUrl: string | null;

@@ -352,6 +352,17 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         scheduledAt: t.scheduledAt,
         publishedAt: t.publishedAt,
         error: t.error,
+        /*
+         * The platform's own id and link for a published post.
+         *
+         * Exposed so the app can send an operator straight to the video on the
+         * platform. YouTube is the reason: its Shorts "Related video" pin has
+         * no API on anyone's side, so the only way to set one is by hand in
+         * Studio, and a deep link is the difference between that being a
+         * two-click job and a hunt through a channel.
+         */
+        remotePostId: t.remotePostId,
+        remoteUrl: t.remoteUrl,
         // Captions saved before emoji decoding landed still hold literal
         // "\uXXXX" text; clean them on the way out.
         caption: t.caption ? decodeEscapes(t.caption) : t.caption,

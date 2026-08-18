@@ -32,6 +32,9 @@ const row = (
   postId: `p-${id}`,
   platform: "instagram",
   status,
+  // Nothing here is published, so neither exists yet.
+  remotePostId: null,
+  remoteUrl: null,
   scheduledAt,
   publishedAt: null,
   error: status === "failed" ? "token expired" : null,
