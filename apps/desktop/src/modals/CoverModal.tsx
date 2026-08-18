@@ -1,7 +1,18 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Modal from "./Modal";
 import { useToast } from "../components/Toasts";
 import { api, fileUrl, uploadCoverImage, videoLabel, type MediaAssetInfo } from "../lib/api";
+import { createSeekQueue } from "../lib/seekQueue";
+
+/** One frame at 30fps, the rate nearly all social video is delivered at. */
+const FRAME_SEC = 1 / 30;
+
+/** m:ss.cc, so a chosen frame can actually be told apart from its neighbour. */
+function fmtPosition(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec - m * 60;
+  return `${m}:${s < 10 ? "0" : ""}${s.toFixed(2)}`;
+}
 
 interface CoverModalProps {
   asset: MediaAssetInfo;
@@ -27,9 +38,19 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
   const src = fileUrl(asset.videoUrl);
   const duration = asset.durationSec ?? 0;
 
+  /*
+   * One seek in flight, always aimed at the newest position.
+   *
+   * The slider still updates on every event, so the handle tracks the pointer
+   * exactly; only the decoder is spared. Assigning currentTime on every change
+   * is what made this stutter, because each assignment threw away a seek the
+   * browser had already started.
+   */
+  const seeks = useMemo(() => createSeekQueue(() => video.current), []);
+
   const seek = (sec: number) => {
     setPositionSec(sec);
-    if (video.current) video.current.currentTime = sec;
+    seeks.request(sec);
   };
 
   const useFrame = async () => {
@@ -97,6 +118,7 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
                 // Paint the frame the slider claims, not frame zero.
                 if (video.current) video.current.currentTime = positionSec;
               }}
+              onSeeked={() => seeks.settled()}
             />
           ) : (
             <div className="coverwait">Video not ready yet.</div>
@@ -104,13 +126,24 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
         </div>
         <label className="flabel" style={{ marginTop: 14 }}>
           Scrub to the frame you want
+          <span className="hint">
+            {fmtPosition(positionSec)}
+            {duration > 0 ? ` of ${fmtPosition(duration)}` : ""} · arrow keys step one frame
+          </span>
         </label>
         <input
           className="coverscrub"
           type="range"
           min={0}
           max={Math.max(duration, 0.1)}
-          step={0.05}
+          /*
+           * A frame at 30fps rather than 50ms. The old step was coarser than a
+           * frame, so arrow keys skipped one or two and "frame by frame" was
+           * not actually available. Most social video is 30fps; the container
+           * does not tell us the rate, and being slightly fine is harmless
+           * where being coarse loses frames outright.
+           */
+          step={FRAME_SEC}
           value={positionSec}
           onChange={(e) => seek(Number(e.target.value))}
         />
