@@ -9,7 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "tsx src/options.check.ts && tsx src/zernio.check.ts && tsx src/simplefin.check.ts && tsx src/youtubeAnalytics.check.ts",
+    "test": "tsx src/options.check.ts && tsx src/zernio.check.ts && tsx src/simplefin.check.ts && tsx src/youtubeAnalytics.check.ts && tsx src/youtubeEnrich.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

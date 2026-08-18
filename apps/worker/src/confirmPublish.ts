@@ -1,4 +1,5 @@
 import { enqueue, getPrisma } from "@toreroflow/db";
+import { enrichYouTubeTarget } from "./youtubeEnrich";
 import type { ZernioProvider } from "@toreroflow/publishers";
 
 /**
@@ -41,6 +42,8 @@ export interface ProviderEntry {
   status: string;
   error: string | null;
   url: string | null;
+  /** The platform's own id for the published post; the enrichment needs it. */
+  platformPostId?: string | null;
 }
 
 /**
@@ -140,6 +143,21 @@ export async function confirmPublishing(zernio: ZernioProvider | null): Promise<
           await prisma.post.update({ where: { id: target.postId }, data: { status: "posted" } });
         }
         console.log(`[worker] target ${target.id} confirmed published (${target.platform})`);
+        /*
+         * The long-form metadata that Zernio has no wire for is applied the
+         * moment the platform admits the video exists, through the channel
+         * owner's own OAuth. Guarded so nothing in there can make a video
+         * that IS published look like it is not; it never throws, but a
+         * broken import or a prisma hiccup must not take the confirm loop
+         * down with it either.
+         */
+        if (target.platform === "youtube") {
+          try {
+            await enrichYouTubeTarget(target.id, mine?.platformPostId ?? null);
+          } catch (error) {
+            console.error(`[worker] youtube enrich crashed for target ${target.id}:`, error);
+          }
+        }
         continue;
       }
 

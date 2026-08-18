@@ -109,3 +109,4 @@ export class DryRunPublisher implements Publisher {
     return { views: 0, likes: 0, comments: 0, shares: 0, saves: 0 };
   }
 }
+export * from "./youtubeEnrich";

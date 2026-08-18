@@ -23,6 +23,7 @@ import { checkFilingReminders } from "./filing";
 import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 import { syncDmStats } from "./dmStats";
+import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { confirmPublishing } from "./confirmPublish";
 
 const prisma = getPrisma();
@@ -860,6 +861,9 @@ void work(
     // is laid onto a video row that the catalogue sync already created, and it
     // has to be on the row before a client report is built from it.
     await syncDmStats();
+    // Long-form metadata still waiting on a consent link or a Google hiccup.
+    // The normal path is the confirm poll; this is the second chance.
+    await sweepYouTubeEnrichment();
     // Checked daily, deletes on the week: a video posted the day after a
     // weekly sweep would otherwise sit for a fortnight, and "a week" should
     // mean a week rather than somewhere between one and two.
@@ -878,6 +882,7 @@ void (async () => {
   await refreshYouTubeCatalogues();
   await syncYouTubeAnalytics();
   await syncDmStats();
+  await sweepYouTubeEnrichment();
 })();
 
 /*

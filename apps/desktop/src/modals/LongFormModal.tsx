@@ -10,6 +10,7 @@ import {
   uploadCoverImage,
   type ClientPost,
   type MediaAssetInfo,
+  type PlatformConnection,
   type YouTubePlaylistInfo,
 } from "../lib/api";
 import { YT_CATEGORIES, YT_LANGUAGES, ratioLabel } from "../lib/youtube";
@@ -103,6 +104,8 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [when, setWhen] = useState(() => localInputValue(new Date(Date.now() + 10 * 60_000)));
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
+  /** Direct channel connections; decides whether the enrichment can run. */
+  const [connections, setConnections] = useState<PlatformConnection[] | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +128,10 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       .get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`)
       .then((r) => setBestTimePosts(r.posts))
       .catch(() => setBestTimePosts([]));
+    api
+      .get<{ connections: PlatformConnection[] }>(`/oauth/connections`)
+      .then((r) => setConnections(r.connections))
+      .catch(() => setConnections([]));
   }, [selectedClient]);
 
   const addTags = (raw: string) => {
@@ -206,12 +213,46 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         text: `${asset.width}x${asset.height} (${ratioLabel(asset.width, asset.height)}), ${Math.round(asset.durationSec ?? 0)}s. Long-form, horizontal.`,
       });
     }
+    /*
+     * Whether the after-publish half can actually run. Tags, license,
+     * embedding, language, recording date and paid promotion are applied
+     * through the channel's own connection, so a channel without one gets a
+     * video with the wizard's words and none of those settings, silently,
+     * unless it is said here. Informational rather than blocking, because
+     * the video itself publishes fine either way.
+     */
+    const enrichWanted =
+      tags.length > 0 ||
+      license !== "standard" ||
+      !embeddable ||
+      recordingDate !== "" ||
+      language !== "" ||
+      paidPromotion;
+    if (enrichWanted) {
+      const connected = connections?.some(
+        (c) => c.socialAccountId === accountId && c.platform === "youtube" && c.status === "active",
+      );
+      rows.push(
+        connected
+          ? {
+              ok: true,
+              text: "This channel is connected directly, so tags, license, embedding and the rest apply within a minute of publishing.",
+            }
+          : {
+              ok: null,
+              text:
+                connections === null
+                  ? "Checking the channel's direct connection…"
+                  : "Tags, license, embedding and the like need the channel's own YouTube connection, and this channel has none yet. The video still publishes; those settings wait until the channel owner clicks a connect link (Settings, Direct data access).",
+            },
+      );
+    }
     rows.push({
       ok: null,
       text: "Copyright and monetization checks run on YouTube's side after upload; no API can run them earlier. Anything they flag appears in Studio.",
     });
     return rows;
-  }, [ytAccounts, accountId, title, description, tagPool, tags.length, thumbName, asset]);
+  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion]);
 
   const checksBlock = checks.some((c) => c.ok === false);
 

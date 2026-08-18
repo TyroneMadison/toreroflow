@@ -33,6 +33,17 @@ const ANALYTICS_API = "https://youtubeanalytics.googleapis.com/v2/reports";
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/yt-analytics.readonly",
   "https://www.googleapis.com/auth/youtube.readonly",
+  /*
+   * The write scope, added for the long-form enrichment (videos.update) and
+   * chosen over the narrower "youtube" scope because force-ssl also covers
+   * captions.insert and thumbnails.set, which pieces 4 and 6 of the long-form
+   * build need. One consent screen instead of three.
+   *
+   * Tokens granted before this line exist happily without it: analytics keeps
+   * reading, and the enrichment job records "reconnect the channel" instead of
+   * failing quietly when it meets one.
+   */
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ] as const;
 
 export class GoogleAuthError extends Error {

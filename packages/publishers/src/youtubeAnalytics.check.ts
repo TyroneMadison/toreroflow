@@ -39,11 +39,26 @@ assert.equal(
   "https://api.example.com/cb",
   "the redirect must go out exactly as registered",
 );
-// Read-only, and it should stay that way. A scope that can post is a scope that
-// can post by accident.
-for (const scope of (url.searchParams.get("scope") ?? "").split(" ")) {
-  assert.ok(scope.endsWith(".readonly"), `every scope is readonly, got ${scope}`);
-}
+/*
+ * The scope list is closed: exactly these three, nothing arrives by accident.
+ *
+ * This used to assert read-only across the board, which was the right rule
+ * while the connection existed for analytics alone. The long-form enrichment
+ * ended that on 2026-08-18: videos.update needs write, and force-ssl was
+ * chosen over the narrower "youtube" scope because it also covers the caption
+ * and thumbnail calls of later pieces, one consent screen instead of three.
+ * The guard's job is unchanged: a NEW scope appearing here must break a check
+ * and force exactly this paragraph to be rewritten by someone who can say why.
+ */
+assert.deepEqual(
+  (url.searchParams.get("scope") ?? "").split(" ").sort(),
+  [
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
+  ].sort(),
+  "the scope list is exactly the three the app can justify",
+);
 
 /* ---- the report parser ---- */
 

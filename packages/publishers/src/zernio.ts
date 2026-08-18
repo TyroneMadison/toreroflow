@@ -696,6 +696,8 @@ export class ZernioProvider {
       status: string;
       error: string | null;
       url: string | null;
+      /** The platform's own id for the published post, e.g. a YouTube video id. */
+      platformPostId: string | null;
     }>;
   }> {
     const data = await this.request<Record<string, unknown>>(
@@ -728,6 +730,7 @@ export class ZernioProvider {
                 ? e.error
                 : null,
           url: typeof e.platformPostUrl === "string" ? e.platformPostUrl : null,
+          platformPostId: typeof e.platformPostId === "string" ? e.platformPostId : null,
         };
       }),
     };
