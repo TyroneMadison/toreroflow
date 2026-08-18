@@ -15,6 +15,7 @@ import {
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 import { INSTAGRAM_REEL_MAX_SECONDS, scheduleTimeError } from "@toreroflow/core";
+import { YT_CATEGORIES } from "../lib/youtube";
 
 interface ScheduleModalProps {
   asset: MediaAssetInfo;
@@ -28,23 +29,6 @@ function localInputValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** YouTube's stable category ids; Autos first because that is the clientele. */
-const YT_CATEGORIES: Array<[string, string]> = [
-  ["2", "Autos & Vehicles"],
-  ["24", "Entertainment"],
-  ["22", "People & Blogs"],
-  ["26", "Howto & Style"],
-  ["28", "Science & Technology"],
-  ["27", "Education"],
-  ["17", "Sports"],
-  ["23", "Comedy"],
-  ["10", "Music"],
-  ["20", "Gaming"],
-  ["19", "Travel & Events"],
-  ["25", "News & Politics"],
-  ["15", "Pets & Animals"],
-  ["1", "Film & Animation"],
-];
 
 export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleModalProps) {
   const { selectedClient } = useAppState();

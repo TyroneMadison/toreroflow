@@ -530,6 +530,9 @@ export interface MediaAssetInfo {
   /** How many images the carousel holds. Zero for a video. */
   slideCount: number;
   durationSec: number | null;
+  /** Probed frame size. Null until processing has measured the file. */
+  width: number | null;
+  height: number | null;
   status: "uploaded" | "processing" | "ready" | "failed";
   hasTranscript: boolean;
   draftCopy: DraftCopy | null;

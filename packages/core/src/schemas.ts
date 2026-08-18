@@ -123,6 +123,43 @@ export const youtubeOptionsSchema = z.object({
   categoryId: z.string().max(10).optional(),
   playlistId: z.string().max(60).optional(),
   aiLabel: z.boolean().optional(),
+  /*
+   * The long-form wizard's fields. The first two override what the route
+   * would otherwise derive from the asset's draft copy, because the wizard
+   * puts a real editor in front of the operator and what they typed there is
+   * the truth. The rest cannot ride Zernio at all; they are stored on the
+   * target and applied by the enrichment job through the channel owner's own
+   * OAuth after the publish confirms (docs/longform-capability-map.md).
+   */
+  title: z.string().min(1).max(100).optional(),
+  description: z.string().max(5000).optional(),
+  /**
+   * YouTube counts the pool as the tags joined with commas, capped at 500.
+   * Enforced here rather than only in the wizard so a raw request cannot
+   * store a set the platform will refuse at apply time.
+   */
+  tags: z
+    .array(z.string().min(1).max(100))
+    .max(60)
+    .refine((t) => t.join(",").length <= 500, {
+      message: "tags exceed YouTube's 500-character pool",
+    })
+    .optional(),
+  license: z.enum(["standard", "creativeCommon"]).optional(),
+  embeddable: z.boolean().optional(),
+  /** ISO date (YYYY-MM-DD). The API takes a datetime; the day is what matters. */
+  recordingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** BCP-47 tag for the video's spoken language, e.g. "en" or "es-419". */
+  defaultLanguage: z.string().max(12).optional(),
+  paidPromotion: z.boolean().optional(),
+  /**
+   * What the operator chose that no API can execute: comment settings, end
+   * screens, fundraisers, members-only and the rest. Compiled by the wizard
+   * into human sentences and shown on the published post beside the Studio
+   * deep link, because recording a choice and silently not acting on it is
+   * worse than not offering the choice.
+   */
+  studioTasks: z.array(z.string().min(1).max(160)).max(30).optional(),
 });
 
 export const schedulePostSchema = z.object({

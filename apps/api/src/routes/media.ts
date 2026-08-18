@@ -103,6 +103,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     revisionOfId: string | null;
     coverOffsetMs: number | null;
     coverKey: string | null;
+    width?: number | null;
+    height?: number | null;
     sourceDeletedAt?: Date | null;
     thumbDeletedAt?: Date | null;
     kind?: string;
@@ -119,6 +121,13 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       kind: a.kind ?? "video",
       slideCount: Array.isArray(a.slideKeys) ? a.slideKeys.length : 0,
       durationSec: a.durationSec,
+      /*
+       * The probed frame size, so the app can tell a horizontal video from a
+       * vertical one at a glance. That distinction is what routes a 16:9 file
+       * into the long-form YouTube wizard instead of the short-form scheduler.
+       */
+      width: a.width ?? null,
+      height: a.height ?? null,
       status: a.status,
       hasTranscript: Array.isArray(a.transcript) && a.transcript.length > 0,
       draftCopy: normalizeDraft(a.draftCopy),

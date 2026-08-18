@@ -135,7 +135,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       : undefined;
 
     const ytOptions = body.youtube;
-    const youtubeBody = captionOverride || captionFor("youtube", draft);
+    // The wizard's own editor wins over draft-derived copy where it spoke.
+    const youtubeBody =
+      ytOptions?.description || captionOverride || captionFor("youtube", draft);
 
     /*
      * A YouTube upload never leaves here with an empty description.
@@ -260,7 +262,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
                 ? { instagram: igOptions }
                 : platform === "youtube"
                   ? {
-                      youtubeTitle: youtubeTitleFor(draft),
+                      youtubeTitle: ytOptions?.title || youtubeTitleFor(draft),
                       ...(ytOptions ? { youtube: ytOptions } : {}),
                     }
                   : platform === "tiktok" && asset.kind === "carousel"

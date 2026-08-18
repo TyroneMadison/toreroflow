@@ -16,9 +16,11 @@ import { useAppState } from "../state/AppState";
 import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
+import LongFormModal from "../modals/LongFormModal";
 import CarouselBuilderModal from "../modals/CarouselBuilderModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
+import { isHorizontal } from "../lib/youtube";
 import BestTimes from "../components/BestTimes";
 import QuotaCard from "../components/QuotaCard";
 import { useToast } from "../components/Toasts";
@@ -64,6 +66,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
   const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
+  /** A horizontal video, routed to the long-form YouTube wizard instead. */
+  const [longForm, setLongForm] = useState<MediaAssetInfo | null>(null);
   const [coverEditing, setCoverEditing] = useState<MediaAssetInfo | null>(null);
   const [dragTargetId, setDragTargetId] = useState<string | null>(null);
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
@@ -825,7 +829,14 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           setSchedBusy(asset.id);
                           void saveDraft(asset)
                             .then((ok) => {
-                              if (ok) setScheduling(asset);
+                              // Shape decides the door: a horizontal video is
+                              // a long-form YouTube upload and gets the wizard
+                              // built for one, not a reel scheduler with a
+                              // YouTube section.
+                              if (ok) {
+                                if (isHorizontal(asset)) setLongForm(asset);
+                                else setScheduling(asset);
+                              }
                             })
                             .finally(() => setSchedBusy(null));
                         }}
@@ -1017,6 +1028,27 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               // Hold the collapsed state until the refreshed list is in hand.
               // Dropping the class first lets a slow fetch re-inflate the card
               // and then pop it away with no animation at all.
+              void load().finally(() => {
+                setDeparting((d) => (d === departingId ? null : d));
+              });
+            }, 950);
+            departTimer.current = timer;
+          }}
+        />
+      )}
+
+      {longForm && (
+        <LongFormModal
+          asset={longForm}
+          onClose={() => setLongForm(null)}
+          onScheduled={() => {
+            const departingId = longForm?.id ?? null;
+            void loadPosts();
+            if (!departingId) return;
+            setDeparting(departingId);
+            if (departTimer.current !== null) window.clearTimeout(departTimer.current);
+            const timer = window.setTimeout(() => {
+              if (departTimer.current === timer) departTimer.current = null;
               void load().finally(() => {
                 setDeparting((d) => (d === departingId ? null : d));
               });
