@@ -1864,3 +1864,11 @@
 .lftags .kw.tiq-g{color:#7ddb8a;background:rgba(125,219,138,.1);border-color:rgba(125,219,138,.3)}
 .lftags .kw.tiq-a{color:#ffc46b}
 .lftags .kw.tiq-r{color:#ff8080;background:rgba(255,128,128,.1);border-color:rgba(255,128,128,.3)}
+
+/* ---- Thumbnail A/B test ---- */
+.pdab{margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--glass);
+  border:1px solid var(--brd-soft)}
+.pdab .tt{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--txt-3);margin-bottom:6px}
+.pdab .what{font-size:12px;line-height:1.5;color:var(--txt-2);margin:0 0 10px}
+.pdab .igrow .btn{margin-left:auto}

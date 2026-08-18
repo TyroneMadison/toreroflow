@@ -2,7 +2,7 @@ import { useState } from "react";
 import Modal from "./Modal";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
-import { api, fileUrl, type PostTargetInfo } from "../lib/api";
+import { api, fileUrl, uploadAbThumb, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { canMove, POST_STATUS } from "../lib/postStatus";
 import { explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
@@ -31,6 +31,60 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retried, setRetried] = useState(false);
+
+  /*
+   * The thumbnail A/B test. The modal only collects the pieces and presses
+   * start; the worker owns the rotation and the verdict, on the same daily
+   * clock as the view capture it measures with.
+   */
+  const [abKeys, setAbKeys] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
+  const [abBusy, setAbBusy] = useState<"a" | "b" | "start" | "cancel" | null>(null);
+  const [abPeriod, setAbPeriod] = useState<3 | 5 | 7>(5);
+  const [abTest, setAbTest] = useState(target.youtube?.abTest ?? null);
+  const canAbTest = target.platform === "youtube" && target.status === "posted";
+
+  const pickVariant = async (slot: "a" | "b", file: File) => {
+    setAbBusy(slot);
+    try {
+      const r = await uploadAbThumb(target.id, slot, file);
+      setAbKeys((k) => ({ ...k, [slot]: r.key }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `could not upload variant ${slot.toUpperCase()}`);
+    } finally {
+      setAbBusy(null);
+    }
+  };
+
+  const startAb = async () => {
+    setAbBusy("start");
+    setError(null);
+    try {
+      const r = await api.post<{ abTest: NonNullable<NonNullable<PostTargetInfo["youtube"]>["abTest"]> }>(
+        `/posts/targets/${target.id}/ab-test`,
+        { periodDays: abPeriod, aKey: abKeys.a, bKey: abKeys.b },
+      );
+      setAbTest(r.abTest);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not start the test");
+    } finally {
+      setAbBusy(null);
+    }
+  };
+
+  const cancelAb = async () => {
+    setAbBusy("cancel");
+    try {
+      await api.del(`/posts/targets/${target.id}/ab-test`);
+      setAbTest((t) => (t ? { ...t, state: "cancelled" } : t));
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not cancel the test");
+    } finally {
+      setAbBusy(null);
+    }
+  };
+
 
   /*
    * Why it failed, and whether pressing anything can help.
@@ -186,6 +240,79 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
                   ))}
                 </ul>
               </>
+            )}
+          </div>
+        )}
+
+        {canAbTest && (
+          <div className="pdab">
+            <div className="tt">Thumbnail A/B test</div>
+            {!abTest || abTest.state === "cancelled" ? (
+              <>
+                <p className="what">
+                  Two images, {abPeriod} days each, measured by this video's own daily view
+                  capture. Make variant A the image that is live today; swaps happen on the
+                  worker's daily pass. Views/day folds impressions in with click-through, so a
+                  narrow verdict is noise.
+                </p>
+                <div className="igrow">
+                  {(["a", "b"] as const).map((slot) => (
+                    <label key={slot} className={`revtoggle${abKeys[slot] ? " on" : ""}`} style={{ cursor: "pointer" }}>
+                      {abBusy === slot
+                        ? "Uploading…"
+                        : abKeys[slot]
+                          ? `Variant ${slot.toUpperCase()} ready`
+                          : `Upload variant ${slot.toUpperCase()}`}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void pickVariant(slot, f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  ))}
+                  {([3, 5, 7] as const).map((d) => (
+                    <span
+                      key={d}
+                      className={`revtoggle${abPeriod === d ? " on" : ""}`}
+                      onClick={() => setAbPeriod(d)}
+                    >
+                      {d}d each
+                    </span>
+                  ))}
+                  <button
+                    className="btn"
+                    disabled={!abKeys.a || !abKeys.b || abBusy !== null}
+                    onClick={() => void startAb()}
+                  >
+                    {abBusy === "start" ? "Starting…" : "Start test"}
+                  </button>
+                </div>
+              </>
+            ) : abTest.state === "running" ? (
+              <div className="igrow" style={{ alignItems: "center" }}>
+                <span className="what" style={{ flex: 1 }}>
+                  Running: variant {(abTest.applied ?? "a").toUpperCase()} is
+                  {abTest.applied ? " live" : " queued for the next daily pass"} ·{" "}
+                  {abTest.periodDays} days per variant.
+                </span>
+                <button className="btn ghost" disabled={abBusy !== null} onClick={() => void cancelAb()}>
+                  {abBusy === "cancel" ? "Cancelling…" : "Cancel test"}
+                </button>
+              </div>
+            ) : abTest.state === "done" ? (
+              <p className="what">
+                {abTest.result?.winner
+                  ? `Winner: variant ${String(abTest.result.winner).toUpperCase()}, now live. `
+                  : ""}
+                {abTest.result?.note ?? "The test finished."}
+              </p>
+            ) : (
+              <p className="what">{abTest.note ?? "The test stopped."}</p>
             )}
           </div>
         )}

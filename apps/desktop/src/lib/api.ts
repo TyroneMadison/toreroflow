@@ -576,6 +576,15 @@ export interface PostTargetInfo {
   youtube?: {
     studioTasks: string[];
     enrich: { state: "applied" | "error" | "pending"; detail: string | null } | null;
+    /** The thumbnail A/B test on this video, when one exists. */
+    abTest: {
+      state: "running" | "done" | "cancelled" | "error" | string;
+      periodDays: number;
+      startedAt: string | null;
+      applied: string | null;
+      note: string | null;
+      result: { aPerDay?: number | null; bPerDay?: number | null; winner?: string | null; note?: string } | null;
+    } | null;
   } | null;
   caption: string | null;
   assetName: string;
@@ -605,6 +614,17 @@ export async function uploadMedia(clientId: string, file: File): Promise<MediaAs
   const data: unknown = await res.json();
   if (!res.ok) throw new ApiError(res.status, data);
   return data as MediaAssetInfo;
+}
+
+/** One variant image for a thumbnail A/B test. Returns the storage key. */
+export async function uploadAbThumb(
+  targetId: string,
+  slot: "a" | "b",
+  file: File,
+): Promise<{ key: string }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  return api.postForm(`/posts/targets/${targetId}/ab-thumb/${slot}`, form);
 }
 
 /** Park a subtitle file with the asset; the enrichment applies it after publish. */

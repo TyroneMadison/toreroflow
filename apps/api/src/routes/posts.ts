@@ -1,4 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { createWriteStream, promises as fs } from "node:fs";
+import nodePath from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileLink } from "../files/link";
 import {
   captionFor,
@@ -387,6 +390,27 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             ? (yt.studioTasks as string[]).filter((x) => typeof x === "string")
             : [];
           const wantsEnrich = enrichFieldsFrom(t.options) !== null || Boolean(yt.captions);
+          const abTestRaw = yt.abTest as
+            | {
+                state?: string;
+                periodDays?: number;
+                startedAt?: string;
+                applied?: string | null;
+                note?: string;
+                result?: unknown;
+              }
+            | undefined;
+          const abTest =
+            abTestRaw && typeof abTestRaw.state === "string"
+              ? {
+                  state: abTestRaw.state,
+                  periodDays: abTestRaw.periodDays ?? 5,
+                  startedAt: abTestRaw.startedAt ?? null,
+                  applied: abTestRaw.applied ?? null,
+                  note: abTestRaw.note ?? null,
+                  result: (abTestRaw.result as Record<string, unknown> | undefined) ?? null,
+                }
+              : null;
           const enrich = yt.enrichedAt
             ? ({ state: "applied", detail: String(yt.enrichedAt) } as const)
             : typeof yt.enrichError === "string"
@@ -394,8 +418,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
               : wantsEnrich
                 ? ({ state: "pending", detail: null } as const)
                 : null;
-          if (!studioTasks.length && !enrich) return null;
-          return { studioTasks, enrich };
+          if (!studioTasks.length && !enrich && !abTest) return null;
+          return { studioTasks, enrich, abTest };
         })(),
         // Captions saved before emoji decoding landed still hold literal
         // "\uXXXX" text; clean them on the way out.
@@ -463,6 +487,148 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+
+  /**
+   * One variant image for a thumbnail A/B test, parked beside the asset.
+   *
+   * Slot A is what runs first; the UI tells the operator to make it the
+   * image that is live today (usually the cover they already picked), because
+   * the first swap happens on the worker's daily pass and window A starts
+   * counting at start time either way.
+   */
+  app.post<{ Params: { id: string; slot: string } }>(
+    "/posts/targets/:id/ab-thumb/:slot",
+    async (request, reply) => {
+      const slot = request.params.slot;
+      if (slot !== "a" && slot !== "b") {
+        return reply.status(400).send({ error: "the slot is a or b" });
+      }
+      const target = await prisma.postTarget.findFirst({
+        where: {
+          id: request.params.id,
+          post: { client: { agencyId: request.user.agencyId } },
+        },
+        include: { post: { select: { clientId: true, mediaAssetId: true } } },
+      });
+      if (!target) return reply.status(404).send({ error: "target not found" });
+      if (target.platform !== "youtube") {
+        return reply.status(400).send({ error: "thumbnail tests are YouTube only" });
+      }
+      if (!target.post.mediaAssetId) {
+        return reply.status(400).send({ error: "this post has no media asset to file the image under" });
+      }
+      const file = await request.file();
+      if (!file) return reply.status(400).send({ error: "no file uploaded" });
+      const mime = file.mimetype;
+      if (mime !== "image/jpeg" && mime !== "image/png") {
+        return reply.status(400).send({ error: "the variant must be a JPEG or PNG" });
+      }
+      const ext = mime === "image/png" ? ".png" : ".jpg";
+      const key = `${target.post.clientId}/${target.post.mediaAssetId}/ab-${slot}${ext}`;
+      await pipeline(file.file, createWriteStream(nodePath.join(env.STORAGE_DIR, key)));
+      if (file.file.truncated) {
+        await fs.rm(nodePath.join(env.STORAGE_DIR, key), { force: true });
+        return reply.status(413).send({ error: "file too large" });
+      }
+      // The other-extension leftover from an earlier pick would otherwise
+      // shadow this one at rotation time.
+      const other = nodePath.join(
+        env.STORAGE_DIR,
+        `${target.post.clientId}/${target.post.mediaAssetId}/ab-${slot}${ext === ".jpg" ? ".png" : ".jpg"}`,
+      );
+      await fs.rm(other, { force: true });
+      return { key };
+    },
+  );
+
+  /**
+   * Start (or cancel) the test. The worker owns everything after this: it
+   * swaps the images on its daily pass and reads the verdict out of the same
+   * daily capture the analytics already write. Details in worker/abThumbs.ts.
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { periodDays?: number; aKey?: string; bKey?: string };
+  }>("/posts/targets/:id/ab-test", async (request, reply) => {
+    const target = await prisma.postTarget.findFirst({
+      where: {
+        id: request.params.id,
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+    });
+    if (!target) return reply.status(404).send({ error: "target not found" });
+    if (target.platform !== "youtube" || target.status !== "posted") {
+      return reply.status(400).send({ error: "tests run on published YouTube videos" });
+    }
+    const body = request.body ?? {};
+    const periodDays = body.periodDays === 3 || body.periodDays === 7 ? body.periodDays : 5;
+    if (!body.aKey || !body.bKey) {
+      return reply.status(400).send({ error: "upload both variants first" });
+    }
+    /*
+     * A test with no channel connection would sit "running" and rotate
+     * nothing, silently, for its whole life. Refusing at the start with the
+     * reason beats a fortnight of nothing happening.
+     */
+    const connection = await prisma.platformConnection.findFirst({
+      where: { socialAccountId: target.socialAccountId, platform: "youtube", status: "active" },
+      select: { id: true },
+    });
+    if (!connection) {
+      return reply.status(400).send({
+        error:
+          "this channel has no direct connection, and the test cannot swap thumbnails without one. Send a connect link from Settings first",
+      });
+    }
+    const options = (target.options as Record<string, unknown> | null) ?? {};
+    const yt = (options.youtube as Record<string, unknown> | undefined) ?? {};
+    const existing = yt.abTest as { state?: string } | undefined;
+    if (existing?.state === "running") {
+      return reply.status(409).send({ error: "a test is already running on this video" });
+    }
+    const abTest = {
+      periodDays,
+      startedAt: new Date().toISOString(),
+      variants: { a: { key: body.aKey }, b: { key: body.bKey } },
+      applied: null,
+      state: "running",
+    };
+    await prisma.postTarget.update({
+      where: { id: target.id },
+      data: { options: { ...options, youtube: { ...yt, abTest } } as never },
+    });
+    return { ok: true, abTest };
+  });
+
+  app.delete<{ Params: { id: string } }>("/posts/targets/:id/ab-test", async (request, reply) => {
+    const target = await prisma.postTarget.findFirst({
+      where: {
+        id: request.params.id,
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+    });
+    if (!target) return reply.status(404).send({ error: "target not found" });
+    const options = (target.options as Record<string, unknown> | null) ?? {};
+    const yt = (options.youtube as Record<string, unknown> | undefined) ?? {};
+    const test = yt.abTest as Record<string, unknown> | undefined;
+    if (!test || test.state !== "running") {
+      return reply.status(409).send({ error: "no running test on this video" });
+    }
+    await prisma.postTarget.update({
+      where: { id: target.id },
+      data: {
+        options: {
+          ...options,
+          youtube: {
+            ...yt,
+            // Whatever image is live stays live; cancelling is not a rollback.
+            abTest: { ...test, state: "cancelled", note: "Cancelled by the operator." },
+          },
+        } as never,
+      },
+    });
+    return { ok: true };
+  });
 
   /**
    * Put a failed target back on the queue, now.

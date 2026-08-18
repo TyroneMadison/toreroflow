@@ -24,6 +24,7 @@ import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 import { syncDmStats } from "./dmStats";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
+import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
 
 const prisma = getPrisma();
@@ -864,6 +865,9 @@ void work(
     // Long-form metadata still waiting on a consent link or a Google hiccup.
     // The normal path is the confirm poll; this is the second chance.
     await sweepYouTubeEnrichment();
+    // Thumbnail experiments rotate on the same daily clock their measurement
+    // (the daily view capture, just written above) ticks on.
+    await sweepThumbnailTests();
     // Checked daily, deletes on the week: a video posted the day after a
     // weekly sweep would otherwise sit for a fortnight, and "a week" should
     // mean a week rather than somewhere between one and two.
@@ -883,6 +887,7 @@ void (async () => {
   await syncYouTubeAnalytics();
   await syncDmStats();
   await sweepYouTubeEnrichment();
+  await sweepThumbnailTests();
 })();
 
 /*

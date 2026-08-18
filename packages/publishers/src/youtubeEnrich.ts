@@ -210,6 +210,42 @@ export async function applyVideoMetadata(
 }
 
 /**
+ * Replace a published video's thumbnail via thumbnails.set.
+ *
+ * The whole A/B mechanism is this one call made on a schedule: YouTube's own
+ * Test & Compare has no API, so the app runs the experiment itself by
+ * swapping the image and reading its own daily view capture. Idempotent by
+ * nature; setting the same image twice is just the same image.
+ */
+export async function setThumbnail(
+  accessToken: string,
+  videoId: string,
+  imageBody: Uint8Array,
+  contentType: "image/jpeg" | "image/png",
+): Promise<void> {
+  const res = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}`, "content-type": contentType },
+      body: imageBody,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    const message =
+      (() => {
+        try {
+          return (JSON.parse(text) as { error?: { message?: string } }).error?.message;
+        } catch {
+          return null;
+        }
+      })() ?? text.slice(0, 200);
+    throw new GoogleAuthError(res.status, message, res.status === 401 || res.status === 403);
+  }
+}
+
+/**
  * Upload one subtitle track to a published video via captions.insert.
  *
  * A multipart/related body built by hand, because that is the whole protocol:
@@ -236,18 +272,27 @@ export async function uploadCaption(
   });
   const encoder = new TextEncoder();
   const head = encoder.encode(
-    `--${boundary}
-content-type: application/json; charset=utf-8
-
-${metadata}
+    `--${boundary}
+
+content-type: application/json; charset=utf-8
+
+
+
+${metadata}
+
 ` +
-      `--${boundary}
-content-type: application/octet-stream
-
+      `--${boundary}
+
+content-type: application/octet-stream
+
+
+
 `,
   );
-  const tail = encoder.encode(`
---${boundary}--
+  const tail = encoder.encode(`
+
+--${boundary}--
+
 `);
   const payload = new Uint8Array(head.length + fileBody.length + tail.length);
   payload.set(head, 0);
