@@ -546,6 +546,87 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * Instagram's audio catalog for one connected account.
+   *
+   * The provider is asked every time rather than a capability being stored on
+   * the account, because the only thing that changes the answer is the client
+   * reconnecting through Facebook, which happens at Instagram and never tells
+   * us. A stored flag would be wrong from that moment until someone noticed;
+   * asking means the picker appears by itself the first time it can work.
+   */
+  app.get<{
+    Params: { id: string };
+    Querystring: { q?: string; audioType?: string };
+  }>("/accounts/:id/instagram/audio", async (request, reply) => {
+    const account = await prisma.socialAccount.findFirst({
+      where: {
+        id: request.params.id,
+        deletedAt: null,
+        client: { agencyId: request.user.agencyId },
+      },
+      select: { platform: true, providerAccountId: true },
+    });
+    if (!account) return reply.status(404).send({ error: "account not found" });
+    if (account.platform !== "instagram") {
+      return reply.status(400).send({ error: "audio catalog is Instagram only" });
+    }
+    if (!zernio || !account.providerAccountId) {
+      return { available: false, reason: "not_connected" };
+    }
+
+    const audioType = request.query.audioType === "original_sound" ? "original_sound" : "music";
+    try {
+      const result = await zernio.instagramAudio(account.providerAccountId, {
+        audioType,
+        q: request.query.q,
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof ZernioError) {
+        return reply.status(502).send({ error: `Zernio: ${error.message}` });
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * A connect link that runs through Facebook rather than Instagram.
+   *
+   * Reconnecting is the only way an existing Instagram account reaches the
+   * audio catalog, and it is the client who has to click it, not the operator,
+   * so this hands back a link to send rather than opening anything.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/accounts/:id/facebook-reconnect",
+    async (request, reply) => {
+      const account = await prisma.socialAccount.findFirst({
+        where: {
+          id: request.params.id,
+          deletedAt: null,
+          client: { agencyId: request.user.agencyId },
+        },
+        include: { client: true },
+      });
+      if (!account) return reply.status(404).send({ error: "account not found" });
+      if (account.platform !== "instagram") {
+        return reply.status(400).send({ error: "Facebook login applies to Instagram accounts" });
+      }
+      if (!zernio) return reply.status(400).send({ error: "no publish provider configured" });
+
+      try {
+        const profileId = await ensureProviderProfile(account.client);
+        const authUrl = await zernio.connectUrl("instagram", profileId, { facebookLogin: true });
+        return { authUrl };
+      } catch (error) {
+        if (error instanceof ZernioError) {
+          return reply.status(502).send({ error: `Zernio: ${error.message}` });
+        }
+        throw error;
+      }
+    },
+  );
+
+  /**
    * Snapshots are daily activity buckets (views/likes/comments attributed to
    * the day content was published), so a window's totals are simple sums.
    */

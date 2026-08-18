@@ -51,6 +51,10 @@ export const instagramOptionsSchema = z.object({
   graduationStrategy: z.enum(["MANUAL", "SS_PERFORMANCE"]).optional(),
   collaborators: z.array(z.string().max(80)).max(3).optional(),
   audioName: z.string().max(120).optional(),
+  /** A track from Instagram's catalog. Reels only; see buildPostExtras. */
+  audioId: z.string().max(120).optional(),
+  audioVolume: z.number().int().min(0).max(100).optional(),
+  videoVolume: z.number().int().min(0).max(100).optional(),
   shareToFeed: z.boolean().optional(),
   firstComment: z.string().max(2200).optional(),
   aiLabel: z.boolean().optional(),

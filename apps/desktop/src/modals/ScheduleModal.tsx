@@ -7,12 +7,15 @@ import { useToast } from "../components/Toasts";
 import {
   api,
   videoLabel,
+  type AudioCatalog,
+  type AudioTrack,
   type CatalogueVideo,
   type MediaAssetInfo,
   type YouTubePlaylistInfo,
 } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
+import { INSTAGRAM_REEL_MAX_SECONDS } from "@toreroflow/core";
 
 interface ScheduleModalProps {
   asset: MediaAssetInfo;
@@ -76,6 +79,15 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   const [igGraduate, setIgGraduate] = useState(false);
   const [igCollaborators, setIgCollaborators] = useState(["", "", ""]);
   const [igAudioName, setIgAudioName] = useState("");
+  /** A catalog track, its two volumes, and the picker's own state. */
+  const [igTrack, setIgTrack] = useState<AudioTrack | null>(null);
+  const [igAudioVolume, setIgAudioVolume] = useState(100);
+  const [igVideoVolume, setIgVideoVolume] = useState(100);
+  const [igAudioOpen, setIgAudioOpen] = useState(false);
+  const [igAudioType, setIgAudioType] = useState<"music" | "original_sound">("music");
+  const [igAudioSearch, setIgAudioSearch] = useState("");
+  const [igCatalog, setIgCatalog] = useState<AudioCatalog | null>(null);
+  const [igAudioBusy, setIgAudioBusy] = useState(false);
   const [igShareToFeed, setIgShareToFeed] = useState(true);
   const [igFirstComment, setIgFirstComment] = useState("");
   const [igAiLabel, setIgAiLabel] = useState(false);
@@ -100,6 +112,19 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   // neither the Instagram nor the YouTube section.
   const igSelected = platforms.includes("instagram") && !isCarousel;
   const ytSelected = platforms.includes("youtube") && !isCarousel;
+  /*
+   * Catalog audio is a Reels feature and nothing else. A video too long to be
+   * a reel goes as a feed post, which Instagram refuses audio on at creation,
+   * so the picker is hidden rather than offering a choice that fails at
+   * publish. Same rule and same threshold as buildPostExtras, which is what
+   * actually decides. A null duration is treated as a reel, matching it.
+   */
+  const igReel =
+    igSelected &&
+    (asset.durationSec == null || asset.durationSec <= INSTAGRAM_REEL_MAX_SECONDS);
+  /** The catalog is per account; the first Instagram target owns the lookup. */
+  const igAccountId =
+    connected.find((a) => a.platform === "instagram" && accountIds.includes(a.id))?.id ?? null;
   const tkCarousel = isCarousel && platforms.includes("tiktok");
   const [tkAutoMusic, setTkAutoMusic] = useState(false);
 
@@ -124,6 +149,62 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
       .catch(() => setYtPlaylists([]));
   }, [ytSelected, selectedClient, ytCatalogue]);
 
+  /*
+   * The catalog loads when the picker opens and again as the operator types.
+   *
+   * Debounced because every keystroke is a call that reaches Meta, and
+   * cancelled on unmount so a slow search cannot land on a closed modal. The
+   * unavailable answer is kept rather than discarded: it is what tells the UI
+   * to draw the reconnect path instead of an empty list.
+   */
+  useEffect(() => {
+    if (!igAudioOpen || !igAccountId) return;
+    let cancelled = false;
+    setIgAudioBusy(true);
+    const timer = setTimeout(() => {
+      const q = igAudioSearch.trim();
+      api
+        .get<AudioCatalog>(
+          `/accounts/${igAccountId}/instagram/audio?audioType=${igAudioType}` +
+            (q ? `&q=${encodeURIComponent(q)}` : ""),
+        )
+        .then((r) => {
+          if (!cancelled) setIgCatalog(r);
+        })
+        .catch(() => {
+          if (!cancelled) setIgCatalog({ available: true, tracks: [] });
+        })
+        .finally(() => {
+          if (!cancelled) setIgAudioBusy(false);
+        });
+    }, igAudioSearch.trim() ? 350 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [igAudioOpen, igAccountId, igAudioSearch, igAudioType]);
+
+  /*
+   * Hands back a Facebook-login connect link for the client to click.
+   *
+   * Copied rather than opened, the same call as the YouTube direct-access link:
+   * authorizing here would bind whichever Instagram this machine is signed into
+   * rather than the client's.
+   */
+  const copyFacebookReconnect = async () => {
+    if (!igAccountId) return;
+    try {
+      const { authUrl } = await api.post<{ authUrl: string }>(
+        `/accounts/${igAccountId}/facebook-reconnect`,
+        {},
+      );
+      await navigator.clipboard.writeText(authUrl);
+      toast.success("Reconnect link copied. Send it to the account owner.");
+    } catch (error) {
+      toast.fail("Could not build the reconnect link", error);
+    }
+  };
+
   /** Only what was actually chosen; untouched controls send nothing. */
   const instagramBody = () => {
     if (!igSelected) return undefined;
@@ -137,6 +218,13 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
     }
     if (collaborators.length) body.collaborators = collaborators;
     if (igAudioName.trim()) body.audioName = igAudioName.trim();
+    // The picker is hidden off a reel, but a track chosen before the duration
+    // ruled one out would still be in state, so the gate is repeated here.
+    if (igTrack && igReel) {
+      body.audioId = igTrack.audioId;
+      if (igAudioVolume !== 100) body.audioVolume = igAudioVolume;
+      if (igVideoVolume !== 100) body.videoVolume = igVideoVolume;
+    }
     if (!igShareToFeed) body.shareToFeed = false;
     if (igFirstComment.trim()) body.firstComment = igFirstComment.trim();
     if (igAiLabel) body.aiLabel = true;
@@ -382,6 +470,149 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
               value={igAudioName}
               onChange={(e) => setIgAudioName(e.target.value)}
             />
+            <label className="flabel" style={{ marginTop: 12 }}>
+              Catalog audio
+              <span className="hint">
+                {igReel
+                  ? "a licensed track from Instagram's catalog, laid over the reel"
+                  : "unavailable: this video is too long to be a reel, and Instagram refuses catalog audio on feed posts"}
+              </span>
+            </label>
+            {igReel &&
+              (igTrack ? (
+                <>
+                  <div className="igrow">
+                    <span
+                      className="revtoggle on"
+                      title="Remove this track"
+                      onClick={() => setIgTrack(null)}
+                    >
+                      {igTrack.title.slice(0, 40)}
+                      {igTrack.artist ? ` — ${igTrack.artist}` : ""} ✕
+                    </span>
+                  </div>
+                  {igTrack.previewUrl && (
+                    <audio
+                      controls
+                      preload="none"
+                      src={igTrack.previewUrl}
+                      style={{ width: "100%", height: 32, marginTop: 8 }}
+                    />
+                  )}
+                  <div className="igvols">
+                    <label className="flabel">
+                      Track volume<span className="hint">{igAudioVolume}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={igAudioVolume}
+                      onChange={(e) => setIgAudioVolume(Number(e.target.value))}
+                    />
+                    <label className="flabel">
+                      Video sound<span className="hint">{igVideoVolume}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={igVideoVolume}
+                      onChange={(e) => setIgVideoVolume(Number(e.target.value))}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="revtoggle" onClick={() => setIgAudioOpen((v) => !v)}>
+                    {igAudioOpen ? "Close list" : "Choose a track"}
+                  </span>
+                  {igAudioOpen && (
+                    <div style={{ marginTop: 8 }}>
+                      {igCatalog && !igCatalog.available ? (
+                        /*
+                         * Not an error. The account publishes reels perfectly
+                         * well; Meta simply serves audio only to Instagram
+                         * accounts connected through Facebook Login, and the
+                         * fix belongs to whoever owns the account.
+                         */
+                        <div className="igaudio-blocked">
+                          <p>
+                            {igCatalog.reason === "not_connected"
+                              ? "This account is not connected to the publish provider yet."
+                              : "Instagram only serves its audio catalog to accounts connected through Facebook. This one was connected the ordinary way, so it can publish reels but cannot reach any tracks."}
+                          </p>
+                          {igCatalog.reason === "facebook_login_required" && (
+                            <span className="revtoggle" onClick={copyFacebookReconnect}>
+                              Copy reconnect link
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="igrow">
+                            <span
+                              className={`revtoggle${igAudioType === "music" ? " on" : ""}`}
+                              onClick={() => setIgAudioType("music")}
+                            >
+                              Music
+                            </span>
+                            <span
+                              className={`revtoggle${igAudioType === "original_sound" ? " on" : ""}`}
+                              onClick={() => setIgAudioType("original_sound")}
+                            >
+                              Original sounds
+                            </span>
+                          </div>
+                          <input
+                            className="field-in"
+                            style={{ marginTop: 6 }}
+                            placeholder="Search, or leave empty for what's trending"
+                            value={igAudioSearch}
+                            onChange={(e) => setIgAudioSearch(e.target.value)}
+                          />
+                          <div style={{ maxHeight: 210, overflowY: "auto", marginTop: 6 }}>
+                            {igAudioBusy && (
+                              <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>Searching…</p>
+                            )}
+                            {!igAudioBusy && igCatalog?.available && !igCatalog.tracks.length && (
+                              <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
+                                No tracks. Instagram's API catalog is smaller than the one in the
+                                app, so a track you can see on your phone may simply not be
+                                licensed for scheduling.
+                              </p>
+                            )}
+                            {igCatalog?.available &&
+                              igCatalog.tracks.slice(0, 40).map((t) => (
+                                <div
+                                  key={t.audioId}
+                                  className="rrow"
+                                  style={{ cursor: "pointer" }}
+                                  onClick={() => {
+                                    setIgTrack(t);
+                                    setIgAudioOpen(false);
+                                  }}
+                                >
+                                  <span className="t">
+                                    {t.title}
+                                    {t.artist ? ` — ${t.artist}` : ""}
+                                  </span>
+                                  <span className="v">
+                                    {t.durationSec
+                                      ? `${Math.floor(t.durationSec / 60)}:${String(
+                                          t.durationSec % 60,
+                                        ).padStart(2, "0")}`
+                                      : ""}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              ))}
             <label className="flabel" style={{ marginTop: 12 }}>
               First comment
               <span className="hint">posted automatically right after the reel</span>

@@ -2,7 +2,7 @@
 // rejected by the API, a gap between windows would silently lose posts,
 // and an unbounded walk would hammer the provider forever.
 import assert from "node:assert/strict";
-import { historyWindows, ZernioProvider } from "./zernio";
+import { audioAssets, historyWindows, ZernioProvider } from "./zernio";
 
 {
   const today = new Date(Date.UTC(2026, 6, 28)); // 2026-07-28
@@ -87,6 +87,60 @@ type AnalyticsStub = (
   const result = await provider.analyticsHistory();
   assert.equal(result.length, 2);
   assert.deepEqual(result, [{ id: "1" }, { id: "2" }]);
+}
+
+/*
+ * The audio catalog's envelope is not documented and no account of ours could
+ * reach the endpoint to find out, so every plausible shape is accepted. This
+ * is the check that turns "we guessed" into "we guessed and it is covered":
+ * when a real response finally lands, whichever branch it takes is already
+ * proven, and any field it names that we do not is a one-line addition here.
+ */
+{
+  const track = {
+    audioId: "482851939985510",
+    title: "Golden Hour",
+    artist: "JVKE",
+    duration: 209,
+    downloadUrl: "https://cdn.example/preview.m4a",
+  };
+  const want = {
+    audioId: "482851939985510",
+    title: "Golden Hour",
+    artist: "JVKE",
+    durationSec: 209,
+    previewUrl: "https://cdn.example/preview.m4a",
+  };
+  for (const envelope of [
+    [track],
+    { data: [track] },
+    { audio: [track] },
+    { audios: [track] },
+    { results: [track] },
+    { items: [track] },
+  ]) {
+    assert.deepEqual(audioAssets(envelope), [want], `envelope ${JSON.stringify(envelope).slice(0, 30)}`);
+  }
+  // A single-asset fetch, bare and wrapped.
+  assert.deepEqual(audioAssets(track), [want], "a bare asset");
+  assert.deepEqual(audioAssets({ audio: track }), [want], "a wrapped asset");
+
+  // An original sound names its creator rather than an artist.
+  assert.equal(
+    audioAssets([{ audioId: "x", title: "t", creator: "@caleb" }])[0].artist,
+    "@caleb",
+    "creator fills in for artist",
+  );
+
+  // Milliseconds are recognised by their field name and by being absurd as seconds.
+  assert.equal(audioAssets([{ audioId: "x", title: "t", durationMs: 209_000 }])[0].durationSec, 209);
+  assert.equal(audioAssets([{ audioId: "x", title: "t", duration: 209_000 }])[0].durationSec, 209);
+  assert.equal(audioAssets([{ audioId: "x", title: "t", duration: 209 }])[0].durationSec, 209);
+
+  // Anything without an id is not a track and cannot be chosen.
+  assert.deepEqual(audioAssets([{ title: "no id" }, null, "junk"]), []);
+  assert.deepEqual(audioAssets(null), []);
+  assert.deepEqual(audioAssets({}), []);
 }
 
 console.log("zernio.check: all checks passed");

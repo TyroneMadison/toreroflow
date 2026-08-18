@@ -10,6 +10,19 @@ export interface InstagramScheduleOptions {
   graduationStrategy?: "MANUAL" | "SS_PERFORMANCE";
   collaborators?: string[];
   audioName?: string;
+  /**
+   * A track from Instagram's catalog, attached to the reel.
+   *
+   * Distinct from audioName above, which only relabels the operator's own
+   * sound and attaches nothing. Reels and nothing else: Instagram rejects
+   * catalog audio on stories, images and carousels at creation, so sending it
+   * on one fails the publish rather than being ignored.
+   */
+  audioId?: string;
+  /** Catalog track loudness, 0-100. Instagram defaults to 100. */
+  audioVolume?: number;
+  /** The video's own sound, 0-100. Zero mutes it under the track. */
+  videoVolume?: number;
   shareToFeed?: boolean;
   firstComment?: string;
   aiLabel?: boolean;
@@ -107,6 +120,11 @@ export interface BuiltPostExtras {
  * covers ride the provider's top-level settings object, which is safe here
  * because the worker publishes exactly one target per request.
  */
+/** 0-100, rounded. A volume outside the range is refused by Instagram. */
+function clampVolume(v: number): number {
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
 export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   const out: BuiltPostExtras = {};
 
@@ -153,6 +171,20 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
       // provider to reject the whole thing over an option nobody can use here.
       if (ig.trial && !longForm) {
         psd.trialParams = { graduationStrategy: ig.graduationStrategy ?? "MANUAL" };
+      }
+      /*
+       * Catalog audio, on reels only, for the same reason as trials above and
+       * with a sharper edge: Instagram refuses it on a feed post at creation,
+       * so a reel that falls back after being refused would fail its second
+       * attempt too, on a different error, and the fallback would look broken
+       * rather than the audio.
+       */
+      if (ig.audioId && !longForm) {
+        psd.audioConfiguration = {
+          audioId: ig.audioId,
+          ...(ig.audioVolume !== undefined ? { audioVolume: clampVolume(ig.audioVolume) } : {}),
+          ...(ig.videoVolume !== undefined ? { videoVolume: clampVolume(ig.videoVolume) } : {}),
+        };
       }
       const collaborators = (ig.collaborators ?? [])
         .map((c) => c.trim())

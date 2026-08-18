@@ -98,6 +98,28 @@ export interface YouTubePlaylistInfo {
   title: string;
 }
 
+/** One track from Instagram's catalog of audio cleared for API publishing. */
+export interface AudioTrack {
+  audioId: string;
+  title: string;
+  artist: string | null;
+  durationSec: number | null;
+  /** Preview audio. Expires in about a day and a half, so never persisted. */
+  previewUrl: string | null;
+}
+
+/**
+ * Whether this account can reach the catalog at all, and what it holds.
+ *
+ * Unavailable is a normal answer, not an error: Meta serves audio only to
+ * Instagram accounts connected through Facebook Login, so an ordinary
+ * connection publishes reels fine and reads no catalog. The UI draws the
+ * reconnect path instead of a failure.
+ */
+export type AudioCatalog =
+  | { available: true; tracks: AudioTrack[] }
+  | { available: false; reason: "facebook_login_required" | "not_connected" };
+
 export interface AccountInfo {
   id: string;
   platform: Platform;

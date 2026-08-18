@@ -383,3 +383,110 @@ assert.equal(
 );
 
 console.log("options builder: instagram length checks passed");
+
+/*
+ * Catalog audio, which Instagram accepts on reels and refuses everywhere else.
+ *
+ * The refusal happens at container creation, so getting this wrong does not
+ * degrade to a post without music: it fails the publish outright. The feed-post
+ * case matters most, because that is the fallback a refused reel takes, and
+ * carrying the audio into it would fail the retry too and read as the fallback
+ * being broken.
+ */
+const igAudio = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 42,
+  instagram: { audioId: "482851939985510", audioVolume: 80, videoVolume: 0 },
+});
+assert.deepEqual(igAudio.platformSpecificData, {
+  contentType: "reels",
+  audioConfiguration: { audioId: "482851939985510", audioVolume: 80, videoVolume: 0 },
+});
+
+// Volume zero is a real choice (mute the video under the track), so it has to
+// survive rather than being dropped as falsy.
+assert.equal(
+  (
+    igAudio.platformSpecificData?.audioConfiguration as { videoVolume?: number }
+  ).videoVolume,
+  0,
+  "a muted video keeps its zero",
+);
+
+// Volumes are optional; an unset one is Instagram's default, not a value of ours.
+assert.deepEqual(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    instagram: { audioId: "abc" },
+  }).platformSpecificData?.audioConfiguration,
+  { audioId: "abc" },
+  "no volume sent when none was chosen",
+);
+
+// Out of range cannot reach the wire.
+assert.deepEqual(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    instagram: { audioId: "abc", audioVolume: 140, videoVolume: -20 },
+  }).platformSpecificData?.audioConfiguration,
+  { audioId: "abc", audioVolume: 100, videoVolume: 0 },
+  "volumes clamp to 0-100",
+);
+
+// Too long to be a reel: the feed post carries no audio.
+assert.equal(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    durationSec: 400,
+    instagram: { audioId: "abc" },
+  }).platformSpecificData?.audioConfiguration,
+  undefined,
+  "a feed post refuses catalog audio",
+);
+
+// The same, via the fallback flag rather than the duration.
+assert.equal(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    durationSec: 42,
+    instagramFeedPost: true,
+    instagram: { audioId: "abc" },
+  }).platformSpecificData?.audioConfiguration,
+  undefined,
+  "a refused reel drops its track on the retry",
+);
+
+// Stories and carousels reject it at creation too.
+assert.equal(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    instagram: { story: true, audioId: "abc" },
+  }).platformSpecificData?.audioConfiguration,
+  undefined,
+  "a story carries no catalog audio",
+);
+assert.equal(
+  buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    coverUrl: null,
+    carousel: true,
+    instagram: { audioId: "abc" },
+  }).platformSpecificData,
+  undefined,
+  "a carousel carries no catalog audio",
+);
+
+console.log("options builder: instagram catalog audio checks passed");

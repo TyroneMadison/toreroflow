@@ -1227,6 +1227,12 @@
 .igrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .igcollabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
 .igcollabs .field-in{padding:8px 10px;font-size:12px}
+/* Track and video loudness, side by side: they are one balance, not two settings. */
+.igvols{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px 12px;margin-top:10px}
+.igvols .flabel{margin:0;white-space:nowrap}
+.igvols input[type=range]{width:100%;accent-color:#ffc46b}
+.igaudio-blocked{padding:10px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--brd-soft)}
+.igaudio-blocked p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--txt-3)}
 
 .qfail{color:var(--red)}
 

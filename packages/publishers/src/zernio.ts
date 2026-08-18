@@ -35,9 +35,100 @@ export class ZernioError extends Error {
   constructor(
     public status: number,
     message: string,
+    /**
+     * Zernio's machine-readable error code, when the body carried one.
+     *
+     * Branching on the human message is how a provider's copy edit becomes our
+     * outage. The audio catalog is the first caller that has to tell one 400
+     * from another, and it asks for the code.
+     */
+    public code?: string,
   ) {
     super(message);
   }
+}
+
+/** Zernio's code for "this account was not connected through Facebook Login". */
+const AUDIO_NEEDS_FACEBOOK = "instagram_audio_requires_facebook_login";
+
+/** One track from Instagram's catalog. */
+export interface AudioAsset {
+  audioId: string;
+  title: string;
+  /** Artist for licensed music, the creator's handle for an original sound. */
+  artist: string | null;
+  /** Track length in seconds, when the catalogue gives one. */
+  durationSec: number | null;
+  /** Preview audio, expires in roughly 1.5 days. Never store it. */
+  previewUrl: string | null;
+}
+
+export type AudioCatalogResult =
+  | { available: true; tracks: AudioAsset[] }
+  | { available: false; reason: "facebook_login_required" };
+
+/**
+ * Pulls tracks out of whatever envelope the catalogue arrived in.
+ *
+ * Zernio is inconsistent about this across endpoints, which zernioProfileId
+ * below already works around for a different field. The docs do not name the
+ * array for this one and no account of ours could reach it to find out, so
+ * every plausible envelope is tried rather than guessing one and shipping a
+ * picker that silently renders nothing.
+ */
+export function audioAssets(data: unknown): AudioAsset[] {
+  const d = data as Record<string, unknown> | null;
+  const raw = Array.isArray(data)
+    ? data
+    : Array.isArray(d?.data)
+      ? d.data
+      : Array.isArray(d?.audio)
+        ? d.audio
+        : Array.isArray(d?.audios)
+          ? d.audios
+          : Array.isArray(d?.results)
+            ? d.results
+            : Array.isArray(d?.items)
+              ? d.items
+              : // A single-asset fetch returns the object itself, wrapped or bare.
+                d && typeof d === "object" && (d.audioId || (d.audio as Record<string, unknown>)?.audioId)
+                ? [d.audioId ? d : d.audio]
+                : [];
+  const out: AudioAsset[] = [];
+  for (const item of raw as Array<Record<string, unknown>>) {
+    if (!item || typeof item !== "object") continue;
+    const id = item.audioId ?? item.id ?? item._id;
+    if (typeof id !== "string" || !id) continue;
+    const duration = item.durationSec ?? item.duration ?? item.durationMs;
+    const secs =
+      typeof duration === "number"
+        ? // durationMs is the only field that could be milliseconds; a track is
+          // never 40 minutes long, so a large number is ms rather than seconds.
+          item.durationMs !== undefined || duration > 2400
+          ? Math.round(duration / 1000)
+          : duration
+        : null;
+    out.push({
+      audioId: id,
+      title: typeof item.title === "string" ? item.title : (item.name as string) || "Untitled",
+      artist:
+        typeof item.artist === "string"
+          ? item.artist
+          : typeof item.creator === "string"
+            ? item.creator
+            : typeof item.artistName === "string"
+              ? item.artistName
+              : null,
+      durationSec: secs,
+      previewUrl:
+        typeof item.downloadUrl === "string"
+          ? item.downloadUrl
+          : typeof item.previewUrl === "string"
+            ? item.previewUrl
+            : null,
+    });
+  }
+  return out;
 }
 
 export interface ZernioAccount {
@@ -130,7 +221,11 @@ export class ZernioProvider {
         typeof data === "object" && data !== null && "error" in data
           ? String((data as { error: unknown }).error)
           : text.slice(0, 200) || `zernio request failed (${res.status})`;
-      throw new ZernioError(res.status, message);
+      const code =
+        typeof data === "object" && data !== null && typeof (data as { code?: unknown }).code === "string"
+          ? (data as { code: string }).code
+          : undefined;
+      throw new ZernioError(res.status, message, code);
     }
     return data as T;
   }
@@ -169,15 +264,88 @@ export class ZernioProvider {
     await this.request("DELETE", `/profiles/${profileId}`);
   }
 
-  /** Hosted OAuth page URL for connecting one platform to a profile. */
-  async connectUrl(platform: Platform, profileId: string): Promise<string> {
+  /**
+   * Hosted OAuth page URL for connecting one platform to a profile.
+   *
+   * `facebookLogin` sends an Instagram connect through Facebook's dialog
+   * instead of Instagram's own. The two produce accounts that publish
+   * identically, so nothing before this cared which one ran; the audio catalog
+   * is the first feature Meta gates on it, and an account connected the
+   * ordinary way simply cannot reach it (see instagramAudio below).
+   */
+  async connectUrl(
+    platform: Platform,
+    profileId: string,
+    opts?: { facebookLogin?: boolean },
+  ): Promise<string> {
+    const query = `profileId=${encodeURIComponent(profileId)}${
+      opts?.facebookLogin ? "&loginMethod=facebook_login" : ""
+    }`;
     const data = await this.request<{ authUrl?: string; url?: string }>(
       "GET",
-      `/connect/${platform}?profileId=${encodeURIComponent(profileId)}`,
+      `/connect/${platform}?${query}`,
     );
     const url = data.authUrl ?? data.url;
     if (!url) throw new ZernioError(500, "zernio connect response missing authUrl");
     return url;
+  }
+
+  /**
+   * Search Instagram's catalog of audio cleared for third-party publishing.
+   *
+   * Omit `q` for what is trending. `audioType` splits licensed music from
+   * other creators' original sounds; they are different catalogues behind one
+   * endpoint.
+   *
+   * Returns unavailable rather than throwing when the account cannot reach the
+   * catalogue, because that is a fact about the connection and not a failure
+   * of the request. Meta serves audio only to Instagram accounts connected
+   * through Facebook Login, and an account connected the ordinary way publishes
+   * reels perfectly well while every audio call 400s. Both of ours were in that
+   * state when this was written, so the unavailable path is the one that runs
+   * until an account is reconnected, and it has to be a state the UI can draw
+   * rather than an error it has to catch.
+   */
+  async instagramAudio(
+    accountId: string,
+    opts: { audioType: "music" | "original_sound"; q?: string },
+  ): Promise<AudioCatalogResult> {
+    const query = new URLSearchParams({ audioType: opts.audioType });
+    if (opts.q?.trim()) query.set("q", opts.q.trim());
+    try {
+      const data = await this.request<unknown>(
+        "GET",
+        `/accounts/${encodeURIComponent(accountId)}/instagram/audio?${query}`,
+      );
+      return { available: true, tracks: audioAssets(data) };
+    } catch (error) {
+      if (error instanceof ZernioError && error.code === AUDIO_NEEDS_FACEBOOK) {
+        return { available: false, reason: "facebook_login_required" };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Re-read one track, which is how a stored audioId is checked before use.
+   *
+   * Preview URLs expire in about a day and a half, and a scheduled post can
+   * outlive that by a week, so the preview a picker stored is stale long before
+   * the post runs. Returns null when the track is gone from the catalogue.
+   */
+  async instagramAudioById(accountId: string, audioId: string): Promise<AudioAsset | null> {
+    try {
+      const data = await this.request<unknown>(
+        "GET",
+        `/accounts/${encodeURIComponent(accountId)}/instagram/audio/${encodeURIComponent(audioId)}`,
+      );
+      return audioAssets(data)[0] ?? null;
+    } catch (error) {
+      if (error instanceof ZernioError && (error.status === 404 || error.code === AUDIO_NEEDS_FACEBOOK)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /** All connected accounts visible to this API key. */
