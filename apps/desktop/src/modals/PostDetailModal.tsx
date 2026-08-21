@@ -214,9 +214,16 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
                 <div className="what">{failure.advice}</div>
                 {target.error && <div className="raw">{target.error}</div>}
               </div>
-            ) : (
-              target.error && <div className="autherr">{target.error}</div>
-            )}
+            ) : target.error ? (
+              /*
+               * A message on a post that is not failed describes an attempt
+               * that has already been dealt with, most often TikTok's shared
+               * cap moving it past the reset. Drawing that in the red error
+               * box would tell an operator something is broken when the post
+               * is simply queued for later.
+               */
+              <div className="pdnote">{target.error}</div>
+            ) : null}
           </div>
         </div>
 

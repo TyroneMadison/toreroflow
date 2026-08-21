@@ -3,7 +3,11 @@
 // it, watches it fail, and the client's video is still not posted. The real
 // strings below were read off the live provider on 2026-08-18.
 import assert from "node:assert/strict";
-import { explainPublishFailure } from "./publishFailure";
+import {
+  explainPublishFailure,
+  QUOTA_DEFERRALS_MAX,
+  quotaDeferralAt,
+} from "./publishFailure";
 
 // The one measured on the account: 5 TikTok targets carried exactly this.
 {
@@ -75,5 +79,45 @@ assert.equal(
 
 // Anything unrecognised is retryable rather than declared unrecoverable.
 assert.equal(explainPublishFailure("something nobody has seen before").outlook, "now");
+
+/*
+ * The deferral clock. A post blocked by TikTok's shared cap is moved past the
+ * midnight-UTC reset rather than failed, so the arithmetic here decides when a
+ * client's video actually goes out.
+ */
+{
+  const at = (iso: string) => new Date(iso);
+  const evening = quotaDeferralAt(at("2026-08-20T22:30:00.000Z"), "target-a");
+  assert.equal(evening.toISOString().slice(0, 10), "2026-08-21", "an evening failure waits for tomorrow");
+  assert.equal(evening.getUTCHours(), 0, "and lands just after the reset");
+  assert.ok(
+    evening.getUTCMinutes() >= 4 && evening.getUTCMinutes() <= 25,
+    "a few minutes past the boundary, never exactly on it",
+  );
+
+  // A failure just after midnight waits for the NEXT reset, not the one it is
+  // already past; otherwise it would retry immediately into the same cap.
+  const justAfter = quotaDeferralAt(at("2026-08-18T01:30:00.000Z"), "target-a");
+  assert.equal(justAfter.toISOString().slice(0, 10), "2026-08-19", "01:30 waits a full day");
+
+  // Two targets deferred the same night do not stack on one minute.
+  const a = quotaDeferralAt(at("2026-08-20T22:30:00.000Z"), "target-a");
+  const b = quotaDeferralAt(at("2026-08-20T22:30:00.000Z"), "target-b");
+  assert.notEqual(a.getTime(), b.getTime(), "the jitter spreads them");
+
+  // Deterministic: the same target deferred twice in one night gets one answer,
+  // so a re-run of the sweep cannot walk a post further into the future.
+  assert.equal(
+    quotaDeferralAt(at("2026-08-20T22:30:00.000Z"), "target-a").getTime(),
+    a.getTime(),
+    "same target, same night, same slot",
+  );
+
+  // A month boundary rolls the month, not just the day.
+  const eom = quotaDeferralAt(at("2026-08-31T23:50:00.000Z"), "x");
+  assert.equal(eom.toISOString().slice(0, 10), "2026-09-01", "the last night of a month rolls over");
+
+  assert.equal(QUOTA_DEFERRALS_MAX, 3, "three nights, then it says so out loud");
+}
 
 console.log("publishFailure.check: all checks passed");

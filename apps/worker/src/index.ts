@@ -1,6 +1,12 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { carouselTargetSize, formatFromDuration } from "@toreroflow/core";
+import {
+  carouselTargetSize,
+  explainPublishFailure,
+  formatFromDuration,
+  QUOTA_DEFERRALS_MAX,
+  quotaDeferralAt,
+} from "@toreroflow/core";
 import {
   getPrisma,
   Prisma,
@@ -471,6 +477,43 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
+    /*
+     * The same quota deferral confirmPublishing does, for the case where the
+     * provider refuses on the call rather than accepting and failing later.
+     *
+     * Repeated here rather than left to one path because a cap that can arrive
+     * two ways and is only handled on one is the same bug with a narrower
+     * entrance. The normal retry ladder is exactly wrong for it: three tries
+     * thirty seconds apart against a cap that resets at midnight just spends
+     * three failures to learn what the first one said.
+     */
+    if (target.platform === "tiktok" && explainPublishFailure(message).tiktokDailyCap) {
+      const opts = (target.options as Record<string, unknown> | null) ?? {};
+      const deferrals = typeof opts.quotaDeferrals === "number" ? opts.quotaDeferrals : 0;
+      if (deferrals < QUOTA_DEFERRALS_MAX) {
+        const when = quotaDeferralAt(new Date(), target.id);
+        const attempt = deferrals + 1;
+        await prisma.postTarget.update({
+          where: { id: target.id },
+          data: {
+            status: "scheduled",
+            scheduledAt: when,
+            error:
+              `TikTok's shared daily cap was full, which is the publishing tool's limit ` +
+              `rather than this account's. Moved to ${when.toISOString().slice(0, 16).replace("T", " ")} UTC, ` +
+              `just after the cap resets (attempt ${attempt} of ${QUOTA_DEFERRALS_MAX}).`,
+            options: { ...opts, quotaDeferrals: attempt } as never,
+          },
+        });
+        await reschedule("publish", { targetId: target.id }, target.id, when);
+        console.log(
+          `[worker] target ${target.id} hit TikTok's shared cap on publish; deferred to ${when.toISOString()} (${attempt}/${QUOTA_DEFERRALS_MAX})`,
+        );
+        return; // deliberately not rethrown: this is queued, not failed
+      }
+    }
+
     const finalAttempt = attemptsMade + 1 >= PUBLISH_ATTEMPTS;
     await prisma.postTarget.update({
       where: { id: target.id },

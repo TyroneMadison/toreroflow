@@ -1,4 +1,9 @@
-import { enqueue, getPrisma } from "@toreroflow/db";
+import { enqueue, getPrisma, reschedule } from "@toreroflow/db";
+import {
+  explainPublishFailure,
+  QUOTA_DEFERRALS_MAX,
+  quotaDeferralAt,
+} from "@toreroflow/core";
 import { enrichYouTubeTarget } from "./youtubeEnrich";
 import type { ZernioProvider } from "@toreroflow/publishers";
 
@@ -195,9 +200,62 @@ export async function confirmPublishing(zernio: ZernioProvider | null): Promise<
           continue;
         }
 
+        /*
+         * TikTok's shared daily cap is a queue, not a refusal.
+         *
+         * The cap belongs to the publishing provider's app and is spent by
+         * every agency using it, so hitting it says nothing about this video,
+         * this account, or anything an operator did. It resets at midnight
+         * UTC. Failing the post outright means a client's video never goes out
+         * because somebody else's agency was busy that afternoon, so instead
+         * the post is moved past the reset and tried again.
+         *
+         * Just after midnight UTC is also, for a US audience, about 8pm
+         * Eastern: the front of the fresh pool and a decent slot rather than a
+         * graveyard one. Bounded at three nights, because a video that has
+         * missed three is stale and quietly trying a fourth time is worse than
+         * saying so.
+         */
+        const deferrals = typeof opts.quotaDeferrals === "number" ? opts.quotaDeferrals : 0;
+        if (
+          target.platform === "tiktok" &&
+          explainPublishFailure(why).tiktokDailyCap &&
+          deferrals < QUOTA_DEFERRALS_MAX
+        ) {
+          const when = quotaDeferralAt(new Date(), target.id);
+          const attempt = deferrals + 1;
+          await prisma.postTarget.update({
+            where: { id: target.id },
+            data: {
+              status: "scheduled",
+              scheduledAt: when,
+              remotePostId: null,
+              error:
+                `TikTok's shared daily cap was full, which is the publishing tool's limit ` +
+                `rather than this account's. Moved to ${when.toISOString().slice(0, 16).replace("T", " ")} UTC, ` +
+                `just after the cap resets (attempt ${attempt} of ${QUOTA_DEFERRALS_MAX}).`,
+              options: { ...opts, quotaDeferrals: attempt } as never,
+            },
+          });
+          await reschedule("publish", { targetId: target.id }, target.id, when);
+          console.log(
+            `[worker] target ${target.id} hit TikTok's shared cap; deferred to ${when.toISOString()} (${attempt}/${QUOTA_DEFERRALS_MAX})`,
+          );
+          continue;
+        }
+
+        const exhausted =
+          target.platform === "tiktok" && explainPublishFailure(why).tiktokDailyCap;
         await prisma.postTarget.update({
           where: { id: target.id },
-          data: { status: "failed", error: why.slice(0, 500) },
+          data: {
+            status: "failed",
+            error: exhausted
+              ? `TikTok's shared daily cap was full on ${QUOTA_DEFERRALS_MAX} consecutive nights, ` +
+                `so this was not published. The cap belongs to the publishing tool and is shared ` +
+                `with every agency using it; ask them to raise it, or post this one by hand.`
+              : why.slice(0, 500),
+          },
         });
         await prisma.post.update({ where: { id: target.postId }, data: { status: "failed" } });
         console.error(`[worker] target ${target.id} FAILED at the platform: ${why}`);

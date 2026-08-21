@@ -186,3 +186,37 @@ export function explainPublishFailure(raw: string | null | undefined): PublishFa
     tiktokDailyCap: false,
   };
 }
+
+/**
+ * How many nights a quota-blocked post will wait before it gives up.
+ *
+ * Three. The cap belongs to the publishing tool and is shared with every other
+ * agency using it, so it can stay exhausted for days; but a video that has
+ * missed three nights is stale news on a client's channel, and at that point
+ * silently trying a fourth time is worse than saying so.
+ */
+export const QUOTA_DEFERRALS_MAX = 3;
+
+/**
+ * When to try a quota-blocked TikTok post again.
+ *
+ * TikTok's daily cap resets at midnight UTC, so the next attempt goes just
+ * after that boundary rather than at the time that failed. Two things fall out
+ * of that, and the second one is luck worth keeping: it is the front of the
+ * fresh pool, and for a US audience midnight UTC is about 8pm Eastern, which
+ * is prime time rather than a graveyard slot.
+ *
+ * The offset is a few minutes past the boundary and jittered per target, for
+ * two different reasons. Landing exactly on 00:00 races every other tool that
+ * also knows when the reset is; and without the per-target spread, a night
+ * with three deferred posts would fire all three into the same minute and
+ * spend the agency's own share of the pool in one burst.
+ */
+export function quotaDeferralAt(now: Date, seed: string): Date {
+  const next = new Date(now);
+  next.setUTCHours(24, 0, 0, 0);
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  next.setUTCMinutes(4 + (hash % 22));
+  return next;
+}
