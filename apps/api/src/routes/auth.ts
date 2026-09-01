@@ -7,6 +7,7 @@ import {
   type LoginResponse,
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
+import { requireAuth } from "../plugins/requireAuth";
 
 /** Uniform body for wrong email OR wrong password - never reveal which. */
 const INVALID_CREDENTIALS = { error: "invalid credentials" } as const;
@@ -24,6 +25,30 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const users = await prisma.user.count();
     return { needsSetup: users === 0 };
   });
+
+  /**
+   * Mint a bot token: a year-long credential that can upload, write copy and
+   * schedule, and nothing else (auth/botAccess.ts is the whole list).
+   *
+   * Operator-only, and the guard itself refuses bots calling it, so a bot
+   * cannot mint its own successors. A year rather than 30 days because a bot
+   * cannot answer a login screen; rotating it is: call this again, update the
+   * bot, and the old token dies at its own expiry.
+   */
+  app.post(
+    "/auth/bot-token",
+    { onRequest: requireAuth },
+    async (request, reply) => {
+      if (request.user.role === "bot") {
+        return reply.status(403).send({ error: "a bot cannot mint tokens" });
+      }
+      const token = app.jwt.sign(
+        { sub: request.user.sub, agencyId: request.user.agencyId, role: "bot" },
+        { expiresIn: "365d" },
+      );
+      return { token, role: "bot", expiresInDays: 365 };
+    },
+  );
 
   const signToken = (user: { id: string; agencyId: string }): string =>
     app.jwt.sign({ sub: user.id, agencyId: user.agencyId }, { expiresIn: TOKEN_TTL });

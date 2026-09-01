@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { isTauri } from "./autostart";
 
 /**
  * Finding and taking an app update, in one place.
@@ -96,6 +97,12 @@ export interface AppUpdate {
 }
 
 export function useAppUpdate(): AppUpdate {
+  /*
+   * In a plain browser tab (the web-hosted app) there is no updater and
+   * nothing to update: a refresh IS the update. Every phase stays idle and
+   * the banner and Settings card render nothing, which is the truth.
+   */
+  const inTauri = isTauri();
   const [update, setUpdate] = useState<Update | null>(null);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [progress, setProgress] = useState(0);
@@ -106,6 +113,7 @@ export function useAppUpdate(): AppUpdate {
   // Read the note from the last attempt once, on mount. Running the version it
   // was trying to reach means it worked, and the note goes.
   useEffect(() => {
+    if (!inTauri) return;
     const attempt = readAttempt();
     if (!attempt) return;
     void getVersion()
@@ -121,6 +129,7 @@ export function useAppUpdate(): AppUpdate {
   }, []);
 
   const look = useCallback(async () => {
+    if (!isTauri()) return;
     setPhase("checking");
     setProblem(null);
     try {

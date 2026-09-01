@@ -52,3 +52,19 @@
 		}
 	}
 }
+
+# The web-hosted app UI. Static files from the webapp container; the page
+# itself calls the API origin above, so nothing here proxies data.
+{$APP_DOMAIN:app.localhost} {
+	reverse_proxy webapp:80
+
+	header {
+		X-Content-Type-Options nosniff
+		# The app in a frame is a clickjacking surface for every schedule
+		# button in it.
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		-Server
+	}
+}

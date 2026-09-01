@@ -161,11 +161,24 @@ services:
   # IPv6 is bound because an AAAA record exists for API_DOMAIN, and Let's
   # Encrypt prefers IPv6 when it finds one. Listening on IPv4 alone would fail
   # the ACME challenge even though the name resolves.
+  # The desktop UI as a web page (see Dockerfile.webapp). Static files only;
+  # every request for data still goes to api.torerone.com from the browser.
+  webapp:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.webapp
+      args:
+        VITE_API_URL: https://${API_DOMAIN:?set API_DOMAIN in infra/.env}
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in infra/.env}
+      # Defaulted so a server without the DNS record yet still boots; the
+      # app.localhost site block just answers nothing public.
+      APP_DOMAIN: ${APP_DOMAIN:-app.localhost}
     ports:
       - "${PUBLIC_IPV4:?set PUBLIC_IPV4 in infra/.env}:80:80"
       - "${PUBLIC_IPV4}:443:443"

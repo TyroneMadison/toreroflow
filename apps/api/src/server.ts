@@ -31,8 +31,9 @@ import { oauthRoutes } from "./routes/oauth";
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { sub: string; agencyId: string };
-    user: { sub: string; agencyId: string };
+    /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
+    payload: { sub: string; agencyId: string; role?: "bot" };
+    user: { sub: string; agencyId: string; role?: "bot" };
   }
 }
 
