@@ -119,12 +119,30 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
         env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
           ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
           : null;
-      if (provider && client.providerProfileId) {
+      /*
+       * A brand-new client has no publishing profile yet, and the natural
+       * flow is create-client-then-send-link in one breath. Without this,
+       * that press published a form-only page and the operator had to know
+       * to press again later. Best effort like everything else here.
+       */
+      let profileId = client.providerProfileId;
+      if (provider && !profileId) {
+        try {
+          profileId = await provider.createProfile(client.name);
+          await prisma.client.update({
+            where: { id: client.id },
+            data: { providerProfileId: profileId },
+          });
+        } catch (err) {
+          app.log.warn({ err }, "could not create the publishing profile for the welcome link");
+        }
+      }
+      if (provider && profileId) {
         for (const platform of ["instagram", "tiktok", "youtube", "facebook"] as const) {
           try {
             connect.push({
               platform,
-              url: await provider.connectUrl(platform, client.providerProfileId),
+              url: await provider.connectUrl(platform, profileId),
             });
           } catch (err) {
             app.log.warn({ err, platform }, "could not build a connect link");
