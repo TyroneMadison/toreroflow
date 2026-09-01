@@ -16,6 +16,7 @@ import {
   type AuthUser,
   type ClientSummary,
   type LoginResponse,
+  setUnauthorizedHandler,
 } from "../lib/api";
 
 const SELECTED_KEY = "toreroflow-selected-client";
@@ -66,6 +67,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const refreshClients = useCallback(async () => {
     const list = await api.get<ClientSummary[]>("/clients");
     setClients(list);
+  }, []);
+
+  /*
+   * A 401 from any request ends the session here, not just at boot.
+   *
+   * The token has already been cleared by the api layer; this is what makes
+   * the app notice. Without it an expiry mid-session left the operator on a
+   * screen whose data would never arrive, with no way to tell that from an
+   * empty calendar.
+   */
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setClients([]);
+    });
   }, []);
 
   // Boot: restore session if a token exists, else ask whether this is first run.

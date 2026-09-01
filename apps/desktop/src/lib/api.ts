@@ -42,6 +42,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What to do when the server stops accepting our token mid-session.
+ *
+ * A session lasts 30 days, so the expiry almost never lands on a boot; it
+ * lands while the app is open and in use. Before this, only the boot path
+ * checked for a 401, so an expiry mid-session left every request failing and
+ * every screen swallowing it: the calendar rendered empty, and nothing
+ * anywhere said the session had ended.
+ *
+ * Registered once by AppState. Module-level rather than threaded through each
+ * caller because the whole point is that no caller has to remember.
+ */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void): void {
+  onUnauthorized = fn;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -59,7 +76,23 @@ async function request<T>(
   });
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data);
+  if (!res.ok) {
+    /*
+     * One 401 means this session is over, whichever request happened to find
+     * out. The token goes immediately so nothing retries with it, and the app
+     * is told once; the error still throws so the calling screen behaves as it
+     * always did.
+     *
+     * The login and bootstrap routes are exempt: a wrong password answers 401
+     * too, and treating that as an expiry would clear a token the operator is
+     * still in the middle of getting.
+     */
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      clearToken();
+      onUnauthorized?.();
+    }
+    throw new ApiError(res.status, data);
+  }
   return data as T;
 }
 
