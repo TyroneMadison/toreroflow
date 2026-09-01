@@ -341,10 +341,23 @@ function ProfileCard({
   const copyWelcomeLink = async () => {
     setLinkBusy(true);
     try {
-      const link = await api.post<{ url: string }>(`/clients/${client.id}/welcome-link`);
+      const link = await api.post<{
+        url: string;
+        connectPublished: boolean;
+        note: string | null;
+      }>(`/clients/${client.id}/welcome-link`);
       setWelcomeUrl(link.url);
       await navigator.clipboard.writeText(link.url);
-      toast.success(`Welcome link for ${client.name} copied.`);
+      // A link whose page carries no connect buttons is worth sending late
+      // rather than silently: the operator must hear it before the client does.
+      if (link.note || !link.connectPublished) {
+        toast.fail(
+          `${client.name}'s page is form-only right now`,
+          new Error(link.note ?? "The connect buttons could not be published. Press again in a minute."),
+        );
+      } else {
+        toast.success(`Welcome link for ${client.name} copied.`);
+      }
     } catch (err) {
       toast.fail(`Could not get ${client.name}'s welcome link`, err);
     } finally {

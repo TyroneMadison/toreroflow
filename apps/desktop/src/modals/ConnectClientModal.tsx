@@ -57,8 +57,18 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     setBusy("welcome");
     setError(null);
     try {
-      const link = await api.post<{ url: string }>(`/clients/${clientId}/welcome-link`);
+      const link = await api.post<{
+        url: string;
+        connectPublished: boolean;
+        note: string | null;
+      }>(`/clients/${clientId}/welcome-link`);
       setWelcomeUrl(link.url);
+      // Form-only is a state the operator has to hear about before sending:
+      // a page without connect buttons is exactly the silent miss this modal
+      // exists to prevent.
+      if (link.note || !link.connectPublished) {
+        setError(link.note ?? "The connect buttons could not be published. Press again in a minute.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not make a welcome link");
     } finally {
