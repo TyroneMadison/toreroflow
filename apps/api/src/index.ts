@@ -1,7 +1,9 @@
 import { env } from "./env";
 import { buildServer } from "./server";
+import { startOnboardingSweep } from "./onboardingSweep";
 
 const app = await buildServer();
+startOnboardingSweep(app.log);
 
 /*
  * What to bind to.

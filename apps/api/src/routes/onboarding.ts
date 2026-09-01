@@ -1,16 +1,17 @@
 import crypto from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import {
-  fieldsToUpdate,
-  mergeHandles,
-  readWelcomeReply,
-  type WelcomeReply,
-} from "@toreroflow/core";
+import { type WelcomeReply } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { NetlifyPublisher } from "../reports/netlify";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { ZernioProvider } from "@toreroflow/publishers";
+import {
+  applyWelcomeReplies,
+  SITE_DOMAIN,
+  WELCOME_FORM,
+  welcomeSiteId as findWelcomeSiteId,
+} from "../onboardingSweep";
 
 /**
  * The welcome link a client gets after they pay.
@@ -29,10 +30,6 @@ import { ZernioProvider } from "@toreroflow/publishers";
  * That is why this exists without the hosted backend everything else in this
  * area has been waiting on.
  */
-
-/** Where the form lives. The site is found by this domain, not by an id. */
-const SITE_DOMAIN = "torerone.com";
-const WELCOME_FORM = "client-welcome";
 
 /**
  * Where a brand's connect links are published for their own welcome page to
@@ -68,9 +65,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
   const welcomeSiteId = async (): Promise<string | null> => {
     const net = publisher();
     if (!net) return null;
-    const sites = await net.listSites();
-    const match = sites.find((s) => s.custom_domain === SITE_DOMAIN);
-    return match?.id ?? null;
+    return findWelcomeSiteId(net);
   };
 
   /**
@@ -235,104 +230,6 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const applied: Array<{ client: string; filled: string[]; handles: number }> = [];
-    let unmatched = 0;
-    /** Replies seen before. Counted so a quiet check can say why it was quiet. */
-    let alreadyApplied = 0;
-
-    for (const submission of submissions) {
-      const parsed = readWelcomeReply(submission);
-      if (!parsed.token) {
-        unmatched += 1;
-        continue;
-      }
-      const client = await prisma.client.findFirst({
-        where: {
-          onboardingToken: parsed.token,
-          agencyId: request.user.agencyId,
-          deletedAt: null,
-        },
-        select: { id: true, name: true, handles: true, welcomeRepliesApplied: true },
-      });
-      if (!client) {
-        unmatched += 1;
-        continue;
-      }
-
-      /*
-       * Applied once, ever.
-       *
-       * Every check reads the whole list of replies back from the host, so
-       * without this the same answers would be written again on every press.
-       * That is not harmless now that an answer wins: a detail corrected by
-       * hand afterwards would be silently reverted to what the client typed
-       * weeks earlier.
-       */
-      if (client.welcomeRepliesApplied.includes(submission.id)) {
-        alreadyApplied += 1;
-        continue;
-      }
-
-      const fill = fieldsToUpdate(parsed.patch);
-
-      /*
-       * Their handles are merged, not replaced. Answering only the YouTube box
-       * must not erase the Instagram handle they gave last time.
-       *
-       * Stored apart from connected accounts on purpose: a typed handle cannot
-       * post anything, and writing one in as an account would put a row on
-       * screen that looks connected and is not. Connecting is the separate tap
-       * that goes to the provider.
-       */
-      const handles = parsed.handles.length
-        ? mergeHandles(client.handles as Record<string, string> | null, parsed.handles)
-        : undefined;
-
-      await prisma.client.update({
-        where: { id: client.id },
-        data: {
-          ...fill,
-          ...(handles ? { handles } : {}),
-          onboardedAt: new Date(),
-          welcomeRepliesApplied: { push: submission.id },
-        },
-      });
-
-      /*
-       * What they wrote is kept as a note, not turned into accounts.
-       *
-       * A handle they typed is not a connected account: connected accounts
-       * only ever come back from the publishing provider, and writing one here
-       * would put a row on screen that cannot post anything. Nor are these
-       * inspiration accounts, which mean the opposite thing, someone whose
-       * content they want theirs to resemble.
-       *
-       * So it lands where free text about a brand belongs, ready for the
-       * operator to read and act on, and easy to delete.
-       */
-      const body = [
-        ...parsed.handles.map((h) => `${h.platform}: @${h.handle}`),
-        ...(parsed.notes ? ["", parsed.notes] : []),
-      ].join("\n");
-      if (body.trim()) {
-        await prisma.knowledgeNote.create({
-          data: {
-            clientId: client.id,
-            title: `From their welcome form, ${new Date(submission.createdAt || Date.now()).toLocaleDateString("en-US")}`,
-            body,
-          },
-        });
-      }
-
-      applied.push({
-        // The name they gave, where they gave one, so the operator reads what
-        // the brand is called now rather than what it used to be.
-        client: fill.name ?? client.name,
-        filled: Object.keys(fill),
-        handles: parsed.handles.length,
-      });
-    }
-
-    return { checked: submissions.length, applied, unmatched, alreadyApplied };
+    return applyWelcomeReplies(submissions, request.user.agencyId);
   });
 }

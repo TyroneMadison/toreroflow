@@ -29,6 +29,7 @@ import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { withReportPage } from "../reports/onboardHook";
 import { ensureReportSlug } from "../reports/slug";
+import { importProviderAccounts } from "../onboardingSweep";
 
 const NOT_FOUND = { error: "client not found" } as const;
 
@@ -374,93 +375,15 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         const profileId = await ensureProviderProfile(client);
-        const remote = await zernio.accountsForProfile(profileId);
-        const valid = remote.filter((a) =>
-          (PLATFORMS as readonly string[]).includes(a.platform),
-        );
-        for (const a of valid) {
-          const platform = a.platform as Platform;
-          const profileData = a.metadata?.profileData;
-          const handle =
-            profileData?.username ?? a.username ?? a.displayName ?? a.name ?? a.platform;
-          const avatarUrl = profileData?.profilePicture ?? null;
-          const displayName = a.displayName ?? profileData?.displayName ?? null;
-          /*
-           * Match on the provider's account id, not on the platform. Matching
-           * by platform meant a second Facebook page silently overwrote the
-           * first: the sync found "the client's facebook row" and updated it,
-           * and the brand could never hold two pages at once. The platform
-           * fallback only catches legacy rows connected before provider ids
-           * were stored, and only when they have no id to disagree with.
-           */
-          const existing =
-            (await prisma.socialAccount.findFirst({
-              where: { clientId: client.id, providerAccountId: a._id, deletedAt: null },
-            })) ??
-            (await prisma.socialAccount.findFirst({
-              where: {
-                clientId: client.id,
-                platform,
-                providerAccountId: null,
-                deletedAt: null,
-                // Reminder accounts also have no provider id, and are not
-                // legacy rows waiting to be claimed by an import.
-                NOT: { tokensEncrypted: "reminder" },
-              },
-            }));
-          const account = existing
-            ? await prisma.socialAccount.update({
-                where: { id: existing.id },
-                data: {
-                  handle,
-                  status: "connected",
-                  providerAccountId: a._id,
-                  avatarUrl,
-                  displayName,
-                  connectedAt: new Date(),
-                },
-              })
-            : await prisma.socialAccount.create({
-                data: {
-                  clientId: client.id,
-                  platform,
-                  handle,
-                  status: "connected",
-                  providerAccountId: a._id,
-                  avatarUrl,
-                  displayName,
-                  // Tokens stay with the provider; this marks custody, not a secret.
-                  tokensEncrypted: "provider:zernio",
-                },
-              });
-          // Followers are known right now; seed today's snapshot immediately.
-          if (typeof a.followersCount === "number") {
-            const dayStart = new Date();
-            dayStart.setHours(0, 0, 0, 0);
-            const snap = await prisma.metricSnapshot.findFirst({
-              where: { socialAccountId: account.id, capturedAt: { gte: dayStart } },
-            });
-            if (snap) {
-              await prisma.metricSnapshot.update({
-                where: { id: snap.id },
-                data: { followers: a.followersCount },
-              });
-            } else {
-              await prisma.metricSnapshot.create({
-                data: {
-                  socialAccountId: account.id,
-                  capturedAt: new Date(),
-                  followers: a.followersCount,
-                },
-              });
-            }
-          }
-        }
+        const { seen } = await importProviderAccounts(zernio, {
+          id: client.id,
+          providerProfileId: profileId,
+        });
         // Backfill history from the provider's already-synced posts right away.
-        if (valid.length) {
+        if (seen) {
           await enqueue("analytics", {});
         }
-        return { imported: valid.length };
+        return { imported: seen };
       } catch (error) {
         if (error instanceof ZernioError) {
           return reply.status(502).send({ error: `Zernio: ${error.message}` });
