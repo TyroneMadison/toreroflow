@@ -598,6 +598,33 @@ function ProfileCard({
             });
           })}
 
+          {/*
+            The welcome link, where reconnecting starts. The same minted-once
+            link the client already has: when a platform drops off, copying it
+            from right under the account rows and sending it again is the whole
+            re-authentication flow, and their taps land back here via the sweep.
+          */}
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
+            <button
+              className="btn ghost"
+              style={{ fontSize: 11.5 }}
+              disabled={linkBusy}
+              title={`Copy ${client.name}'s welcome link. Send it when accounts need connecting or reconnecting; what they do there flows back into the app on its own.`}
+              onClick={() => void copyWelcomeLink()}
+            >
+              {linkBusy ? "Getting the link…" : "Copy their welcome link (connect / reconnect)"}
+            </button>
+            {welcomeUrl && (
+              <div
+                className="sub"
+                style={{ fontSize: 11, wordBreak: "break-all", margin: "6px 0 0" }}
+                title="Copied. Send this to them."
+              >
+                {welcomeUrl}
+              </div>
+            )}
+          </div>
+
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
             {!remOpen ? (
               <button
