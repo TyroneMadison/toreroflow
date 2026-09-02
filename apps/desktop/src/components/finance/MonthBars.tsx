@@ -24,10 +24,11 @@ function axisLabel(cents: number): string {
 }
 
 /**
- * The last twelve months, one bar each. Bar height is income, the red slice
- * is cost, the green slice is what was kept. The hovered or current month
- * shows the exact figures. Cost above income still draws inside the income
- * bar; the callout carries the real numbers.
+ * The last twelve months, two bars each: green is what came in, red is what
+ * went out, standing side by side on the same scale so the eye compares them
+ * directly. The old single bar sized itself by income and painted cost inside
+ * it, which meant a month that cost more than it earned showed as pure red
+ * and manually added income became invisible exactly when it mattered most.
  *
  * Clicking a bar opens that month. The whole screen already reads whichever
  * month it is pointed at, so this needs no history view of its own: the same
@@ -43,7 +44,9 @@ export default function MonthBars({
   onPick(month: string): void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = niceCeil(Math.max(...series.map((p) => p.inCents)));
+  // Both directions share the axis: a $1,400 cost month must tower over a
+  // $570 income month, not erase it.
+  const max = niceCeil(Math.max(...series.map((p) => Math.max(p.inCents, p.outCents))));
   const active = hover ?? series.length - 1;
   const labels = [max, (max * 3) / 4, max / 2, max / 4, 0];
 
@@ -53,8 +56,7 @@ export default function MonthBars({
         <div>
           <h3>Last 12 months</h3>
           <div className="sub">
-            Each bar is what came in. Red is what it cost you, green is what you kept. Click a month
-            to open it.
+            Green is what came in, red is what went out, side by side. Click a month to open it.
           </div>
         </div>
       </div>
@@ -66,9 +68,8 @@ export default function MonthBars({
         </div>
         <div className="chart">
           {series.map((p, i) => {
-            const totalPct = (p.inCents / max) * 100;
-            const costPct = (Math.min(p.outCents, p.inCents) / max) * 100;
-            const keptPct = Math.max(totalPct - costPct, 0);
+            const inPct = (p.inCents / max) * 100;
+            const outPct = (p.outCents / max) * 100;
             return (
               <div
                 className={`col${i === active ? " on" : ""}`}
@@ -94,8 +95,8 @@ export default function MonthBars({
                   </div>
                 )}
                 <div className="tk">
-                  {costPct > 0 && <div className="fill o" style={{ height: `${costPct.toFixed(1)}%` }} />}
-                  {keptPct > 0 && <div className="fill i" style={{ height: `${keptPct.toFixed(1)}%` }} />}
+                  <div className="fill i" style={{ height: `${inPct.toFixed(1)}%` }} />
+                  <div className="fill o" style={{ height: `${outPct.toFixed(1)}%` }} />
                 </div>
                 <div className="cap">{shortMonth(p.month)}</div>
               </div>
