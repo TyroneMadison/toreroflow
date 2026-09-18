@@ -20,7 +20,7 @@ import LongFormModal from "../modals/LongFormModal";
 import CarouselBuilderModal from "../modals/CarouselBuilderModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
-import { isHorizontal } from "../lib/youtube";
+import { usesLongFormWizard } from "../lib/youtube";
 import BestTimes from "../components/BestTimes";
 import QuotaCard from "../components/QuotaCard";
 import { useToast } from "../components/Toasts";
@@ -688,8 +688,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                             className={`fmtopt${asset.format === f ? " on" : ""}`}
                             title={
                               f === "short_form"
-                                ? "Counts toward the short-form target"
-                                : "Counts toward the long-form target"
+                                ? "Counts toward the short-form target. Schedules to every connected platform, landscape included."
+                                : "Counts toward the long-form target. A landscape video opens the YouTube wizard instead."
                             }
                             onClick={() => void setFormat(asset, f)}
                           >
@@ -829,12 +829,15 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           setSchedBusy(asset.id);
                           void saveDraft(asset)
                             .then((ok) => {
-                              // Shape decides the door: a horizontal video is
-                              // a long-form YouTube upload and gets the wizard
-                              // built for one, not a reel scheduler with a
-                              // YouTube section.
+                              // The Short/Long switch decides the door, and
+                              // shape only narrows it. Horizontal used to mean
+                              // the YouTube wizard on its own, back when no
+                              // other platform took a 16:9 frame; Instagram and
+                              // TikTok both do now, so a landscape short-form
+                              // cut goes to the ordinary scheduler with every
+                              // platform on offer.
                               if (ok) {
-                                if (isHorizontal(asset)) setLongForm(asset);
+                                if (usesLongFormWizard(asset)) setLongForm(asset);
                                 else setScheduling(asset);
                               }
                             })

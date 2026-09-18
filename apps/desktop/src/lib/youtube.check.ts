@@ -2,7 +2,13 @@
 // human actually does: a choice that fails to become a task is silently lost,
 // and a default that becomes a task buries the real work. Both directions are
 // pinned here, along with the routing and ratio helpers.
-import { buildStudioTasks, COMMENT_DEFAULTS, isHorizontal, ratioLabel } from "./youtube";
+import {
+  buildStudioTasks,
+  COMMENT_DEFAULTS,
+  isHorizontal,
+  ratioLabel,
+  usesLongFormWizard,
+} from "./youtube";
 
 /** Local so the file stays part of the app's typecheck without pulling in node types. */
 const assert = {
@@ -116,3 +122,43 @@ assert.equal(ratioLabel(2538, 1080), "2.35:1", "scope");
 assert.equal(ratioLabel(1234, 567), "1234x567", "the unnamed fall back to pixels");
 
 console.log("youtube.check: all checks passed");
+
+/*
+ * Which door a video opens.
+ *
+ * Horizontal alone used to send a video to the YouTube wizard. Instagram and
+ * TikTok take 16:9 now, so a landscape short-form cut has to reach the ordinary
+ * scheduler or it can only ever go to one platform.
+ */
+{
+  const landscape = { width: 1920, height: 1080, kind: "video" } as const;
+  const vertical = { width: 1080, height: 1920, kind: "video" } as const;
+
+  assert.equal(
+    usesLongFormWizard({ ...landscape, format: "short_form" }),
+    false,
+    "a 1920x1080 short-form cut goes to the scheduler, not the wizard",
+  );
+  assert.equal(
+    usesLongFormWizard({ ...landscape, format: "long_form" }),
+    true,
+    "a landscape long-form video still opens the wizard",
+  );
+
+  /* Vertical never reaches the wizard, whatever the switch says. */
+  assert.equal(usesLongFormWizard({ ...vertical, format: "long_form" }), false, "vertical stays out");
+  assert.equal(usesLongFormWizard({ ...vertical, format: "short_form" }), false, "vertical stays out");
+
+  /* Shape itself is unchanged: it still describes the frame, not the door. */
+  assert.equal(isHorizontal({ ...landscape, format: "short_form" }), true, "1920x1080 is horizontal");
+  assert.equal(isHorizontal({ ...vertical, format: "long_form" }), false, "1080x1920 is not");
+
+  /*
+   * Assets probed before dimensions were recorded have only the switch to go
+   * on, and it decides alone rather than defaulting a landscape video into a
+   * scheduler that may not suit it.
+   */
+  const unmeasured = { width: null, height: null, kind: "video" } as const;
+  assert.equal(usesLongFormWizard({ ...unmeasured, format: "long_form" }), true, "no dimensions: the switch decides");
+  assert.equal(usesLongFormWizard({ ...unmeasured, format: "short_form" }), false, "no dimensions: the switch decides");
+}

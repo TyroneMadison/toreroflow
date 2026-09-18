@@ -72,6 +72,30 @@ export function isHorizontal(asset: Pick<MediaAssetInfo, "width" | "height" | "f
 }
 
 /**
+ * Whether this video belongs to the long-form YouTube wizard.
+ *
+ * Shape used to be the whole rule: anything wider than it was tall went to the
+ * wizard, because horizontal meant a YouTube upload and nothing else would take
+ * the frame. Instagram and TikTok both accept 16:9 now, so a 1920x1080 cut is an
+ * ordinary short-form post that happens to be landscape, and sending it to a
+ * one-platform wizard is the wrong door for it.
+ *
+ * So the operator's own Short/Long switch decides, and shape only narrows it.
+ * The switch already existed, already sat on every card, and already meant
+ * roughly this; it just spent its meaning on quota counting alone.
+ *
+ * Vertical never reaches the wizard whatever the switch says. A vertical
+ * long-form video is a YouTube upload the ordinary scheduler handles, and the
+ * five phases exist for the 16:9 upload that needs chapters, an end screen and
+ * a self-certification.
+ */
+export function usesLongFormWizard(
+  asset: Pick<MediaAssetInfo, "width" | "height" | "format" | "kind">,
+): boolean {
+  return isHorizontal(asset) && asset.format === "long_form";
+}
+
+/**
  * The conventional name for a frame's shape, e.g. "16:9", or "1234x567" when
  * it is none of the named ones. Cosmetic: the Checks phase says what the file
  * is rather than making the operator do the division.
