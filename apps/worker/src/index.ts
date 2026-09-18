@@ -402,6 +402,34 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         publishNow: true,
       });
       remotePostId = result.remotePostId;
+    } else if (env.PUBLISH_PROVIDER !== "dryrun") {
+      /*
+       * A configured provider this target cannot reach is a broken account,
+       * not a dry run.
+       *
+       * The dry-run branch below is honest on a dev box: nothing was ever
+       * going to reach a platform, so returning at once and calling it posted
+       * costs nothing. On a server configured to publish for real, the same
+       * silence is a lie. An account reconnected in Settings leaves a new row
+       * behind it, the posts already scheduled keep pointing at the old one,
+       * and that row no longer carries the "provider:zernio" tag. Three of a
+       * client's videos went to a log file while the calendar showed Posted
+       * with a green tick, and ten more were queued behind them. Nothing could
+       * have surfaced it: a dry run writes no error and no remote url, and
+       * confirmPublishing never inspects it because it was never left in
+       * "publishing".
+       *
+       * So when a real provider is configured, a target that cannot reach it
+       * fails loudly and names which half is wrong.
+       */
+      throw new Error(
+        zernio
+          ? `this account is not connected through ${env.PUBLISH_PROVIDER} (it is tagged ` +
+            `"${target.socialAccount.tokensEncrypted ?? "nothing"}"), so nothing was published. ` +
+            `Reconnect ${target.socialAccount.handle} in Settings, then reschedule this post.`
+          : `PUBLISH_PROVIDER is "${env.PUBLISH_PROVIDER}" but no provider API key is set, so ` +
+            `nothing was published. Set PUBLISH_PROVIDER_API_KEY on the server and restart the worker.`,
+      );
     } else {
       // Dry-run accounts (and dev without a provider key) log instead of post.
       const publisher = new DryRunPublisher(target.platform as Platform);
