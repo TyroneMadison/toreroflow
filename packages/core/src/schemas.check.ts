@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { schedulePostSchema } from "./schemas";
+import { PLATFORM_MAX_UPLOAD_BYTES, schedulePostSchema, uploadSizeError } from "./schemas";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/core test`.
@@ -67,6 +67,34 @@ assert.throws(
       schedulePostSchema.parse({ platforms: ["facebook"], accountIds: [], scheduledAt: at }),
     "an empty account list must not be accepted",
   );
+}
+
+/*
+ * Upload size, the guard that keeps a doomed post out of the queue.
+ *
+ * The failure being pinned: a 506MB export was scheduled, waited hours for its
+ * slot, and only then was refused by the provider as too large for a reel. The
+ * size was knowable the whole time.
+ */
+{
+  const MB = 1024 * 1024;
+  const limit = PLATFORM_MAX_UPLOAD_BYTES.instagram!;
+  assert.equal(limit, 300 * MB, "instagram is capped at the provider's 300MB");
+
+  assert.equal(uploadSizeError("instagram", 299 * MB), null, "under the limit publishes");
+  assert.equal(uploadSizeError("instagram", limit), null, "exactly the limit is allowed");
+
+  const over = uploadSizeError("instagram", 506 * MB);
+  assert.ok(over, "the video that started this must be refused");
+  assert.match(over!, /506MB/, "the message names the measured size");
+  assert.match(over!, /300MB/, "the message names the limit");
+
+  /*
+   * A platform with no stated limit is unchecked, not assumed. Inventing a
+   * number would refuse videos that publish fine today.
+   */
+  assert.equal(uploadSizeError("tiktok", 900 * MB), null, "an unknown limit refuses nothing");
+  assert.equal(uploadSizeError("youtube", 900 * MB), null, "an unknown limit refuses nothing");
 }
 
 console.log("schedule schema: all checks passed");

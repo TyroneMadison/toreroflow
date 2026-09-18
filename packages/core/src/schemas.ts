@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PLATFORMS } from "./types";
+import { PLATFORMS, type Platform } from "./types";
 
 export const platformSchema = z.enum(PLATFORMS);
 
@@ -104,6 +104,46 @@ export const INSTAGRAM_REEL_ATTEMPT_CEILING = 180;
  * rather than dying inside the provider.
  */
 export const INSTAGRAM_FEED_MAX_SECONDS = 60 * 60;
+
+/**
+ * The largest file the publishing provider will take, per platform.
+ *
+ * Not the platform's own limit: Instagram's API accepts a reel up to 1GB, and
+ * this 300MB is the provider's cap sitting in front of it. It is recorded here
+ * because it is what a post actually hits, and it is the provider's number to
+ * change, not ours.
+ *
+ * Only platforms whose limit is known appear. An absent platform is unchecked
+ * rather than assumed generous: inventing a number here would refuse a video
+ * that would have published fine, which is worse than the failure this guards
+ * against. Add one when the provider states it.
+ */
+export const PLATFORM_MAX_UPLOAD_BYTES: Partial<Record<Platform, number>> = {
+  instagram: 300 * 1024 * 1024,
+};
+
+/**
+ * Why this file cannot go to this platform, or null if it can.
+ *
+ * Checked when a post is scheduled rather than when it publishes. The two are
+ * hours apart, and the provider only refuses at the second one: a 506MB export
+ * was accepted into the queue, sat there until its slot, and then failed with
+ * "Video file too large for Instagram Reels" long after the moment to re-cut it
+ * had passed. Nothing about the size changes in between, so there is no reason
+ * to wait to find out.
+ *
+ * The message names the measured size and the limit, because "too large" alone
+ * does not tell an operator whether to trim two seconds or re-export.
+ */
+export function uploadSizeError(platform: Platform, bytes: number): string | null {
+  const max = PLATFORM_MAX_UPLOAD_BYTES[platform];
+  if (max === undefined || bytes <= max) return null;
+  const mb = (n: number) => `${Math.round(n / (1024 * 1024))}MB`;
+  return (
+    `this video is ${mb(bytes)} and ${platform} takes ${mb(max)}. ` +
+    `Re-export it at a lower bitrate and schedule it again.`
+  );
+}
 
 export const tiktokOptionsSchema = z.object({
   /**

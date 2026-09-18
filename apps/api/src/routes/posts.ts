@@ -11,6 +11,7 @@ import {
   INSTAGRAM_STORY_MAX_SECONDS,
   schedulePostSchema,
   scheduleTimeError,
+  uploadSizeError,
   youtubeTitleFor,
   type Platform,
 } from "@toreroflow/core";
@@ -97,6 +98,41 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           ? "an account in this schedule is not connected"
           : `not connected: ${missing.map((a) => a.platform).join(", ")}`,
       });
+    }
+
+    /*
+     * A file the provider will refuse, refused here instead.
+     *
+     * Publishing is hours away and nothing about the size changes in between,
+     * so waiting to find out costs the slot and nothing else: a 506MB export
+     * sat in the queue until its moment, failed with "Video file too large for
+     * Instagram Reels", and by then the video could not be re-cut in time for
+     * the post it was meant to be.
+     *
+     * Measured off disk rather than read from the asset, which carries no size
+     * column, so videos uploaded long before this existed are checked too.
+     *
+     * The whole schedule is refused, not the oversized platform alone. Queueing
+     * three platforms and quietly dropping the fourth is the shape of failure
+     * this is here to remove, not one to introduce somewhere new.
+     */
+    if (asset.kind === "video" && !asset.sourceDeletedAt) {
+      let bytes: number | null = null;
+      try {
+        bytes = (await fs.stat(nodePath.join(env.STORAGE_DIR, asset.storageKey))).size;
+      } catch {
+        /*
+         * Unreadable is not oversized. The publish path already reports a
+         * missing file in its own words, and refusing a schedule because this
+         * could not stat the video would block a post over a storage hiccup.
+         */
+      }
+      if (bytes !== null) {
+        for (const { platform } of accounts) {
+          const tooLarge = uploadSizeError(platform, bytes);
+          if (tooLarge) return reply.status(400).send({ error: tooLarge });
+        }
+      }
     }
 
     // Older rows carry {hook, caption} or a `title` that used to mean both
