@@ -1,14 +1,22 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Modal from "./Modal";
+import CoverModal from "./CoverModal";
+import PreviewModal from "./PreviewModal";
+import { useToast } from "../components/Toasts";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
-import { api, fileUrl, uploadAbThumb, type PostTargetInfo } from "../lib/api";
+import { api, fileUrl, uploadAbThumb, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { canMove, POST_STATUS } from "../lib/postStatus";
 import { explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
 
 interface PostDetailModalProps {
   target: PostTargetInfo;
+  /**
+   * Every post on the same calendar day, when the opener knows them. Turns on
+   * "use this caption on every post that day"; absent, the button is absent.
+   */
+  dayTargets?: PostTargetInfo[];
   onClose(): void;
   onChanged(): void;
 }
@@ -24,7 +32,13 @@ function localValue(iso: string | null): string {
  * Quick look at one scheduled post from the calendar, with its day and time
  * editable in place. Published and in-flight posts are read-only.
  */
-export default function PostDetailModal({ target, onClose, onChanged }: PostDetailModalProps) {
+export default function PostDetailModal({
+  target,
+  dayTargets,
+  onClose,
+  onChanged,
+}: PostDetailModalProps) {
+  const toast = useToast();
   const editable = canMove(target.status);
   // Wider than `editable`: a failed post cannot move, but its words can
   // change before a retry.
@@ -51,6 +65,76 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retried, setRetried] = useState(false);
+
+  /*
+   * The video itself, for the preview and the cover picker, which both want
+   * the full asset rather than the calendar's summary of it. Loaded on open
+   * and again after a cover change, so the thumbnail here matches what will
+   * post.
+   */
+  const [asset, setAsset] = useState<MediaAssetInfo | null>(null);
+  const [viewing, setViewing] = useState<"preview" | "cover" | null>(null);
+  const loadAsset = useCallback(async () => {
+    if (!target.mediaAssetId) return;
+    try {
+      setAsset(await api.get<MediaAssetInfo>(`/media/${target.mediaAssetId}`));
+    } catch {
+      // The card still works without it; only preview and cover need it.
+    }
+  }, [target.mediaAssetId]);
+  useEffect(() => {
+    void loadAsset();
+  }, [loadAsset]);
+  const videoSrc = asset?.kind === "video" ? fileUrl(asset.videoUrl) : null;
+  // A cover change only matters before it posts; after, the platform has its own.
+  const canCover = videoSrc !== null && captionEditable;
+
+  const [writing, setWriting] = useState(false);
+  /**
+   * The same AI writer as the upload card, filling the boxes rather than
+   * saving: the operator reads it, then saves. YouTube also gets the title.
+   */
+  const writeWithAi = async () => {
+    if (!target.mediaAssetId) return;
+    const hasWords = caption.trim() !== "" || (ytTitleEditable && ytTitle.trim() !== "");
+    if (hasWords && !window.confirm("Replace what is written here with an AI draft?")) return;
+    setWriting(true);
+    setError(null);
+    try {
+      const out = await api.post<{ description: string; title: string }>(
+        `/media/${target.mediaAssetId}/caption`,
+        {},
+      );
+      if (!out.description.trim() && !out.title.trim()) {
+        setError("The AI returned no words. Try again, or write it yourself.");
+        return;
+      }
+      if (out.description.trim()) setCaption(out.description);
+      if (ytTitleEditable && out.title.trim()) setYtTitle(out.title.slice(0, 100));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not write the caption");
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  /*
+   * The rest of this post's day, for the one-caption-everywhere button. Only
+   * posts that can still change count, so the number on the button is the
+   * number that will change (the server also skips Instagram stories, which
+   * never show a caption, and says so in the result).
+   */
+  const sameDay = (dayTargets ?? []).filter(
+    (t) => t.status === "scheduled" || t.status === "failed",
+  );
+  const dayLabel = target.scheduledAt
+    ? new Date(target.scheduledAt).toLocaleDateString([], {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
+    : "";
+  const [confirmDay, setConfirmDay] = useState(false);
 
   /*
    * The thumbnail A/B test. The modal only collects the pieces and presses
@@ -137,7 +221,8 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   // with a card's existing time already behind, so moving it has to be judged
   // against now rather than against what it was.
   const whenError = editable ? scheduleTimeError(new Date(when)) : null;
-  const thumb = fileUrl(target.thumbUrl);
+  // The loaded asset's thumbnail follows a cover change; the summary's does not.
+  const thumb = fileUrl(asset?.thumbUrl ?? target.thumbUrl);
 
   /** Every text edit, in one place so Save and Retry send the same things. */
   const saveCopy = async () => {
@@ -165,6 +250,41 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not save");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * This caption onto every post that day, this one included.
+   *
+   * This post's other edits save first, so pressing this never throws away a
+   * rename or a new time typed a moment before. Two presses, because it
+   * overwrites captions on posts that are not open.
+   */
+  const applyToDay = async () => {
+    setConfirmDay(false);
+    setBusy(true);
+    setError(null);
+    try {
+      await saveCopy();
+      if (dirty) {
+        await api.patch(`/posts/targets/${target.id}/reschedule`, {
+          scheduledAt: new Date(when).toISOString(),
+        });
+      }
+      const r = await api.post<{ updated: number; skipped: number }>(
+        "/posts/targets/bulk-caption",
+        { targetIds: sameDay.map((t) => t.id), caption },
+      );
+      toast.success(
+        `Caption set on ${r.updated} ${r.updated === 1 ? "post" : "posts"} for ${dayLabel}` +
+          (r.skipped ? ` (${r.skipped} skipped: stories or already posting).` : "."),
+      );
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not change the day's captions");
     } finally {
       setBusy(false);
     }
@@ -212,6 +332,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   };
 
   return (
+    <>
     <Modal maxWidth={520} onClose={onClose}>
       <div className="modal-head">
         <div>
@@ -229,7 +350,14 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
 
       <div className="modal-body">
         <div className="pdrow">
-          <div className="pdthumb">
+          <div
+            className="pdthumb"
+            style={videoSrc ? { cursor: "pointer" } : undefined}
+            title={videoSrc ? "Play the video" : undefined}
+            onClick={() => {
+              if (videoSrc) setViewing("preview");
+            }}
+          >
             {thumb && <img src={thumb} alt="" />}
           </div>
           <div className="pdmeta">
@@ -238,6 +366,29 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
               <span>{PLATFORM_LABELS[target.platform]}</span>
             </div>
             <div className={`pdstatus ${target.status}`}>{POST_STATUS[target.status].label}</div>
+            {videoSrc && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <button className="btn ghost" style={{ fontSize: 11.5 }} onClick={() => setViewing("preview")}>
+                  <svg>
+                    <use href="#i-play" />
+                  </svg>{" "}
+                  Preview
+                </button>
+                {canCover && (
+                  <button
+                    className="btn ghost"
+                    style={{ fontSize: 11.5 }}
+                    title="Pick a frame or upload an image. Every platform of this video uses it."
+                    onClick={() => setViewing("cover")}
+                  >
+                    <svg>
+                      <use href="#i-image" />
+                    </svg>{" "}
+                    Change cover
+                  </button>
+                )}
+              </div>
+            )}
             {target.publishedAt && (
               <div className="sub">
                 Published {new Date(target.publishedAt).toLocaleString([], {
@@ -432,8 +583,24 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
 
         {captionEditable ? (
           <>
-            <label className="flabel" style={{ marginTop: 16 }}>
+            <label className="flabel withact" style={{ marginTop: 16 }}>
               Caption for {PLATFORM_LABELS[target.platform]}
+              {target.mediaAssetId && (
+                <span
+                  className={`revtoggle${writing ? " on" : ""}`}
+                  style={{ marginLeft: "auto" }}
+                  title={
+                    ytTitleEditable
+                      ? "Writes a caption and a YouTube title from what is said in the video. Read them, then save."
+                      : "Writes a caption from what is said in the video. Read it, then save."
+                  }
+                  onClick={() => {
+                    if (!writing) void writeWithAi();
+                  }}
+                >
+                  {writing ? "Writing..." : "Write with AI"}
+                </span>
+              )}
             </label>
             <textarea
               className="field-in"
@@ -449,6 +616,25 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
                 Added underneath when it posts:{" "}
                 {target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")}
               </p>
+            )}
+            {sameDay.length > 1 && (
+              <button
+                className={`btn ghost${confirmDay ? " danger" : ""}`}
+                style={{ fontSize: 11.5, marginTop: 8, ...(confirmDay ? { color: "var(--red)" } : {}) }}
+                disabled={busy || copyError !== null || (dirty && whenError !== null)}
+                title={`Replaces the caption on every scheduled post on ${dayLabel}, on every platform, with this one.`}
+                onClick={() => {
+                  if (confirmDay) void applyToDay();
+                  else {
+                    setConfirmDay(true);
+                    setTimeout(() => setConfirmDay(false), 4000);
+                  }
+                }}
+              >
+                {confirmDay
+                  ? `Sure? Replaces ${sameDay.length} captions`
+                  : `Use this caption on all ${sameDay.length} posts on ${dayLabel}`}
+              </button>
             )}
           </>
         ) : (
@@ -551,5 +737,23 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
         )}
       </div>
     </Modal>
+    {/*
+      Siblings of the window rather than children: the glass panel's backdrop
+      filter would trap a nested overlay inside its own box.
+    */}
+    {viewing === "preview" && videoSrc && (
+      <PreviewModal name={target.assetName} url={videoSrc} onClose={() => setViewing(null)} />
+    )}
+    {viewing === "cover" && asset && (
+      <CoverModal
+        asset={asset}
+        onClose={() => setViewing(null)}
+        onChanged={() => {
+          void loadAsset();
+          onChanged();
+        }}
+      />
+    )}
+    </>
   );
 }

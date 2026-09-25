@@ -468,6 +468,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           t.platform === "youtube"
             ? (((t.options as Record<string, unknown> | null) ?? {}).youtubeTitle as string | undefined) ?? null
             : null,
+        // Cleared from the queue card by the operator; still on the calendar.
+        queueDismissed: Boolean(
+          ((t.options as Record<string, unknown> | null) ?? {}).queueDismissedAt,
+        ),
         // Renaming goes through the video's own draft, shared by every
         // platform it was scheduled to.
         mediaAssetId: t.post.mediaAssetId,
@@ -604,6 +608,88 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: "only scheduled or failed posts can change their title" });
     }
     return { id: target.id, youtubeTitle: title };
+  });
+
+  /** Target ids from a request body: strings only, a sane handful at most. */
+  const idsFrom = (value: unknown): string[] | null => {
+    if (!Array.isArray(value)) return null;
+    const ids = [...new Set(value.filter((x): x is string => typeof x === "string"))];
+    return ids.length > 0 && ids.length <= 100 ? ids : null;
+  };
+
+  /**
+   * One caption onto many posts at once: the calendar's "every post that day".
+   *
+   * The ids come from the calendar rather than a date range, so exactly the
+   * cards the operator was looking at change, with no timezone to disagree
+   * about where a day starts. Instagram stories are skipped because Instagram
+   * never shows a story's caption, and published posts are skipped by the
+   * same status rule as the single edit.
+   */
+  app.post("/posts/targets/bulk-caption", async (request, reply) => {
+    const body = (request.body ?? {}) as { targetIds?: unknown; caption?: unknown };
+    const ids = idsFrom(body.targetIds);
+    if (!ids || typeof body.caption !== "string" || body.caption.length > 5000) {
+      return reply.status(400).send({
+        error: "invalid request",
+        detail: "Send the posts to change and a caption of 5,000 characters at most.",
+      });
+    }
+    const caption = body.caption.trim() || null;
+    const candidates = await prisma.postTarget.findMany({
+      where: {
+        id: { in: ids },
+        status: { in: ["scheduled", "failed"] },
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+      select: { id: true, options: true },
+    });
+    const eligible = candidates
+      .filter((t) => {
+        const ig = ((t.options as Record<string, unknown> | null) ?? {}).instagram as
+          | { story?: unknown }
+          | undefined;
+        return ig?.story !== true;
+      })
+      .map((t) => t.id);
+    const { count } = eligible.length
+      ? await prisma.postTarget.updateMany({
+          where: { id: { in: eligible }, status: { in: ["scheduled", "failed"] } },
+          data: { caption },
+        })
+      : { count: 0 };
+    return { updated: count, skipped: ids.length - count };
+  });
+
+  /**
+   * Clear failure notices off the queue card without touching the posts.
+   *
+   * The queue lists failures so they cannot go unseen; once seen, the
+   * operator can dismiss them and the posts stay exactly where they are on
+   * the calendar, failed and retryable. Only failures can be dismissed: an
+   * upcoming post is the queue's actual content, not a notice about it.
+   */
+  app.post("/posts/targets/dismiss", async (request, reply) => {
+    const ids = idsFrom(((request.body ?? {}) as { targetIds?: unknown }).targetIds);
+    if (!ids) return reply.status(400).send({ error: "send the notices to clear" });
+    const failed = await prisma.postTarget.findMany({
+      where: {
+        id: { in: ids },
+        status: "failed",
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+      select: { id: true, options: true },
+    });
+    const at = new Date().toISOString();
+    for (const t of failed) {
+      await prisma.postTarget.update({
+        where: { id: t.id },
+        data: {
+          options: { ...((t.options as Record<string, unknown> | null) ?? {}), queueDismissedAt: at },
+        },
+      });
+    }
+    return { dismissed: failed.length };
   });
 
 
@@ -793,7 +879,10 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "the inbox route is TikTok only" });
       }
 
-      const options = (target.options as Record<string, unknown> | null) ?? {};
+      // A dismissed failure that is retried and fails again is news again,
+      // so the dismissal does not survive the retry.
+      const { queueDismissedAt: _dismissed, ...options } =
+        (target.options as Record<string, unknown> | null) ?? {};
       const nextOptions = draft
         ? {
             ...options,

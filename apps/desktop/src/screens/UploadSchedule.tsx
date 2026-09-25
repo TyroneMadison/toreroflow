@@ -73,7 +73,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
   const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
@@ -389,31 +388,23 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   };
 
   /*
-   * Everything the X button could remove, not just the six rows on screen:
-   * "clear all" that leaves a hidden seventh failure behind would read as
-   * broken. Publishing rows are skipped because the server refuses them.
+   * The failure notices, all of them rather than the six rows on screen, so
+   * "clear all" never leaves a hidden seventh behind. Dismissing deletes
+   * nothing: the posts stay on the calendar, failed and retryable, and the
+   * upcoming posts are the queue itself so they are never cleared.
    */
-  const clearable = posts.filter((p) => p.status === "scheduled" || p.status === "failed");
-  const clearableScheduled = clearable.filter((p) => p.status === "scheduled").length;
+  const notices = posts.filter((p) => p.status === "failed" && !p.queueDismissed);
 
-  const clearQueue = async () => {
-    setConfirmClear(false);
+  const clearNotices = async () => {
     setClearing(true);
-    const results = await Promise.allSettled(
-      clearable.map((p) => api.del(`/posts/targets/${p.id}`)),
-    );
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed) {
-      toast.fail(
-        `Cleared ${clearable.length - failed} of ${clearable.length}`,
-        new Error(`${failed} could not be removed. They may have started publishing.`),
-      );
-    } else {
-      toast.success(`Queue cleared (${clearable.length} removed).`);
+    try {
+      await api.post("/posts/targets/dismiss", { targetIds: notices.map((p) => p.id) });
+    } catch (err) {
+      toast.fail("Could not clear the notifications", err);
+    } finally {
+      setClearing(false);
+      void loadPosts();
     }
-    setClearing(false);
-    void loadPosts();
-    void load();
   };
 
   const removeAsset = async (asset: MediaAssetInfo) => {
@@ -901,33 +892,15 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             <div className="card glass">
               <div className="rowhead">
                 <h3>Up next in queue</h3>
-                {clearable.length > 0 && (
-                  // Two clicks, and the second says what it costs: scheduled
-                  // posts cleared here will not publish.
+                {notices.length > 0 && (
                   <button
-                    className={`btn ghost${confirmClear ? " danger" : ""}`}
-                    style={{ fontSize: 11.5, ...(confirmClear ? { color: "var(--red)" } : {}) }}
+                    className="btn ghost"
+                    style={{ fontSize: 11.5 }}
                     disabled={clearing}
-                    title={
-                      clearableScheduled
-                        ? `Removes ${clearable.length} posts, including ${clearableScheduled} scheduled that will not publish`
-                        : `Removes ${clearable.length} failed ${clearable.length === 1 ? "post" : "posts"}`
-                    }
-                    onClick={() => {
-                      if (confirmClear) void clearQueue();
-                      else {
-                        setConfirmClear(true);
-                        setTimeout(() => setConfirmClear(false), 4000);
-                      }
-                    }}
+                    title={`Clears ${notices.length} failure ${notices.length === 1 ? "notice" : "notices"} from this list. Nothing is removed from the calendar.`}
+                    onClick={() => void clearNotices()}
                   >
-                    {clearing
-                      ? "Clearing..."
-                      : confirmClear
-                        ? clearableScheduled
-                          ? `Sure? ${clearableScheduled} scheduled won't post`
-                          : `Sure? Clear ${clearable.length}`
-                        : "Clear all"}
+                    {clearing ? "Clearing..." : "Clear all"}
                   </button>
                 )}
               </div>

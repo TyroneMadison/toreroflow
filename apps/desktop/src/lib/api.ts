@@ -626,6 +626,8 @@ export interface PostTargetInfo {
   youtubeTitle: string | null;
   /** The video behind the post, which carries its name. */
   mediaAssetId: string | null;
+  /** A failure the operator cleared off the queue card. Still on the calendar. */
+  queueDismissed: boolean;
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */

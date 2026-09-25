@@ -42,6 +42,7 @@ const row = (
   hashtags: [],
   youtubeTitle: null,
   mediaAssetId: null,
+  queueDismissed: false,
   assetName: `${id}.mp4`,
   thumbUrl: null,
   assetKind: "video",
@@ -91,6 +92,16 @@ const row = (
   const rows = queueRows(many);
   assert.equal(rows.length, 6, "cap honored");
   assert.equal(rows[0].id, "boom", "the failure survives the cap");
+}
+
+/* A dismissed failure leaves the queue; an undismissed one and upcoming work stay. */
+{
+  const rows = queueRows([
+    { ...row("seen", "failed", "2026-07-28T10:00:00.000Z"), queueDismissed: true },
+    row("fresh", "failed", "2026-07-29T10:00:00.000Z"),
+    row("next", "scheduled", "2026-07-30T10:00:00.000Z"),
+  ]);
+  assert.deepEqual(rows.map((r) => r.id), ["fresh", "next"], "only the dismissed failure is hidden");
 }
 
 /* The caller's array is never reordered underneath it. */

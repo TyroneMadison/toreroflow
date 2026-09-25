@@ -501,6 +501,18 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       {detail && (
         <PostDetailModal
           target={detail}
+          // Same local-day rule the grid uses to place cards, so the button's
+          // count is exactly the cards in that day's cell.
+          dayTargets={
+            detail.scheduledAt
+              ? targets.filter(
+                  (t) =>
+                    t.scheduledAt &&
+                    new Date(t.scheduledAt).toDateString() ===
+                      new Date(detail.scheduledAt!).toDateString(),
+                )
+              : undefined
+          }
           onClose={() => setDetail(null)}
           onChanged={() => void load()}
         />
