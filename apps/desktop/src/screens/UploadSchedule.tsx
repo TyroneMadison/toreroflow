@@ -73,6 +73,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [overTargetId, setOverTargetId] = useState<string | null>(null);
   const [queueDetail, setQueueDetail] = useState<PostTargetInfo | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
   const carouselInput = useRef<HTMLInputElement>(null);
@@ -384,6 +386,34 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       // only after a navigation.
       void load();
     }
+  };
+
+  /*
+   * Everything the X button could remove, not just the six rows on screen:
+   * "clear all" that leaves a hidden seventh failure behind would read as
+   * broken. Publishing rows are skipped because the server refuses them.
+   */
+  const clearable = posts.filter((p) => p.status === "scheduled" || p.status === "failed");
+  const clearableScheduled = clearable.filter((p) => p.status === "scheduled").length;
+
+  const clearQueue = async () => {
+    setConfirmClear(false);
+    setClearing(true);
+    const results = await Promise.allSettled(
+      clearable.map((p) => api.del(`/posts/targets/${p.id}`)),
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed) {
+      toast.fail(
+        `Cleared ${clearable.length - failed} of ${clearable.length}`,
+        new Error(`${failed} could not be removed. They may have started publishing.`),
+      );
+    } else {
+      toast.success(`Queue cleared (${clearable.length} removed).`);
+    }
+    setClearing(false);
+    void loadPosts();
+    void load();
   };
 
   const removeAsset = async (asset: MediaAssetInfo) => {
@@ -871,6 +901,35 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             <div className="card glass">
               <div className="rowhead">
                 <h3>Up next in queue</h3>
+                {clearable.length > 0 && (
+                  // Two clicks, and the second says what it costs: scheduled
+                  // posts cleared here will not publish.
+                  <button
+                    className={`btn ghost${confirmClear ? " danger" : ""}`}
+                    style={{ fontSize: 11.5, ...(confirmClear ? { color: "var(--red)" } : {}) }}
+                    disabled={clearing}
+                    title={
+                      clearableScheduled
+                        ? `Removes ${clearable.length} posts, including ${clearableScheduled} scheduled that will not publish`
+                        : `Removes ${clearable.length} failed ${clearable.length === 1 ? "post" : "posts"}`
+                    }
+                    onClick={() => {
+                      if (confirmClear) void clearQueue();
+                      else {
+                        setConfirmClear(true);
+                        setTimeout(() => setConfirmClear(false), 4000);
+                      }
+                    }}
+                  >
+                    {clearing
+                      ? "Clearing..."
+                      : confirmClear
+                        ? clearableScheduled
+                          ? `Sure? ${clearableScheduled} scheduled won't post`
+                          : `Sure? Clear ${clearable.length}`
+                        : "Clear all"}
+                  </button>
+                )}
               </div>
               {queued.length === 0 ? (
                 <div className="empty">
