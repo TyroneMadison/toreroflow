@@ -39,6 +39,7 @@ const row = (
   publishedAt: null,
   error: status === "failed" ? "token expired" : null,
   caption: null,
+  hashtags: [],
   assetName: `${id}.mp4`,
   thumbUrl: null,
   assetKind: "video",

@@ -460,6 +460,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         // Captions saved before emoji decoding landed still hold literal
         // "\uXXXX" text; clean them on the way out.
         caption: t.caption ? decodeEscapes(t.caption) : t.caption,
+        // Appended under the caption at publish time, so an editor can show
+        // them and nobody types them in a second time.
+        hashtags: t.hashtags,
         // The typed name when there is one, so the queue and calendar stop
         // showing raw file names.
         assetName:
@@ -522,6 +525,43 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       return { id: updated.id, scheduledAt: updated.scheduledAt };
     },
   );
+
+  /**
+   * Rewrite one platform's caption before it goes out.
+   *
+   * The worker reads the caption when it publishes, so what is saved here is
+   * what posts. Failed posts are editable too: a duplicate-content refusal is
+   * often cured by changing the words before pressing Retry. The status check
+   * sits inside the write so a post that starts publishing mid-edit is
+   * refused rather than half-changed.
+   */
+  app.patch<{ Params: { id: string } }>("/posts/targets/:id/caption", async (request, reply) => {
+    const body = (request.body ?? {}) as { caption?: unknown };
+    if (typeof body.caption !== "string" || body.caption.length > 5000) {
+      return reply
+        .status(400)
+        .send({ error: "invalid caption", detail: "A caption is text, 5,000 characters at most." });
+    }
+    const caption = body.caption.trim() || null;
+    const { count } = await prisma.postTarget.updateMany({
+      where: {
+        id: request.params.id,
+        status: { in: ["scheduled", "failed"] },
+        post: { client: { agencyId: request.user.agencyId } },
+      },
+      data: { caption },
+    });
+    if (count === 0) {
+      const exists = await prisma.postTarget.findFirst({
+        where: { id: request.params.id, post: { client: { agencyId: request.user.agencyId } } },
+        select: { id: true },
+      });
+      return exists
+        ? reply.status(409).send({ error: "only scheduled or failed posts can change their caption" })
+        : reply.status(404).send({ error: "target not found" });
+    }
+    return { id: request.params.id, caption };
+  });
 
 
   /**

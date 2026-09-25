@@ -620,6 +620,8 @@ export interface PostTargetInfo {
     } | null;
   } | null;
   caption: string | null;
+  /** Added under the caption when it posts. */
+  hashtags: string[];
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */

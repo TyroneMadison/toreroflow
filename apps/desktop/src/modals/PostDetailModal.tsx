@@ -26,6 +26,11 @@ function localValue(iso: string | null): string {
  */
 export default function PostDetailModal({ target, onClose, onChanged }: PostDetailModalProps) {
   const editable = canMove(target.status);
+  // Wider than `editable`: a failed post cannot move, but its words can
+  // change before a retry.
+  const captionEditable = target.status === "scheduled" || target.status === "failed";
+  const [caption, setCaption] = useState(target.caption ?? "");
+  const captionDirty = caption.trim() !== (target.caption ?? "").trim();
   const [when, setWhen] = useState(() => localValue(target.scheduledAt));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,17 +124,22 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const whenError = editable ? scheduleTimeError(new Date(when)) : null;
   const thumb = fileUrl(target.thumbUrl);
 
+  const saveCaption = () => api.patch(`/posts/targets/${target.id}/caption`, { caption });
+
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api.patch(`/posts/targets/${target.id}/reschedule`, {
-        scheduledAt: new Date(when).toISOString(),
-      });
+      if (captionDirty) await saveCaption();
+      if (dirty) {
+        await api.patch(`/posts/targets/${target.id}/reschedule`, {
+          scheduledAt: new Date(when).toISOString(),
+        });
+      }
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "could not reschedule");
+      setError(err instanceof Error ? err.message : "could not save");
     } finally {
       setBusy(false);
     }
@@ -146,6 +156,9 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
     setBusy(true);
     setError(null);
     try {
+      // Retrying with new words is the point of editing a failed caption,
+      // so the edit goes first rather than waiting on a separate Save.
+      if (captionDirty) await saveCaption();
       await api.post(`/posts/targets/${target.id}/retry`, draft ? { tiktokDraft: true } : {});
       setRetried(true);
       onChanged();
@@ -337,13 +350,36 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </div>
         )}
 
-        {target.caption && (
+        {captionEditable ? (
           <>
             <label className="flabel" style={{ marginTop: 16 }}>
-              Caption
+              Caption for {PLATFORM_LABELS[target.platform]}
             </label>
-            <div className="pdcaption">{target.caption}</div>
+            <textarea
+              className="field-in"
+              rows={5}
+              maxLength={5000}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="No caption"
+              style={{ width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }}
+            />
+            {target.hashtags.length > 0 && (
+              <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 6 }}>
+                Added underneath when it posts:{" "}
+                {target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")}
+              </p>
+            )}
           </>
+        ) : (
+          target.caption && (
+            <>
+              <label className="flabel" style={{ marginTop: 16 }}>
+                Caption
+              </label>
+              <div className="pdcaption">{target.caption}</div>
+            </>
+          )
         )}
 
         <label className="flabel" style={{ marginTop: 16 }}>
@@ -398,7 +434,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </button>
         )}
         <button className="btn ghost" onClick={onClose}>
-          {editable ? "Cancel" : "Close"}
+          {editable || captionEditable ? "Cancel" : "Close"}
         </button>
         {/*
           The inbox route sits beside Retry rather than replacing it, because
@@ -418,17 +454,19 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
             {busy ? "Retrying…" : failure?.outlook === "later" ? "Retry anyway" : "Retry now"}
           </button>
         )}
-        {editable && (
+        {(editable || captionEditable) && (
           <button
             className="btn"
-            disabled={!dirty || busy || whenError !== null}
-            title={whenError ?? undefined}
+            // A stale time only blocks saving the time; a caption-only edit
+            // on a post whose slot is about to fire must still go through.
+            disabled={!(dirty || captionDirty) || busy || (dirty && whenError !== null)}
+            title={dirty && whenError ? whenError : undefined}
             onClick={() => void save()}
           >
             <svg>
               <use href="#i-check" />
             </svg>{" "}
-            {busy && !confirmDelete ? "Saving…" : "Save time"}
+            {busy && !confirmDelete ? "Saving…" : "Save changes"}
           </button>
         )}
       </div>
