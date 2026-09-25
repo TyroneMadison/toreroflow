@@ -622,6 +622,10 @@ export interface PostTargetInfo {
   caption: string | null;
   /** Added under the caption when it posts. */
   hashtags: string[];
+  /** The title YouTube will show. Null on every other platform. */
+  youtubeTitle: string | null;
+  /** The video behind the post, which carries its name. */
+  mediaAssetId: string | null;
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */

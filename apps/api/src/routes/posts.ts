@@ -463,6 +463,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         // Appended under the caption at publish time, so an editor can show
         // them and nobody types them in a second time.
         hashtags: t.hashtags,
+        // The title YouTube shows, stored on the target at schedule time.
+        youtubeTitle:
+          t.platform === "youtube"
+            ? (((t.options as Record<string, unknown> | null) ?? {}).youtubeTitle as string | undefined) ?? null
+            : null,
+        // Renaming goes through the video's own draft, shared by every
+        // platform it was scheduled to.
+        mediaAssetId: t.post.mediaAssetId,
         // The typed name when there is one, so the queue and calendar stop
         // showing raw file names.
         assetName:
@@ -561,6 +569,41 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         : reply.status(404).send({ error: "target not found" });
     }
     return { id: request.params.id, caption };
+  });
+
+  /**
+   * Retitle a YouTube upload before it goes out.
+   *
+   * The worker sends options.youtubeTitle as the video's title at publish, so
+   * this is the one place it lives. Required and 100 characters at most,
+   * because YouTube refuses both an empty title and a longer one. The status
+   * is part of the write so a post that starts publishing mid-edit is refused.
+   */
+  app.patch<{ Params: { id: string } }>("/posts/targets/:id/youtube-title", async (request, reply) => {
+    const body = (request.body ?? {}) as { title?: unknown };
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title || title.length > 100) {
+      return reply
+        .status(400)
+        .send({ error: "invalid title", detail: "A YouTube title is required, 100 characters at most." });
+    }
+    const target = await prisma.postTarget.findFirst({
+      where: { id: request.params.id, post: { client: { agencyId: request.user.agencyId } } },
+      select: { id: true, platform: true, status: true, options: true },
+    });
+    if (!target) return reply.status(404).send({ error: "target not found" });
+    if (target.platform !== "youtube") {
+      return reply.status(400).send({ error: "only a YouTube post has a YouTube title" });
+    }
+    const options = (target.options as Record<string, unknown> | null) ?? {};
+    const { count } = await prisma.postTarget.updateMany({
+      where: { id: target.id, status: { in: ["scheduled", "failed"] } },
+      data: { options: { ...options, youtubeTitle: title } },
+    });
+    if (count === 0) {
+      return reply.status(409).send({ error: "only scheduled or failed posts can change their title" });
+    }
+    return { id: target.id, youtubeTitle: title };
   });
 
 

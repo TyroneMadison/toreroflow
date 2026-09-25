@@ -31,6 +31,21 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const captionEditable = target.status === "scheduled" || target.status === "failed";
   const [caption, setCaption] = useState(target.caption ?? "");
   const captionDirty = caption.trim() !== (target.caption ?? "").trim();
+  // The name is the app's own label for the video, never published, so it
+  // stays editable after posting. Blank is not a name: it would fall back to
+  // the file name, which is what renaming exists to replace.
+  const [name, setName] = useState(target.assetName);
+  const nameDirty = target.mediaAssetId !== null && name.trim() !== target.assetName.trim();
+  const nameError = nameDirty && !name.trim() ? "The video needs a name." : null;
+  const ytTitleEditable = target.platform === "youtube" && captionEditable;
+  const [ytTitle, setYtTitle] = useState(target.youtubeTitle ?? "");
+  const ytTitleDirty = ytTitleEditable && ytTitle.trim() !== (target.youtubeTitle ?? "").trim();
+  const ytTitleError =
+    ytTitleDirty && !ytTitle.trim()
+      ? "YouTube needs a title."
+      : ytTitle.trim().length > 100
+        ? "YouTube titles stop at 100 characters."
+        : null;
   const [when, setWhen] = useState(() => localValue(target.scheduledAt));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,13 +139,23 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
   const whenError = editable ? scheduleTimeError(new Date(when)) : null;
   const thumb = fileUrl(target.thumbUrl);
 
-  const saveCaption = () => api.patch(`/posts/targets/${target.id}/caption`, { caption });
+  /** Every text edit, in one place so Save and Retry send the same things. */
+  const saveCopy = async () => {
+    // Retry reaches here too, and the draft route would accept a blank name.
+    if (copyError) throw new Error(copyError);
+    if (nameDirty) await api.patch(`/media/${target.mediaAssetId}/draft`, { name: name.trim() });
+    if (ytTitleDirty) await api.patch(`/posts/targets/${target.id}/youtube-title`, { title: ytTitle });
+    if (captionDirty) await api.patch(`/posts/targets/${target.id}/caption`, { caption });
+  };
+  const anyDirty = dirty || captionDirty || nameDirty || ytTitleDirty;
+  const anyEditable = editable || captionEditable || target.mediaAssetId !== null;
+  const copyError = nameError ?? ytTitleError;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      if (captionDirty) await saveCaption();
+      await saveCopy();
       if (dirty) {
         await api.patch(`/posts/targets/${target.id}/reschedule`, {
           scheduledAt: new Date(when).toISOString(),
@@ -156,9 +181,9 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
     setBusy(true);
     setError(null);
     try {
-      // Retrying with new words is the point of editing a failed caption,
-      // so the edit goes first rather than waiting on a separate Save.
-      if (captionDirty) await saveCaption();
+      // Retrying with new words is the point of editing a failed post, so
+      // the edits go first rather than waiting on a separate Save.
+      await saveCopy();
       await api.post(`/posts/targets/${target.id}/retry`, draft ? { tiktokDraft: true } : {});
       setRetried(true);
       onChanged();
@@ -350,6 +375,61 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </div>
         )}
 
+        {target.mediaAssetId && (
+          <>
+            <label className="flabel" style={{ marginTop: 16 }}>
+              Video name
+            </label>
+            <input
+              className="field-in"
+              maxLength={300}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={{ width: "100%" }}
+            />
+            {nameError ? (
+              <div className="autherr">{nameError}</div>
+            ) : (
+              <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 6 }}>
+                Your label in the app, on every platform this video is scheduled to. Never
+                published.
+              </p>
+            )}
+          </>
+        )}
+
+        {ytTitleEditable ? (
+          <>
+            <label className="flabel" style={{ marginTop: 16 }}>
+              YouTube title
+            </label>
+            <input
+              className="field-in"
+              maxLength={100}
+              value={ytTitle}
+              onChange={(e) => setYtTitle(e.target.value)}
+              placeholder="The title viewers see on YouTube"
+              style={{ width: "100%" }}
+            />
+            {ytTitleError ? (
+              <div className="autherr">{ytTitleError}</div>
+            ) : (
+              <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 6 }}>
+                {ytTitle.trim().length}/100
+              </p>
+            )}
+          </>
+        ) : (
+          target.youtubeTitle && (
+            <>
+              <label className="flabel" style={{ marginTop: 16 }}>
+                YouTube title
+              </label>
+              <div className="pdcaption">{target.youtubeTitle}</div>
+            </>
+          )
+        )}
+
         {captionEditable ? (
           <>
             <label className="flabel" style={{ marginTop: 16 }}>
@@ -434,7 +514,7 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
           </button>
         )}
         <button className="btn ghost" onClick={onClose}>
-          {editable || captionEditable ? "Cancel" : "Close"}
+          {anyEditable ? "Cancel" : "Close"}
         </button>
         {/*
           The inbox route sits beside Retry rather than replacing it, because
@@ -454,13 +534,13 @@ export default function PostDetailModal({ target, onClose, onChanged }: PostDeta
             {busy ? "Retrying…" : failure?.outlook === "later" ? "Retry anyway" : "Retry now"}
           </button>
         )}
-        {(editable || captionEditable) && (
+        {anyEditable && (
           <button
             className="btn"
             // A stale time only blocks saving the time; a caption-only edit
             // on a post whose slot is about to fire must still go through.
-            disabled={!(dirty || captionDirty) || busy || (dirty && whenError !== null)}
-            title={dirty && whenError ? whenError : undefined}
+            disabled={!anyDirty || busy || copyError !== null || (dirty && whenError !== null)}
+            title={copyError ?? (dirty && whenError ? whenError : undefined)}
             onClick={() => void save()}
           >
             <svg>

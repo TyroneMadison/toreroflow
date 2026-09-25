@@ -40,6 +40,8 @@ const row = (
   error: status === "failed" ? "token expired" : null,
   caption: null,
   hashtags: [],
+  youtubeTitle: null,
+  mediaAssetId: null,
   assetName: `${id}.mp4`,
   thumbUrl: null,
   assetKind: "video",
