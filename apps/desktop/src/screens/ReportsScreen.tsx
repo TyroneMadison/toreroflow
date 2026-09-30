@@ -249,6 +249,60 @@ export default function ReportsScreen({
     }
   };
 
+  /** Which bulk run is going and how far along, for the buttons' progress. */
+  const [allRun, setAllRun] = useState<{ kind: "update" | "publish"; step: number } | null>(null);
+
+  /**
+   * Every brand, one at a time. Sequential on purpose: each refresh asks the
+   * worker for follower counts and each publish is a site deploy, and firing
+   * them together is how both stop answering. One summary at the end instead
+   * of a toast per brand.
+   */
+  const runAll = async (kind: "update" | "publish") => {
+    const failed: string[] = [];
+    let lagging = 0;
+    let baseWarning: string | null = null;
+    for (const [i, c] of clients.entries()) {
+      setAllRun({ kind, step: i + 1 });
+      setBusy(c.id);
+      try {
+        if (kind === "update") {
+          const res = await api.post<RefreshResult>(
+            `/clients/${c.id}/reports/refresh?month=${month}`,
+            {},
+          );
+          setUpdated((u) => ({ ...u, [c.id]: month }));
+          if (!res.followersRefreshed) lagging += 1;
+        } else {
+          const res = await api.post<PublishResult>(
+            `/clients/${c.id}/reports/publish?month=${month}`,
+            {},
+          );
+          baseWarning ??= res.publicBaseWarning ?? null;
+        }
+      } catch {
+        failed.push(c.name);
+      }
+    }
+    setBusy(null);
+    setAllRun(null);
+    if (kind === "publish") await loadPublishing();
+    const done = clients.length - failed.length;
+    const verb = kind === "update" ? "updated" : "published";
+    if (failed.length) {
+      toast.fail(
+        `${done} of ${clients.length} reports ${verb}`,
+        new Error(`Could not finish: ${failed.join(", ")}. Try those on their own.`),
+      );
+    } else {
+      toast.success(
+        `All ${done} reports ${verb} for ${monthLabel(month)}.` +
+          (lagging ? ` Follower counts may lag a cycle on ${lagging}.` : ""),
+      );
+    }
+    if (baseWarning) toast.error(baseWarning);
+  };
+
   const publish = async (clientId: string, name: string) => {
     setBusy(clientId);
     try {
@@ -303,13 +357,49 @@ export default function ReportsScreen({
                 client actually sees.
               </div>
             </div>
-            <Select
-              className="repmonth"
-              value={month}
-              onChange={setMonth}
-              aria-label="Month"
-              options={months.map((m) => ({ value: m.value, label: m.label }))}
-            />
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {clients.length > 1 && (
+                <>
+                  <button
+                    className="btn ghost"
+                    disabled={busy !== null}
+                    title={`Pull the latest numbers for every brand's ${monthLabel(month)} report, one after another`}
+                    onClick={() => void runAll("update")}
+                  >
+                    <svg>
+                      <use href="#i-refresh" />
+                    </svg>{" "}
+                    {allRun?.kind === "update"
+                      ? `Updating ${allRun.step} of ${clients.length}…`
+                      : "Update all"}
+                  </button>
+                  <button
+                    className="btn pub"
+                    disabled={busy !== null || !canPublish}
+                    title={
+                      canPublish
+                        ? `Rebuild every brand's live page with its ${monthLabel(month)} report, at the same links`
+                        : (publishing?.reason ?? "Publishing is not configured")
+                    }
+                    onClick={() => void runAll("publish")}
+                  >
+                    <svg>
+                      <use href="#i-globe" />
+                    </svg>{" "}
+                    {allRun?.kind === "publish"
+                      ? `Publishing ${allRun.step} of ${clients.length}…`
+                      : "Republish all"}
+                  </button>
+                </>
+              )}
+              <Select
+                className="repmonth"
+                value={month}
+                onChange={setMonth}
+                aria-label="Month"
+                options={months.map((m) => ({ value: m.value, label: m.label }))}
+              />
+            </div>
           </div>
 
           {clients.length === 0 ? (
