@@ -8,6 +8,7 @@ import {
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { requireAuth } from "../plugins/requireAuth";
+import { actingUserId } from "../auth/actingUser";
 
 /** Uniform body for wrong email OR wrong password - never reveal which. */
 const INVALID_CREDENTIALS = { error: "invalid credentials" } as const;
@@ -42,8 +43,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (request.user.role === "bot") {
         return reply.status(403).send({ error: "a bot cannot mint tokens" });
       }
+      // A real user id, so whatever the bot creates has a real creator.
+      const sub = await actingUserId(request);
+      if (!sub) return reply.status(401).send({ error: "unknown user" });
       const token = app.jwt.sign(
-        { sub: request.user.sub, agencyId: request.user.agencyId, role: "bot" },
+        { sub, agencyId: request.user.agencyId, role: "bot" },
         { expiresIn: "365d" },
       );
       return { token, role: "bot", expiresInDays: 365 };
@@ -134,10 +138,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(401).send(UNAUTHORIZED);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.sub },
-      include: { agency: true },
-    });
+    const userId = await actingUserId(request);
+    const user = userId
+      ? await prisma.user.findUnique({ where: { id: userId }, include: { agency: true } })
+      : null;
     if (!user) {
       return reply.status(401).send(UNAUTHORIZED);
     }

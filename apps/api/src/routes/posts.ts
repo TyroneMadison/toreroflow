@@ -19,6 +19,7 @@ import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
 import { enrichFieldsFrom } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { actingUserId } from "../auth/actingUser";
 
 /**
  * The name an operator typed for a video, or "" when they have not.
@@ -280,11 +281,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    const createdById = await actingUserId(request);
+    if (!createdById) return reply.status(401).send({ error: "unknown user" });
+
     const post = await prisma.post.create({
       data: {
         clientId: asset.clientId,
         mediaAssetId: asset.id,
-        createdById: request.user.sub,
+        createdById,
         status: "scheduled",
         targets: {
           create: accounts.map(({ platform, account }) => ({
