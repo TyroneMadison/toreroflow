@@ -16,6 +16,7 @@ import {
   type AccountAnalytics,
   type ClientAnalytics,
   type ClientPost,
+  type ClientResults,
 } from "../lib/api";
 import ViewsChart from "../components/ViewsChart";
 import { clientAvatarUrl } from "../lib/avatar";
@@ -122,6 +123,135 @@ function GainRows({ accounts, label }: { accounts: AccountAnalytics[]; label: st
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A "YYYY-MM-DD" day as written, never shifted a day back by the viewer's timezone. */
+function fmtDay(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * Everything the client has had since joining, in one card.
+ *
+ * Views count only posts the app published, so that number is the agency's
+ * work. Follower change is the whole account, labelled as such, because a
+ * client also posts on their own and the card should never claim that.
+ */
+function SinceJoining({ clientId, reloadKey }: { clientId: string; reloadKey: number }) {
+  const [r, setR] = useState<ClientResults | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setR(null);
+    api
+      .get<ClientResults>(`/clients/${clientId}/results`)
+      .then((res) => !cancelled && setR(res))
+      .catch(() => !cancelled && setR(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, reloadKey]);
+  if (!r) return null;
+
+  const { views } = r;
+  const partial = views.reporting < views.posts;
+  return (
+    <div className="card glass ansince">
+      <div className="rowhead" style={{ marginBottom: 0 }}>
+        <div>
+          <h3>Since joining</h3>
+          <div className="sub">
+            {fmtDate(r.joinedAt)} · {r.days} {r.days === 1 ? "day" : "days"} with Torerone
+          </div>
+        </div>
+      </div>
+      <div className="ankpis">
+        <div className="kpi glass">
+          <div className="lab">Posts published</div>
+          <div className="val">{r.published.posts.toLocaleString()}</div>
+          <span className="foot">
+            from {r.published.videos} {r.published.videos === 1 ? "video" : "videos"}
+          </span>
+        </div>
+        <div className="kpi glass">
+          <div className="lab">Views on those posts</div>
+          <div className="val">{views.reporting ? fmt(views.total) : "-"}</div>
+          <span className="foot">
+            {views.reporting === 0
+              ? r.published.posts
+                ? "counts arrive with the nightly sync"
+                : "nothing published yet"
+              : partial
+                ? `${views.reporting} of ${views.posts} posts reporting`
+                : `all ${views.posts} posts reporting`}
+          </span>
+        </div>
+        <div className="kpi glass">
+          <div className="lab">Best post</div>
+          <div className="val">{views.best ? fmt(views.best.views) : "-"}</div>
+          <span className="foot" title={views.best?.title}>
+            {views.best ? (
+              <>
+                <Pf p={PF_ID[views.best.platform as Platform]} size="sm" />{" "}
+                {views.best.url ? (
+                  <a
+                    className="link"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void openExternal(views.best!.url!);
+                    }}
+                    href={views.best.url}
+                  >
+                    {views.best.title}
+                  </a>
+                ) : (
+                  views.best.title
+                )}
+              </>
+            ) : (
+              "appears once views come in"
+            )}
+          </span>
+        </div>
+        <div className="kpi glass">
+          <div className="lab">Average per post</div>
+          <div className="val">{views.reporting ? fmt(Math.round(views.total / views.reporting)) : "-"}</div>
+          <span className="foot">views, across the posts reporting</span>
+        </div>
+      </div>
+      {r.accounts.length > 0 && (
+        <div className="sincegrid">
+          {r.accounts.map((a) => {
+            const f = a.followers;
+            const noun = a.platform === "youtube" ? "subscribers" : "followers";
+            return (
+              <div className="sincerow" key={`${a.platform}:${a.handle}`}>
+                <Pf p={PF_ID[a.platform]} size="sm" />
+                <div className="who">
+                  <b>@{a.handle}</b>
+                  <span>
+                    {f
+                      ? `${f.start.toLocaleString()} to ${f.now.toLocaleString()} ${noun} since ${fmtDay(f.startOn)}`
+                      : `${noun}: not enough history yet`}
+                  </span>
+                </div>
+                {f && (
+                  <span className={`delta ${f.change > 0 ? "up" : f.change < 0 ? "dn" : "flat"}`}>
+                    {f.change > 0 ? "+" : ""}
+                    {f.pct != null ? `${f.pct}%` : fmt(f.change)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="sub" style={{ marginTop: 12 }}>
+        Views are each platform's own count for posts published through Toreroflow
+        {r.viewsCountedAt ? `, last counted ${fmtDate(r.viewsCountedAt)}` : ""}. Follower change
+        covers the whole account, including anything posted outside the app.
+      </div>
     </div>
   );
 }
@@ -625,6 +755,8 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 </span>
               </div>
             </div>
+
+            <SinceJoining clientId={selectedClient.id} reloadKey={reloadKey} />
 
             <div className="anwrap">
               {/* left column */}

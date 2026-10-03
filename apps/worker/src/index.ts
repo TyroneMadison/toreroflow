@@ -564,6 +564,17 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
 /* ---- daily analytics ingestion (spec Section 5 step 4) ---- */
 
 /** First numeric value among several possible provider field names. */
+/** A platform's post link without the tracking query TikTok appends. */
+function postUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.startsWith("http")) return null;
+  try {
+    const u = new URL(raw);
+    return u.hostname.endsWith("tiktok.com") ? `${u.origin}${u.pathname}` : raw;
+  } catch {
+    return null;
+  }
+}
+
 function metric(item: Record<string, unknown>, ...names: string[]): number | null {
   for (const n of names) {
     const v = item[n];
@@ -638,16 +649,37 @@ async function ingestAnalytics(): Promise<void> {
 
   const horizon = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
   const byAccount = new Map<string, Map<string, DayBucket>>();
-  const postEntries: Array<{ accountId: string; postId: string; m: Record<string, unknown> }> = [];
+  const postEntries: Array<{
+    accountId: string;
+    postId: string;
+    m: Record<string, unknown>;
+    url: string | null;
+  }> = [];
 
   for (const post of posts) {
     const publishedAt = new Date(String(post.publishedAt ?? post.scheduledFor ?? ""));
-    if (Number.isNaN(publishedAt.getTime()) || publishedAt < horizon) continue;
+    if (Number.isNaN(publishedAt.getTime())) continue;
+    // The horizon bounds the day buckets only. A post the app published keeps
+    // getting its view count however old it is, or results since joining
+    // would quietly stop counting a long-standing client's early posts.
+    const inHorizon = publishedAt >= horizon;
     const platforms = Array.isArray(post.platforms) ? post.platforms : [];
     for (const entry of platforms as Array<Record<string, unknown>>) {
       const accountId = typeof entry.accountId === "string" ? entry.accountId : null;
       const m = (entry.analytics ?? post.analytics) as Record<string, unknown> | undefined;
       if (!accountId || !m) continue;
+
+      /*
+       * The id a post was created under is latePostId. Analytics hands every
+       * post back as its own record with a fresh _id, so keying on _id never
+       * matched one of our posts and the per-post capture below wrote nothing.
+       * _id stays as the fallback for posts made before the field existed.
+       */
+      const postId = post.latePostId ?? post._id ?? post.id;
+      if (typeof postId === "string") {
+        postEntries.push({ accountId, postId, m, url: postUrl(entry.platformPostUrl) });
+      }
+      if (!inHorizon) continue;
 
       const dayKey = publishedAt.toISOString().slice(0, 10);
       let days = byAccount.get(accountId);
@@ -675,11 +707,6 @@ async function ingestAnalytics(): Promise<void> {
       if (watchSec && watchSec > 0) {
         bucket.watchSum += watchSec;
         bucket.watchCount += 1;
-      }
-
-      const postId = post._id ?? post.id;
-      if (typeof postId === "string") {
-        postEntries.push({ accountId, postId, m });
       }
     }
   }
@@ -775,6 +802,10 @@ async function ingestAnalytics(): Promise<void> {
         (p) => p.accountId === account.providerAccountId && p.postId === target.remotePostId,
       );
       if (!entry) continue;
+      // TikTok confirms before its link exists, so the link arrives here.
+      if (!target.remoteUrl && entry.url) {
+        await prisma.postTarget.update({ where: { id: target.id }, data: { remoteUrl: entry.url } });
+      }
       await prisma.postMetric.create({
         data: {
           postTargetId: target.id,

@@ -24,6 +24,7 @@ import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
 import { reportRoutes } from "./routes/reports";
 import { overviewRoutes } from "./routes/overview";
+import { resultsRoutes } from "./routes/results";
 import { financialsRoutes } from "./routes/financials";
 import { deployRoutes } from "./routes/deploy";
 import { oauthRoutes } from "./routes/oauth";
@@ -160,6 +161,7 @@ export async function buildServer(
   await app.register(postRoutes);
   await app.register(reportRoutes);
   await app.register(overviewRoutes);
+  await app.register(resultsRoutes);
   await app.register(financialsRoutes);
   await app.register(deployRoutes);
   await app.register(oauthRoutes);

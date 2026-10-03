@@ -29,7 +29,7 @@ import { actingUserId } from "../auth/actingUser";
  * same way, so the queue and the upload list always agree about what a
  * video is called.
  */
-function draftName(draft: unknown): string {
+export function draftName(draft: unknown): string {
   if (!draft || typeof draft !== "object") return "";
   const d = draft as { name?: unknown; title?: unknown; hook?: unknown };
   for (const v of [d.name, d.title, d.hook]) {

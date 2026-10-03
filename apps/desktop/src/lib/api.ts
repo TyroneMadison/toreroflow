@@ -290,6 +290,26 @@ export interface AccountAnalytics {
   }>;
 }
 
+/** What a client has had since joining: GET /clients/:id/results. */
+export interface ClientResults {
+  joinedAt: string;
+  days: number;
+  published: { posts: number; videos: number };
+  views: {
+    total: number;
+    reporting: number;
+    posts: number;
+    byPlatform: Record<string, { posts: number; reporting: number; views: number }>;
+    best: { platform: string; title: string; url: string | null; publishedAt: string | null; views: number | null } | null;
+  };
+  viewsCountedAt: string | null;
+  accounts: Array<{
+    platform: Platform;
+    handle: string;
+    followers: { start: number; startOn: string; now: number; nowOn: string; change: number; pct: number | null } | null;
+  }>;
+}
+
 export interface ClientAnalytics {
   client: { id: string; name: string; plan: string | null };
   days: number;

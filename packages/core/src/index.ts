@@ -35,3 +35,4 @@ export * from "./toreiq";
 export * from "./metricSeries";
 export * from "./dataProvenance";
 export * as tokens from "./tokens";
+export * from "./results";

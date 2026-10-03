@@ -1876,3 +1876,15 @@
 /* A carried message on a post that is queued, not failed. */
 .pdnote{margin-top:10px;padding:9px 12px;border-radius:11px;font-size:12px;line-height:1.5;
   color:var(--txt-2);background:var(--glass-2);border:1px solid var(--brd-soft)}
+
+/* Results since joining: the whole-relationship card above the analytics grid. */
+.ansince{margin-bottom:16px}
+.ansince .ankpis{margin-top:14px}
+.ansince .kpi .foot{font-size:11.5px;color:var(--txt-3);display:block}
+.ansince .kpi .val a{color:inherit;text-decoration:none}
+.sincegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:14px}
+.sincerow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--brd-soft);min-width:0}
+.sincerow .who{flex:1;min-width:0;display:flex;flex-direction:column}
+.sincerow .who b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sincerow .who span{font-size:11.5px;color:var(--txt-3)}
+.sincerow .delta.flat{color:var(--txt-3);background:var(--glass)}
