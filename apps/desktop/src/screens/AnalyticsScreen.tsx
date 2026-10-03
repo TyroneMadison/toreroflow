@@ -172,6 +172,8 @@ function SinceJoining({ clientId, reloadKey }: { clientId: string; reloadKey: nu
           <div className="val">{r.published.posts.toLocaleString()}</div>
           <span className="foot">
             from {r.published.videos} {r.published.videos === 1 ? "video" : "videos"}
+            {r.published.carousels > 0 &&
+              ` and ${r.published.carousels} ${r.published.carousels === 1 ? "carousel" : "carousels"}`}
           </span>
         </div>
         <div className="kpi glass">
@@ -190,7 +192,7 @@ function SinceJoining({ clientId, reloadKey }: { clientId: string; reloadKey: nu
         <div className="kpi glass">
           <div className="lab">Best post</div>
           <div className="val">{views.best ? fmt(views.best.views) : "-"}</div>
-          <span className="foot" title={views.best?.title}>
+          <span className="foot best" title={views.best?.title}>
             {views.best ? (
               <>
                 <Pf p={PF_ID[views.best.platform as Platform]} size="sm" />{" "}
@@ -221,23 +223,26 @@ function SinceJoining({ clientId, reloadKey }: { clientId: string; reloadKey: nu
         </div>
       </div>
       {r.accounts.length > 0 && (
-        <div className="sincegrid">
+        <div className="angain sincegrid">
           {r.accounts.map((a) => {
             const f = a.followers;
             const noun = a.platform === "youtube" ? "subscribers" : "followers";
+            // A count that stopped updating says when it was last true.
+            const stale =
+              f != null && Date.now() - new Date(`${f.nowOn}T12:00:00`).getTime() > 2 * 86_400_000;
             return (
-              <div className="sincerow" key={`${a.platform}:${a.handle}`}>
+              <div className="arow" key={`${a.platform}:${a.handle}`}>
                 <Pf p={PF_ID[a.platform]} size="sm" />
                 <div className="who">
                   <b>@{a.handle}</b>
                   <span>
                     {f
-                      ? `${f.start.toLocaleString()} to ${f.now.toLocaleString()} ${noun} since ${fmtDay(f.startOn)}`
+                      ? `${f.start.toLocaleString()} to ${f.now.toLocaleString()} ${noun} since ${fmtDay(f.startOn)}${stale ? `, as of ${fmtDay(f.nowOn)}` : ""}`
                       : `${noun}: not enough history yet`}
                   </span>
                 </div>
                 {f && (
-                  <span className={`delta ${f.change > 0 ? "up" : f.change < 0 ? "dn" : "flat"}`}>
+                  <span className={`delta ${f.change > 0 ? "up" : f.change < 0 ? "down" : "flat"}`}>
                     {f.change > 0 ? "+" : ""}
                     {f.pct != null ? `${f.pct}%` : fmt(f.change)}
                   </span>

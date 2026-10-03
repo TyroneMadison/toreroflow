@@ -294,7 +294,7 @@ export interface AccountAnalytics {
 export interface ClientResults {
   joinedAt: string;
   days: number;
-  published: { posts: number; videos: number };
+  published: { posts: number; videos: number; carousels: number };
   views: {
     total: number;
     reporting: number;

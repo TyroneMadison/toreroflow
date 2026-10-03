@@ -42,33 +42,54 @@ export async function resultsRoutes(app: FastifyInstance): Promise<void> {
       prisma.postTarget.findMany({
         where: { status: "posted", post: { clientId: request.params.id, deletedAt: null } },
         select: {
+          id: true,
           platform: true,
           remoteUrl: true,
           publishedAt: true,
-          post: { select: { mediaAssetId: true, mediaAsset: { select: { draftCopy: true, originalName: true } } } },
-          postMetrics: { orderBy: { capturedAt: "desc" }, take: 1, select: { views: true, capturedAt: true } },
+          post: {
+            select: {
+              mediaAssetId: true,
+              mediaAsset: { select: { kind: true, draftCopy: true, originalName: true } },
+            },
+          },
         },
       }),
     ]);
+
+    // The latest real count per post, one row each. A nested take would load
+    // every day's row for every post and trim them in memory.
+    const ids = targets.map((t) => t.id);
+    const latestRows = ids.length
+      ? await prisma.$queryRaw<Array<{ postTargetId: string; views: number; capturedAt: Date }>>`
+          SELECT DISTINCT ON ("postTargetId") "postTargetId", views, "capturedAt"
+          FROM "PostMetric"
+          WHERE "postTargetId" = ANY(${ids}) AND views IS NOT NULL
+          ORDER BY "postTargetId", "capturedAt" DESC`
+      : [];
+    const latest = new Map(latestRows.map((r) => [r.postTargetId, r]));
 
     const posts: PublishedPost[] = targets.map((t) => ({
       platform: t.platform,
       title: draftName(t.post.mediaAsset?.draftCopy) || t.post.mediaAsset?.originalName || "Untitled video",
       url: t.remoteUrl,
       publishedAt: t.publishedAt?.toISOString() ?? null,
-      views: t.postMetrics[0]?.views ?? null,
+      views: latest.get(t.id)?.views ?? null,
     }));
-    const lastCounted = targets
-      .map((t) => t.postMetrics[0]?.capturedAt)
-      .filter((d): d is Date => d != null)
+    const lastCounted = latestRows
+      .map((r) => r.capturedAt)
       .sort((a, b) => b.getTime() - a.getTime())[0];
+    const kinds = new Map(
+      targets.filter((t) => t.post.mediaAssetId).map((t) => [t.post.mediaAssetId, t.post.mediaAsset?.kind]),
+    );
+    const carousels = [...kinds.values()].filter((k) => k === "carousel").length;
 
     return {
       joinedAt: joinedAt.toISOString(),
       days: Math.max(0, Math.floor((Date.now() - joinedAt.getTime()) / 86_400_000)),
       published: {
         posts: targets.length,
-        videos: new Set(targets.map((t) => t.post.mediaAssetId).filter(Boolean)).size,
+        videos: kinds.size - carousels,
+        carousels,
       },
       views: viewTotals(posts),
       viewsCountedAt: lastCounted?.toISOString() ?? null,

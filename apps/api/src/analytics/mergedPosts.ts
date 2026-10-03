@@ -321,7 +321,8 @@ export async function buildMergedPosts(
       avgWatchSec: avgWatchSec && avgWatchSec > 0 ? avgWatchSec : null,
       durationSec:
         num(m, "duration", "videoDuration", "durationSec", "mediaDuration") ??
-        durationByRemoteId.get(id) ??
+        // The provider hands our post id back as latePostId, never as _id.
+        durationByRemoteId.get(typeof p.latePostId === "string" ? p.latePostId : id) ??
         null,
       byPlatform,
     });

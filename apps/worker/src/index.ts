@@ -793,30 +793,50 @@ async function ingestAnalytics(): Promise<void> {
       }
     }
 
-    // Per-post metrics for anything we published through the provider.
-    const targets = await prisma.postTarget.findMany({
-      where: { socialAccountId: account.id, status: "posted", remotePostId: { not: null } },
+  }
+
+  /*
+   * Per-post metrics for everything the app published.
+   *
+   * Matched on the provider account and our own post id, not through the
+   * active account rows: disconnecting and reconnecting an account makes a
+   * new row, and the posts published before that still point at the old one.
+   * One row per post per UTC day, because this runs on boot, at 04:00 and on
+   * every report update, and a row per run would grow without end.
+   */
+  const entryByKey = new Map(postEntries.map((e) => [`${e.accountId}|${e.postId}`, e]));
+  const published = await prisma.postTarget.findMany({
+    where: { status: "posted", remotePostId: { not: null } },
+    select: {
+      id: true,
+      remotePostId: true,
+      remoteUrl: true,
+      socialAccount: { select: { providerAccountId: true } },
+    },
+  });
+  const todayStart = new Date(`${todayKey}T00:00:00.000Z`);
+  for (const target of published) {
+    const entry = entryByKey.get(`${target.socialAccount.providerAccountId}|${target.remotePostId}`);
+    if (!entry) continue;
+    // TikTok confirms before its link exists, so the link arrives here.
+    if (!target.remoteUrl && entry.url) {
+      await prisma.postTarget.update({ where: { id: target.id }, data: { remoteUrl: entry.url } });
+    }
+    const data = {
+      views: metric(entry.m, "views", "impressions", "plays"),
+      likes: metric(entry.m, "likes", "likeCount"),
+      comments: metric(entry.m, "comments", "commentCount"),
+      shares: metric(entry.m, "shares", "shareCount"),
+      saves: metric(entry.m, "saves", "saveCount"),
+    };
+    const today = await prisma.postMetric.findFirst({
+      where: { postTargetId: target.id, capturedAt: { gte: todayStart } },
+      select: { id: true },
     });
-    for (const target of targets) {
-      const entry = postEntries.find(
-        (p) => p.accountId === account.providerAccountId && p.postId === target.remotePostId,
-      );
-      if (!entry) continue;
-      // TikTok confirms before its link exists, so the link arrives here.
-      if (!target.remoteUrl && entry.url) {
-        await prisma.postTarget.update({ where: { id: target.id }, data: { remoteUrl: entry.url } });
-      }
-      await prisma.postMetric.create({
-        data: {
-          postTargetId: target.id,
-          capturedAt: new Date(),
-          views: metric(entry.m, "views", "impressions", "plays"),
-          likes: metric(entry.m, "likes", "likeCount"),
-          comments: metric(entry.m, "comments", "commentCount"),
-          shares: metric(entry.m, "shares", "shareCount"),
-          saves: metric(entry.m, "saves", "saveCount"),
-        },
-      });
+    if (today) {
+      await prisma.postMetric.update({ where: { id: today.id }, data: { ...data, capturedAt: new Date() } });
+    } else {
+      await prisma.postMetric.create({ data: { postTargetId: target.id, capturedAt: new Date(), ...data } });
     }
   }
   console.log(
