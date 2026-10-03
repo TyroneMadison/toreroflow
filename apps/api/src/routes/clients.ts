@@ -30,6 +30,7 @@ import { requireAuth } from "../plugins/requireAuth";
 import { withReportPage } from "../reports/onboardHook";
 import { ensureReportSlug } from "../reports/slug";
 import { importProviderAccounts } from "../onboardingSweep";
+import { ensureProviderProfile as ensureProfile } from "../providerProfile";
 
 const NOT_FOUND = { error: "client not found" } as const;
 
@@ -65,19 +66,11 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
   const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
 
   /** Zernio profile backing this client, created on first use. */
-  const ensureProviderProfile = async (client: {
+  const ensureProviderProfile = (client: {
     id: string;
     name: string;
     providerProfileId: string | null;
-  }): Promise<string> => {
-    if (client.providerProfileId) return client.providerProfileId;
-    const profileId = await zernio!.createProfile(client.name);
-    await prisma.client.update({
-      where: { id: client.id },
-      data: { providerProfileId: profileId },
-    });
-    return profileId;
-  };
+  }): Promise<string> => ensureProfile(zernio!, client);
 
   app.addHook("onRequest", requireAuth);
 

@@ -6,6 +6,7 @@ import { NetlifyPublisher } from "../reports/netlify";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { ZernioProvider } from "@toreroflow/publishers";
+import { ensureProviderProfile } from "../providerProfile";
 import {
   applyWelcomeReplies,
   SITE_DOMAIN,
@@ -123,11 +124,7 @@ export async function onboardingRoutes(app: FastifyInstance): Promise<void> {
       let profileId = client.providerProfileId;
       if (provider && !profileId) {
         try {
-          profileId = await provider.createProfile(client.name);
-          await prisma.client.update({
-            where: { id: client.id },
-            data: { providerProfileId: profileId },
-          });
+          profileId = await ensureProviderProfile(provider, client);
         } catch (err) {
           app.log.warn({ err }, "could not create the publishing profile for the welcome link");
         }

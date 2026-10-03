@@ -414,6 +414,12 @@ export class ZernioProvider {
     return id;
   }
 
+  /** Every profile on the account, for finding one by name. */
+  async listProfiles(): Promise<Array<{ _id: string; name: string }>> {
+    const data = await this.request<{ profiles?: Array<{ _id: string; name: string }> }>("GET", "/profiles");
+    return data.profiles ?? [];
+  }
+
   /**
    * Disconnects one connected account, at the provider.
    *
