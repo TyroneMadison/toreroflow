@@ -68,12 +68,34 @@ export async function resultsRoutes(app: FastifyInstance): Promise<void> {
       : [];
     const latest = new Map(latestRows.map((r) => [r.postTargetId, r]));
 
+    /*
+     * Posts the provider stopped reporting on. When an account is reconnected
+     * at the provider, the posts published under the old connection drop out
+     * of its analytics, but the stored catalogue still holds their last count
+     * under the same link. Matched on the exact link, so a post is only ever
+     * credited with its own views.
+     */
+    const unreported = targets.filter((t) => !latest.has(t.id) && t.remoteUrl);
+    const stored = unreported.length
+      ? await prisma.externalVideo.findMany({
+          where: {
+            url: { in: unreported.map((t) => t.remoteUrl!) },
+            socialAccount: { clientId: request.params.id },
+          },
+          select: { url: true, views: true },
+        })
+      : [];
+    const storedViews = new Map<string, number>();
+    for (const v of stored) {
+      if (v.url) storedViews.set(v.url, Math.max(storedViews.get(v.url) ?? 0, v.views));
+    }
+
     const posts: PublishedPost[] = targets.map((t) => ({
       platform: t.platform,
       title: draftName(t.post.mediaAsset?.draftCopy) || t.post.mediaAsset?.originalName || "Untitled video",
       url: t.remoteUrl,
       publishedAt: t.publishedAt?.toISOString() ?? null,
-      views: latest.get(t.id)?.views ?? null,
+      views: latest.get(t.id)?.views ?? (t.remoteUrl ? storedViews.get(t.remoteUrl) : undefined) ?? null,
     }));
     const lastCounted = latestRows
       .map((r) => r.capturedAt)
