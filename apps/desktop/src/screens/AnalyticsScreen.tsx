@@ -19,6 +19,7 @@ import {
   type ClientResults,
 } from "../lib/api";
 import ViewsChart from "../components/ViewsChart";
+import AnalyticsHero, { AnalyticsTabs } from "../components/analytics/AnalyticsHero";
 import { Empty, ErrorState, Loading } from "../components/states";
 import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
@@ -580,19 +581,11 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
   const last10 = all.slice(0, 10);
   const mostViewed = [...all].sort((a, b) => b.views - a.views).slice(0, 8);
-  /*
-   * Carousels, most recent first. mediaType comes from the provider, so
-   * carousels posted natively on the platform count too, not just ones made
-   * through the app. Single images stay out: one Facebook photo is not a
-   * carousel and listing it as one would pad the section.
-   */
-  const carousels = all
-    .filter((p) => p.mediaType === "carousel")
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
-    .slice(0, 8);
-  const tier1m = buildTier(lifetime, 1_000_000, null, cutoff);
-  const tier100k = buildTier(lifetime, 100_000, 1_000_000, cutoff);
-  const tier10k = buildTier(lifetime, 10_000, 100_000, cutoff);
+  // Tier counts: all time, plus how many joined in the last 30 days.
+  const cutoff30 = Date.now() - 30 * 86_400_000;
+  const tier1m = buildTier(lifetime, 1_000_000, null, cutoff30);
+  const tier100k = buildTier(lifetime, 100_000, 1_000_000, cutoff30);
+  const tier10k = buildTier(lifetime, 10_000, 100_000, cutoff30);
 
   const history = data ? mergedViewHistory(data) : [];
   const maxViews = Math.max(1, ...history.map((h) => h.views));
@@ -621,8 +614,8 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     <section className="screen active" data-screen="analytics" data-state={state}>
       <div className="topbar">
         <div className="h">
-          <h2>Client Analytics</h2>
-          <p>
+          <h2>{selectedClient ? selectedClient.name : "Analytics"}</h2>
+          <p className="an6-hidden">
             {selectedClient
               ? `${selectedClient.name} · ${tab === "all" ? "all platforms" : (activeTab?.label ?? tab)} · ${
                   rangeDays == null
@@ -736,6 +729,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           <Loading screen="analytics" label="Loading the analytics" />
         ) : (
           <>
+            <AnalyticsTabs />
             <div className="anbar">
               <div className="antabs">
                 <div
@@ -785,12 +779,22 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
               </div>
             </div>
 
+            <AnalyticsHero
+              name={selectedClient.name}
+              avatar={avatar}
+              initials={selectedClient.avatarSeed ?? selectedClient.name.slice(0, 1).toUpperCase()}
+              platforms={connectedPlatforms.map((a) => a.platform)}
+              stats={kpis}
+              shares={pieSegs.map((sg) => ({ platform: sg.platform, frac: sg.frac }))}
+              loading={loading}
+            />
+
             <SinceJoining clientId={selectedClient.id} reloadKey={reloadKey} />
 
             <div className="anwrap">
               {/* left column */}
               <div className="ancol">
-                <div className="card glass">
+                <div id="an-platforms" className="card glass">
                   <h3>Views breakdown</h3>
                   <div className="sub" style={{ marginBottom: 14 }}>
                     Share of views per platform
@@ -867,16 +871,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
               {/* center column */}
               <div className="ancol mid">
-                <div className="ankpis">
-                  {kpis.map((k) => (
-                    <div className="kpi glass" key={k.label}>
-                      <div className="lab">{k.label}</div>
-                      <div className="val">{loading ? "…" : k.value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="card glass anuploads">
+                <div id="an-engagement" className="card glass anuploads">
                   <div className="rowhead">
                     <div>
                       <h3>Engagement</h3>
@@ -980,7 +975,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="card glass">
+                <div id="an-views" className="card glass">
                   <div className="rowhead">
                     <div>
                       <h3>Views over time</h3>
@@ -992,7 +987,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   <ViewsChart posts={all} platforms={activePlatforms} />
                 </div>
 
-                <div className="card glass">
+                <div id="an-videos" className="card glass">
                   <div className="rowhead">
                     <div>
                       <h3>Last 10 uploads</h3>
@@ -1050,75 +1045,10 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="card glass">
-                  <div className="rowhead">
-                    <div>
-                      <h3>Carousels</h3>
-                      <div className="sub">
-                        Slide posts and how they did. Shares include TikTok reposts.
-                      </div>
-                    </div>
-                  </div>
-                  {carousels.length ? (
-                    <div className="anmost" style={{ marginTop: 8 }}>
-                      {carousels.map((p) => (
-                        <div className="arow" key={p.id}>
-                          <div className="anthumb" style={{ width: 38, height: 48 }}>
-                            {thumb(p.thumbnailUrl) && <img src={thumb(p.thumbnailUrl)!} alt="" />}
-                          </div>
-                          <div className="t">
-                            <b title={p.title}>{p.title}</b>
-                            <span>
-                              {fmtDate(p.publishedAt)}
-                              {" · "}
-                              {p.platforms.map((pl) => PLATFORM_LABELS[pl] ?? pl).join(", ")}
-                              {" · "}
-                              {fmt(p.likes)} likes · {fmt(p.comments)} comments ·{" "}
-                              {fmt(p.shares)} shares · {fmt(p.saves)} saves
-                            </span>
-                          </div>
-                          <span className="v">{fmt(p.views)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty" style={{ padding: "14px 8px" }}>
-                      <b>{loading ? "Loading…" : "No carousels yet"}</b>
-                      <p>
-                        Add one in Upload and Schedule and it appears here with its views, likes,
-                        comments, shares and saves. Carousels posted straight on the platform
-                        count too.
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
 
               {/* right column */}
               <div className="ancol">
-                <div className="card glass anprofile">
-                  <div className="pic">
-                    {avatar ? (
-                      <img src={avatar} alt={selectedClient.name} />
-                    ) : (
-                      <div className="pinitials" style={{ height: "100%" }}>
-                        {selectedClient.avatarSeed ?? selectedClient.name.slice(0, 2)}
-                      </div>
-                    )}
-                  </div>
-                  <b>{selectedClient.name}</b>
-                  <div className="sub">
-                    {connectedPlatforms.length
-                      ? `${connectedPlatforms.length} connected ${connectedPlatforms.length === 1 ? "platform" : "platforms"}`
-                      : "No platforms connected"}
-                  </div>
-                  <div className="icons">
-                    {connectedPlatforms.map((a) => (
-                      <Pf key={a.id} p={PF_ID[a.platform]} size="sm" />
-                    ))}
-                  </div>
-                </div>
-
                 <div className="card glass">
                   <h3>Most viewed</h3>
                   <div className="sub">Top videos across all platforms</div>
@@ -1145,7 +1075,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="card glass">
+                <div id="an-growth" className="card glass">
                   <h3>Followers over time</h3>
                   <div className="sub">Latest snapshot per account</div>
                   <GainRows accounts={accounts} label="Follower counts" />
@@ -1153,24 +1083,25 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
               </div>
             </div>
 
+            <h3 className="gx-section" id="an-sorter">Views divider</h3>
             <div className="anranks">
               <RankCard
                 title="1M+ club"
                 range="Top 10 videos with 1,000,000+ views"
                 tier={tier1m}
-                rangeLabel={rangeLabel}
+                rangeLabel="30d"
               />
               <RankCard
                 title="100K to 999K"
                 range="Top 10 videos with 100,000 to 999,999 views"
                 tier={tier100k}
-                rangeLabel={rangeLabel}
+                rangeLabel="30d"
               />
               <RankCard
                 title="10K to 99K"
                 range="Top 10 videos with 10,000 to 99,999 views"
                 tier={tier10k}
-                rangeLabel={rangeLabel}
+                rangeLabel="30d"
               />
             </div>
 

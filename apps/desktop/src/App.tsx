@@ -168,7 +168,7 @@ function Shell() {
         <main className="main">
           {/* The Dashboard draws its own header with its controls; the screens
               not yet restyled get the shared one above their old topbar. */}
-          {activeScreen !== "dashboard" && (
+          {activeScreen !== "dashboard" && activeScreen !== "analytics" && (
             <PageHeader screen={activeScreen} />
           )}
           {activeScreen === "dashboard" && (

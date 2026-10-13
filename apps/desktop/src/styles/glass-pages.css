@@ -92,3 +92,34 @@
 .gx-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .gx-brand:not(.hero) .gx-tiles .gx-statv{font-size:20px}
 .gx-enroll{flex-direction:row;align-items:center;justify-content:space-between;padding:14px 18px}
+
+/* ---- Analytics v6 (components/analytics/AnalyticsHero.tsx) ---- */
+.screen[data-screen="analytics"]>.topbar .h{display:none}
+.an6-hidden{display:none}
+.an6-tabs{display:inline-flex;gap:4px;padding:5px;border-radius:999px;margin-bottom:14px}
+.an6-tabs button{position:relative;z-index:1;border:0;background:none;color:var(--text-2);font:inherit;font-size:12.5px;padding:7px 14px;border-radius:999px;cursor:pointer}
+.an6-tabs button:hover,.an6-tabs button:focus-visible{color:var(--text);background:var(--press-bg)}
+.an6-hero{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;margin:6px 0 18px;align-items:stretch}
+@media (max-width:1100px){.an6-hero{grid-template-columns:minmax(0,1fr)}}
+.an6-top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px;min-width:0}
+.an6-namecol{min-width:280px;flex:1}
+.an6-name{font-size:clamp(44px,5vw,72px);font-weight:800;letter-spacing:-.035em;line-height:1;color:var(--text);margin:0 0 16px}
+.an6-strip{display:flex;gap:10px;max-width:640px}
+.an6-pillwrap{min-width:70px;display:flex;flex-direction:column;gap:5px}
+.an6-pill{position:relative;height:26px;border-radius:999px;overflow:hidden;background:var(--press-bg);
+  box-shadow:inset 0 2px 5px rgba(0,0,0,.25),inset 0 0 0 1px rgba(255,255,255,.25)}
+.an6-pill i{position:absolute;inset:0 auto 0 0;border-radius:999px;opacity:.85}
+.an6-pill b{position:relative;z-index:1;display:block;font-size:11.5px;line-height:26px;padding-left:10px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.an6-stats{display:flex;gap:clamp(18px,3vw,44px);flex-wrap:wrap}
+.an6-statv{font-size:clamp(40px,4.6vw,68px);font-weight:300;letter-spacing:-.04em;line-height:1;color:var(--text)}
+.an6-stat .tf-lbl{margin-top:6px}
+.an6-profile{border-radius:var(--r-chart);padding:18px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;min-height:200px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(255,122,102,.55),rgba(140,60,200,.45) 55%,rgba(40,90,220,.45)) !important}
+.an6-profile>*{position:relative;z-index:1}
+.an6-orb{width:96px;height:96px;border-radius:50%;margin:0 auto auto;display:grid;place-items:center;overflow:hidden;font-size:38px;font-weight:700;color:#fff;
+  background:radial-gradient(circle at 35% 30%,#ffb3a6,#e2523e 70%);box-shadow:inset 0 3px 4px rgba(255,255,255,.55),0 0 0 4px rgba(255,255,255,.3),0 12px 30px rgba(0,0,0,.35)}
+.an6-orb img{width:100%;height:100%;object-fit:cover}
+.an6-pname b{display:block;font-size:20px;font-weight:700;color:#fff}
+.an6-pname span{font-size:12px;color:rgba(255,255,255,.85)}
+.an6-picons{display:flex;gap:6px}
+[data-theme="light"] .an6-pill b{color:#fff}
