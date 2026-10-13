@@ -88,8 +88,16 @@ export default function AnalyticsHero({
           ))}
         </div>
       </div>
-      <div className="an6-profile glass-z1" data-testid="analytics.profile">
-        <div className="an6-orb">{avatar ? <img src={avatar} alt="" /> : <span>{initials}</span>}</div>
+      <div className={`an6-profile glass-z1${avatar ? " has-photo" : ""}`} data-testid="analytics.profile">
+        {avatar ? (
+          <div className="gx-photo" aria-hidden="true">
+            <img src={avatar} alt="" />
+          </div>
+        ) : (
+          <div className="an6-orb">
+            <span>{initials}</span>
+          </div>
+        )}
         <div className="an6-pname">
           <b>{name}</b>
           <span>

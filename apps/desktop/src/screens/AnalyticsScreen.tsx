@@ -12,6 +12,7 @@ import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
 import {
   api,
+  type PostTargetInfo,
   fileUrl,
   type AccountAnalytics,
   type ClientAnalytics,
@@ -20,6 +21,8 @@ import {
 } from "../lib/api";
 import ViewsChart from "../components/ViewsChart";
 import AnalyticsHero, { AnalyticsTabs } from "../components/analytics/AnalyticsHero";
+import { QueueCard, ReachCard } from "../components/analytics/AnalyticsPanels";
+import { queueRows } from "../lib/queue";
 import { Empty, ErrorState, Loading } from "../components/states";
 import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
@@ -372,6 +375,24 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     };
   }, [selectedClient, reloadKey]);
 
+  // Posting queue: the same scheduled posts Upload and Schedule shows.
+  const [queuePosts, setQueuePosts] = useState<PostTargetInfo[] | null>(null);
+  const [queueLoading, setQueueLoading] = useState(false);
+  useEffect(() => {
+    if (!selectedClient) return;
+    let live = true;
+    setQueueLoading(true);
+    api
+      .get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`)
+      .then((r) => live && setQueuePosts(r))
+      .catch(() => live && setQueuePosts(null))
+      .finally(() => live && setQueueLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [selectedClient, reloadKey]);
+  const queue = queuePosts ? queueRows(queuePosts, 5) : [];
+
   /** Drop the server's cached post list, then refetch everything live. */
   const refresh = async () => {
     if (!selectedClient || refreshing) return;
@@ -514,6 +535,23 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const totalComments = all.reduce((s, p) => s + p.comments, 0);
   const totalShares = all.reduce((s, p) => s + p.shares, 0);
   const totalReach = sumReported("reach", perPlatform, (b) => b.reach);
+  // Reach ring: no goal exists anywhere, so it measures against the period
+  // before this one (same length). All-time has no previous period.
+  const prevReach =
+    rangeDays == null
+      ? null
+      : sumReported(
+          "reach",
+          scopeToPlatform(
+            everyPost.filter((p) => {
+              const t = new Date(p.publishedAt).getTime();
+              return t >= cutoff - rangeDays * 86_400_000 && t < cutoff;
+            }),
+            tabPlatform,
+            tabAccountId,
+          ).flatMap((p) => p.byPlatform),
+          (b) => b.reach,
+        );
   const totalImpressions = sumReported("impressions", perPlatform, (b) => b.impressions);
   const totalClicks = sumReported("clicks", perPlatform, (b) => b.clicks);
   /*
@@ -581,6 +619,16 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
   const last10 = all.slice(0, 10);
   const mostViewed = [...all].sort((a, b) => b.views - a.views).slice(0, 8);
+  /*
+   * Carousels, most recent first. mediaType comes from the provider, so
+   * carousels posted natively on the platform count too, not just ones made
+   * through the app. Single images stay out: one Facebook photo is not a
+   * carousel and listing it as one would pad the section.
+   */
+  const carousels = all
+    .filter((p) => p.mediaType === "carousel")
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+    .slice(0, 8);
   // Tier counts: all time, plus how many joined in the last 30 days.
   const cutoff30 = Date.now() - 30 * 86_400_000;
   const tier1m = buildTier(lifetime, 1_000_000, null, cutoff30);
@@ -779,6 +827,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
               </div>
             </div>
 
+            <div className="an6-grid">
             <AnalyticsHero
               name={selectedClient.name}
               avatar={avatar}
@@ -790,6 +839,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
             />
 
             <SinceJoining clientId={selectedClient.id} reloadKey={reloadKey} />
+
+            <ReachCard
+              reach={totalReach}
+              previous={prevReach}
+              rangeLabel={rangeLabel}
+              loading={loading}
+            />
 
             <div className="anwrap">
               {/* left column */}
@@ -856,13 +912,13 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="card glass">
+                <div id="an-followers" className="card glass">
                   <h3>Recent followers</h3>
                   <div className="sub">All platforms except YouTube · 30-day change</div>
                   <GainRows accounts={otherAccounts} label="Follower gains" />
                 </div>
 
-                <div className="card glass">
+                <div id="an-subs" className="card glass">
                   <h3>Recent subscribers</h3>
                   <div className="sub">YouTube · 30-day change</div>
                   <GainRows accounts={ytAccounts} label="Subscriber gains" />
@@ -922,7 +978,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   )}
                 </div>
 
-                <div className="card glass anuploads">
+                <div id="an-uploaded" className="card glass anuploads">
                   <div className="rowhead">
                     <div>
                       <h3>Videos uploaded</h3>
@@ -939,7 +995,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                   </div>
                 </div>
 
-                <div className="card glass">
+                <div id="an-pervideo" className="card glass">
                   <div className="rowhead">
                     <div>
                       <h3>Views per video</h3>
@@ -1049,7 +1105,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
 
               {/* right column */}
               <div className="ancol">
-                <div className="card glass">
+                <div id="an-most" className="card glass">
                   <h3>Most viewed</h3>
                   <div className="sub">Top videos across all platforms</div>
                   {mostViewed.length ? (
@@ -1103,6 +1159,52 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                 tier={tier10k}
                 rangeLabel="30d"
               />
+            </div>
+
+            <QueueCard posts={queue} loading={queueLoading} />
+
+                <div id="an-carousels" className="card glass">
+              <div className="rowhead">
+                <div>
+                  <h3>Carousels</h3>
+                  <div className="sub">
+                    Slide posts and how they did. Shares include TikTok reposts.
+                  </div>
+                </div>
+              </div>
+              {carousels.length ? (
+                <div className="anmost" style={{ marginTop: 8 }}>
+                  {carousels.map((p) => (
+                    <div className="arow" key={p.id}>
+                      <div className="anthumb" style={{ width: 38, height: 48 }}>
+                        {thumb(p.thumbnailUrl) && <img src={thumb(p.thumbnailUrl)!} alt="" />}
+                      </div>
+                      <div className="t">
+                        <b title={p.title}>{p.title}</b>
+                        <span>
+                          {fmtDate(p.publishedAt)}
+                          {" · "}
+                          {p.platforms.map((pl) => PLATFORM_LABELS[pl] ?? pl).join(", ")}
+                          {" · "}
+                          {fmt(p.likes)} likes · {fmt(p.comments)} comments ·{" "}
+                          {fmt(p.shares)} shares · {fmt(p.saves)} saves
+                        </span>
+                      </div>
+                      <span className="v">{fmt(p.views)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty" style={{ padding: "14px 8px" }}>
+                  <b>{loading ? "Loading…" : "No carousels yet"}</b>
+                  <p>
+                    Add one in Upload and Schedule and it appears here with its views, likes,
+                    comments, shares and saves. Carousels posted straight on the platform
+                    count too.
+                  </p>
+                </div>
+              )}
+            </div>
             </div>
 
             <div className="note">

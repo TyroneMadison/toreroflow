@@ -91,7 +91,7 @@ export default function AuthScreen() {
 
             {error && <div className="autherr">{error}</div>}
 
-            <button className="btn" type="submit" disabled={busy} style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>
+            <button className="btn pri" type="submit" disabled={busy} style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>
               {busy ? "One moment…" : needsSetup ? "Create account" : "Log in"}
             </button>
           </>

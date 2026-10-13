@@ -123,9 +123,14 @@ function BrandCard({ c, hero, onOpenInsights }: { c: OverviewClient; hero?: bool
   const steps = pipeline(c);
   const h = headline(c, steps);
   return (
-    <article className={`gx-brand glass-z1 ${hero ? "hero" : ""} ${h.tone}`} data-testid={`account-overview.client-${c.id}`} data-status={h.word.toLowerCase().replace(/ /g, "-")}>
+    <article className={`gx-brand glass-z1 ${hero ? "hero" : ""} ${hero && c.avatarUrl ? "has-photo" : ""} ${h.tone}`} data-testid={`account-overview.client-${c.id}`} data-status={h.word.toLowerCase().replace(/ /g, "-")}>
+      {hero && c.avatarUrl && (
+        <div className="gx-photo" aria-hidden="true">
+          <img src={c.avatarUrl} alt="" />
+        </div>
+      )}
       <header className="gx-head">
-        <Avatar c={c} size={hero ? 52 : 40} />
+        {!(hero && c.avatarUrl) && <Avatar c={c} size={hero ? 52 : 40} />}
         <div className="gx-title">
           {hero && c.attention > 0 && <span className="tf-lbl">Needs you now</span>}
           <b>{c.name}</b>
