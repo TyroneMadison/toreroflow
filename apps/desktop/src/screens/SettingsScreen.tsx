@@ -13,6 +13,7 @@ import {
 import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { loadAutomation, setAutomation } from "../lib/theme";
+import { loadGlassLevel, setGlassLevel } from "../lib/glass";
 import { openExternal } from "../lib/external";
 import { useRoute } from "../lib/routes";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
@@ -104,18 +105,18 @@ function DirectConnection({
             : revoked
               ? "access was withdrawn, send a fresh link"
               : connection
-                ? `${connection.externalName ?? "channel"} · shares, watch time, subscribers gained`
+                ? `${connection.externalName ?? "channel"} Â· shares, watch time, subscribers gained`
                 : "not authorized, so shares and watch time stay blank"}
         </span>
       </div>
       {configured && (
         <button className="cbtn" disabled={busy} onClick={() => void copyLink()}>
-          {busy ? "…" : connection ? "Copy new link" : "Copy link"}
+          {busy ? "â€¦" : connection ? "Copy new link" : "Copy link"}
         </button>
       )}
       {connection && (
         <button className="dangerbtn" disabled={busy} onClick={() => void remove()}>
-          {busy ? "…" : "Remove"}
+          {busy ? "â€¦" : "Remove"}
         </button>
       )}
     </div>
@@ -167,7 +168,7 @@ function ContactFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
         <label className="cfield" key={f.key}>
           <span className="lab">
             {f.label}
-            {saving === f.key && <i> saving…</i>}
+            {saving === f.key && <i> savingâ€¦</i>}
           </span>
           <input
             className="field-in"
@@ -237,7 +238,7 @@ function BillingFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
       <label className="cfield">
         <span className="lab">
           Monthly price
-          {saving && <i> saving…</i>}
+          {saving && <i> savingâ€¦</i>}
         </span>
         <div className="pricein">
           <span>$</span>
@@ -399,8 +400,8 @@ function ProfileCard({
         <div className="psub">
           {client.name}
           {connected.length
-            ? ` · ${connected.length} connected ${connected.length === 1 ? "platform" : "platforms"}`
-            : " · no platforms yet"}
+            ? ` Â· ${connected.length} connected ${connected.length === 1 ? "platform" : "platforms"}`
+            : " Â· no platforms yet"}
         </div>
         <div className="pplat">
           {connected.map((a) => (
@@ -514,7 +515,7 @@ function ProfileCard({
           <div className="flabel" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
             Platforms
             <span className="link" style={{ textTransform: "none", letterSpacing: 0 }} onClick={onSync}>
-              {busyKey === `sync:${client.id}` ? "Syncing…" : "Sync accounts"}
+              {busyKey === `sync:${client.id}` ? "Syncingâ€¦" : "Sync accounts"}
             </span>
           </div>
           {pending && (
@@ -543,7 +544,7 @@ function ProfileCard({
                     </span>
                   </div>
                   <button className="cbtn" disabled={busy} onClick={() => onConnect(platform)}>
-                    {busy ? "…" : "Connect"}
+                    {busy ? "â€¦" : "Connect"}
                   </button>
                 </div>
               );
@@ -580,7 +581,7 @@ function ProfileCard({
                       disabled={busy}
                       onClick={() => onDisconnect(account.id)}
                     >
-                      {busy ? "…" : "Disconnect"}
+                      {busy ? "â€¦" : "Disconnect"}
                     </button>
                   </div>
                   {/* YouTube only for now: it is the one platform whose direct
@@ -615,7 +616,7 @@ function ProfileCard({
               title={`Copy ${client.name}'s welcome link. Send it when accounts need connecting or reconnecting; what they do there flows back into the app on its own.`}
               onClick={() => void copyWelcomeLink()}
             >
-              {linkBusy ? "Getting the link…" : "Copy their welcome link (connect / reconnect)"}
+              {linkBusy ? "Getting the linkâ€¦" : "Copy their welcome link (connect / reconnect)"}
             </button>
             {welcomeUrl && (
               <div
@@ -664,7 +665,7 @@ function ProfileCard({
                   }}
                 />
                 <button className="cbtn" disabled={remBusy || !remHandle.trim()} onClick={() => void addReminder()}>
-                  {remBusy ? "…" : "Add"}
+                  {remBusy ? "â€¦" : "Add"}
                 </button>
                 <button className="btn ghost" style={{ fontSize: 11.5 }} onClick={() => setRemOpen(false)}>
                   Cancel
@@ -685,6 +686,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
   const [automation, setAutomationState] = useState(loadAutomation);
+  const [glassLevel, setGlassLevelState] = useState(loadGlassLevel);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState<string | null>(null);
   const autoSynced = useRef(new Set<string>());
@@ -899,7 +901,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
               <span>
                 {autostart === null
                   ? isTauri()
-                    ? "checking…"
+                    ? "checkingâ€¦"
                     : "desktop app only"
                   : autostart
                     ? "On"
@@ -907,6 +909,30 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
               </span>
             </div>
             <div className={`switch${autostart ? " on" : ""}`} style={{ marginLeft: "auto" }} />
+          </div>
+          <div className="pt" style={{ maxWidth: 420, marginTop: 8, width: "100%", display: "block" }}>
+            <div className="info">
+              <b>Glass translucency</b>
+              <span>Frosted blur to clear liquid glass. Changes the whole app at once.</span>
+            </div>
+            <label className="tf-glass-slider">
+              <span>Frosted</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={glassLevel}
+                aria-label="Glass translucency"
+                data-testid="settings.glass-level"
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value);
+                  setGlassLevel(v);
+                  setGlassLevelState(v);
+                }}
+              />
+              <span>Clear</span>
+            </label>
           </div>
           <button
             type="button"
@@ -989,7 +1015,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         <div className="card glass setsec" id="settings-operator" data-section="operator">
           <h3>Operator</h3>
           <div className="sub" style={{ marginBottom: 12 }}>
-            Signed in as {user?.email} · {user?.agencyName}
+            Signed in as {user?.email} Â· {user?.agencyName}
           </div>
           <button className="btn ghost" onClick={logout} data-testid="settings.logout">
             Log out

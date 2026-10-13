@@ -3,15 +3,18 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { normalizeUrl, scrubToken } from "./lib/routes";
 import { applyTheme, initAutomation, loadTheme } from "./lib/theme";
+import { applyGlassLevel, loadGlassLevel } from "./lib/glass";
 // Tokens first so styles.css can point its old variables at them; frame.css
 // last so the dock layout wins over the old sidebar one.
 import "./styles/tokens.css";
 import "./styles.css";
 import "./styles/frame.css";
+import "./styles/liquid.css";
 
 // Apply persisted theme before first paint to avoid a flash of the wrong theme.
 applyTheme(loadTheme());
 initAutomation();
+applyGlassLevel(loadGlassLevel());
 
 /*
  * Web-hosted sign-in for automations: #token=... in the URL becomes the

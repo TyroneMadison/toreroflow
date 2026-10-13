@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import IconDefs from "./components/IconDefs";
+import GlassFilter from "./components/GlassFilter";
 import Dock from "./components/Dock";
 import PageHeader from "./components/PageHeader";
 import DashboardScreen from "./screens/DashboardScreen";
@@ -243,6 +244,7 @@ export default function App() {
         <div className="tf-bg" aria-hidden="true" />
         <div className="tf-vig" aria-hidden="true" />
         <IconDefs />
+        <GlassFilter />
         <Shell />
       </AppStateProvider>
     </ToastProvider>

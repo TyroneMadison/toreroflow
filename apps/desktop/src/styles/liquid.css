@@ -1,0 +1,97 @@
+/* ============================== Liquid glass (frosted-v2) ==============================
+   Approved mockups: /design frosted-v2. One knob, --glass-level, set on <html> by
+   lib/glass.ts from the Settings slider: 0 = thick frosted, 1 = clear liquid glass.
+   Default .95 (the clear blue "music player" look). Loaded after frame.css.
+   No blob shapes, no droplets: the gloss is streaks, rims and soft light only.
+   ======================================================================================= */
+:root{
+  --glass-level:.95;
+  --L:var(--glass-level);
+  --g-blur:calc(48px - 42px * var(--L));          /* 48px frosted -> 6px clear */
+  --g-blur-2:calc(28px - 24px * var(--L));
+  --g-blur-3:calc(56px - 36px * var(--L));
+  --g-sat:calc(140% + 40% * var(--L));
+  --g-tint:calc(.26 - .22 * var(--L));            /* white fill .26 -> .04 */
+  --g-tint-2:calc(.16 - .12 * var(--L));
+  --g-rim:calc(.85 - .25 * var(--L));
+  --g-gloss:calc(.25 + .45 * var(--L));           /* wet gloss strength, subtle */
+  --g-legible:calc(.05 + .40 * var(--L));         /* backing behind small text */
+  --g-chroma:calc(.15 + .45 * var(--L));          /* chromatic rim strength */
+  --press-bg:rgba(10,20,50,calc(.30 - .12 * var(--L)));
+  --bg-base:#0a1a4a;
+}
+
+/* ---- wallpaper: blue ribbons whose curves run the same way as the rounded glass ---- */
+.tf-bg{inset:0 !important;filter:none !important;
+  background:url("../assets/ribbons.jpg") center/cover no-repeat,#0a1a4a !important}
+.tf-vig{background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(4,10,40,.38)) !important}
+[data-theme="light"] .tf-bg{filter:brightness(1.18) saturate(.8) !important}
+
+/* ---- shared glass slab ---- */
+.glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{
+  background:
+    /* wet gloss: thin top streak, soft highlight, glow pooled at the bottom, faint blue edges */
+    linear-gradient(180deg,rgba(255,255,255,calc(var(--g-gloss) * .9)) 0,rgba(255,255,255,calc(var(--g-gloss) * .25)) 1.5px,transparent 5px),
+    radial-gradient(45% 10% at 22% 2%,rgba(255,255,255,calc(var(--g-gloss) * .45)),transparent 70%),
+    radial-gradient(55% 22% at 60% 100%,rgba(200,235,255,calc(var(--g-gloss) * .25)),transparent 70%),
+    radial-gradient(140% 140% at 50% 45%,transparent 70%,rgba(60,130,230,calc(var(--g-gloss) * .2)) 100%),
+    linear-gradient(150deg,rgba(255,255,255,calc(var(--g-tint) + .05)),rgba(255,255,255,var(--g-tint)) 40%,rgba(255,255,255,calc(var(--g-tint) * .6))) !important;
+  backdrop-filter:var(--g-refract,) blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
+  -webkit-backdrop-filter:blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--g-rim) * .65)),
+    inset 3px 3px 2px -1px rgba(255,180,220,var(--g-chroma)),      /* chromatic rim: warm top-left */
+    inset -3px -3px 2px -1px rgba(140,220,255,var(--g-chroma)),    /* cool bottom-right */
+    inset 0 -6px 10px -6px rgba(10,30,90,.45),
+    0 2px 3px rgba(5,15,50,.18),0 18px 40px rgba(5,15,50,.22),0 40px 80px rgba(5,10,40,.2) !important}
+.glass-z2,.glass-sm{
+  backdrop-filter:blur(var(--g-blur-2)) saturate(var(--g-sat)) !important;
+  -webkit-backdrop-filter:blur(var(--g-blur-2)) saturate(var(--g-sat)) !important;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,calc(var(--g-gloss) * .5)) 0,transparent 3px),
+    rgba(255,255,255,var(--g-tint-2)) !important;
+  box-shadow:inset 0 2px 5px rgba(10,20,60,.25),inset 0 -1px 0 rgba(255,255,255,calc(var(--g-rim) * .7)),
+    inset 0 0 0 1px rgba(255,255,255,calc(var(--g-rim) * .4)) !important}
+.glass-z3{backdrop-filter:blur(var(--g-blur-3)) saturate(var(--g-sat)) !important;
+  -webkit-backdrop-filter:blur(var(--g-blur-3)) saturate(var(--g-sat)) !important;
+  background-color:rgba(20,40,100,calc(.55 - .3 * var(--L))) !important}
+/* the old masked rim from tokens.css: keep as the bright 1px edge */
+.glass-z1::before,.glass-z3::before{background:linear-gradient(140deg,rgba(255,255,255,var(--g-rim)),rgba(255,255,255,.18) 30%,rgba(255,255,255,.06) 60%,rgba(255,255,255,calc(var(--g-rim) * .6))) !important}
+.glass-z1::after,.glass-z2::after,.glass-z3::after{background:linear-gradient(170deg,rgba(255,255,255,calc(.14 - .06 * var(--L))),transparent 28%) !important}
+
+/* ---- Financials v3 language: big numbers, clear pressed buttons ---- */
+.tf-btn{background:var(--press-bg) !important;border:1.5px solid rgba(255,255,255,calc(.55 - .1 * var(--L))) !important;color:#fff !important;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.25),0 1px 0 rgba(255,255,255,.35) !important}
+.tf-btn.pri{background:linear-gradient(180deg,rgba(255,122,102,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important;
+  box-shadow:inset 0 3px 8px rgba(80,10,0,.35),inset 0 -1px 0 rgba(255,255,255,.35),0 6px 18px rgba(255,122,102,.35) !important}
+.di.on,.tf-tabs a.a,.tf-seg button[aria-pressed="true"]{background:var(--press-bg) !important;color:#fff !important;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.3),inset 0 0 0 1.5px rgba(255,170,150,.8),0 0 18px rgba(255,122,102,.3) !important}
+.di.on svg{color:var(--accent-hi)}
+h1,h2,.big,.hero,.kpi-v,.val,.v{text-shadow:0 1px 12px rgba(5,15,60,.35)}
+
+/* ---- legibility: small text over clear glass gets a soft dark halo ---- */
+.tf-lbl,.sub,.tf-sub,.mini,small,.chip,.badge,.pill,.delta,.muted,label,th,
+.glass-z1 span,.glass .sub,.glass-z2 span{
+  text-shadow:0 0 6px rgba(5,15,55,var(--g-legible)),0 1px 2px rgba(5,15,55,var(--g-legible))}
+
+/* ---- Settings: translucency slider ---- */
+.tf-glass-slider{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;max-width:420px;margin-top:8px}
+.tf-glass-slider input[type=range]{-webkit-appearance:none;appearance:none;height:8px;border-radius:999px;cursor:pointer;
+  background:linear-gradient(90deg,rgba(255,255,255,.65),rgba(120,190,255,.35));box-shadow:inset 0 1px 3px rgba(0,0,0,.35)}
+.tf-glass-slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:linear-gradient(180deg,#fff,#d9ecff);box-shadow:0 0 0 1.5px rgba(255,255,255,.8),0 3px 8px rgba(0,0,0,.35)}
+.tf-glass-slider input[type=range]::-moz-range-thumb{width:22px;height:22px;border:0;border-radius:50%;background:#fff}
+.tf-glass-slider span{font-size:12px;color:var(--text-2)}
+
+/* ---- plain glass: automation mode and reduced transparency ---- */
+html[data-glass="low"] .tf-bg{background:#0a1a4a !important}
+html[data-glass="low"] .glass-z1,html[data-glass="low"] .glass-z2,html[data-glass="low"] .glass-z3,
+html[data-glass="low"] .glass,html[data-glass="low"] .glass-sm,html[data-glass="low"] .dock{
+  background:rgba(22,40,90,.94) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2) !important;
+  backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+html[data-glass="low"] *{text-shadow:none !important}
+@media (prefers-reduced-transparency: reduce){
+  .tf-bg{background:#0a1a4a !important}
+  .glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{background:rgba(22,40,90,.94) !important;
+    backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+}
