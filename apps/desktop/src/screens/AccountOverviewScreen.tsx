@@ -127,7 +127,7 @@ function BrandCard({ c, hero, onOpenInsights }: { c: OverviewClient; hero?: bool
       <header className="gx-head">
         <Avatar c={c} size={hero ? 52 : 40} />
         <div className="gx-title">
-          {hero && <span className="tf-lbl">Needs you now</span>}
+          {hero && c.attention > 0 && <span className="tf-lbl">Needs you now</span>}
           <b>{c.name}</b>
           <span>{subline(c)}</span>
         </div>
