@@ -1,0 +1,39 @@
+/* Client carousel at the top of Account Overview. Glass from tokens.css, tuned by --glass-level. */
+.ccar{--ccar-hud:#5EE6FF;position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:0 0 18px}
+[data-theme="light"] .ccar{--ccar-hud:#0A86A8}
+
+.ccar-track{position:relative;height:250px;overflow:hidden;touch-action:pan-y;user-select:none;cursor:grab;outline:none}
+.ccar-track.dragging{cursor:grabbing}
+/* Soft coral glow behind the centred card. */
+.ccar-track::before{content:"";position:absolute;left:50%;top:50%;width:230px;height:190px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(255,122,102,calc(.22 + .18 * var(--glass-level,.95))),transparent);filter:blur(24px)}
+
+.ccar-card{position:absolute;left:50%;top:50%;width:190px;padding:18px 14px 14px;border-radius:var(--r-card,26px);
+  display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--txt);cursor:pointer;
+  transition:transform .45s cubic-bezier(.22,.8,.24,1),opacity .45s ease,filter .45s ease;will-change:transform,opacity,filter}
+.ccar-track.dragging .ccar-card{transition:none}
+.ccar-card.on{box-shadow:var(--gl-inset),var(--gl-drop),0 0 0 1.5px rgba(255,122,102,.7)}
+.ccar-card:focus-visible{outline:2px solid var(--ccar-hud);outline-offset:3px}
+
+.ccar-av{width:64px;height:64px;border-radius:50%;overflow:hidden;display:grid;place-items:center;font:700 26px/1 inherit;color:#fff;
+  box-shadow:0 0 0 2px rgba(255,255,255,.35),0 6px 18px rgba(0,0,0,.25)}
+.ccar-card.on .ccar-av{box-shadow:0 0 0 2px var(--accent,#FF7A66),0 0 18px rgba(255,122,102,.45)}
+.ccar-av img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ccar-name{font-size:15px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ccar-views{display:flex;flex-direction:column;align-items:center;line-height:1.1}
+.ccar-views strong{font-size:22px;font-variant-numeric:tabular-nums;color:var(--accent,#FF7A66)}
+[data-theme="light"] .ccar-views strong{color:var(--accent-lo,#E2523E)}
+.ccar-views small{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ccar-hud)}
+.ccar-plats{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;min-height:22px}
+
+.ccar-nav{width:38px;height:38px;border-radius:50%;border:1px solid var(--brd);background:var(--glass-2);color:var(--txt);
+  font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.ccar-nav:hover:not(:disabled){border-color:var(--ccar-hud);color:var(--ccar-hud)}
+.ccar-nav:disabled{opacity:.35;cursor:default}
+.ccar-nav:focus-visible{outline:2px solid var(--ccar-hud);outline-offset:2px}
+
+.ccar-hud{grid-column:1/-1;margin:0;text-align:center;font:600 11px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ccar-hud)}
+
+/* No glide, no blur pulse: cards jump straight to place. */
+@media (prefers-reduced-motion:reduce){.ccar-card{transition:none;will-change:auto}}
+html[data-motion="reduced"] .ccar-card{transition:none;will-change:auto}

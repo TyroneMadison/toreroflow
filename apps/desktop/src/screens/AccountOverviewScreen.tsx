@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
+import ClientCarousel from "../components/ClientCarousel";
 import Stat from "../components/glass/Stat";
 import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
@@ -186,7 +187,7 @@ export default function AccountOverviewScreen({
   onOpenInsights(clientId: string): void;
 }) {
   const toast = useToast();
-  const { clients: knownClients } = useAppState();
+  const { clients: knownClients, selectedClient } = useAppState();
   const [data, setData] = useState<AccountOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -209,6 +210,8 @@ export default function AccountOverviewScreen({
   }, [load, knownClients]);
 
   const clients = data?.clients ?? [];
+  /** The carousel's pick leads; otherwise the most urgent brand does. */
+  const hero = clients.find((c) => c.id === selectedClient?.id) ?? clients[0]!;
   /** Every connected platform on this screen, for the provenance footer. */
   const overviewPlatforms = clients.flatMap((c) =>
     c.platforms.filter((p) => p.status === "connected").map((p) => p.platform),
@@ -280,10 +283,12 @@ export default function AccountOverviewScreen({
             }
           />
         ) : (
+          <>
+          <ClientCarousel clients={clients} />
           <div className="gx-ao">
-            <BrandCard c={clients[0]!} hero onOpenInsights={onOpenInsights} />
+            <BrandCard c={hero} hero onOpenInsights={onOpenInsights} />
             <div className="gx-ao-mid">
-              {clients.slice(1).map((c) => (
+              {clients.filter((c) => c !== hero).map((c) => (
                 <BrandCard key={c.id} c={c} onOpenInsights={onOpenInsights} />
               ))}
               <div className="gx-enroll glass-z1">
@@ -295,6 +300,7 @@ export default function AccountOverviewScreen({
             </div>
             <ThisWeek clients={clients} />
           </div>
+          </>
         )}
         <DataProvenance platforms={overviewPlatforms} />
       </div>
