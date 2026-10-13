@@ -9,6 +9,7 @@ import { PF_ID } from "../lib/platforms";
 import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
 import { useAppState } from "../state/AppState";
 import PostDetailModal from "../modals/PostDetailModal";
+import { Empty, ErrorState, Loading } from "../components/states";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -73,6 +74,10 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const [view, setView] = useState<CalView>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
+  // The screen remounts per brand, so the skeleton shows once per brand and
+  // never again on polls or range changes.
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   // Feeds the best-times strip. Loaded once per brand, not polled: it is
   // built from published history, which moves daily, not while you watch.
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
@@ -125,16 +130,20 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             `/clients/${selectedClient.id}/posts?from=${rangeStart.toISOString()}&to=${rangeEnd.toISOString()}`,
           ),
         );
-      } catch (err) {
+        setLoaded(true);
+        setLoadError(false);
+      } catch {
         // Polls stay silent: the rows on screen are this brand's own. The
         // first load of a mount or a range change is operator-initiated, so
-        // that failure is announced.
-        if (opts?.announce) toast.fail("Could not load the calendar", err);
+        // that failure shows as the screen's error state.
+        if (opts?.announce) setLoadError(true);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedClient, view, anchor.getTime(), toast],
+    [selectedClient, view, anchor.getTime()],
   );
+
+  const state = !selectedClient ? "empty" : loadError ? "error" : loaded ? "ready" : "loading";
 
   useEffect(() => {
     void load({ announce: true });
@@ -297,7 +306,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     : [];
 
   return (
-    <section className="screen active" data-screen="calendar">
+    <section className="screen active" data-screen="calendar" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Content Calendar</h2>
@@ -307,7 +316,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
               : "Nothing scheduled in this view yet."}
           </p>
         </div>
-        <button className="btn ghost" onClick={onNewPost}>
+        <button className="btn ghost" onClick={onNewPost} data-testid="calendar.new-post">
           <svg>
             <use href="#i-plus" />
           </svg>{" "}
@@ -389,7 +398,26 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           ))}
         </div>
 
-        {view === "week" && (
+        {state === "empty" && (
+          <Empty
+            screen="calendar"
+            title="No brand selected"
+            hint="Pick a brand in the dock to see its calendar."
+          />
+        )}
+        {state === "loading" && <Loading screen="calendar" label="Loading the calendar" />}
+        {state === "error" && (
+          <ErrorState
+            screen="calendar"
+            message="Could not load the calendar. Check that the API is online, then try again."
+            onRetry={() => {
+              setLoadError(false);
+              void load({ announce: true });
+            }}
+          />
+        )}
+
+        {state === "ready" && view === "week" && (
           <div className="cal glass">
             {week.map((day, i) => {
               const events = eventsFor(day);
@@ -414,7 +442,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           </div>
         )}
 
-        {view === "day" && (
+        {state === "ready" && view === "day" && (
           <div className="cal glass" style={{ gridTemplateColumns: "1fr" }}>
             <div className="col" {...dragProps(anchor)} style={dropStyle(anchor)}>
               <div className={`colhead${anchor.toDateString() === today ? " today" : ""}`}>
@@ -434,7 +462,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           </div>
         )}
 
-        {view === "month" && (
+        {state === "ready" && view === "month" && (
           <div className="cal glass" style={{ display: "block" }}>
             <div className="mhead">
               {DOW.map((d) => (

@@ -19,9 +19,11 @@ import {
   type ClientResults,
 } from "../lib/api";
 import ViewsChart from "../components/ViewsChart";
+import { Empty, ErrorState, Loading } from "../components/states";
 import { clientAvatarUrl } from "../lib/avatar";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
+import { setQuery, useRoute, type Range } from "../lib/routes";
 import { buildTier, scopeToPlatform, type ViewTier } from "../lib/viewTiers";
 import { watchHours } from "../lib/watchTime";
 import { useAppState } from "../state/AppState";
@@ -315,12 +317,16 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
   const [data, setData] = useState<ClientAnalytics | null>(null);
   const [posts, setPosts] = useState<ClientPost[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
-  /** null means every day the provider has, not an arbitrary window. */
-  const [rangeDays, setRangeDays] = useState<number | null>(30);
+  /** null means every day the provider has, not an arbitrary window. Lives
+   *  in ?range so a link reopens the same period. */
+  const { range } = useRoute();
+  const rangeDays = range === "all" ? null : (range ?? 30);
+  const setRangeDays = (d: number | null) => setQuery({ range: d === null ? "all" : (d as Range) });
   const [tab, setTab] = useState<string>("all");
   const dropRef = useRef<HTMLDivElement | null>(null);
 
@@ -341,6 +347,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     }
     let cancelled = false;
     setLoading(true);
+    setFailed(false);
     Promise.all([
       api.get<ClientAnalytics>(`/clients/${selectedClient.id}/analytics`),
       api.get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`),
@@ -354,6 +361,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
         if (cancelled) return;
         setData(null);
         setPosts(null);
+        setFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -599,8 +607,18 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
     ? selectedClient.accounts.filter((a) => a.status === "connected")
     : [];
 
+  // A brand switch keeps the previous figures up while the next load runs,
+  // so only a first load with nothing to show is a loading screen.
+  const state = !selectedClient
+    ? "empty"
+    : failed
+      ? "error"
+      : loading && !data
+        ? "loading"
+        : "ready";
+
   return (
-    <section className="screen active" data-screen="analytics">
+    <section className="screen active" data-screen="analytics" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Client Analytics</h2>
@@ -617,7 +635,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           </p>
         </div>
         <div className="branddrop" ref={dropRef} style={{ marginLeft: "auto" }}>
-          <button className="btn ghost" onClick={() => setMenuOpen((o) => !o)}>
+          <button className="btn ghost" onClick={() => setMenuOpen((o) => !o)} data-testid="analytics.brand">
             {selectedClient ? selectedClient.name : "Pick a brand"}
             <svg style={{ width: 14, height: 14 }}>
               <use href="#i-chev" />
@@ -682,6 +700,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           disabled={!selectedClient || refreshing || loading}
           title="Pull the newest uploads and numbers from every platform"
           onClick={() => void refresh()}
+          data-testid="analytics.refresh"
         >
           <svg className={refreshing ? "spin" : undefined}>
             <use href="#i-refresh" />
@@ -692,6 +711,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
           className="btn"
           disabled={!selectedClient || exporting}
           onClick={() => void exportReport()}
+          data-testid="analytics.export"
         >
           <svg>
             <use href="#i-dl" />
@@ -701,17 +721,19 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
       </div>
       <div className="stage">
         {!selectedClient ? (
-          <div className="card glass">
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-chart" />
-                </svg>
-              </div>
-              <b>No brand selected</b>
-              <p>Pick a brand from the dropdown above, or enroll one to get started.</p>
-            </div>
-          </div>
+          <Empty
+            screen="analytics"
+            title="No brand selected"
+            hint="Pick a brand from the dropdown above, or enroll one to get started."
+          />
+        ) : state === "error" ? (
+          <ErrorState
+            screen="analytics"
+            message="Could not load the analytics for this brand."
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
+        ) : state === "loading" ? (
+          <Loading screen="analytics" label="Loading the analytics" />
         ) : (
           <>
             <div className="anbar">
@@ -743,12 +765,14 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                     key={d}
                     className={rangeDays === d ? "on" : ""}
                     onClick={() => setRangeDays(d)}
+                    data-testid={`analytics.range.${d}`}
                   >
                     {d}d
                   </span>
                 ))}
                 <span
                   className={rangeDays === null ? "on" : ""}
+                  data-testid="analytics.range.all"
                   title={
                     earliest
                       ? `Everything the provider holds, back to ${fmtDate(earliest)}`

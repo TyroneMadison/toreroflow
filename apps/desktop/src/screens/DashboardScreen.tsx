@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import BrandAvatar from "../components/BrandAvatar";
 import BrandViewsChart from "../components/BrandViewsChart";
 import DataProvenance from "../components/DataProvenance";
 import PageHeader from "../components/PageHeader";
 import Pf from "../components/Pf";
+import { Empty, ErrorState, Loading } from "../components/states";
 import { api, type ClientAnalytics } from "../lib/api";
 import { brandColor } from "../lib/avatar";
 import { dailyViews, pctChange } from "../lib/brandTrend";
-import type { ScreenId } from "../lib/nav";
 import { PF_ID } from "../lib/platforms";
+import { setQuery, useRoute } from "../lib/routes";
 import { useAppState } from "../state/AppState";
 import "./DashboardScreen.css";
 
 interface DashboardScreenProps {
   onOpenInsights(clientId: string): void;
   onOpenConnect(): void;
-  onNavigate(screen: ScreenId): void;
 }
 
 function fmt(n: number | null | undefined): string {
@@ -54,9 +54,11 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-export default function DashboardScreen({ onOpenInsights, onOpenConnect, onNavigate }: DashboardScreenProps) {
+export default function DashboardScreen({ onOpenInsights, onOpenConnect }: DashboardScreenProps) {
   const { clients } = useAppState();
-  const [days, setDays] = useState<number>(30);
+  // The period lives in ?range; one this screen does not offer reads as 30.
+  const { range } = useRoute();
+  const days: number = RANGES.find((r) => r === range) ?? 30;
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [nonce, setNonce] = useState(0);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
@@ -163,7 +165,7 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect, onNavig
             key={r}
             type="button"
             aria-pressed={days === r}
-            onClick={() => setDays(r)}
+            onClick={() => setQuery({ range: r })}
             data-testid={`dashboard.range.${r}`}
           >
             {r}d
@@ -191,11 +193,19 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect, onNavig
     </>
   );
 
+  const wrap = (body: ReactNode) =>
+    state === "loading" ? (
+      <Loading screen="dashboard" label="Loading the numbers">
+        {body}
+      </Loading>
+    ) : (
+      body
+    );
+
   return (
     <section className="dash" data-screen="dashboard" data-state={state} aria-busy={state === "loading"}>
       <PageHeader
         screen="dashboard"
-        onNavigate={onNavigate}
         subtitle={`Toreroflow by Torerone · ${
           clients.length
             ? `Quick overview across ${clients.length} ${clients.length === 1 ? "brand" : "brands"}`
@@ -205,26 +215,29 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect, onNavig
       />
 
       {state === "empty" && (
-        <div className="dash-msg glass-z1" data-testid="dashboard.empty">
-          <b>No brands yet</b>
-          <p>Every brand you add gets its own results card here.</p>
-          <button type="button" className="tf-btn pri" onClick={onOpenConnect} data-testid="dashboard.empty.add-client">
-            Add client
-          </button>
-        </div>
+        <Empty
+          screen="dashboard"
+          title="No brands yet"
+          hint="Every brand you add gets its own results card here."
+          action={
+            <button type="button" className="tf-btn pri" onClick={onOpenConnect} data-testid="dashboard.empty.add-client">
+              Add client
+            </button>
+          }
+        />
       )}
 
       {state === "error" && (
-        <div className="dash-msg glass-z1" role="alert" data-testid="dashboard.error">
-          <b>Could not load the numbers</b>
-          <p>None of the brands' analytics came back. Check that the API is online, then try again.</p>
-          <button type="button" className="tf-btn glass-z1" onClick={refresh} data-testid="dashboard.retry">
-            Retry
-          </button>
-        </div>
+        <ErrorState
+          screen="dashboard"
+          message="None of the brands' analytics came back. Check that the API is online, then try again."
+          onRetry={refresh}
+        />
       )}
 
-      {(state === "loading" || state === "ready") && (
+      {/* Loading keeps the cards' own skeleton, inside the shared wrapper. */}
+      {(state === "loading" || state === "ready") &&
+        wrap(
         <>
           <div className="dash-cards">
             {clients.map((client, i) => {
@@ -335,8 +348,8 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect, onNavig
               ))}
             </div>
           </section>
-        </>
-      )}
+        </>,
+        )}
 
       {/* Every brand's platforms together: the dashboard is the one screen
           that spans all of them, so its footer names the whole set. */}

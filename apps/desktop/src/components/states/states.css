@@ -1,0 +1,7 @@
+/* Shared loading, empty and error states (components/states). */
+.tf-state-card{border-radius:var(--r-card);padding:28px 24px;display:flex;flex-direction:column;gap:12px}
+.tf-state-card>*{position:relative;z-index:1}
+.tf-loading .skel{display:block;height:16px;width:100%}
+.tf-state-msg{align-items:center;text-align:center;gap:8px;padding:48px 24px}
+.tf-state-msg b{font-size:16px}
+.tf-state-msg p{font-size:13px;color:var(--text-2);max-width:420px;margin-bottom:8px}

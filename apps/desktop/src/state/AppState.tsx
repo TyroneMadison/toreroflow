@@ -18,6 +18,7 @@ import {
   type LoginResponse,
   setUnauthorizedHandler,
 } from "../lib/api";
+import { currentRoute, setQuery, useRoute } from "../lib/routes";
 
 const SELECTED_KEY = "toreroflow-selected-client";
 
@@ -60,8 +61,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [apiDown, setApiDown] = useState(false);
   const [clients, setClients] = useState<ClientSummary[]>([]);
+  // A ?client= in the URL wins over the remembered brand, so a link opens the
+  // brand it names.
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
-    () => localStorage.getItem(SELECTED_KEY),
+    () => currentRoute().clientId ?? localStorage.getItem(SELECTED_KEY),
   );
 
   const refreshClients = useCallback(async () => {
@@ -173,6 +176,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (id) localStorage.setItem(SELECTED_KEY, id);
     else localStorage.removeItem(SELECTED_KEY);
   }, []);
+
+  /*
+   * The selection and ?client= follow each other. Back/forward or a pasted
+   * link that names a brand selects it; selecting a brand rewrites the query
+   * in place, without a history entry. An unknown id is corrected by the
+   * fallback above, which then rewrites the URL.
+   */
+  const urlClientId = useRoute().clientId;
+  useEffect(() => {
+    if (urlClientId) selectClient(urlClientId);
+  }, [urlClientId, selectClient]);
+  useEffect(() => {
+    setQuery({ client: selectedClientId });
+  }, [selectedClientId]);
 
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === selectedClientId) ?? null,

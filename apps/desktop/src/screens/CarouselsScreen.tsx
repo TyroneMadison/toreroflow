@@ -3,6 +3,7 @@ import { API_URL, api, getToken } from "../lib/api";
 import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import { useAppState } from "../state/AppState";
+import { Empty, ErrorState, Loading } from "../components/states";
 
 /**
  * Carousels, and the knowledge they are written from.
@@ -49,7 +50,10 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
   const [topic, setTopic] = useState("");
   const [slideCount, setSlideCount] = useState(7);
   const [working, setWorking] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
+  // A failed refresh after an edit keeps what is on screen and toasts; only a
+  // first load with nothing to show turns into the error state.
   const load = useCallback(async () => {
     if (!clientId) return;
     try {
@@ -59,16 +63,21 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
       ]);
       setNotes(n);
       setDrafts(d);
+      setLoadError(null);
     } catch (err) {
       toast.fail("Could not load carousels", err);
-      setNotes([]);
-      setDrafts([]);
+      setLoadError(err instanceof Error ? err.message : "could not load carousels");
     }
   }, [clientId, toast]);
 
   useEffect(() => {
+    setNotes(null);
+    setDrafts(null);
+    setLoadError(null);
     void load();
   }, [load]);
+
+  const state = !clientId ? "empty" : notes === null ? (loadError ? "error" : "loading") : "ready";
 
   const addNote = async () => {
     if (!clientId || !noteTitle.trim() || !noteBody.trim()) return;
@@ -134,21 +143,40 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
     }
   };
 
-  if (!clientId) {
+  if (state !== "ready") {
     return (
-      <section className="screen active" data-screen="carousels">
+      <section className="screen active" data-screen="carousels" data-state={state}>
         <div className="topbar">
           <div className="h">
             <h2>Carousels</h2>
-            <p>Pick a brand from the sidebar to write carousels for it.</p>
           </div>
+        </div>
+        <div className="stage">
+          {state === "empty" ? (
+            <Empty
+              screen="carousels"
+              title="No brand selected"
+              hint="Pick a brand in the dock to write carousels for it."
+            />
+          ) : state === "error" ? (
+            <ErrorState
+              screen="carousels"
+              message={loadError}
+              onRetry={() => {
+                setLoadError(null);
+                void load();
+              }}
+            />
+          ) : (
+            <Loading screen="carousels" />
+          )}
         </div>
       </section>
     );
   }
 
   return (
-    <section className="screen active" data-screen="carousels">
+    <section className="screen active" data-screen="carousels" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Carousels</h2>
@@ -297,6 +325,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
                 </button>
                 <button
                   className="cbtn"
+                  data-testid="carousels.upload-images"
                   title="Go to Upload and Schedule to add the finished images. The caption and hashtags written here ride along, so nothing is retyped."
                   onClick={() => {
                     setPendingCarouselDraft({ id: d.id, topic: d.topic });

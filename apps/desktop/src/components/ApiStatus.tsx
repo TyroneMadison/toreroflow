@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT_MS = 3_000;
  * dead worker now says so here.
  */
 /** The polling, shared by this pill and the dock. */
-export function useApiStatus(): { color: string; label: string; title: string } {
+export function useApiStatus(): { online: boolean; color: string; label: string; title: string } {
   const [online, setOnline] = useState(false);
   const [workerUp, setWorkerUp] = useState(true);
 
@@ -62,7 +62,7 @@ export function useApiStatus(): { color: string; label: string; title: string } 
     online && !workerUp
       ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
       : label;
-  return { color, label, title };
+  return { online, color, label, title };
 }
 
 export default function ApiStatus() {

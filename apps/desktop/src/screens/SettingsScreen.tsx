@@ -14,8 +14,10 @@ import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { loadAutomation, setAutomation } from "../lib/theme";
 import { openExternal } from "../lib/external";
+import { useRoute } from "../lib/routes";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
+import { Empty } from "../components/states";
 
 interface SettingsScreenProps {
   onOpenConnect(): void;
@@ -693,6 +695,12 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     void getAutostart().then(setAutostartState);
   }, []);
 
+  // /settings/<section> scrolls that card into view, on load and on back/forward.
+  const { section } = useRoute();
+  useEffect(() => {
+    if (section) document.getElementById(`settings-${section}`)?.scrollIntoView({ block: "start" });
+  }, [section]);
+
   /**
    * Which accounts have a direct credential.
    *
@@ -862,7 +870,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   };
 
   return (
-    <section className="screen active" data-screen="settings">
+    <section className="screen active" data-screen="settings" data-state="ready">
       <div className="topbar">
         <div className="h">
           <h2>Settings</h2>
@@ -870,7 +878,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         </div>
       </div>
       <div className="stage">
-        <div className="card glass setsec">
+        <div className="card glass setsec" id="settings-general" data-section="general">
           <h3>General</h3>
           <div className="sub" style={{ marginBottom: 10 }}>
             Desktop app behavior
@@ -879,6 +887,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             className="pt"
             style={{ maxWidth: 420, opacity: autostart === null ? 0.5 : 1 }}
             onClick={toggleAutostart}
+            data-testid="settings.autostart"
             title={
               autostart === null
                 ? "Available when running the desktop app (not browser dev mode)"
@@ -922,7 +931,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
           </button>
         </div>
 
-        <div className="card glass setsec">
+        <div className="card glass setsec" id="settings-accounts" data-section="accounts">
           <div className="rowhead">
             <div>
               <h3>Connected Accounts</h3>
@@ -932,21 +941,17 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                 Their numbers live under Analytics.
               </div>
             </div>
-            <span className="link" onClick={onOpenConnect}>
+            <span className="link" onClick={onOpenConnect} data-testid="settings.enroll-client">
               + Enroll a client
             </span>
           </div>
 
           {clients.length === 0 ? (
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-users" />
-                </svg>
-              </div>
-              <b>No clients enrolled</b>
-              <p>Enroll a client to start connecting their platforms.</p>
-            </div>
+            <Empty
+              screen="settings"
+              title="No clients enrolled"
+              hint="Enroll a client to start connecting their platforms."
+            />
           ) : (
             <div className="pgrid">
               {clients.map((client) => (
@@ -969,18 +974,24 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
           )}
         </div>
 
-        <BusinessCard />
+        <div id="settings-business" data-section="business">
+          <BusinessCard />
+        </div>
 
-        <UpdateCard />
+        <div id="settings-updates" data-section="updates">
+          <UpdateCard />
+        </div>
 
-        <DeployCard />
+        <div id="settings-deploy" data-section="deploy">
+          <DeployCard />
+        </div>
 
-        <div className="card glass setsec">
+        <div className="card glass setsec" id="settings-operator" data-section="operator">
           <h3>Operator</h3>
           <div className="sub" style={{ marginBottom: 12 }}>
             Signed in as {user?.email} · {user?.agencyName}
           </div>
-          <button className="btn ghost" onClick={logout}>
+          <button className="btn ghost" onClick={logout} data-testid="settings.logout">
             Log out
           </button>
         </div>

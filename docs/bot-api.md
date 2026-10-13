@@ -66,11 +66,16 @@ and can be moved or removed there before it fires.
 The full app UI is served at the web app domain. Sign the bot in by opening:
 
 ```
-https://<APP_DOMAIN>/#token=<BOT_TOKEN>
+https://<APP_DOMAIN>/create/upload?client=<clientId>&automation=1#token=<BOT_TOKEN>
 ```
 
-The fragment becomes the session and is scrubbed from the address bar. The
-bot then drives the same Upload & Schedule screen the operator uses. Screens
+The fragment becomes the session and is scrubbed from the address bar, on
+any path, so the link above signs in and lands straight on Upload & Schedule
+for that client with animation and blur off. Every screen has its own URL,
+and the app publishes what it is doing (screen, brand, busy, last error) as
+html attributes and `window.__TOREROFLOW_STATE__`, so a bot can wait for
+`html[data-busy="false"]` and `[data-state="ready"]` instead of guessing.
+All of it is in [agent-state.md](agent-state.md). Screens
 outside the bot's permissions (Financials, the DM inbox, deletions) render
 errors when opened - the server refuses, the browser only displays.
 

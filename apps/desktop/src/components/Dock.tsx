@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { SECTIONS, sectionOf, type ScreenId } from "../lib/nav";
+import { linkProps } from "../lib/routes";
 import type { Theme } from "../lib/theme";
 import { useAppState } from "../state/AppState";
-import { useApiStatus } from "./ApiStatus";
+import type { useApiStatus } from "./ApiStatus";
 import BrandAvatar from "./BrandAvatar";
 
 interface DockProps {
   activeScreen: ScreenId;
-  onNavigate: (screen: ScreenId) => void;
+  /** Polled once by the shell, which also publishes it for agents. */
+  api: ReturnType<typeof useApiStatus>;
   theme: Theme;
   onToggleTheme: () => void;
   onOpenConnect: () => void;
@@ -25,7 +27,7 @@ interface DockProps {
  */
 export default function Dock({
   activeScreen,
-  onNavigate,
+  api,
   theme,
   onToggleTheme,
   onOpenConnect,
@@ -34,7 +36,6 @@ export default function Dock({
   alertIsError,
 }: DockProps) {
   const { clients, selectedClient, selectClient } = useAppState();
-  const api = useApiStatus();
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = sectionOf(activeScreen).id;
@@ -61,28 +62,26 @@ export default function Dock({
         <span className="di-lbl">{api.label}</span>
       </span>
       {alertCount > 0 && (
-        <button
-          type="button"
+        <a
           className={`di di-alert${alertIsError ? " bad" : ""}`}
-          onClick={() => onNavigate("reports")}
+          {...linkProps("reports")}
           title="Open the Reports screen to see what failed"
           data-testid="nav.alerts"
         >
           <span className="tf-badge">{alertCount}</span>
           <span className="di-lbl">{alertCount === 1 ? "problem" : "problems"}</span>
-        </button>
+        </a>
       )}
       <span className="sep" />
 
       {SECTIONS.map((s) => (
-        <button
+        <a
           key={s.id}
-          type="button"
           className={`di${active === s.id ? " on" : ""}`}
           aria-current={active === s.id ? "page" : undefined}
           aria-label={s.label}
           title={s.id === "measure" && reportNotice ? reportNotice : s.label}
-          onClick={() => onNavigate(s.pages[0]!.id)}
+          {...linkProps(s.pages[0]!.id)}
           data-testid={`nav.section.${s.id}`}
         >
           <svg aria-hidden="true">
@@ -90,7 +89,7 @@ export default function Dock({
           </svg>
           <span className="di-lbl">{s.label}</span>
           {s.id === "measure" && reportNotice && <span className="tf-bell" aria-hidden="true" />}
-        </button>
+        </a>
       ))}
 
       <span className="sep" />

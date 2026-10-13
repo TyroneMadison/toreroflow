@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { normalizeUrl, scrubToken } from "./lib/routes";
 import { applyTheme, initAutomation, loadTheme } from "./lib/theme";
 // Tokens first so styles.css can point its old variables at them; frame.css
 // last so the dock layout wins over the old sidebar one.
@@ -22,12 +23,17 @@ initAutomation();
  * never reach the server or its logs, and it is scrubbed immediately so it is
  * not left sitting in the location bar, a screenshot, or browser history.
  * Harmless in the desktop shell, where nothing ever navigates with a fragment.
+ *
+ * Runs before the router, on any path: /create/upload#token=... signs in and
+ * opens Upload. routes.check.ts covers it.
  */
-const tokenMatch = /[#&]token=([^&]+)/.exec(window.location.hash);
-if (tokenMatch) {
-  localStorage.setItem("toreroflow-token", decodeURIComponent(tokenMatch[1]!));
-  history.replaceState(null, "", window.location.pathname + window.location.search);
+const scrubbed = scrubToken(window.location.href);
+if (scrubbed) {
+  localStorage.setItem("toreroflow-token", scrubbed.token);
+  history.replaceState(null, "", scrubbed.url);
 }
+// "/" and unknown paths become /dashboard, without a history entry.
+normalizeUrl();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

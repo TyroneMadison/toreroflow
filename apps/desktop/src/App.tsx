@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import IconDefs from "./components/IconDefs";
 import Dock from "./components/Dock";
 import PageHeader from "./components/PageHeader";
@@ -21,9 +21,11 @@ import { ToastProvider } from "./components/Toasts";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import AlertDock from "./components/AlertDock";
 import UpdateBanner from "./components/UpdateBanner";
-import { api, type AlertsResponse, type SystemAlert } from "./lib/api";
+import { useApiStatus } from "./components/ApiStatus";
+import { api, getActivity, subscribeActivity, type AlertsResponse, type SystemAlert } from "./lib/api";
+import { buildAgentState, publishAgentState } from "./lib/agentState";
+import { navigate, pathFor, useRoute } from "./lib/routes";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
-import type { ScreenId } from "./lib/nav";
 
 // The screen list lives in lib/nav.ts beside the section map; re-exported
 // here for the files that already import it from App.
@@ -35,9 +37,29 @@ type ModalState =
   | { kind: "preview"; name: string; url: string }
   | null;
 
+/** Publishes the agent-readable state. Renders nothing, so the busy flag
+ *  flipping on every request re-renders only this. */
+function AgentStateSync({ apiUp }: { apiUp: boolean }) {
+  const { screen, section, range } = useRoute();
+  const { user, selectedClient } = useAppState();
+  const { busy, lastError } = useSyncExternalStore(subscribeActivity, getActivity);
+  const clientId = selectedClient?.id ?? null;
+  const clientName = selectedClient?.name ?? null;
+  const role = user?.role ?? null;
+  useEffect(() => {
+    const route = pathFor(screen, section);
+    publishAgentState(
+      buildAgentState({ route, screen, section, clientId, clientName, range, apiUp, busy, role, lastError }),
+    );
+  }, [screen, section, clientId, clientName, range, apiUp, busy, role, lastError]);
+  return null;
+}
+
 function Shell() {
   const { authReady, user, selectedClientId } = useAppState();
-  const [activeScreen, setActiveScreen] = useState<ScreenId>("dashboard");
+  // The URL decides the screen (lib/routes.ts); the dock and tabs are links.
+  const activeScreen = useRoute().screen;
+  const apiStatus = useApiStatus();
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   const [modal, setModal] = useState<ModalState>(null);
   const [reportNotice, setReportNotice] = useState<string | null>(null);
@@ -110,11 +132,16 @@ function Shell() {
   const closeModal = useCallback(() => setModal(null), []);
 
   if (!authReady) {
-    return null;
+    return <AgentStateSync apiUp={apiStatus.online} />;
   }
 
   if (!user) {
-    return <AuthScreen />;
+    return (
+      <>
+        <AgentStateSync apiUp={apiStatus.online} />
+        <AuthScreen />
+      </>
+    );
   }
 
   // Dismissing hides a problem from the sidebar count without deleting it, so
@@ -123,12 +150,13 @@ function Shell() {
 
   return (
     <>
+      <AgentStateSync apiUp={apiStatus.online} />
       <UpdateBanner />
       <AlertDock alerts={alerts} onChanged={refreshAlerts} />
       <div className="app">
         <Dock
           activeScreen={activeScreen}
-          onNavigate={setActiveScreen}
+          api={apiStatus}
           theme={theme}
           onToggleTheme={toggleTheme}
           onOpenConnect={openConnect}
@@ -140,15 +168,10 @@ function Shell() {
           {/* The Dashboard draws its own header with its controls; the screens
               not yet restyled get the shared one above their old topbar. */}
           {activeScreen !== "dashboard" && (
-            <PageHeader screen={activeScreen} onNavigate={setActiveScreen} />
+            <PageHeader screen={activeScreen} />
           )}
           {activeScreen === "dashboard" && (
-            <DashboardScreen
-              key="dashboard"
-              onOpenInsights={openInsights}
-              onOpenConnect={openConnect}
-              onNavigate={setActiveScreen}
-            />
+            <DashboardScreen key="dashboard" onOpenInsights={openInsights} onOpenConnect={openConnect} />
           )}
           {activeScreen === "upload" && (
             <UploadSchedule
@@ -163,7 +186,7 @@ function Shell() {
           {activeScreen === "calendar" && (
             <CalendarScreen
               key={`calendar-${selectedClientId ?? "none"}`}
-              onNewPost={() => setActiveScreen("upload")}
+              onNewPost={() => navigate("upload")}
             />
           )}
           {activeScreen === "analytics" && (
@@ -188,7 +211,7 @@ function Shell() {
           {activeScreen === "carousels" && (
             <CarouselsScreen
               key={`carousels-${selectedClientId ?? "none"}`}
-              onUploadImages={() => setActiveScreen("upload")}
+              onUploadImages={() => navigate("upload")}
             />
           )}
           {activeScreen === "workflows" && (

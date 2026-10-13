@@ -43,10 +43,6 @@
 .vot-none{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--text-3)}
 .vot-x{display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-top:8px}
 
-.dash-msg{border-radius:var(--r-card);padding:48px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
-.dash-msg>*{position:relative;z-index:1}
-.dash-msg b{font-size:16px}
-.dash-msg p{font-size:13px;color:var(--text-2);max-width:380px;margin-bottom:8px}
 
 /* Provenance as a one-line footer here, not a panel. */
 .dash .prov{margin:0;padding:0 4px;background:none;border:0;box-shadow:none;display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap}

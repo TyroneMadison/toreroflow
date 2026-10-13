@@ -6,11 +6,15 @@ import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from 
 import { useAppState } from "../state/AppState";
 import DmCampaigns from "../components/DmCampaigns";
 import DmInbox from "../components/DmInbox";
+import { Empty, ErrorState, Loading } from "../components/states";
 
 export default function WorkflowsScreen() {
   const { selectedClient } = useAppState();
   const toast = useToast();
-  const [workflows, setWorkflows] = useState<WorkflowInfo[]>([]);
+  // null until the first list lands for this brand.
+  const [workflows, setWorkflows] = useState<WorkflowInfo[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [name, setName] = useState("");
   const [source, setSource] = useState<Platform>("instagram");
   const [destinations, setDestinations] = useState<Platform[]>([]);
@@ -26,9 +30,15 @@ export default function WorkflowsScreen() {
     setWorkflows(list);
   }, [selectedClient]);
 
+  // Reloads after an edit throw into that edit's own catch; only this first
+  // load feeds the screen's error state.
   useEffect(() => {
-    void load();
-  }, [load]);
+    setWorkflows(null);
+    setLoadError(null);
+    load().catch((err) => setLoadError(err instanceof Error ? err.message : "could not load workflows"));
+  }, [load, reloadKey]);
+
+  const state = !selectedClient ? "empty" : workflows === null ? (loadError ? "error" : "loading") : "ready";
 
   const toggleDestination = (p: Platform) => {
     if (p === source) return;
@@ -78,7 +88,7 @@ export default function WorkflowsScreen() {
   };
 
   return (
-    <section className="screen active" data-screen="workflows">
+    <section className="screen active" data-screen="workflows" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Workflows</h2>
@@ -91,17 +101,17 @@ export default function WorkflowsScreen() {
       </div>
       <div className="stage">
         {!selectedClient ? (
-          <div className="card glass">
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-bolt" />
-                </svg>
-              </div>
-              <b>No brand selected</b>
-              <p>Pick a brand from the sidebar dropdown to manage its workflows.</p>
-            </div>
-          </div>
+          <Empty
+            screen="workflows"
+            title="No brand selected"
+            hint="Pick a brand in the dock to manage its workflows."
+          />
+        ) : workflows === null ? (
+          loadError ? (
+            <ErrorState screen="workflows" message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
+          ) : (
+            <Loading screen="workflows" />
+          )
         ) : (
           <div className="split">
             <div>

@@ -1,26 +1,44 @@
 import type { ReactNode } from "react";
 import { sectionOf, type ScreenId } from "../lib/nav";
+import { linkProps, SETTINGS_SECTIONS, useRoute } from "../lib/routes";
 
 /**
  * Every screen's one h1: logo and title on the left, the section's pages as
- * tabs in the middle, the screen's own controls on the right.
+ * tabs in the middle, the screen's own controls on the right. The tabs are
+ * links, so each page has a URL that can be opened in a new tab or copied.
+ * Settings has one page, so its tabs are its sections instead.
  */
 export default function PageHeader({
   screen,
-  onNavigate,
   title,
   subtitle,
   controls,
 }: {
   screen: ScreenId;
-  onNavigate: (screen: ScreenId) => void;
   /** Defaults to the page's label. */
   title?: string;
   subtitle?: ReactNode;
   controls?: ReactNode;
 }) {
+  const { section: activeSection } = useRoute();
   const section = sectionOf(screen);
   const page = section.pages.find((p) => p.id === screen)!;
+  const tabs =
+    screen === "settings"
+      ? SETTINGS_SECTIONS.map((s) => ({
+          key: s.id,
+          label: s.label,
+          on: s.id === activeSection,
+          link: linkProps("settings", s.id),
+          testid: `settings.section.${s.id}`,
+        }))
+      : section.pages.map((p) => ({
+          key: p.id,
+          label: p.label,
+          on: p.id === screen,
+          link: linkProps(p.id),
+          testid: `nav.page.${p.slug}`,
+        }));
   return (
     <header className="tf-head">
       <div className="tf-logo">
@@ -34,22 +52,20 @@ export default function PageHeader({
           <div className="tf-sub">{subtitle ?? "Toreroflow by Torerone"}</div>
         </div>
       </div>
-      {section.pages.length > 1 && (
-        <div className="tf-tabs glass-z1" role="tablist" aria-label={section.label}>
-          {section.pages.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={p.id === screen}
-              className={p.id === screen ? "a" : undefined}
-              onClick={() => onNavigate(p.id)}
-              data-testid={`nav.page.${p.slug}`}
+      {tabs.length > 1 && (
+        <nav className="tf-tabs glass-z1" aria-label={section.label}>
+          {tabs.map((t) => (
+            <a
+              key={t.key}
+              aria-current={t.on ? "page" : undefined}
+              className={t.on ? "a" : undefined}
+              {...t.link}
+              data-testid={t.testid}
             >
-              {p.label}
-            </button>
+              {t.label}
+            </a>
           ))}
-        </div>
+        </nav>
       )}
       <div className="tf-ctr">{controls}</div>
     </header>

@@ -24,6 +24,7 @@ import { usesLongFormWizard } from "../lib/youtube";
 import BestTimes from "../components/BestTimes";
 import QuotaCard from "../components/QuotaCard";
 import { useToast } from "../components/Toasts";
+import { Empty, ErrorState, Loading } from "../components/states";
 
 const fmtWhen = (iso: string | null): string =>
   iso
@@ -54,6 +55,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const { selectedClient, pendingCarouselDraft, setPendingCarouselDraft } = useAppState();
   const toast = useToast();
   const [assets, setAssets] = useState<MediaAssetInfo[]>([]);
+  // The video list is the screen's primary load. The screen remounts per
+  // brand, so "loaded" only ever goes false to true once per brand.
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [uploadingNames, setUploadingNames] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** The asset whose description is being written, so one press at a time. */
@@ -139,12 +144,18 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         // one, and processing finishing moves one out of unclassified into
         // short or long. Refreshing it here means no caller has to remember.
         setQuotaKey((k) => k + 1);
-      } catch (err) {
-        if (opts?.announce) toast.fail("Could not load videos", err);
+        setLoaded(true);
+        setLoadError(false);
+      } catch {
+        // The first load fails into the screen's error state; later refreshes
+        // stay silent over the list already on screen.
+        if (opts?.announce) setLoadError(true);
       }
     },
-    [selectedClient, toast],
+    [selectedClient],
   );
+
+  const state = !selectedClient ? "empty" : loadError ? "error" : loaded ? "ready" : "loading";
 
   useEffect(() => {
     void load({ announce: true });
@@ -437,15 +448,37 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     void load();
   };
 
+  if (!selectedClient) {
+    return (
+      <section className="screen active" data-screen="upload" data-state={state}>
+        <div className="topbar">
+          <div className="h">
+            <h2>Upload &amp; Schedule</h2>
+          </div>
+        </div>
+        <div className="stage">
+          <Empty
+            screen="upload"
+            title="No brand selected"
+            hint="Pick or add a brand in the dock, then drop a video."
+            action={
+              <button type="button" className="btn" onClick={onOpenConnect} data-testid="upload.add-brand">
+                Add a brand
+              </button>
+            }
+          />
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="screen active" data-screen="upload">
+    <section className="screen active" data-screen="upload" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Upload &amp; Schedule</h2>
           <p>
-            {selectedClient
-              ? `Drop a video for ${selectedClient.name}. It gets transcribed and a title and description drafted, with the video left untouched.`
-              : "Pick or add a brand in the sidebar, then drop a video."}
+            {`Drop a video for ${selectedClient.name}. It gets transcribed and a title and description drafted, with the video left untouched.`}
           </p>
         </div>
       </div>
@@ -554,6 +587,18 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   Not these images? Detach.
                 </span>
               </p>
+            )}
+
+            {state === "loading" && <Loading screen="upload" label="Loading videos" />}
+            {state === "error" && (
+              <ErrorState
+                screen="upload"
+                message="Could not load this brand's videos. Check that the API is online, then try again."
+                onRetry={() => {
+                  setLoadError(false);
+                  void load({ announce: true });
+                }}
+              />
             )}
 
             {uploadingNames.map((name) => (

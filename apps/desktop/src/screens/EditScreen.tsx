@@ -5,6 +5,7 @@ import StudioEditor from "../editor/StudioEditor";
 import AnalyzeHome from "../editor/analyze/AnalyzeHome";
 import AnalysisDetail from "../editor/analyze/AnalysisDetail";
 import IdeasHome from "../editor/ideas/IdeasHome";
+import { Empty } from "../components/states";
 
 type EditArea = "studio" | "analyze" | "ideas";
 
@@ -26,19 +27,25 @@ export default function EditScreen() {
 
   if (!selectedClient) {
     return (
-      <section className="screen active" data-screen="edit">
+      <section className="screen active" data-screen="edit" data-state="empty">
         <div className="topbar">
           <div className="h">
             <h2>Edit</h2>
-            <p>Pick a brand from the sidebar to edit videos for it.</p>
           </div>
+        </div>
+        <div className="stage">
+          <Empty
+            screen="edit"
+            title="No brand selected"
+            hint="Pick a brand in the dock to edit videos for it."
+          />
         </div>
       </section>
     );
   }
 
   return (
-    <section className="screen active" data-screen="edit">
+    <section className="screen active" data-screen="edit" data-state="ready">
       <div className="topbar">
         <div className="h">
           <h2>Edit</h2>

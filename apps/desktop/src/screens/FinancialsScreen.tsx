@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../components/Toasts";
+import { ErrorState, Loading } from "../components/states";
 import AnnualSection from "../components/finance/AnnualSection";
 import BankSection from "../components/finance/BankSection";
 import TaxCard from "../components/finance/TaxCard";
@@ -137,7 +138,7 @@ export default function FinancialsScreen() {
   const year = exportYear ?? data?.years[0] ?? new Date().getFullYear();
 
   return (
-    <section className="screen active" data-screen="financials">
+    <section className="screen active" data-screen="financials" data-state={phase}>
       <div className="topbar">
         <div className="h">
           <h2>Financials</h2>
@@ -156,6 +157,7 @@ export default function FinancialsScreen() {
           disabled={refreshing || phase === "loading"}
           title="Pull the bank again and re-read every figure on this screen"
           onClick={() => void refreshAll()}
+          data-testid="financials.refresh"
         >
           <svg className={refreshing ? "spin" : undefined}>
             <use href="#i-refresh" />
@@ -166,25 +168,25 @@ export default function FinancialsScreen() {
 
       <div className="stage">
         {phase === "loading" && (
-          <div className="finskeleton">
-            <div className="band">
-              <div className="netcard glass finskel" />
-              <div className="donutcard glass finskel" />
-              <div className="actcard glass finskel" />
+          <Loading screen="financials" label="Loading the month">
+            <div className="finskeleton">
+              <div className="band">
+                <div className="netcard glass finskel" />
+                <div className="donutcard glass finskel" />
+                <div className="actcard glass finskel" />
+              </div>
+              <div className="card glass chartcard finskel" style={{ height: 260 }} />
+              <div className="finload">Loading the month…</div>
             </div>
-            <div className="card glass chartcard finskel" style={{ height: 260 }} />
-            <div className="finload">Loading the month…</div>
-          </div>
+          </Loading>
         )}
 
         {phase === "error" && (
-          <div className="card glass finerror">
-            <b>Could not load this month.</b>
-            <span>The numbers on this screen are unavailable, not zero.</span>
-            <button className="btn" onClick={() => void load()}>
-              Try again
-            </button>
-          </div>
+          <ErrorState
+            screen="financials"
+            message="Could not load this month. The numbers on this screen are unavailable, not zero."
+            onRetry={() => void load()}
+          />
         )}
 
         {phase === "ready" && data && (
@@ -264,6 +266,7 @@ export default function FinancialsScreen() {
               />
               <button
                 className="btn"
+                data-testid="financials.export"
                 onClick={() => {
                   void api
                     .get<{ url: string }>(`/financials/export?year=${year}`)

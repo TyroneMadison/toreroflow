@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
+import { Empty, ErrorState, Loading } from "../components/states";
 import {
   api,
   type ClientPublishState,
@@ -194,6 +195,7 @@ export default function ReportsScreen({
   const { clients } = useAppState();
   const toast = useToast();
   const [publishing, setPublishing] = useState<ReportPublishing | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [month, setMonth] = useState(lastMonthValue);
   const [busy, setBusy] = useState<string | null>(null);
   /** Clients updated this session, so Publish can say the numbers are fresh. */
@@ -202,8 +204,10 @@ export default function ReportsScreen({
   const loadPublishing = useCallback(async () => {
     try {
       setPublishing(await api.get<ReportPublishing>("/reports/publishing"));
+      setLoadFailed(false);
     } catch (err) {
       setPublishing(null);
+      setLoadFailed(true);
       toast.fail("Could not load the report links", err);
     }
   }, [toast]);
@@ -325,9 +329,11 @@ export default function ReportsScreen({
   const months = monthOptions();
   const publishState = new Map(publishing?.clients.map((c) => [c.id, c]) ?? []);
   const canPublish = publishing?.configured === true;
+  const state =
+    clients.length === 0 ? "empty" : loadFailed ? "error" : publishing === null ? "loading" : "ready";
 
   return (
-    <section className="screen active" data-screen="reports">
+    <section className="screen active" data-screen="reports" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Reports</h2>
@@ -365,6 +371,7 @@ export default function ReportsScreen({
                     disabled={busy !== null}
                     title={`Pull the latest numbers for every brand's ${monthLabel(month)} report, one after another`}
                     onClick={() => void runAll("update")}
+                    data-testid="reports.update-all"
                   >
                     <svg>
                       <use href="#i-refresh" />
@@ -382,6 +389,7 @@ export default function ReportsScreen({
                         : (publishing?.reason ?? "Publishing is not configured")
                     }
                     onClick={() => void runAll("publish")}
+                    data-testid="reports.publish-all"
                   >
                     <svg>
                       <use href="#i-globe" />
@@ -402,16 +410,23 @@ export default function ReportsScreen({
             </div>
           </div>
 
-          {clients.length === 0 ? (
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-users" />
-                </svg>
-              </div>
-              <b>No brands enrolled</b>
-              <p>Enroll a client and their reports will build from real numbers.</p>
-            </div>
+          {state === "empty" ? (
+            <Empty
+              screen="reports"
+              title="No brands enrolled"
+              hint="Enroll a client and their reports will build from real numbers."
+            />
+          ) : state === "error" ? (
+            <ErrorState
+              screen="reports"
+              message="Could not load the report links."
+              onRetry={() => {
+                setLoadFailed(false);
+                void loadPublishing();
+              }}
+            />
+          ) : state === "loading" ? (
+            <Loading screen="reports" label="Loading the report links" />
           ) : (
             <div className="repbuild">
               {clients.map((c) => {

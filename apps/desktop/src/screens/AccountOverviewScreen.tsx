@@ -3,6 +3,7 @@ import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
 import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
+import { Empty, ErrorState, Loading } from "../components/states";
 import { api, type AccountOverview, type OverviewClient } from "../lib/api";
 import { PF_ID } from "../lib/platforms";
 import { openExternal } from "../lib/external";
@@ -209,20 +210,26 @@ export default function AccountOverviewScreen({
     return () => clearInterval(t);
   }, [anyRunning, load]);
 
+  // A failed first load leaves no data; a failed refresh keeps the last good
+  // list on screen and just toasts.
+  const state = loading ? "loading" : !data ? "error" : clients.length === 0 ? "empty" : "ready";
+
   return (
-    <section className="screen active" data-screen="account-overview">
+    <section className="screen active" data-screen="account-overview" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>Account Overview</h2>
           <p>
             {loading
               ? "Checking every brand…"
-              : needing === 0
-                ? "Nothing needs you right now."
-                : `${needing} brand${needing === 1 ? "" : "s"} need${needing === 1 ? "s" : ""} attention, most urgent first.`}
+              : !data
+                ? "The overview did not load."
+                : needing === 0
+                  ? "Nothing needs you right now."
+                  : `${needing} brand${needing === 1 ? "" : "s"} need${needing === 1 ? "s" : ""} attention, most urgent first.`}
           </p>
         </div>
-        <button className="btn ghost" onClick={() => void load()}>
+        <button className="btn ghost" onClick={() => void load()} data-testid="account-overview.refresh">
           <svg>
             <use href="#i-refresh" />
           </svg>{" "}
@@ -231,21 +238,33 @@ export default function AccountOverviewScreen({
       </div>
 
       <div className="stage">
-        {!loading && clients.length === 0 ? (
-          <div className="card glass">
-            <div className="empty">
-              <div className="eic">
-                <svg>
-                  <use href="#i-users" />
-                </svg>
-              </div>
-              <b>No brands enrolled</b>
-              <p>Enroll a client and their status appears here.</p>
-              <button className="btn" style={{ marginTop: 12 }} onClick={onOpenConnect}>
+        {state === "loading" ? (
+          <Loading screen="account-overview" label="Checking every brand" />
+        ) : state === "error" ? (
+          <ErrorState
+            screen="account-overview"
+            message="Could not load the overview."
+            onRetry={() => {
+              setLoading(true);
+              void load();
+            }}
+          />
+        ) : state === "empty" ? (
+          <Empty
+            screen="account-overview"
+            title="No brands enrolled"
+            hint="Enroll a client and their status appears here."
+            action={
+              <button
+                className="btn"
+                style={{ marginTop: 12 }}
+                onClick={onOpenConnect}
+                data-testid="account-overview.enroll"
+              >
                 Enroll a client
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : (
           <div className="ovlist">
             {clients.map((c) => (

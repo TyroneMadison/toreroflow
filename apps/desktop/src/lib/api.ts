@@ -59,7 +59,53 @@ export function setUnauthorizedHandler(fn: () => void): void {
   onUnauthorized = fn;
 }
 
-async function request<T>(
+/*
+ * Requests in flight and the last failure, for the agent-readable state
+ * (lib/agentState.ts). A counter rather than a flag so overlapping requests
+ * keep "busy" true until the last one settles. The snapshot object is only
+ * replaced on change, which is what useSyncExternalStore needs.
+ */
+let inflight = 0;
+let activity: { busy: boolean; lastError: string | null } = { busy: false, lastError: null };
+const activityListeners = new Set<() => void>();
+
+function setActivity(next: Partial<typeof activity>): void {
+  const merged = { ...activity, ...next };
+  if (merged.busy === activity.busy && merged.lastError === activity.lastError) return;
+  activity = merged;
+  activityListeners.forEach((l) => l());
+}
+
+export function getActivity(): typeof activity {
+  return activity;
+}
+
+export function subscribeActivity(l: () => void): () => void {
+  activityListeners.add(l);
+  return () => activityListeners.delete(l);
+}
+
+/** Wraps a request so the busy counter and lastError see it. */
+async function tracked<T>(path: string, run: () => Promise<T>): Promise<T> {
+  inflight++;
+  setActivity({ busy: true });
+  try {
+    return await run();
+  } catch (err) {
+    // The path, never the query: signed file links carry credentials there.
+    setActivity({ lastError: `${path.split("?")[0]}: ${err instanceof Error ? err.message : String(err)}` });
+    throw err;
+  } finally {
+    inflight--;
+    setActivity({ busy: inflight > 0 });
+  }
+}
+
+function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return tracked(path, () => rawRequest<T>(method, path, body));
+}
+
+async function rawRequest<T>(
   method: string,
   path: string,
   body?: unknown,
@@ -104,15 +150,16 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
   /** Multipart POST; the browser writes the boundary header itself. */
-  postForm: async <T>(path: string, form: FormData): Promise<T> => {
-    const headers: Record<string, string> = {};
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${API_URL}${path}`, { method: "POST", headers, body: form });
-    const data: unknown = await res.json();
-    if (!res.ok) throw new ApiError(res.status, data);
-    return data as T;
-  },
+  postForm: <T>(path: string, form: FormData): Promise<T> =>
+    tracked(path, async () => {
+      const headers: Record<string, string> = {};
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_URL}${path}`, { method: "POST", headers, body: form });
+      const data: unknown = await res.json();
+      if (!res.ok) throw new ApiError(res.status, data);
+      return data as T;
+    }),
 };
 
 /* ---- API response shapes ---- */
