@@ -52,7 +52,7 @@ function cssUnder(dir: string): string[] {
     .map((f) => `${dir}/${f}`);
 }
 
-const FILES = [MAIN, ...cssUnder(`${ROOT}/src/editor`), ...cssUnder(`${ROOT}/src/screens`)];
+const FILES = [MAIN, ...cssUnder(`${ROOT}/src/editor`), ...cssUnder(`${ROOT}/src/screens`), ...cssUnder(`${ROOT}/src/styles`)];
 
 /** Properties whose animation costs layout or a repaint on every frame. */
 const EXPENSIVE = [

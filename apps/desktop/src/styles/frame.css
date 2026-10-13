@@ -1,0 +1,120 @@
+/* ============================== Clear Glass frame ==============================
+   The app frame from design/mockup-03-clear-glass.html: content straight on the
+   background field, a page header per screen, and a floating dock at the
+   bottom. Loaded after styles.css so it wins over the old sidebar layout.
+   ============================================================================== */
+
+body{background:var(--bg-base)}
+
+/* main scrolls, not the window, so content slides under the dock. The bottom
+   padding is the dock's height plus its gap, so nothing ends up behind it. */
+.app{position:relative;z-index:2;display:block;height:100vh;padding:0}
+.main{height:100%;display:flex;flex-direction:column;gap:20px;min-width:0;overflow-y:auto;overflow-x:hidden;
+  padding:28px 34px 118px;scrollbar-width:thin}
+
+/* Screens not yet restyled: their old topbar keeps its controls and summary
+   line, the page header above it carries the title. */
+.main>.screen.active{min-height:0}
+.main>.screen>.topbar{padding:0 0 12px}
+.main>.screen>.topbar h2{display:none}
+.main>.screen>.stage{padding:4px 2px 12px}
+
+/* ---- page header ---- */
+.tf-head{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:16px;flex:none}
+.tf-logo{display:flex;align-items:center;gap:14px;min-width:0}
+.tf-mark{width:46px;height:46px;border-radius:14px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(160deg,#FFA594,var(--accent) 55%,var(--accent-lo));
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.6),0 6px 20px rgba(255,122,102,.55)}
+.tf-mark svg{width:24px;height:24px;fill:#fff}
+.tf-head h1{font-size:30px;font-weight:700;letter-spacing:-.01em;line-height:1.15;color:var(--text)}
+.tf-sub{color:var(--text-2);font-size:13px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tf-tabs{display:flex;gap:4px;padding:4px;border-radius:var(--r-pill)}
+.tf-tabs button{position:relative;z-index:1;padding:7px 14px;border-radius:var(--r-pill);border:0;background:none;
+  font:inherit;font-size:12.5px;color:var(--text-2);cursor:pointer;white-space:nowrap}
+.tf-tabs button:hover{color:var(--text)}
+.tf-tabs button.a{background:rgba(255,122,102,.28);color:var(--text);box-shadow:inset 0 0 0 1px rgba(255,160,140,.5)}
+.tf-ctr{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+
+/* Header buttons: glass pills, and the one coral primary. */
+.tf-btn{position:relative;display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:var(--r-pill);
+  border:0;font:inherit;font-size:12.5px;color:var(--text);cursor:pointer;white-space:nowrap;
+  transition:transform var(--dur-tap) var(--ease-out)}
+.tf-btn:active{transform:scale(.97)}
+.tf-btn:disabled{opacity:.5;cursor:default;transform:none}
+.tf-btn svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;position:relative;z-index:1}
+.tf-btn.pri{background:linear-gradient(180deg,rgba(255,150,130,.95),rgba(255,122,102,.9));color:var(--on-accent);font-weight:600;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.6),0 8px 24px rgba(255,122,102,.5)}
+.tf-seg{display:flex;padding:4px;border-radius:var(--r-pill)}
+.tf-seg button{position:relative;z-index:1;padding:7px 14px;border-radius:var(--r-pill);border:0;background:none;
+  font:inherit;font-size:12px;color:var(--text-2);cursor:pointer}
+.tf-seg button[aria-pressed="true"]{background:rgba(255,255,255,.22);color:var(--text);box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+[data-theme="light"] .tf-seg button[aria-pressed="true"]{background:rgba(255,255,255,.85)}
+
+/* Eyebrow label, as in the mockup. */
+.tf-lbl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)}
+
+.tf-av{flex:none;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;overflow:hidden;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.5),0 3px 10px rgba(0,0,0,.3)}
+.tf-av img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ---- dock ---- */
+.dock{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:50;height:72px;border-radius:var(--r-pill);
+  display:flex;align-items:center;gap:6px;padding:0 12px;max-width:calc(100vw - 24px)}
+.di{position:relative;z-index:1;white-space:nowrap;display:flex;align-items:center;gap:9px;padding:12px 20px;border-radius:var(--r-pill);
+  border:0;background:none;font:inherit;font-size:14px;color:var(--text-2);cursor:pointer}
+.di:hover{color:var(--text)}
+.di svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.di.on{background:linear-gradient(180deg,rgba(255,150,130,.95),rgba(255,122,102,.88));color:var(--on-accent);font-weight:600;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.6),0 6px 20px rgba(255,122,102,.55)}
+.di-status{cursor:default}
+.di-status:hover{color:var(--text-2)}
+.sep{position:relative;z-index:1;width:1px;height:34px;background:var(--hair);margin:0 6px;flex:none}
+.tf-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.tog{width:30px;height:17px;border-radius:9px;background:var(--tint-3);position:relative;flex:none}
+.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;
+  transition:transform var(--dur-tap) var(--ease-out)}
+.tog.on{background:var(--accent)}
+.tog.on::after{transform:translateX(13px)}
+.tf-bell{position:absolute;top:9px;right:12px;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.di.on .tf-bell{background:#fff}
+.tf-badge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:grid;place-items:center;font-size:11px;font-weight:700;
+  background:var(--c-warn);color:#1a1205}
+.di-alert.bad .tf-badge{background:var(--c-bad);color:#fff}
+.di-brand{padding:6px 16px 6px 6px}
+.di-brandtext{line-height:1.2;text-align:left}
+.di-brandtext b{display:block;font-size:13px;color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.di-brandtext small{display:block;font-size:10.5px;opacity:.65}
+
+.tf-brandwrap{position:relative;z-index:1}
+.tf-menu{position:absolute;right:0;bottom:calc(100% + 18px);min-width:240px;max-height:min(360px,60vh);overflow:auto;
+  padding:8px;border-radius:20px;display:flex;flex-direction:column;gap:2px;
+  /* Nested inside the dock's own backdrop-filter, the browser blurs only the
+     dock behind it, not the page, so it needs a near-solid fill to stay legible. */
+  background:var(--gl-low-3)}
+.tf-mi{position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;border:0;background:none;
+  font:inherit;font-size:13px;color:var(--text-2);cursor:pointer;text-align:left}
+.tf-mi:hover,.tf-mi.on{background:var(--tint-2);color:var(--text)}
+.tf-mi.on{font-weight:600}
+.tf-mi-add{color:var(--accent-hi);margin-top:4px}
+[data-theme="light"] .tf-mi-add{color:var(--accent-lo)}
+
+/* Everything that used to sit in a bottom corner moves up clear of the dock. */
+.toasts{bottom:118px;right:34px}
+.updatebar{bottom:118px;left:34px}
+.alertdock,.alertdock-tab{top:96px}
+
+/* Keyboard focus is visible on every control the frame adds. */
+.di:focus-visible,.tf-btn:focus-visible,.tf-tabs button:focus-visible,.tf-seg button:focus-visible,.tf-mi:focus-visible{
+  outline:2px solid var(--accent-hi);outline-offset:2px}
+
+/* ---- narrower windows ---- */
+@media (max-width:1280px){
+  .tf-head{display:flex;flex-wrap:wrap}
+  .tf-logo{flex:1 1 auto}
+  .tf-ctr{flex:1 1 100%;justify-content:flex-start}
+}
+@media (max-width:1100px){
+  .dock .di-lbl{display:none}
+  .di{padding:12px 14px}
+  .main{padding:20px 16px 112px}
+}

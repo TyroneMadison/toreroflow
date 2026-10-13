@@ -9,37 +9,37 @@
       pure black, one coral accent, white at a few fixed opacities for
       everything else. See docs/superpowers/specs/2026-07-30-site-colour-...
     */
-    --bg-0:#000;
+    --bg-0:var(--bg-base);
     --bg-1:#08070a;
-    --glass:rgba(255,255,255,0.05);
-    --glass-2:rgba(255,255,255,0.085);
-    --glass-3:rgba(255,255,255,0.13);
+    --glass:var(--tint-1);
+    --glass-2:var(--tint-2);
+    --glass-3:var(--tint-3);
     /* The site's border-white/15 hairline. */
-    --brd:rgba(255,255,255,0.15);
-    --brd-soft:rgba(255,255,255,0.08);
-    --txt:#fff;
-    --txt-2:rgba(255,255,255,0.70);
-    --txt-3:rgba(255,255,255,0.45);
+    --brd:var(--hair);
+    --brd-soft:var(--hair-soft);
+    --txt:var(--text);
+    --txt-2:var(--text-2);
+    --txt-3:var(--text-3);
     /* The site has exactly one accent. --b is the warm end of it, not a
        second hue, so a gradient still reads as a gradient. */
-    --v:#FF6F61;
-    --b:#FF9A73;
-    --green:#57d6a0;
-    --amber:#ffcf6b;
+    --v:var(--accent);
+    --b:var(--accent-hi);
+    --green:var(--c-ok);
+    --amber:var(--c-warn);
     /*
       Away from the old #ff6b7a, which is nearly the accent's own hue. With
       coral as the brand colour a failed post would have looked like a button.
     */
-    --red:#FF2D55;
+    --red:var(--c-bad);
     /*
       Blue is not a brand colour any more, it is a meaning: scheduled, and a
       payment that is due. Kept because a calendar where everything is the
       accent colour tells you nothing.
     */
-    --info:#4EA8FF;
-    --grad:linear-gradient(135deg,#FF6F61 0%,#FF9A73 100%);
-    --radius:22px;
-    --radius-sm:14px;
+    --info:var(--c-info);
+    --grad:linear-gradient(135deg,var(--accent) 0%,var(--accent-hi) 100%);
+    --radius:var(--r-card);
+    --radius-sm:var(--r-tile);
     --shadow:0 24px 60px rgba(0,0,0,.6);
     --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
   }
@@ -360,7 +360,7 @@
   [data-theme="light"] .themetoggle .knob::after{left:16px}
 
   /* ---- light theme ---- */
-  [data-theme="light"]{color-scheme:light;--bg-0:#e8eaf4;--bg-1:#f3f4fb;--glass:rgba(255,255,255,.6);--glass-2:rgba(255,255,255,.82);--glass-3:rgba(30,30,70,.07);--brd:rgba(30,30,70,.12);--brd-soft:rgba(30,30,70,.07);--txt:rgba(24,26,45,.94);--txt-2:rgba(24,26,45,.62);--txt-3:rgba(24,26,45,.42)}
+  [data-theme="light"]{color-scheme:light;--bg-1:#f3f4fb}
   [data-theme="light"] body{background:var(--bg-0)}
   [data-theme="light"] option{background:#fff;color:rgba(24,26,45,.94)}
   [data-theme="light"] .field{background:radial-gradient(900px 620px at 14% -12%,rgba(255,111,97,.22),transparent 60%),radial-gradient(820px 520px at 102% -6%,rgba(255,154,115,.2),transparent 55%),linear-gradient(180deg,#f3f4fb,#e6e8f4)}

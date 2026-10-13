@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import IconDefs from "./components/IconDefs";
-import Sidebar from "./components/Sidebar";
+import Dock from "./components/Dock";
+import PageHeader from "./components/PageHeader";
 import DashboardScreen from "./screens/DashboardScreen";
 import UploadSchedule from "./screens/UploadSchedule";
 import EditScreen from "./screens/EditScreen";
@@ -22,19 +23,11 @@ import AlertDock from "./components/AlertDock";
 import UpdateBanner from "./components/UpdateBanner";
 import { api, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
+import type { ScreenId } from "./lib/nav";
 
-export type ScreenId =
-  | "dashboard"
-  | "upload"
-  | "edit"
-  | "calendar"
-  | "analytics"
-  | "reports"
-  | "overview"
-  | "financials"
-  | "carousels"
-  | "workflows"
-  | "settings";
+// The screen list lives in lib/nav.ts beside the section map; re-exported
+// here for the files that already import it from App.
+export type { ScreenId } from "./lib/nav";
 
 type ModalState =
   | { kind: "connect" }
@@ -133,7 +126,7 @@ function Shell() {
       <UpdateBanner />
       <AlertDock alerts={alerts} onChanged={refreshAlerts} />
       <div className="app">
-        <Sidebar
+        <Dock
           activeScreen={activeScreen}
           onNavigate={setActiveScreen}
           theme={theme}
@@ -143,12 +136,18 @@ function Shell() {
           alertCount={visibleAlerts.length}
           alertIsError={visibleAlerts.some((a) => a.severity === "error")}
         />
-        <main className="main glass">
+        <main className="main">
+          {/* The Dashboard draws its own header with its controls; the screens
+              not yet restyled get the shared one above their old topbar. */}
+          {activeScreen !== "dashboard" && (
+            <PageHeader screen={activeScreen} onNavigate={setActiveScreen} />
+          )}
           {activeScreen === "dashboard" && (
             <DashboardScreen
               key="dashboard"
               onOpenInsights={openInsights}
               onOpenConnect={openConnect}
+              onNavigate={setActiveScreen}
             />
           )}
           {activeScreen === "upload" && (
@@ -218,11 +217,8 @@ export default function App() {
     // still loading its own data still has somewhere to surface.
     <ToastProvider>
       <AppStateProvider>
-        <div className="field">
-          <div className="blob b1" />
-          <div className="blob b2" />
-        </div>
-        <div className="grain" />
+        <div className="tf-bg" aria-hidden="true" />
+        <div className="tf-vig" aria-hidden="true" />
         <IconDefs />
         <Shell />
       </AppStateProvider>

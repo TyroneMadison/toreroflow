@@ -1,0 +1,55 @@
+/* Dashboard, Clear Glass (design/mockup-03-clear-glass.html). */
+
+/* Grows to fill main, so the chart takes whatever height the cards leave.
+   With more brands than fit, it grows past main instead and main scrolls. */
+.dash{flex:1 0 auto;display:flex;flex-direction:column;gap:20px;min-height:0}
+
+.dash-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+@media (max-width:1100px){.dash-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.dash-cards{grid-template-columns:minmax(0,1fr)}}
+
+.bcard{border-radius:var(--r-card);padding:20px;cursor:pointer}
+.bcard-h{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+.bcard-name{min-width:0}
+.bcard-name h2{font-size:16px;font-weight:700;line-height:1.2}
+.bcard-name h2 button{border:0;background:none;padding:0;font:inherit;color:var(--text);cursor:pointer;text-align:left}
+.bcard-name h2 button:focus-visible{outline:2px solid var(--accent-hi);outline-offset:3px;border-radius:6px}
+.bcard-name small{display:block;margin-top:2px;font-size:11.5px;color:var(--text-3)}
+.bc-trend{margin-left:auto;text-align:right;font-size:10.5px;color:var(--text-3)}
+.bc-trend svg{display:block;margin-left:auto}
+.bc-trend em{font-style:normal;font-size:11.5px;font-weight:600}
+.bcard-pf{display:flex;gap:6px;margin-top:12px;position:relative;z-index:1}
+
+.bcard-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.bcard-tiles .tile{border-radius:var(--r-tile);padding:12px;min-width:0}
+.bcard-tiles dt{font-size:9.5px;position:relative;z-index:1}
+.bcard-tiles dd{font-size:20px;font-weight:700;margin-top:6px;color:var(--text);position:relative;z-index:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bcard-tiles .skel{display:block;height:20px;width:70%}
+
+/* The chart takes the rest of the height. */
+.vot{flex:1 1 auto;min-height:300px;border-radius:var(--r-chart);padding:22px 26px;display:flex;flex-direction:column}
+.vot-h{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;position:relative;z-index:1}
+.vot-h h2{font-weight:400}
+.vot-total{display:flex;align-items:baseline;gap:8px;font-size:28px;font-weight:700;margin-top:6px;color:var(--text)}
+.vot-total span{font-size:13px;font-weight:600}
+.vot-total .skel{display:inline-block;width:120px;height:28px}
+.vot-leg{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 18px;list-style:none;font-size:12px;color:var(--text-2)}
+.vot-leg li::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;
+  background:var(--c);box-shadow:0 0 8px var(--c)}
+.vot-plot{flex:1;min-height:0;position:relative;margin-top:12px}
+.vot-plot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.vot-grid line{stroke:var(--hair-soft);stroke-dasharray:4 6}
+.vot-none{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--text-3)}
+.vot-x{display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-top:8px}
+
+.dash-msg{border-radius:var(--r-card);padding:48px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.dash-msg>*{position:relative;z-index:1}
+.dash-msg b{font-size:16px}
+.dash-msg p{font-size:13px;color:var(--text-2);max-width:380px;margin-bottom:8px}
+
+/* Provenance as a one-line footer here, not a panel. */
+.dash .prov{margin:0;padding:0 4px;background:none;border:0;box-shadow:none;display:flex;align-items:center;gap:6px 18px;flex-wrap:wrap}
+.dash .prov-row{flex:1 1 auto}
+.dash .prov-notes{margin:0}
+.dash .prov-foot{margin:0;padding:0;border:0}

@@ -14,7 +14,8 @@ const REQUEST_TIMEOUT_MS = 3_000;
  * only symptom anywhere was a card stuck on "Queued for processing", so a
  * dead worker now says so here.
  */
-export default function ApiStatus() {
+/** The polling, shared by this pill and the dock. */
+export function useApiStatus(): { color: string; label: string; title: string } {
   const [online, setOnline] = useState(false);
   const [workerUp, setWorkerUp] = useState(true);
 
@@ -57,16 +58,21 @@ export default function ApiStatus() {
   // Amber, not red: the app works, but nothing is being processed behind it.
   const color = !online ? "var(--red)" : workerUp ? "var(--green)" : "var(--amber)";
   const label = !online ? "API offline" : workerUp ? "API online" : "Worker offline";
+  const title =
+    online && !workerUp
+      ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
+      : label;
+  return { color, label, title };
+}
+
+export default function ApiStatus() {
+  const { color, label, title } = useApiStatus();
   return (
     <div
       className="glass-sm"
       // Always set, because on a narrow window the label is hidden and this
       // becomes the only way to read what the dot means.
-      title={
-        online && !workerUp
-          ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
-          : label
-      }
+      title={title}
       style={{
         display: "flex",
         alignItems: "center",

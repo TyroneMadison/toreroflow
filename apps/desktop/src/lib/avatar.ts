@@ -1,5 +1,11 @@
 import type { ClientSummary } from "./api";
 
+/** Each brand's colour, by its place in the client list: card avatar, chart
+ *  line and legend dot all use the same one. */
+const BRAND_COLORS = ["#FF7A66", "#6fb0ff", "#F2BE6E", "#B794FF", "#4ADE9A", "#FF8FB8"];
+export const brandColor = (index: number): string =>
+  BRAND_COLORS[index % BRAND_COLORS.length]!;
+
 /**
  * Best real profile picture for a client: Instagram's avatar first (usually
  * the brand's face), then any other connected account's, else null.

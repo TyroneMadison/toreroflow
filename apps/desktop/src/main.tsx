@@ -1,11 +1,16 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { applyTheme, loadTheme } from "./lib/theme";
+import { applyTheme, initAutomation, loadTheme } from "./lib/theme";
+// Tokens first so styles.css can point its old variables at them; frame.css
+// last so the dock layout wins over the old sidebar one.
+import "./styles/tokens.css";
 import "./styles.css";
+import "./styles/frame.css";
 
 // Apply persisted theme before first paint to avoid a flash of the wrong theme.
 applyTheme(loadTheme());
+initAutomation();
 
 /*
  * Web-hosted sign-in for automations: #token=... in the URL becomes the

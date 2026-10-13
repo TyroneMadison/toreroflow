@@ -12,6 +12,7 @@ import {
 } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
+import { loadAutomation, setAutomation } from "../lib/theme";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
@@ -681,6 +682,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const toast = useToast();
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [autostartBusy, setAutostartBusy] = useState(false);
+  const [automation, setAutomationState] = useState(loadAutomation);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState<string | null>(null);
   const autoSynced = useRef(new Set<string>());
@@ -897,6 +899,27 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             </div>
             <div className={`switch${autostart ? " on" : ""}`} style={{ marginLeft: "auto" }} />
           </div>
+          <button
+            type="button"
+            className="pt"
+            role="switch"
+            aria-checked={automation}
+            style={{ maxWidth: 420, marginTop: 8, width: "100%", font: "inherit", color: "inherit", textAlign: "left" }}
+            onClick={() => {
+              setAutomation(!automation);
+              setAutomationState(!automation);
+            }}
+            data-testid="settings.automation"
+          >
+            <div className="info">
+              <b>Automation mode</b>
+              <span>
+                No animation and no blur, for bots driving the app. Also on with{" "}
+                <span style={{ whiteSpace: "nowrap" }}>?automation=1</span>.
+              </span>
+            </div>
+            <div className={`switch${automation ? " on" : ""}`} style={{ marginLeft: "auto" }} />
+          </button>
         </div>
 
         <div className="card glass setsec">

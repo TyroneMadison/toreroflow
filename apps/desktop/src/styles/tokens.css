@@ -1,0 +1,122 @@
+/* ============================== Clear Glass tokens ==============================
+   The approved redesign (design/mockup-03-clear-glass.html). Loaded before
+   styles.css, whose older variables (--v, --glass, --brd, --txt...) now point
+   here, so screens not yet restyled pick up the palette without being touched.
+   ============================================================================== */
+
+:root{
+  --accent:#FF7A66;
+  --accent-hi:#FF9A88;
+  --accent-lo:#E2523E;
+  --on-accent:#2A0C06;
+
+  /* Data colours. Prefixed so styles.css can keep its own --info name. */
+  --c-ok:#4ADE9A;
+  --c-bad:#F0506E;
+  --c-info:#4C9DFF;
+  --c-warn:#E0A458;
+
+  --text:#fff;
+  --text-2:rgba(255,255,255,.72);
+  --text-3:rgba(255,255,255,.55);
+
+  --r-chart:28px;
+  --r-card:26px;
+  --r-tile:16px;
+  --r-pill:999px;
+
+  /* Flat tints for the older surfaces that paint a single fill. */
+  --tint-1:rgba(255,255,255,.06);
+  --tint-2:rgba(255,255,255,.10);
+  --tint-3:rgba(255,255,255,.14);
+  --hair:rgba(255,255,255,.18);
+  --hair-soft:rgba(255,255,255,.10);
+
+  /* The glass recipe, straight from the mockup's .g and .g2. */
+  --gl-fill-1:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.04) 45%,rgba(255,255,255,.07));
+  --gl-fill-2:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.03));
+  --gl-fill-3:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.07) 45%,rgba(255,255,255,.10));
+  --gl-rim:linear-gradient(135deg,rgba(255,255,255,.75),rgba(255,255,255,.12) 35%,rgba(255,255,255,.05) 60%,rgba(255,255,255,.35));
+  --gl-sheen:linear-gradient(160deg,rgba(255,255,255,.14),transparent 30%);
+  --gl-inset:inset 0 1px 1px rgba(255,255,255,.35),inset 0 0 24px rgba(255,255,255,.06),inset 0 -10px 20px rgba(0,0,0,.08);
+  --gl-drop:0 2px 4px rgba(0,0,0,.18),0 12px 28px rgba(0,0,0,.22),0 40px 80px rgba(10,0,30,.3);
+  --gl-low-1:rgba(34,22,46,.82);
+  --gl-low-2:rgba(255,255,255,.08);
+  --gl-low-3:rgba(26,16,36,.94);
+
+  --bg-base:#0b0714;
+  --bg-field:
+    radial-gradient(520px 420px at 12% 18%,#FF7A66 0%,transparent 70%),
+    radial-gradient(600px 500px at 38% 75%,#7a1d2e 0%,transparent 70%),
+    radial-gradient(640px 520px at 85% 25%,#2448b8 0%,transparent 70%),
+    radial-gradient(520px 460px at 72% 88%,#6a2fc0 0%,transparent 70%),
+    radial-gradient(400px 300px at 55% 35%,#c2456a 0%,transparent 70%),
+    #0b0714;
+  --bg-vig:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.45));
+}
+
+[data-theme="light"]{
+  --text:rgba(24,22,40,.94);
+  --text-2:rgba(24,22,40,.70);
+  --text-3:rgba(24,22,40,.54);
+
+  --tint-1:rgba(255,255,255,.5);
+  --tint-2:rgba(255,255,255,.7);
+  --tint-3:rgba(30,30,70,.07);
+  --hair:rgba(30,30,70,.12);
+  --hair-soft:rgba(30,30,70,.07);
+
+  /* Around 45% white, so the pastel field still shows through. */
+  --gl-fill-1:linear-gradient(135deg,rgba(255,255,255,.58),rgba(255,255,255,.38) 45%,rgba(255,255,255,.46));
+  --gl-fill-2:linear-gradient(135deg,rgba(255,255,255,.55),rgba(255,255,255,.32));
+  --gl-fill-3:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.66) 45%,rgba(255,255,255,.74));
+  --gl-rim:linear-gradient(135deg,rgba(255,255,255,1),rgba(255,255,255,.5) 35%,rgba(255,255,255,.3) 60%,rgba(255,255,255,.8));
+  --gl-sheen:linear-gradient(160deg,rgba(255,255,255,.4),transparent 30%);
+  --gl-inset:inset 0 1px 1px rgba(255,255,255,.9),inset 0 0 24px rgba(255,255,255,.3),inset 0 -10px 20px rgba(60,40,120,.04);
+  --gl-drop:0 2px 4px rgba(50,40,110,.06),0 12px 28px rgba(50,40,110,.10),0 40px 80px rgba(50,40,110,.12);
+  --gl-low-1:rgba(255,255,255,.82);
+  --gl-low-2:rgba(30,30,70,.05);
+  --gl-low-3:rgba(250,249,255,.96);
+
+  --bg-base:#f3f1f8;
+  --bg-field:
+    radial-gradient(520px 420px at 12% 18%,#FFB3A6 0%,transparent 70%),
+    radial-gradient(600px 500px at 38% 75%,#F6C3D3 0%,transparent 70%),
+    radial-gradient(640px 520px at 85% 25%,#B9CBFF 0%,transparent 70%),
+    radial-gradient(520px 460px at 72% 88%,#D6C4FF 0%,transparent 70%),
+    radial-gradient(400px 300px at 55% 35%,#FFD3C2 0%,transparent 70%),
+    #f3f1f8;
+  --bg-vig:radial-gradient(ellipse at center,transparent 60%,rgba(80,60,140,.10));
+}
+
+/* ---- the background field ---- */
+.tf-bg{position:fixed;inset:-100px;z-index:0;pointer-events:none;background:var(--bg-field);filter:blur(70px) saturate(130%)}
+.tf-vig{position:fixed;inset:0;z-index:0;pointer-events:none;background:var(--bg-vig)}
+
+/* ---- glass layers: z1 panels, z2 tiles inside them, z3 floating menus ---- */
+.glass-z1,.glass-z2,.glass-z3{position:relative;background:var(--gl-fill-1);
+  backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);
+  box-shadow:var(--gl-inset),var(--gl-drop)}
+.glass-z2{background:var(--gl-fill-2);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%)}
+.glass-z3{background:var(--gl-fill-3);backdrop-filter:blur(40px) saturate(200%);-webkit-backdrop-filter:blur(40px) saturate(200%);
+  box-shadow:var(--gl-inset),var(--gl-drop),0 30px 70px rgba(0,0,0,.35)}
+/* A 1px rim, brightest top-left, drawn as a masked gradient border. */
+.glass-z1::before,.glass-z2::before,.glass-z3::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+  background:var(--gl-rim);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.glass-z1::after,.glass-z2::after,.glass-z3::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:var(--gl-sheen)}
+
+/* ---- automation mode (lib/theme.ts) ---- */
+/* No blur anywhere: solid tinted fills instead, cheap to render and easy to read back. */
+html[data-glass="low"] *,html[data-glass="low"] *::before,html[data-glass="low"] *::after{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+html[data-glass="low"] .tf-bg{filter:none}
+html[data-glass="low"] .glass-z1,html[data-glass="low"] .glass,html[data-glass="low"] .glass-sm{background:var(--gl-low-1)}
+html[data-glass="low"] .glass-z2{background:var(--gl-low-2)}
+html[data-glass="low"] .glass-z3{background:var(--gl-low-3)}
+html[data-glass="low"] .glass-z1::after,html[data-glass="low"] .glass-z2::after,html[data-glass="low"] .glass-z3::after{display:none}
+
+/* No motion: the same switch as the system reduce-motion rule in styles.css. */
+html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-motion="reduced"] *::after{
+  animation-duration:.001ms !important;animation-iteration-count:1 !important;
+  transition-duration:.001ms !important;scroll-behavior:auto !important}
+html[data-motion="reduced"] .stagger>*{animation-delay:0ms !important;opacity:1;transform:none}
