@@ -18,14 +18,28 @@
   --g-legible:calc(.05 + .40 * var(--L));         /* backing behind small text */
   --g-chroma:calc(.15 + .45 * var(--L));          /* chromatic rim strength */
   --press-bg:rgba(10,20,50,calc(.30 - .12 * var(--L)));
-  --bg-base:#0a1a4a;
+  --bg-base:#050505;
+  --g-smoke:.06;
 }
 
-/* ---- wallpaper: blue ribbons whose curves run the same way as the rounded glass ---- */
+/* ---- base: no wallpaper ----
+   Desktop (data-shell="desktop"): the window itself is transparent and the
+   panels sit over the live Windows desktop (Acrylic at the frosted end, fully
+   clear at the clear end, lib/windowGlass.ts). Web: a browser cannot see the
+   desktop, so a neutral, very subtle dark base stands in for it. */
 .tf-bg{inset:0 !important;filter:none !important;
-  background:url("../assets/ribbons.jpg") center/cover no-repeat,#0a1a4a !important}
-.tf-vig{background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(4,10,40,.38)) !important}
-[data-theme="light"] .tf-bg{filter:brightness(1.18) saturate(.8) !important}
+  background:radial-gradient(120% 90% at 20% 0%,#141414 0%,transparent 60%),#050505 !important}
+.tf-vig{background:radial-gradient(ellipse at 50% 45%,transparent 60%,rgba(0,0,0,.28)) !important}
+[data-theme="light"] .tf-bg{background:radial-gradient(120% 90% at 20% 0%,#fff 0%,transparent 60%),#f2f2f7 !important}
+[data-theme="light"] .tf-vig{background:none !important}
+html[data-shell="desktop"],html[data-shell="desktop"] body,html[data-shell="desktop"] #root{background:transparent !important}
+html[data-shell="desktop"] .tf-bg,html[data-shell="desktop"] .tf-vig{display:none !important}
+/* Over a real desktop the panels need a little smoke to stay readable: more when frosted, less when clear. */
+html[data-shell="desktop"]{--g-smoke:calc(.42 - .2 * var(--L))}
+/* The base colour every panel is smoked with: Grok-style near-black, or iPhone white. */
+:root{--g-base:5,5,5}
+[data-theme="light"]{--g-base:242,242,247;--g-smoke:.18}
+html[data-shell="desktop"][data-theme="light"]{--g-smoke:calc(.55 - .25 * var(--L))}
 
 /* ---- shared glass slab ---- */
 .glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{
@@ -35,7 +49,8 @@
     radial-gradient(45% 10% at 22% 2%,rgba(255,255,255,calc(var(--g-gloss) * .45)),transparent 70%),
     radial-gradient(55% 22% at 60% 100%,rgba(200,235,255,calc(var(--g-gloss) * .25)),transparent 70%),
     radial-gradient(140% 140% at 50% 45%,transparent 70%,rgba(60,130,230,calc(var(--g-gloss) * .2)) 100%),
-    linear-gradient(150deg,rgba(255,255,255,calc(var(--g-tint) + .05)),rgba(255,255,255,var(--g-tint)) 40%,rgba(255,255,255,calc(var(--g-tint) * .6))) !important;
+    linear-gradient(150deg,rgba(255,255,255,calc(var(--g-tint) + .05)),rgba(255,255,255,var(--g-tint)) 40%,rgba(255,255,255,calc(var(--g-tint) * .6))),
+    linear-gradient(rgba(var(--g-base),var(--g-smoke)),rgba(var(--g-base),var(--g-smoke))) !important;
   backdrop-filter:var(--g-refract,) blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
   -webkit-backdrop-filter:blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
   box-shadow:
@@ -84,14 +99,52 @@ h1,h2,.big,.hero,.kpi-v,.val,.v{text-shadow:0 1px 12px rgba(5,15,60,.35)}
 .tf-glass-slider span{font-size:12px;color:var(--text-2)}
 
 /* ---- plain glass: automation mode and reduced transparency ---- */
-html[data-glass="low"] .tf-bg{background:#0a1a4a !important}
+html[data-glass="low"] .tf-bg{background:#0a0a0a !important}
 html[data-glass="low"] .glass-z1,html[data-glass="low"] .glass-z2,html[data-glass="low"] .glass-z3,
 html[data-glass="low"] .glass,html[data-glass="low"] .glass-sm,html[data-glass="low"] .dock{
-  background:rgba(22,40,90,.94) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2) !important;
+  background:rgba(28,30,40,.95) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2) !important;
   backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
 html[data-glass="low"] *{text-shadow:none !important}
 @media (prefers-reduced-transparency: reduce){
-  .tf-bg{background:#0a1a4a !important}
-  .glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{background:rgba(22,40,90,.94) !important;
+  .tf-bg{background:#0a0a0a !important}
+  .glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{background:rgba(28,30,40,.95) !important;
     backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
 }
+
+/* ---- older .btn buttons get the same clear pressed look ---- */
+.btn{background:var(--press-bg) !important;border:1.5px solid rgba(255,255,255,calc(.5 - .1 * var(--L))) !important;color:#fff !important;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.25),inset 0 -1px 0 rgba(255,255,255,.22),0 1px 0 rgba(255,255,255,.3) !important}
+.btn.pub,.btn.pri{background:linear-gradient(180deg,rgba(255,122,102,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important}
+
+/* ---- per-panel edge bending (lib/refraction.ts) ---- */
+/* A panel with its own lens map uses it instead of the shared ripple. */
+[data-lens]{backdrop-filter:var(--lens) blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important}
+html[data-glass="low"] [data-lens]{backdrop-filter:none !important}
+@media (prefers-reduced-transparency: reduce){[data-lens]{backdrop-filter:none !important}}
+
+/* ---- light mode: dark text, white glass, softer shadows, same slider ---- */
+[data-theme="light"]{--press-bg:rgba(255,255,255,calc(.55 - .2 * var(--L)))}
+[data-theme="light"] .tf-btn,[data-theme="light"] .btn,[data-theme="light"] .di.on,[data-theme="light"] .tf-tabs a.a,
+[data-theme="light"] .tf-seg button[aria-pressed="true"]{color:var(--text) !important;border-color:rgba(30,30,70,.18) !important;
+  box-shadow:inset 0 2px 5px rgba(30,30,70,.1),inset 0 -1px 0 rgba(255,255,255,.8),0 1px 2px rgba(30,30,70,.08) !important}
+[data-theme="light"] .tf-btn.pri,[data-theme="light"] .btn.pub,[data-theme="light"] .btn.pri{color:#fff !important}
+[data-theme="light"] .gx-big,[data-theme="light"] .gx-statv,[data-theme="light"] .gx-title b{color:var(--text);text-shadow:none}
+[data-theme="light"] .gx-big.ok,[data-theme="light"] .gx-statv.ok,[data-theme="light"] .gx-word.ok,[data-theme="light"] .gx-hero-word.ok{color:#14915a}
+[data-theme="light"] .gx-big.bad,[data-theme="light"] .gx-statv.bad,[data-theme="light"] .gx-word.bad,[data-theme="light"] .gx-hero-word.bad{color:#d0294a}
+[data-theme="light"] .gx-big.info,[data-theme="light"] .gx-statv.info{color:#1f6fd6}
+[data-theme="light"] .gx-statv.warn,[data-theme="light"] .gx-word.warn,[data-theme="light"] .gx-hero-word.warn,[data-theme="light"] .gx-note.warn{color:#a8650f}
+[data-theme="light"] .gx-badge{color:var(--text);border-color:rgba(30,30,70,.35)}
+[data-theme="light"] .gx-row{color:var(--text)}
+[data-theme="light"] .gx-ticks i{background:rgba(30,30,70,.15)}[data-theme="light"] .gx-ticks i.on{background:rgba(30,30,70,.55)}
+[data-theme="light"] .gx-actions{background:rgba(255,255,255,calc(.35 + .1 * var(--glass-level)));border-top-color:rgba(30,30,70,.08)}
+[data-theme="light"] h1,[data-theme="light"] h2,[data-theme="light"] .big,[data-theme="light"] .hero,[data-theme="light"] .v{text-shadow:none}
+[data-theme="light"] .tf-lbl,[data-theme="light"] .sub,[data-theme="light"] .tf-sub,[data-theme="light"] .mini,[data-theme="light"] small,
+[data-theme="light"] .chip,[data-theme="light"] .badge,[data-theme="light"] .pill,[data-theme="light"] .delta,[data-theme="light"] .muted,
+[data-theme="light"] label,[data-theme="light"] th,[data-theme="light"] .glass-z1 span,[data-theme="light"] .glass .sub,[data-theme="light"] .glass-z2 span{
+  text-shadow:0 0 6px rgba(255,255,255,var(--g-legible))}
+[data-theme="light"] .glass-z1,[data-theme="light"] .glass,[data-theme="light"] .dock{
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,calc(var(--g-rim) * .9)),inset 3px 3px 2px -1px rgba(255,180,220,calc(var(--g-chroma) * .7)),
+    inset -3px -3px 2px -1px rgba(140,200,255,calc(var(--g-chroma) * .7)),0 2px 4px rgba(30,30,70,.06),0 14px 34px rgba(30,30,70,.1) !important}
+html[data-glass="low"][data-theme="light"] .glass-z1,html[data-glass="low"][data-theme="light"] .glass-z2,html[data-glass="low"][data-theme="light"] .glass-z3,
+html[data-glass="low"][data-theme="light"] .glass,html[data-glass="low"][data-theme="light"] .glass-sm,html[data-glass="low"][data-theme="light"] .dock{background:rgba(255,255,255,.96) !important}
+html[data-glass="low"][data-theme="light"] .tf-bg{background:#f2f2f7 !important}

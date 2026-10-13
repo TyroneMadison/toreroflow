@@ -1,16 +1,19 @@
 import { useEffect } from "react";
 import { applyGlassLevel, loadGlassLevel } from "../lib/glass";
+import { startRefraction } from "../lib/refraction";
 
 /*
  * The refraction filter every glass panel points its backdrop-filter at.
- * Soft fractal noise displaces what sits behind the glass, so the ribbons
- * bend and ripple through it; the red and blue channels are pushed a little
+ * Soft fractal noise displaces what sits behind the glass, so what sits
+ * behind it bends and ripple through it; the red and blue channels are pushed a little
  * further than green for the chromatic fringe. Strength comes from the
  * Settings slider (lib/glass.ts sets the scale). Rendered once, hidden.
  */
 export default function GlassFilter() {
   useEffect(() => {
+    const stop = startRefraction();
     applyGlassLevel(loadGlassLevel());
+    return stop;
   }, []);
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" focusable="false">

@@ -1,3 +1,5 @@
+import { refreshWindowGlass } from "./windowGlass";
+
 export type Theme = "dark" | "light";
 
 export const THEME_STORAGE_KEY = "toreroflow-theme";
@@ -12,6 +14,7 @@ export function loadTheme(): Theme {
 
 export function applyTheme(theme: Theme): void {
   document.documentElement.setAttribute("data-theme", theme);
+  refreshWindowGlass();
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {

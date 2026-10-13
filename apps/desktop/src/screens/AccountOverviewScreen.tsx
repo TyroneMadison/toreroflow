@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
+import Stat from "../components/glass/Stat";
 import DataProvenance from "../components/DataProvenance";
 import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
@@ -21,146 +22,159 @@ import { useAppState } from "../state/AppState";
  * list is the work and the bottom is the finished.
  */
 
-/** One thing needing doing, or a green line saying it does not. */
-function Signal({
-  tone,
-  label,
-  detail,
-}: {
-  tone: "bad" | "warn" | "ok";
-  label: string;
-  detail?: string;
-}) {
+type Tone = "bad" | "warn" | "ok";
+
+/** The five steps every brand moves through each month, each red, amber or green. */
+function pipeline(c: OverviewClient): Array<{ label: string; tone: Tone; detail: string }> {
+  const connected = c.platforms.filter((p) => p.status === "connected").length;
+  const plan = c.insight?.status;
+  return [
+    {
+      label: "Connected",
+      tone: c.needsReconnect ? "bad" : connected === 0 ? "warn" : "ok",
+      detail: c.needsReconnect ? "a platform dropped its authorisation" : `${connected} platform${connected === 1 ? "" : "s"}`,
+    },
+    {
+      label: "Plan",
+      tone: plan === "failed" ? "bad" : isReady(plan) ? "ok" : "warn",
+      detail: plan === "failed" ? "did not finish" : isRunning(plan) ? "being written" : isReady(plan) ? "ready" : "none yet",
+    },
+    {
+      label: "Posting",
+      tone: c.lastPostAt === null ? "warn" : (c.daysQuiet ?? 0) >= 14 ? "bad" : (c.daysQuiet ?? 0) >= 7 ? "warn" : "ok",
+      detail: c.lastPostAt === null ? "nothing published" : `last ${c.daysQuiet ?? 0}d ago`,
+    },
+    {
+      label: "Delivered",
+      tone: !c.delivery ? "ok" : c.delivery.behindBy > 0 ? "warn" : "ok",
+      detail: !c.delivery ? "no quota" : c.delivery.behindBy > 0 ? `${c.delivery.behindBy} behind` : "on quota",
+    },
+    {
+      label: "Report",
+      tone: c.report.stale ? "bad" : c.report.built && !c.report.opened ? "warn" : c.report.url ? "ok" : "warn",
+      detail: c.report.stale ? "out of date" : c.report.url ? "published" : "not published",
+    },
+  ];
+}
+
+/** One word for where the brand stands, the biggest thing on its card. */
+function headline(c: OverviewClient, steps: ReturnType<typeof pipeline>): { word: string; tone: Tone } {
+  if (c.needsReconnect) return { word: "Reconnect", tone: "bad" };
+  if (steps.some((s) => s.tone === "bad")) return { word: "Stalled", tone: "bad" };
+  if (c.delivery && c.delivery.behindBy > 0) return { word: "Behind", tone: "warn" };
+  if (steps.some((s) => s.tone === "warn")) return { word: "Check in", tone: "warn" };
+  return { word: "On track", tone: "ok" };
+}
+
+function Avatar({ c, size = 44 }: { c: OverviewClient; size?: number }) {
   return (
-    <div className={`signal ${tone}`}>
-      <span className="sdot" />
-      <b>{label}</b>
-      {detail && <span>{detail}</span>}
+    <div className="gx-av" style={{ width: size, height: size }}>
+      {c.avatarUrl ? <img src={c.avatarUrl} alt="" /> : <span>{c.avatarSeed ?? c.name.slice(0, 1).toUpperCase()}</span>}
     </div>
   );
 }
 
-function ClientRow({
-  client,
-  onOpenInsights,
-}: {
-  client: OverviewClient;
-  onOpenInsights(id: string): void;
-}) {
-  const { delivery, report } = client;
-  const signals: Array<{ tone: "bad" | "warn" | "ok"; label: string; detail?: string }> = [];
-
-  if (client.needsReconnect) {
-    signals.push({
-      tone: "bad",
-      label: "Reconnect needed",
-      detail: "a platform has dropped its authorisation",
-    });
-  }
-
-  if (delivery) {
-    const parts: string[] = [];
-    if (delivery.short.target != null) {
-      parts.push(`${delivery.short.delivered}/${delivery.short.target} short`);
-    }
-    if (delivery.long.target != null) {
-      parts.push(`${delivery.long.delivered}/${delivery.long.target} long`);
-    }
-    signals.push(
-      delivery.behindBy > 0
-        ? {
-            tone: "warn",
-            label: `${delivery.behindBy} video${delivery.behindBy === 1 ? "" : "s"} behind`,
-            detail: parts.join(" · "),
-          }
-        : { tone: "ok", label: "Delivered", detail: parts.join(" · ") },
-    );
-  }
-
-  // Never published reads differently to gone quiet, so it is said differently.
-  if (client.lastPostAt === null) {
-    signals.push({ tone: "warn", label: "Nothing published yet" });
-  } else if ((client.daysQuiet ?? 0) >= 7) {
-    signals.push({
-      tone: client.daysQuiet! >= 14 ? "bad" : "warn",
-      label: `Quiet ${client.daysQuiet} days`,
-      detail: "nothing has gone out",
-    });
-  } else {
-    signals.push({
-      tone: "ok",
-      label: client.daysQuiet === 0 ? "Posted today" : `Posted ${client.daysQuiet}d ago`,
-    });
-  }
-
-  // The plan runs on the worker, so this row is where an operator who closed
-  // the modal finds out it landed.
-  if (isRunning(client.insight?.status)) {
-    signals.push({ tone: "warn", label: "Writing a plan", detail: "running in the background" });
-  } else if (client.insight?.status === "failed") {
-    signals.push({ tone: "bad", label: "Plan did not finish", detail: "open it to see why" });
-  } else if (isReady(client.insight?.status)) {
-    signals.push({ tone: "ok", label: "Plan ready", detail: "what to do next is written up" });
-  }
-
-  if (report.stale) {
-    signals.push({
-      tone: "warn",
-      label: "Report page is out of date",
-      detail: `still showing ${report.publishedMonth ?? "an earlier month"}`,
-    });
-  } else if (report.built && !report.opened) {
-    signals.push({ tone: "warn", label: `${report.label} report ready`, detail: "not opened yet" });
-  } else if (report.url) {
-    signals.push({ tone: "ok", label: "Report published", detail: report.label });
-  }
-
-  const worst = signals.some((s) => s.tone === "bad")
-    ? "bad"
-    : signals.some((s) => s.tone === "warn")
-      ? "warn"
-      : "ok";
-
+function Pipe({ steps }: { steps: ReturnType<typeof pipeline> }) {
   return (
-    <div className={`ovrow glass ${worst}`}>
-      <div className="ovhead">
-        <div className="ovav">
-          {client.avatarUrl ? (
-            <img src={client.avatarUrl} alt="" />
-          ) : (
-            <span>{client.avatarSeed ?? client.name.slice(0, 2).toUpperCase()}</span>
-          )}
+    <div className="gx-pipe" role="list" aria-label="Pipeline">
+      {steps.map((s) => (
+        <div key={s.label} role="listitem" className={`gx-step ${s.tone}`} title={`${s.label}: ${s.detail}`} data-step={s.label.toLowerCase()} data-tone={s.tone}>
+          <i />
+          <span>{s.label}</span>
         </div>
-        <div className="ovname">
-          <b>{client.name}</b>
-          <div className="ovplats">
-            {client.platforms.map((p) => (
-              <Pf key={p.platform} p={PF_ID[p.platform]} size="sm" />
-            ))}
-          </div>
-        </div>
-        <div className="ovactions">
-          {report.url && (
-            <button
-              className="btn ghost"
-              title="Open the client's live report page"
-              onClick={() => void openExternal(report.url!)}
-            >
-              View report
-            </button>
-          )}
-          <button className="btn" onClick={() => onOpenInsights(client.id)}>
-            What to do next
-          </button>
-        </div>
-      </div>
+      ))}
+    </div>
+  );
+}
 
-      <div className="ovsignals">
-        {signals.map((s, i) => (
-          <Signal key={i} {...s} />
-        ))}
+function subline(c: OverviewClient): string {
+  const posted = c.lastPostAt === null ? "Nothing posted yet" : c.daysQuiet === 0 ? "Posted today" : `Posted ${c.daysQuiet}d ago`;
+  const plan = isReady(c.insight?.status) ? "plan ready" : isRunning(c.insight?.status) ? "plan being written" : c.insight?.status === "failed" ? "plan did not finish" : "no plan yet";
+  return `${posted} · ${plan}`;
+}
+
+function Tiles({ c }: { c: OverviewClient }) {
+  const plan = c.insight?.status;
+  return (
+    <div className="gx-tiles">
+      <div className="gx-stat glass-z2">
+        <div className="tf-lbl">Plan</div>
+        <div className="gx-statv">{isRunning(plan) ? "running" : isReady(plan) ? "ready" : plan === "failed" ? "failed" : "none"}</div>
+        <div className="gx-sub">{isRunning(plan) ? "in the background" : "what to do next"}</div>
+      </div>
+      <div className="gx-stat glass-z2">
+        <div className="tf-lbl">Last post</div>
+        <div className="gx-statv">{c.lastPostAt === null ? "never" : c.daysQuiet === 0 ? "today" : `${c.daysQuiet}d ago`}</div>
+        <div className="gx-sub">{c.platforms.length} platform{c.platforms.length === 1 ? "" : "s"}</div>
+      </div>
+      <div className="gx-stat glass-z2">
+        <div className="tf-lbl">{c.report.label} report</div>
+        <div className={`gx-statv ${c.report.stale ? "bad" : ""}`}>
+          {c.report.stale ? "stale" : c.report.url ? (c.report.built && !c.report.opened ? "ready" : "live") : "unpublished"}
+        </div>
+        <div className="gx-sub">{c.report.stale ? `still ${c.report.publishedMonth ?? "earlier"}` : c.report.built && !c.report.opened ? "not opened yet" : "\u00a0"}</div>
       </div>
     </div>
+  );
+}
+
+function BrandCard({ c, hero, onOpenInsights }: { c: OverviewClient; hero?: boolean; onOpenInsights(id: string): void }) {
+  const steps = pipeline(c);
+  const h = headline(c, steps);
+  return (
+    <article className={`gx-brand glass-z1 ${hero ? "hero" : ""} ${h.tone}`} data-testid={`account-overview.client-${c.id}`} data-status={h.word.toLowerCase().replace(/ /g, "-")}>
+      <header className="gx-head">
+        <Avatar c={c} size={hero ? 52 : 40} />
+        <div className="gx-title">
+          {hero && <span className="tf-lbl">Needs you now</span>}
+          <b>{c.name}</b>
+          <span>{subline(c)}</span>
+        </div>
+        {hero ? (
+          c.needsReconnect && <span className="gx-badge bad">Reconnect needed</span>
+        ) : (
+          <div className={`gx-word ${h.tone}`}>{h.word}</div>
+        )}
+      </header>
+      <div className="gx-plats">
+        {c.platforms.map((p) => (
+          <Pf key={p.platform} p={PF_ID[p.platform]} size="sm" />
+        ))}
+      </div>
+      {hero && (
+        <>
+          <div className="tf-lbl" style={{ marginTop: 14 }}>Status</div>
+          <div className={`gx-hero-word ${h.tone}`}>{h.word}</div>
+          <div className="gx-fill" />
+        </>
+      )}
+      <Pipe steps={steps} />
+      <Tiles c={c} />
+      <footer className="gx-actions">
+        {c.report.url && (
+          <button type="button" className="tf-btn" onClick={() => void openExternal(c.report.url!)}>
+            Report page
+          </button>
+        )}
+        <button type="button" className="tf-btn pri grow" onClick={() => onOpenInsights(c.id)} data-testid={`account-overview.plan-${c.id}`}>
+          {hero && c.needsReconnect ? "Open plan · reconnect in Settings" : "Open plan"}
+        </button>
+      </footer>
+    </article>
+  );
+}
+
+function ThisWeek({ clients }: { clients: OverviewClient[] }) {
+  const need = clients.filter((c) => c.attention > 0).length;
+  const postedWeek = clients.filter((c) => c.lastPostAt !== null && (c.daysQuiet ?? 99) < 7).length;
+  const published = clients.filter((c) => c.report.url && !c.report.stale).length;
+  return (
+    <aside className="gx-side glass-z1" data-testid="account-overview.this-week">
+      <div className="tf-lbl">This week</div>
+      <Stat label="Need you" value={need} tone={need > 0 ? "bad" : "ok"} />
+      <Stat label="Posted" value={postedWeek} sub={`of ${clients.length} brand${clients.length === 1 ? "" : "s"} in 7 days`} tone="ok" />
+      <Stat label="Reports" value={`${published} / ${clients.length}`} sub="published and current" />
+    </aside>
   );
 }
 
@@ -266,10 +280,20 @@ export default function AccountOverviewScreen({
             }
           />
         ) : (
-          <div className="ovlist">
-            {clients.map((c) => (
-              <ClientRow key={c.id} client={c} onOpenInsights={onOpenInsights} />
-            ))}
+          <div className="gx-ao">
+            <BrandCard c={clients[0]!} hero onOpenInsights={onOpenInsights} />
+            <div className="gx-ao-mid">
+              {clients.slice(1).map((c) => (
+                <BrandCard key={c.id} c={c} onOpenInsights={onOpenInsights} />
+              ))}
+              <div className="gx-enroll glass-z1">
+                <b>Enroll a client</b>
+                <button type="button" className="tf-btn" onClick={onOpenConnect} data-testid="account-overview.enroll-more">
+                  + Enroll
+                </button>
+              </div>
+            </div>
+            <ThisWeek clients={clients} />
           </div>
         )}
         <DataProvenance platforms={overviewPlatforms} />

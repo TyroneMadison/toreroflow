@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Select from "../components/Select";
+import Story from "../components/glass/Story";
 import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
 import {
@@ -344,168 +345,159 @@ export default function ReportsScreen({
         </div>
       </div>
       <div className="stage">
-        <AlertBanner
-          alerts={alerts}
-          onDismiss={(id) => {
-            void api
-              .post(`/alerts/${id}/dismiss`, {})
-              .then(onAlertsChanged)
-              .catch((err) => toast.fail("Could not dismiss that", err));
-          }}
-        />
-
-        <div className="card glass">
-          <div className="rowhead">
-            <div>
-              <h3>Client reports</h3>
-              <div className="sub">
-                Update pulls fresh views, engagement and followers. Publishing is what the
-                client actually sees.
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              {clients.length > 1 && (
-                <>
-                  <button
-                    className="btn ghost"
-                    disabled={busy !== null}
-                    title={`Pull the latest numbers for every brand's ${monthLabel(month)} report, one after another`}
-                    onClick={() => void runAll("update")}
-                    data-testid="reports.update-all"
-                  >
-                    <svg>
-                      <use href="#i-refresh" />
-                    </svg>{" "}
-                    {allRun?.kind === "update"
-                      ? `Updating ${allRun.step} of ${clients.length}…`
-                      : "Update all"}
-                  </button>
-                  <button
-                    className="btn pub"
-                    disabled={busy !== null || !canPublish}
-                    title={
-                      canPublish
-                        ? `Rebuild every brand's live page with its ${monthLabel(month)} report, at the same links`
-                        : (publishing?.reason ?? "Publishing is not configured")
-                    }
-                    onClick={() => void runAll("publish")}
-                    data-testid="reports.publish-all"
-                  >
-                    <svg>
-                      <use href="#i-globe" />
-                    </svg>{" "}
-                    {allRun?.kind === "publish"
-                      ? `Publishing ${allRun.step} of ${clients.length}…`
-                      : "Republish all"}
-                  </button>
-                </>
-              )}
-              <Select
-                className="repmonth"
-                value={month}
-                onChange={setMonth}
-                aria-label="Month"
-                options={months.map((m) => ({ value: m.value, label: m.label }))}
-              />
-            </div>
-          </div>
-
-          {state === "empty" ? (
-            <Empty
-              screen="reports"
-              title="No brands enrolled"
-              hint="Enroll a client and their reports will build from real numbers."
-            />
-          ) : state === "error" ? (
-            <ErrorState
-              screen="reports"
-              message="Could not load the report links."
-              onRetry={() => {
-                setLoadFailed(false);
-                void loadPublishing();
-              }}
-            />
-          ) : state === "loading" ? (
-            <Loading screen="reports" label="Loading the report links" />
-          ) : (
-            <div className="repbuild">
-              {clients.map((c) => {
-                const avatar = clientAvatarUrl(c);
-                const state = publishState.get(c.id);
-                const working = busy === c.id;
-                return (
-                  <div className="repclient" key={c.id}>
-                    <div className="avatar" style={{ width: 32, height: 32, borderRadius: 10, overflow: "hidden", background: avatar ? "var(--glass-2)" : "linear-gradient(135deg,#FF6F61,#FF9A73)" }}>
-                      {avatar ? (
-                        <img src={avatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      ) : (
-                        (c.avatarSeed ?? c.name.slice(0, 2).toUpperCase())
-                      )}
-                    </div>
-                    <b>{c.name}</b>
-                    <button
-                      className="btn ghost"
-                      disabled={busy !== null}
-                      title="Pull the latest numbers and rebuild this report"
-                      onClick={() => void update(c.id, c.name)}
-                    >
-                      <svg>
-                        <use href="#i-refresh" />
-                      </svg>{" "}
-                      {working ? "Working…" : "Update report"}
-                    </button>
-                    <button
-                      className="btn pub"
-                      disabled={busy !== null || !canPublish}
-                      title={
-                        canPublish
-                          ? state?.url
-                            ? "Rebuild the page at the same link"
-                            : "Create the client's permanent report page"
-                          : (publishing?.reason ?? "Publishing is not configured")
-                      }
-                      onClick={() => void publish(c.id, c.name)}
-                    >
-                      <svg>
-                        <use href="#i-globe" />
-                      </svg>{" "}
-                      {state?.url ? "Republish" : "Publish"}
-                    </button>
-                    {state && (
-                      <ReportLink
-                        state={state}
-                        siteUnknown={!canPublish}
-                        onCopyFailed={() =>
-                          toast.error(
-                            "Could not reach the clipboard. The link is selected, press Ctrl+C to copy it.",
-                          )
-                        }
-                      />
-                    )}
-                    {updated[c.id] === month && (
-                      <div className="repwhen">
-                        Updated for {monthLabel(month)}. Publish to put it in front of the
-                        client.
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+        <div className="gx-toolbar">
+          <Select
+            className="repmonth"
+            value={month}
+            onChange={setMonth}
+            aria-label="Month"
+            options={months.map((m) => ({ value: m.value, label: m.label }))}
+          />
+          {clients.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="tf-btn"
+                disabled={busy !== null}
+                title={`Pull the latest numbers for every brand's ${monthLabel(month)} report, one after another`}
+                onClick={() => void runAll("update")}
+                data-testid="reports.update-all"
+              >
+                {allRun?.kind === "update" ? `Updating ${allRun.step} of ${clients.length}…` : "Update all"}
+              </button>
+              <button
+                type="button"
+                className="tf-btn pri"
+                disabled={busy !== null || !canPublish}
+                title={
+                  canPublish
+                    ? `Rebuild every brand's live page with its ${monthLabel(month)} report, at the same links`
+                    : (publishing?.reason ?? "Publishing is not configured")
+                }
+                onClick={() => void runAll("publish")}
+                data-testid="reports.publish-all"
+              >
+                {allRun?.kind === "publish" ? `Publishing ${allRun.step} of ${clients.length}…` : "Republish all"}
+              </button>
+            </>
           )}
-
-          {publishing && !publishing.configured && (
-            <div className="btnote" style={{ marginTop: 12 }}>
-              Publishing is off. {publishing.reason}
-            </div>
-          )}
-
-          <div className="btnote" style={{ marginTop: 12 }}>
-            Watch time is estimated from views, and follower change is left out until there
-            is a full month of history to compare against. A published page carries the last
-            3 months and stays at the same link for good.
-          </div>
         </div>
+
+        {state === "empty" ? (
+          <Empty
+            screen="reports"
+            title="No brands enrolled"
+            hint="Enroll a client and their reports will build from real numbers."
+          />
+        ) : state === "error" ? (
+          <ErrorState
+            screen="reports"
+            message="Could not load the report links."
+            onRetry={() => {
+              setLoadFailed(false);
+              void loadPublishing();
+            }}
+          />
+        ) : state === "loading" ? (
+          <Loading screen="reports" label="Loading the report links" />
+        ) : (
+          <div className="gx-cols gx-cols-rep">
+            {clients.map((c) => {
+              const avatar = clientAvatarUrl(c);
+              const ps = publishState.get(c.id);
+              const working = busy === c.id;
+              const live = ps?.url != null;
+              const current = live && ps?.publishedMonth === month;
+              const shows = ps?.publishedMonth
+                ? new Date(Number(ps.publishedMonth.slice(0, 4)), Number(ps.publishedMonth.slice(5)) - 1, 1).toLocaleDateString("en-US", { month: "short" })
+                : "None";
+              return (
+                <Story
+                  key={c.id}
+                  testId={`reports.client-${c.id}`}
+                  icon={
+                    <div className="gx-av">
+                      {avatar ? <img src={avatar} alt="" /> : <span>{c.avatarSeed ?? c.name.slice(0, 1).toUpperCase()}</span>}
+                    </div>
+                  }
+                  title={c.name}
+                  sub={updated[c.id] === month ? `Updated for ${monthLabel(month)}, publish to send` : monthLabel(month)}
+                  badge={!live ? "Not published" : current ? "Published" : "Out of date"}
+                  badgeTone={!live ? "warn" : current ? "ok" : "bad"}
+                  bigLabel="Live page shows"
+                  big={shows}
+                  bigTone={current ? "ok" : undefined}
+                  foot={
+                    ps?.publishedAt
+                      ? `published ${new Date(ps.publishedAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                      : undefined
+                  }
+                  actions={
+                    <div className="gx-repfoot">
+                      {ps && (
+                        <ReportLink
+                          state={ps}
+                          siteUnknown={!canPublish}
+                          onCopyFailed={() =>
+                            toast.error("Could not reach the clipboard. The link is selected, press Ctrl+C to copy it.")
+                          }
+                        />
+                      )}
+                      <div className="gx-repbtns">
+                        <button
+                          type="button"
+                          className="tf-btn"
+                          disabled={busy !== null}
+                          title="Pull the latest numbers and rebuild this report"
+                          onClick={() => void update(c.id, c.name)}
+                          data-testid={`reports.update-${c.id}`}
+                        >
+                          {working ? "Working…" : "Update report"}
+                        </button>
+                        <button
+                          type="button"
+                          className="tf-btn pri grow"
+                          disabled={busy !== null || !canPublish}
+                          title={
+                            canPublish
+                              ? ps?.url
+                                ? "Rebuild the page at the same link"
+                                : "Create the client's permanent report page"
+                              : (publishing?.reason ?? "Publishing is not configured")
+                          }
+                          onClick={() => void publish(c.id, c.name)}
+                          data-testid={`reports.publish-${c.id}`}
+                        >
+                          {ps?.url ? "Republish" : "Publish"}
+                        </button>
+                      </div>
+                    </div>
+                  }
+                />
+              );
+            })}
+            <aside className="gx-side glass-z1" data-testid="reports.alerts">
+              <div className="tf-lbl">Alerts</div>
+              <AlertBanner
+                alerts={alerts}
+                onDismiss={(id) => {
+                  void api
+                    .post(`/alerts/${id}/dismiss`, {})
+                    .then(onAlertsChanged)
+                    .catch((err) => toast.fail("Could not dismiss that", err));
+                }}
+              />
+              {!alerts.some((x) => !x.dismissed) && <div className="gx-note">Nothing failing.</div>}
+              <div className="gx-fill" />
+              {publishing && !publishing.configured && (
+                <div className="gx-note warn">Publishing is off. {publishing.reason}</div>
+              )}
+              <div className="gx-note">
+                Published pages refresh on their own when a month ends, carry the last 3 months, and keep the same link for good.
+              </div>
+            </aside>
+          </div>
+        )}
       </div>
     </section>
   );

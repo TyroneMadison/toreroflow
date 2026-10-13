@@ -7,6 +7,9 @@
  * follows it too: heavy ripple at the clear end, none at the frosted end.
  * Persisted in localStorage; applied before first paint by main.tsx.
  */
+import { setRefraction } from "./refraction";
+import { applyWindowGlass } from "./windowGlass";
+
 export const GLASS_STORAGE_KEY = "toreroflow-glass-level";
 export const GLASS_DEFAULT = 0.95;
 
@@ -52,6 +55,8 @@ export function applyGlassLevel(level: number): void {
   const scale = refractionScale(v);
   html.style.setProperty("--g-refract", scale > 2 && supportsRefraction() ? "url(#tf-refract)" : "");
   document.getElementById("tf-refract-map")?.setAttribute("scale", String(scale));
+  setRefraction(scale);
+  applyWindowGlass(v, html.getAttribute("data-glass") === "low");
   listeners.forEach((fn) => fn(v));
 }
 

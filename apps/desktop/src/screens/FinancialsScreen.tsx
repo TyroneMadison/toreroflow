@@ -10,6 +10,7 @@ import NetCard from "../components/finance/NetCard";
 import DonutCard from "../components/finance/DonutCard";
 import GlanceCard from "../components/finance/GlanceCard";
 import MonthBars from "../components/finance/MonthBars";
+import FinHero from "../components/finance/FinHero";
 import { api, fileUrl } from "../lib/api";
 import { syncComplaint, waitForBankSync } from "../lib/bankSync";
 import { openExternal } from "../lib/external";
@@ -191,6 +192,9 @@ export default function FinancialsScreen() {
 
         {phase === "ready" && data && (
           <div className="fincards">
+            <FinHero data={data} onPick={setMonth} />
+
+            <h3 className="gx-section">Details</h3>
             <div className="band">
               <NetCard series={data.series} />
               <DonutCard rows={data.revenue} totalCents={data.totals.inCents} />
@@ -206,9 +210,12 @@ export default function FinancialsScreen() {
               </div>
             )}
 
+            <div id="fin-bank" />
             <BankSection reloadKey={bankKey} onMoneyMoved={() => void refresh()} />
+            <div id="fin-tax" />
             <TaxCard year={year} />
 
+            <div id="fin-revenue" />
             <RevenueSection
               rows={data.revenue}
               totalCents={data.totals.inCents}
@@ -216,7 +223,8 @@ export default function FinancialsScreen() {
               onChanged={() => void refresh()}
             />
 
-            <div className="cols2">
+            <div id="fin-oneoff" />
+            <div className="cols2" id="fin-recurring">
               <ExpenseSection
                 title="Money coming out"
                 sub="Recurring only. Rolls forward each month."
@@ -249,7 +257,7 @@ export default function FinancialsScreen() {
               onChanged={() => void refresh()}
             />
 
-            <div className="card glass exportcard">
+            <div className="card glass exportcard" id="fin-export">
               <div style={{ flex: 1 }}>
                 <b style={{ fontSize: 14.5 }}>Export for taxes</b>
                 <div className="sub">
