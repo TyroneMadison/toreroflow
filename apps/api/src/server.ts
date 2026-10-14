@@ -28,6 +28,7 @@ import { resultsRoutes } from "./routes/results";
 import { financialsRoutes } from "./routes/financials";
 import { deployRoutes } from "./routes/deploy";
 import { oauthRoutes } from "./routes/oauth";
+import { trelloRoutes } from "./routes/trello";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -147,6 +148,7 @@ export async function buildServer(
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(clientRoutes);
+  await app.register(trelloRoutes);
   await app.register(agencyRoutes);
   await app.register(bankRoutes);
   await app.register(carouselRoutes);

@@ -262,6 +262,11 @@ export const schedulePostSchema = z.object({
   instagram: instagramOptionsSchema.optional(),
   youtube: youtubeOptionsSchema.optional(),
   tiktok: tiktokOptionsSchema.optional(),
+  /**
+   * The scheduler (person or bot) confirms it read the client's SOP. Required
+   * by the API whenever the client has one; ignored when they have none.
+   */
+  sopAcknowledged: z.boolean().optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 

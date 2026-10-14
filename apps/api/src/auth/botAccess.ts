@@ -26,6 +26,11 @@ const ALLOW: Rule[] = [
   // needs. Read-only.
   { method: "GET", path: new RegExp(`^/auth/me$`) },
   { method: "GET", path: new RegExp(`^/clients$`) },
+  // Which pipeline cards are ready, which client each belongs to, and that
+  // client's SOP. Read-only; editing SOPs and label routing stays human.
+  { method: "GET", path: new RegExp(`^/trello/ready$`) },
+  { method: "GET", path: new RegExp(`^/clients/label-map$`) },
+  { method: "GET", path: new RegExp(`^/clients/${ID}/sop$`) },
 
   // The workflow itself: upload, poll processing, write copy, schedule.
   { method: "POST", path: new RegExp(`^/clients/${ID}/media$`) },

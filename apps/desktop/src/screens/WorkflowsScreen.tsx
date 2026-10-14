@@ -156,7 +156,22 @@ export default function WorkflowsScreen() {
                   {PLATFORMS.filter((p) => p !== source).map((p) => {
                     const on = destinations.includes(p);
                     return (
-                      <div key={p} className={`pt${on ? " on" : ""}`} onClick={() => toggleDestination(p)}>
+                      <div
+                        key={p}
+                        className={`pt${on ? " on" : ""}`}
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={`Auto-publish to ${PLATFORM_LABELS[p]}`}
+                        tabIndex={0}
+                        data-testid={`workflow-dest-${p}`}
+                        onClick={() => toggleDestination(p)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            toggleDestination(p);
+                          }
+                        }}
+                      >
                         <Pf p={PF_ID[p]} />
                         <div className="info">
                           <b>{SURFACE_LABEL[p]}</b>
@@ -173,6 +188,7 @@ export default function WorkflowsScreen() {
                 <div className="schedrow">
                   <button
                     className="btn"
+                    data-testid="workflow-create"
                     style={{ marginLeft: "auto" }}
                     disabled={busy || !name.trim() || destinations.length === 0}
                     onClick={() => void create()}
@@ -203,7 +219,7 @@ export default function WorkflowsScreen() {
                   </div>
                 ) : (
                   workflows.map((w) => (
-                    <div className="best" key={w.id} style={{ alignItems: "center" }}>
+                    <div className="best" key={w.id} style={{ alignItems: "center" }} data-testid={`workflow-${w.id}`}>
                       <div className="l" style={{ flexWrap: "wrap" }}>
                         <Pf p={PF_ID[w.sourcePlatform]} size="sm" />
                         <span style={{ color: "var(--txt-3)" }}>→</span>
@@ -217,15 +233,29 @@ export default function WorkflowsScreen() {
                           className={`switch${w.enabled ? " on" : ""}`}
                           style={{ cursor: "pointer" }}
                           title={w.enabled ? "Enabled - click to pause" : "Paused - click to enable"}
+                          role="switch"
+                          aria-checked={w.enabled}
+                          aria-label={`${w.name} enabled`}
+                          tabIndex={0}
+                          data-testid={`workflow-toggle-${w.id}`}
                           onClick={() => void toggleEnabled(w)}
+                          onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                              e.preventDefault();
+                              void toggleEnabled(w);
+                            }
+                          }}
                         />
-                        <span
+                        <button
+                          type="button"
                           className="link"
-                          style={{ color: "var(--red)" }}
+                          style={{ color: "var(--red)", background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}
+                          aria-label={`Delete workflow ${w.name}`}
+                          data-testid={`workflow-delete-${w.id}`}
                           onClick={() => void remove(w)}
                         >
                           Delete
-                        </span>
+                        </button>
                       </div>
                     </div>
                   ))

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Modal from "./Modal";
+import SopPanel, { sopRequired } from "../components/SopPanel";
 import GlassDateTime from "../components/GlassDateTime";
 import Pf from "../components/Pf";
 import Select from "../components/Select";
@@ -21,6 +22,13 @@ interface ScheduleModalProps {
   asset: MediaAssetInfo;
   onClose: () => void;
   onScheduled: () => void;
+  /** Rendered inside a routed page rather than over the screen. */
+  inline?: boolean;
+  /**
+   * Set by a host page that shows the SOP itself. Undefined means this modal
+   * shows the SOP and its own acknowledgement checkbox.
+   */
+  sopAcknowledged?: boolean;
 }
 
 /** Local-time value for <input type="datetime-local">, minutes precision. */
@@ -30,8 +38,18 @@ function localInputValue(d: Date): string {
 }
 
 
-export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleModalProps) {
+export default function ScheduleModal({
+  asset,
+  onClose,
+  onScheduled,
+  inline = false,
+  sopAcknowledged,
+}: ScheduleModalProps) {
   const { selectedClient } = useAppState();
+  const hostOwnsSop = sopAcknowledged !== undefined;
+  const [ownAck, setOwnAck] = useState(false);
+  const sopAck = hostOwnsSop ? sopAcknowledged : ownAck;
+  const sopBlocked = sopRequired(selectedClient?.sop) && !sopAck;
   const toast = useToast();
   const isCarousel = asset.kind === "carousel";
   // A carousel can only go where images go: Instagram takes up to 10 as a
@@ -241,6 +259,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         platforms,
         accountIds,
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
+        ...(sopAck ? { sopAcknowledged: true } : {}),
         instagram: instagramBody(),
         youtube: youtubeBody(),
         ...(tkCarousel && tkAutoMusic ? { tiktok: { autoAddMusic: true } } : {}),
@@ -262,7 +281,7 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
   };
 
   return (
-    <Modal maxWidth={520} onClose={onClose}>
+    <Modal maxWidth={520} onClose={onClose} inline={inline} label={`Schedule ${videoLabel(asset)}`} testId="schedule-form">
       {/* .modal-head is sticky with background:inherit, which on a .glass modal
           is a 5% white fill; scrolled body content showed through the title.
           Its blur(30px) cannot help either: the parent .glass already carries a
@@ -281,13 +300,16 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
           <h3>Schedule post</h3>
           <p>{videoLabel(asset)}</p>
         </div>
-        <div className="modal-x" onClick={onClose}>
+        <button type="button" className="modal-x" aria-label="Close" data-testid="schedule-close" onClick={onClose}>
           <svg>
             <use href="#i-x" />
           </svg>
-        </div>
+        </button>
       </div>
       <div className="modal-body">
+        {!hostOwnsSop && selectedClient && (
+          <SopPanel clientId={selectedClient.id} acknowledged={ownAck} onAcknowledge={setOwnAck} compact />
+        )}
         <label className="flabel">Post at</label>
         <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
         {whenError && <div className="autherr">{whenError}</div>}
@@ -698,13 +720,19 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         )}
       </div>
       <div className="modal-foot">
+        {sopBlocked && (
+          <span className="sop-hint" role="status" data-testid="sop-required">
+            Tick “I read the SOP” to schedule
+          </span>
+        )}
         <button className="btn ghost" onClick={onClose}>
           Cancel
         </button>
         {/* Publishing is irreversible, so Post now asks once before firing. */}
         <button
           className={`btn ${confirmNow ? "danger" : "ghost"}`}
-          disabled={busy !== null || accountIds.length === 0}
+          disabled={busy !== null || accountIds.length === 0 || sopBlocked}
+          data-testid="schedule-post-now"
           onClick={() => {
             if (confirmNow) void submit("now");
             else {
@@ -717,8 +745,9 @@ export default function ScheduleModal({ asset, onClose, onScheduled }: ScheduleM
         </button>
         <button
           className="btn"
-          disabled={busy !== null || accountIds.length === 0 || whenError !== null}
-          title={whenError ?? undefined}
+          disabled={busy !== null || accountIds.length === 0 || whenError !== null || sopBlocked}
+          title={sopBlocked ? "Read the SOP and tick the box first" : (whenError ?? undefined)}
+          data-testid="schedule-submit"
           onClick={() => void submit("schedule")}
         >
           <svg>

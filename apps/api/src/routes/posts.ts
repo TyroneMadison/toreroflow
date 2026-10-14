@@ -59,6 +59,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     if (asset.status !== "ready") {
       return reply.status(409).send({ error: "asset is still processing" });
     }
+    // The client's SOP is the brief for every post. When one exists, nothing
+    // is scheduled until the caller says it read it, bots included.
+    if (asset.client.sop?.trim() && body.sopAcknowledged !== true) {
+      return reply.status(409).send({
+        error: "sop not acknowledged",
+        detail: `Read ${asset.client.name}'s SOP and send sopAcknowledged: true.`,
+      });
+    }
 
     const scheduledAt = new Date(body.scheduledAt);
     /*

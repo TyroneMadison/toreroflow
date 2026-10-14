@@ -16,6 +16,9 @@ for (const [method, path] of [
   ["POST", "/media/cms84z50v/schedule"],
   ["GET", "/clients/cms0qdz5t/posts"],
   ["GET", "/clients/cms0qdz5t/posts?from=2026-09-01"],
+  ["GET", "/trello/ready"],
+  ["GET", "/clients/label-map"],
+  ["GET", "/clients/cms0qdz5t/sop"],
 ] as const) {
   assert.equal(botAllowed(method, path), true, `${method} ${path} is the workflow`);
 }
@@ -47,5 +50,7 @@ for (const [method, path] of [
 
 // The query string never changes the verdict.
 assert.equal(botAllowed("GET", "/financials/summary?x=1"), false, "query cannot smuggle");
+assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/sop"), false, "editing an SOP stays human");
+assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/trello-labels"), false, "label routing stays human");
 
 console.log("botAccess.check: all checks passed");

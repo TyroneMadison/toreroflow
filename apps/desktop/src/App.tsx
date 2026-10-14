@@ -14,6 +14,8 @@ import FinancialsScreen from "./screens/FinancialsScreen";
 import CarouselsScreen from "./screens/CarouselsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import ReadyQueueScreen from "./screens/ReadyQueueScreen";
+import ScheduleScreen from "./screens/ScheduleScreen";
 import AuthScreen from "./screens/AuthScreen";
 import ConnectClientModal from "./modals/ConnectClientModal";
 import ClientInsightsModal from "./modals/ClientInsightsModal";
@@ -218,6 +220,8 @@ function Shell() {
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />
           )}
+          {activeScreen === "ready" && <ReadyQueueScreen key="ready" />}
+          {activeScreen === "schedule" && <ScheduleScreen key="schedule" />}
           {activeScreen === "settings" && (
             <SettingsScreen key="settings" onOpenConnect={openConnect} />
           )}

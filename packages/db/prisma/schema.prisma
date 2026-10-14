@@ -232,6 +232,16 @@ model Client {
   /// serve, what they sound like. One editable blob rather than columns,
   /// because the useful facts about a niche do not fit a schema.
   nicheProfile         Json?
+  /// URL-safe handle for deep links such as /clients/caleb/ready. Null falls
+  /// back to the slugified name, so existing clients need no backfill.
+  slug                 String?
+  /// The client's posting SOP, written by a human. Null means none added yet;
+  /// the app shows an empty state and never fills one in.
+  sop                  String?
+  sopUpdatedAt         DateTime?
+  /// Trello label colors (e.g. "red", "black_dark") that route a card on the
+  /// editor pipeline board to this client. Empty means the built-in defaults.
+  trelloLabels         String[]       @default([])
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
   createdAt            DateTime       @default(now())

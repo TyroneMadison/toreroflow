@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import DeployCard from "../components/DeployCard";
 import UpdateCard from "../components/UpdateCard";
 import BusinessCard from "../components/BusinessCard";
+import TrelloLabelCard from "../components/TrelloLabelCard";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
@@ -1003,6 +1004,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         <div id="settings-business" data-section="business">
           <BusinessCard />
         </div>
+
+        <TrelloLabelCard />
 
         <div id="settings-updates" data-section="updates">
           <UpdateCard />
