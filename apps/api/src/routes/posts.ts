@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { fileLink } from "../files/link";
 import {
   captionFor,
+  composeCaption,
   carouselVerdict,
   decodeEscapes,
   INSTAGRAM_FEED_MAX_SECONDS,
@@ -168,6 +169,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     // receives, which is what this field has always meant. It does not touch
     // YouTube's title: that is a separate field with its own input.
     const captionOverride = body.caption ? decodeEscapes(body.caption) : "";
+    // The client's caption block (and keyword line) goes under every caption
+    // and description, here, so the app and bots get it alike. YouTube's
+    // title is left alone.
+    const withBlock = (caption: string): string =>
+      caption
+        ? composeCaption(
+            { caption, title: draft.name, cardName: body.cardName, useBlock: body.captionBlock },
+            asset.client,
+          )
+        : caption;
     const hashtags = (body.hashtags ?? stored.hashtags ?? []).map(decodeEscapes);
     // Collaborators arrive as typed usernames; strip the @ some people type.
     const igOptions = body.instagram
@@ -182,7 +193,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const ytOptions = body.youtube;
     // The wizard's own editor wins over draft-derived copy where it spoke.
     const youtubeBody =
-      ytOptions?.description || captionOverride || captionFor("youtube", draft);
+      withBlock(ytOptions?.description || captionOverride || captionFor("youtube", draft));
 
     /*
      * A YouTube upload never leaves here with an empty description.
@@ -301,7 +312,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             caption:
               platform === "youtube"
                 ? youtubeBody
-                : captionOverride || captionFor(platform, draft),
+                : withBlock(captionOverride || captionFor(platform, draft)),
             hashtags,
             scheduledAt,
             status: "scheduled",

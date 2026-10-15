@@ -25,6 +25,8 @@ for (const [method, path] of [
 
 // The dangerous neighbors of each allowed route are refused.
 for (const [method, path] of [
+  // Caption block and keyword lines are human-only settings.
+  ["PUT", "/clients/cms0qdz5t/caption-block"],
   // Same paths, wrong verbs.
   ["DELETE", "/media/cms84z50v"],
   ["DELETE", "/posts/targets/cms84z50v"],

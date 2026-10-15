@@ -15,7 +15,7 @@ import {
 } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
-import { INSTAGRAM_REEL_MAX_SECONDS, scheduleTimeError } from "@toreroflow/core";
+import { INSTAGRAM_REEL_MAX_SECONDS, captionFor, composeCaption, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
 import { YT_CATEGORIES } from "../lib/youtube";
 
 interface ScheduleModalProps {
@@ -48,6 +48,14 @@ export default function ScheduleModal({
   const { selectedClient } = useAppState();
   const hostOwnsSop = sopAcknowledged !== undefined;
   const [ownAck, setOwnAck] = useState(false);
+  // Per-post switch for the client's caption block; the server composes.
+  const [useBlock, setUseBlock] = useState(true);
+  const hasBlock = Boolean(selectedClient?.captionBlock?.trim() || selectedClient?.captionKeywords?.length);
+  const draft = asset.draftCopy ?? {};
+  const originalCaption = captionFor("instagram", draft);
+  const finalCaption = selectedClient
+    ? composeCaption({ caption: originalCaption, title: draft.name, useBlock }, selectedClient)
+    : originalCaption;
   const sopAck = hostOwnsSop ? sopAcknowledged : ownAck;
   // A gentle reminder only; never disables scheduling.
   const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
@@ -261,6 +269,7 @@ export default function ScheduleModal({
         accountIds,
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
         ...(sopAck ? { sopAcknowledged: true } : {}),
+        ...(hasBlock && !useBlock ? { captionBlock: false } : {}),
         instagram: instagramBody(),
         youtube: youtubeBody(),
         ...(tkCarousel && tkAutoMusic ? { tiktok: { autoAddMusic: true } } : {}),
@@ -310,6 +319,24 @@ export default function ScheduleModal({
       <div className="modal-body">
         {!hostOwnsSop && selectedClient && (
           <SopPanel clientId={selectedClient.id} acknowledged={ownAck} onAcknowledge={setOwnAck} compact />
+        )}
+        {hasBlock && (
+          <div data-testid="caption-block-preview" style={{ marginBottom: 16 }}>
+            <label className="flabel">Final caption (all platforms)</label>
+            <button type="button" className="btn ghost" onClick={() => setUseBlock(!useBlock)} data-testid="caption-block-toggle" style={{ marginBottom: 8 }}>
+              <span className={`switch${useBlock ? " on" : ""}`} style={{ marginRight: 8 }} />
+              Add {selectedClient?.name}'s caption block to this post
+            </button>
+            <div
+              className="glass"
+              style={{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.45, padding: 10, borderRadius: 10, maxHeight: 220, overflow: "auto" }}
+            >
+              {finalCaption || <span style={{ color: "var(--txt-3)" }}>No caption yet</span>}
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 6 }}>
+              {finalCaption.length} chars · YouTube title stays: {youtubeTitleFor(draft) || "(none)"}
+            </p>
+          </div>
         )}
         <label className="flabel">Post at</label>
         <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />

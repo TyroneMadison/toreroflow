@@ -242,6 +242,14 @@ model Client {
   /// Trello label colors (e.g. "red", "black_dark") that route a card on the
   /// editor pipeline board to this client. Empty means the built-in defaults.
   trelloLabels         String[]       @default([])
+  /// Text added directly under every caption for this client, on every
+  /// platform. Line breaks are kept exactly. Null means none.
+  captionBlock         String?
+  /// Whether the caption block is added by default. A post can still skip it.
+  captionBlockOn       Boolean        @default(true)
+  /// Keyword lines: [{ keywords: string[], line: string }]. The first entry
+  /// whose keyword appears in the title, card or caption adds its line.
+  captionKeywords      Json           @default("[]")
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
   createdAt            DateTime       @default(now())
