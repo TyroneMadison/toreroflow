@@ -258,6 +258,10 @@ export const schedulePostSchema = z.object({
     .optional(),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
+  /** False skips the client's caption block (and keyword line) for this post. */
+  captionBlock: z.boolean().optional(),
+  /** The Trello card title, when known, so keyword lines can match it. */
+  cardName: z.string().max(500).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
   instagram: instagramOptionsSchema.optional(),
   youtube: youtubeOptionsSchema.optional(),

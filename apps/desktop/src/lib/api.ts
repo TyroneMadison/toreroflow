@@ -297,6 +297,10 @@ export interface ClientSummary {
   sopUpdatedAt: string | null;
   /** Trello label colors routed to this client; empty means the defaults. */
   trelloLabels: string[];
+  /** Text added under every caption; null means none. */
+  captionBlock: string | null;
+  captionBlockOn: boolean;
+  captionKeywords: { keywords: string[]; line: string }[];
   /** Null when no account has reported a follower count yet. */
   totalFollowers: number | null;
   accounts: AccountInfo[];

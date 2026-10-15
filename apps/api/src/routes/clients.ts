@@ -7,6 +7,8 @@ import {
   connectAccountSchema,
   contactSchema,
   createClientSchema,
+  captionBlockSettingsSchema,
+  readCaptionKeywords,
   isRunning,
   platformSchema,
   PLATFORMS,
@@ -131,6 +133,9 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         sop: c.sop?.trim() ? c.sop : null,
         sopUpdatedAt: c.sopUpdatedAt,
         trelloLabels: c.trelloLabels,
+        captionBlock: c.captionBlock,
+        captionBlockOn: c.captionBlockOn,
+        captionKeywords: readCaptionKeywords(c.captionKeywords),
         accounts,
         // Null rather than 0 when nothing is known, so the UI can say so
         // instead of claiming a real zero.
@@ -198,6 +203,36 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
       select: { contactName: true, contactEmail: true, contactPhone: true },
     });
     return updated;
+  });
+
+  /**
+   * The client's caption block and keyword lines. Human only: this route is
+   * not in auth/botAccess.ts, so bot tokens are refused before reaching here.
+   * The block is stored exactly as typed (CRLF normalised), blank means none.
+   */
+  app.put<{ Params: { id: string } }>("/clients/:id/caption-block", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.id, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!client) return reply.status(404).send(NOT_FOUND);
+    const body = captionBlockSettingsSchema.parse(request.body);
+    const block =
+      body.captionBlock === undefined
+        ? undefined
+        : body.captionBlock === null || body.captionBlock.trim() === ""
+          ? null
+          : body.captionBlock.replace(/\r\n?/g, "\n");
+    const updated = await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        ...(block !== undefined ? { captionBlock: block } : {}),
+        ...(body.captionBlockOn !== undefined ? { captionBlockOn: body.captionBlockOn } : {}),
+        ...(body.captionKeywords !== undefined ? { captionKeywords: body.captionKeywords } : {}),
+      },
+      select: { captionBlock: true, captionBlockOn: true, captionKeywords: true },
+    });
+    return { ...updated, captionKeywords: readCaptionKeywords(updated.captionKeywords) };
   });
 
   app.delete<{ Params: { id: string } }>("/clients/:id", async (request, reply) => {
