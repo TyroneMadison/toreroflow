@@ -11,7 +11,7 @@ import { setRefraction } from "./refraction";
 import { applyWindowGlass } from "./windowGlass";
 
 export const GLASS_STORAGE_KEY = "toreroflow-glass-level";
-export const GLASS_DEFAULT = 0.95;
+export const GLASS_DEFAULT = 0.5;
 
 export function clampGlass(v: unknown): number {
   const n = typeof v === "number" ? v : Number.parseFloat(String(v));

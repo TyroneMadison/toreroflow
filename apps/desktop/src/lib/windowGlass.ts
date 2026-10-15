@@ -19,7 +19,7 @@ export function windowEffectFor(level: number): "acrylic" | "clear" {
 /** Re-applies after the theme flips, so the acrylic tint follows it. */
 export function refreshWindowGlass(): void {
   last = null;
-  const v = Number(document.documentElement.getAttribute("data-glass-level") ?? "0.95");
+  const v = Number(document.documentElement.getAttribute("data-glass-level") ?? "0.5");
   applyWindowGlass(v, document.documentElement.getAttribute("data-glass") === "low");
 }
 
