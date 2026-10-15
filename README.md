@@ -1,29 +1,27 @@
 <div align="center">
 
-<img src="docs/logo.png" width="96" alt="Toreroflow - white thumbs-up on a coral tile" />
+<img src="docs/logo.png" width="96" alt="Toreroflow logo" />
 
 # Toreroflow
 
-**The desktop command center for a short-form video agency · by Torerone**
+**The command center for a short-form video agency, by Torerone**
 
-One place to cut a video, schedule it to every platform, watch what it did, bill for it,
+Cut a video, schedule it to every platform, watch what it did, bill for it,
 and hand the client something worth reading.
 
 <br/>
 
-![Tauri](https://img.shields.io/badge/Tauri-2-FF6F61?style=for-the-badge&logo=tauri&logoColor=white)
-![React](https://img.shields.io/badge/React-18-FF6F61?style=for-the-badge&logo=react&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-FF6F61?style=for-the-badge&logo=typescript&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-6-FF6F61?style=for-the-badge&logo=prisma&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-FF6F61?style=for-the-badge&logo=postgresql&logoColor=white)
-
 ![Release](https://img.shields.io/github/v/release/TyroneMadison/toreroflow?style=flat-square&color=FF6F61&label=release)
-![Platform](https://img.shields.io/badge/platform-Windows-1c1c1e?style=flat-square)
-![Checks](https://img.shields.io/badge/checks-49%20runnable-1c1c1e?style=flat-square)
+![Tauri](https://img.shields.io/badge/Tauri-2-FF6F61?style=flat-square&logo=tauri&logoColor=white)
+![React](https://img.shields.io/badge/React-18-FF6F61?style=flat-square&logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-FF6F61?style=flat-square&logo=typescript&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-6-FF6F61?style=flat-square&logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-FF6F61?style=flat-square&logo=postgresql&logoColor=white)
+![pnpm](https://img.shields.io/badge/pnpm-monorepo-1c1c1e?style=flat-square&logo=pnpm)
 
 <br/>
 
-<img src="docs/screens/upload.png" width="920" alt="Upload and Schedule: drop zone, a video card being named, and the queue and best-posting-times panels" />
+<img src="docs/screenshots/dashboard.png" width="920" alt="Dashboard: one card per brand with views, retention, likes and comments, and views over time across all brands" />
 
 <sub>Screenshots use a placeholder brand. No client of ours appears in this repository.</sub>
 
@@ -31,324 +29,178 @@ and hand the client something worth reading.
 
 ---
 
-<div align="center">
+## Contents
 
-### ![New](https://img.shields.io/badge/NEW%20IN%20v0.2.0-FF6F61?style=for-the-badge) &nbsp; The Edit tab
-
-**The editing app moved inside.** Drop raw footage in and leave with a captioned,
-cut, ready-to-post video, without opening a second program or paying a second
-subscription.
-
-</div>
-
-Three areas behind one tab, each of which used to be somebody else's product.
-
-<table>
-  <tr>
-    <td width="33%" valign="top"><b>Studio</b><br/><sub>Cut a video by editing its words</sub><br/><br/>Footage comes in and is transcribed to the word. Auto cut strips silences and filler. Delete a word in the transcript and the footage goes with it. Then a timeline for B-roll, a caption style, and a render.</td>
-    <td width="33%" valign="top"><b>Analyze</b><br/><sub>A video that scores itself</sub><br/><br/>Hook, retention, payoff and a peak score, with the key moments marked on the video and named. An action plan for the next cut, and spin-off ideas from what already worked.</td>
-    <td width="33%" valign="top"><b>Ideas</b><br/><sub>An ideas desk that knows the brand</sub><br/><br/>Hooks, scripts and shot lists for the brand's own niche, grounded in a knowledge base you drag files into. Brainstorm threads that are still there tomorrow.</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screens/edit-studio.png" alt="Studio: the project list for a brand, with a named cut ready to open" /></td>
-    <td align="center"><img src="docs/screens/edit-analyze.png" alt="Analyze: a scored video with its peak score on the card" /></td>
-    <td align="center"><img src="docs/screens/edit-ideas.png" alt="Ideas: the brand's niche and the knowledge base the studio writes from" /></td>
-  </tr>
-</table>
-
-<div align="center">
-  <img src="docs/screens/edit-ideas-list.png" width="820" alt="Saved ideas: hooks grouped by format, each with the niche it was written for and a button to write the script" />
-  <br/>
-  <sub>Every idea for a brand in one list, from first line to posted, each one able to become a script.</sub>
-</div>
-
-```mermaid
-flowchart LR
-    F["Raw footage"] --> S1["1 · Auto cut<br/>silences and filler words"]
-    S1 --> S2["2 · Edit<br/>word editor, timeline, B-roll"]
-    S2 --> S3["3 · Caption style<br/>karaoke, word pop, fonts"]
-    S3 --> S4["4 · Export<br/>720/1080/1440 · 30/60fps · MP4/MOV"]
-    S4 --> P["Straight into<br/>Upload and Schedule"]
-```
-
-**What it does not pretend to know.** No platform hands out per-second retention for a
-video that has not been posted, so the analyzer never implies it has any. The scores are
-an honest read of the content itself, and the screen says so.
-
-**It is not a separate island.** Videos the Account Overview plan says to make land in the
-Ideas list tagged with where they came from, so the plan and the ideas desk are one system
-rather than two lists that disagree.
+- [What's new (last few days)](#whats-new-last-few-days)
+- [Features](#features)
+  - [Dashboard](#dashboard)
+  - [Create: upload and schedule](#create-upload-and-schedule)
+  - [Edit: Studio, Analyze, Ideas](#edit-studio-analyze-ideas)
+  - [Trello pipeline](#trello-pipeline)
+  - [Caption block](#caption-block)
+  - [Calendar](#calendar)
+- [How it is put together](#how-it-is-put-together)
+- [Releases and auto-update](#releases-and-auto-update)
+- [Getting started](#getting-started)
+- [AI-friendly: notes for coding agents](#ai-friendly-notes-for-coding-agents)
+- [Changelog](CHANGELOG.md)
 
 ---
 
-## Every section, and what it does
+## What's new (last few days)
 
-The sidebar has eleven sections in four groups. This is what each one is for, and what it
-deliberately will not do.
+| Version | Date | What changed |
+|---|---|---|
+| **v0.3.25** | 2026-10-14 | **Caption block** per client: standing text and keyword lines added under every caption, on by default, composed server-side for every platform. YouTube title untouched. Human-only setting. |
+| **v0.3.24** | 2026-10-14 | **Upload to Trello** from the Ready queue. Card moves to *Approved by Client/ uploaded* when the post is scheduled, with a Retry move button. Files over 250 MB go as a signed link. |
+| **v0.3.23** | 2026-10-14 | **Cover-color client matching** for Trello cards (label only as a fallback). Glass default now 0.5. |
+| PR #2 | 2026-10-14 | **Polly-friendly scheduling**: Ready queue, SOP page and reminder, Trello label map. |
+| v0.3.17 - 0.3.22 | 2026-10-13 | Clear Glass / liquid glass redesign, Analytics v6, Account Overview carousel. |
 
-### ![Overview](https://img.shields.io/badge/OVERVIEW-1c1c1e?style=flat-square)
-
-| Section | In one line |
-|---|---|
-| **Dashboard** | Every brand's results on one card each, and a click through to the full picture. |
-| **Financials** | What came in, what went out, what is left, per month and per brand. |
-| **Account Overview** | What needs you today across every brand, and the plan for what to do next. |
-
-<details>
-<summary><b>The detail</b></summary>
-
-<br/>
-
-**Dashboard.** The first screen after sign-in. One results card per enrolled brand with the
-figures that matter this month, so the answer to "how is everyone doing" does not require
-opening eleven tabs.
-
-**Financials.** Money in and money out, per month and per brand, with invoices rendered as
-PDFs. Monthly pricing set on a client flows straight into the math here. Tax sits alongside
-it: what to set aside on this year's profit, federal and state, with every state rate
-editable because a built-in table goes stale each January. A read-only bank feed through
-SimpleFIN puts the real balance next to the figures entered by hand. **Nothing in this
-section can move money.** The bank provider has one endpoint and it is a GET.
-
-**Account Overview.** The triage screen. It says how many brands need something and what,
-and it holds the "what to do next" plan: a one-page brief written to the client in plain
-words, built on their own numbers and on what the accounts they said they want to be like
-are actually posting. Generating it runs in the background, so the screen is not a place
-you have to sit and wait.
-
-</details>
-
-### ![Create](https://img.shields.io/badge/CREATE-FF6F61?style=flat-square)
-
-| Section | In one line |
-|---|---|
-| **Upload & Schedule** | Drag a video in and send it to any mix of platforms, with the options each one really supports. |
-| **Edit** | Studio, Analyze and Ideas. Cut it, score it, and work out what to make next. |
-| **Calendar** | Day, week and month, with a padlock on anything that can no longer move. |
-| **Carousels** | Write the slides from a brand's knowledge base and export the CSV Canva bulk create wants. |
-| **Workflows** | Saved fan-out rules for reposting one upload across platforms. |
-
-<details>
-<summary><b>The detail</b></summary>
-
-<br/>
-
-**Upload & Schedule.** The original is kept untouched. An upload waits for the file and
-nothing else: it is read for its dimensions, a thumbnail is pulled, and it is ready. One
-press of Generate caption and title transcribes it and drafts a name and description from
-what it actually says, because that is the point at which the words are wanted. One name and
-one description cover every platform, with YouTube's own title and description behind a
-toggle, because YouTube is the only one that works that way.
-
-Per-platform options are the ones the platform genuinely supports, not a lowest common
-denominator: Instagram gets reels with a cover frame you scrub to, collaborators, a pinned
-first comment, trial reels, and a story as a second post rather than a hidden setting.
-YouTube gets visibility, made-for-kids, category, playlist, a pinned first comment, the AI
-label, and a related video picked from the channel's own catalogue.
-
-**Edit.** The three areas above. Studio is a four-step run from raw footage to a rendered
-file: auto cut, word editor and timeline, caption style, export at 720p through 1440p, 30
-or 60fps, MP4 or MOV, with bitrate presets and the file size shown before you commit.
-Analyze scores a video and marks the moments. Ideas writes hooks, scripts and shot lists
-grounded in a knowledge base you drag files into. Rendering happens on the server, so the
-window is free while it works.
-
-**Calendar.** Drag a scheduled post to another day. Anything posted, or going out right now,
-is locked and carries a padlock that says why. A legend across the top explains every
-status colour, because a colour nobody can decode is decoration.
-
-**Carousels.** A brand's knowledge base in, slide copy out, then a CSV that Canva bulk
-create turns into a finished set. Carousels schedule through the same uploader as video
-rather than a separate path.
-
-**Workflows.** Fan-out rules are saved here, and **nothing runs them yet**. A video only
-ever goes to the platforms ticked at the moment it is scheduled. That is stated on the
-screen too: a rule that silently does not fire is worse than no rule.
-
-</details>
-
-### ![Measure](https://img.shields.io/badge/MEASURE-1c1c1e?style=flat-square)
-
-| Section | In one line |
-|---|---|
-| **Analytics** | Views, watch time, followers and engagement per platform, over any range. |
-| **Reports** | A permanent page per brand on the agency's own domain, plus the PDF. |
-
-<details>
-<summary><b>The detail</b></summary>
-
-<br/>
-
-**Analytics.** A tab per connected network plus an overall view, over 30, 60, 90 days or
-all time. Every figure on the screen narrows to the platform selected. Behind it sits a
-rolling store of every post we have ever seen, so all-time boards survive the provider's
-one-year window, and lifetime YouTube history is read from YouTube itself rather than the
-provider's recent slice.
-
-A metric a platform does not report is shown as unavailable, never as a zero. Nobody saved
-it and nobody could save it are different facts, and printing zero for the second one is a
-lie a client would reasonably act on.
-
-**Reports.** Two steps on purpose: Update pulls fresh numbers and rebuilds the page, Publish
-is what the client can see. Updating never changes what is already live. A brand's link is
-assigned once and never regenerated, because that link may already be in an inbox. Published
-pages refresh on their own at month end, and only for brands already published once, because
-putting a client's numbers on the public web is a decision an operator makes rather than a
-timer. Weekly reports ship beside monthly ones. Thumbnails are embedded rather than linked,
-so a page does not rot into broken images the week after it is sent.
-
-</details>
-
-### ![Settings](https://img.shields.io/badge/SETTINGS-1c1c1e?style=flat-square)
-
-| Section | In one line |
-|---|---|
-| **Settings** | App behaviour, connected accounts, client onboarding, and the operator session. |
-
-<details>
-<summary><b>The detail</b></summary>
-
-<br/>
-
-Connect a brand's platforms, set its monthly price, adjust the video quota per format, and
-manage the operator session. Client onboarding lives here as well: one link a new client
-opens on their phone that collects their details and connects their accounts, and the app
-pulls the reply when asked.
-
-The Ship card deploys the server. It asks, it does not act on its own, and the only power
-the API has in that exchange is writing one file for a watcher on the host to pick up.
-
-</details>
+Full details in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## The app
+## Features
+
+### Dashboard
+
+A quick overview across every brand: views, retention, likes and comments per
+client, and views over time for all brands on one chart. Switch the range
+between 30, 60 and 90 days, refresh live data, or export a report.
+
+### Create: upload and schedule
+
+<img src="docs/screenshots/create-upload.png" width="920" alt="Create: upload and schedule screen" />
+
+Drop videos in, name them, write or generate captions, and schedule to every
+connected platform at once.
+
+### Edit: Studio, Analyze, Ideas
+
+The editing app lives inside Toreroflow.
 
 <table>
   <tr>
-    <td align="center" width="50%"><b>Content calendar</b><br/><sub>Status at a glance, and a padlock on anything that can no longer move</sub><br/><br/><img src="docs/screens/calendar.png" alt="Content calendar, week view, with a status legend" /></td>
-    <td align="center" width="50%"><b>Financials</b><br/><sub>Money in, money out, tax to set aside, the year-end export</sub><br/><br/><img src="docs/screens/financials.png" alt="Financials screen with the state picker open" /></td>
+    <td width="33%" valign="top"><b>Studio</b><br/>Cut a video by editing its words: transcription, auto cut, B-roll timeline, caption style and render.</td>
+    <td width="33%" valign="top"><b>Analyze</b><br/>Hook, retention, payoff and a peak score, with key moments marked and an action plan for the next cut.</td>
+    <td width="33%" valign="top"><b>Ideas</b><br/>Hooks, scripts and shot lists for the brand's niche, grounded in a knowledge base you drag files into.</td>
   </tr>
   <tr>
-    <td align="center" width="50%"><b>Carousels</b><br/><sub>A brand's knowledge base, and the words written from it</sub><br/><br/><img src="docs/screens/carousels.png" alt="Carousels screen with a knowledge base and a generator" /></td>
-    <td align="center" width="50%"><b>What the client receives</b><br/><sub>Plain words, their numbers, and what works for the accounts they follow</sub><br/><br/><img src="docs/screens/game-plan.png" alt="A one page game plan PDF" /></td>
+    <td><img src="docs/screenshots/edit-studio.png" alt="Edit: Studio" /></td>
+    <td><img src="docs/screenshots/edit-analyze.png" alt="Edit: Analyze" /></td>
+    <td><img src="docs/screenshots/edit-ideas.png" alt="Edit: Ideas" /></td>
   </tr>
 </table>
 
-The palette, the glass and the coral come from [torerone.com](https://torerone.com), so the app and
-the site read as one thing. Dropdowns are the app's own component rather than the operating
-system's: a native list takes no radius, no blur and no animation on any platform.
+### Trello pipeline
+
+<img src="docs/screenshots/trello-upload.png" width="920" alt="Upload to Trello: client, list, new or existing card, title, description and file drop" />
+
+- Cards on the editor pipeline board are matched to clients by **cover color**
+  (red → Caleb, black/gray → Dud Rents, yellow/gold → Jacoby; labels only as a
+  fallback). Unmapped colors are held, never scheduled automatically.
+- Each client has a **Ready queue** fed from the board.
+- **Upload to Trello** creates or updates a card and attaches files (up to
+  250 MB each; bigger files go as a signed Toreroflow link).
+- Scheduling a post moves its card to **Approved by Client/ uploaded**, with a
+  **Retry move** button if the move fails.
+
+### Caption block
+
+<img src="docs/screenshots/settings-caption-block.png" width="920" alt="Settings: Trello cover colors table and the caption block editor for a client" />
+
+Standing text that goes directly under every caption and description for a
+client, on every platform, with line breaks kept exactly. Optional **keyword
+lines** slot in between the caption and the block when a keyword appears in
+the title, card or caption. It is **on by default**, can be skipped for a single
+post from the schedule window (with a live preview), and is composed on the
+server so the app and bots get the same result. The YouTube title is never
+changed, and only humans can edit the block.
+
+### Calendar
+
+<img src="docs/screenshots/calendar.png" width="920" alt="Calendar: scheduled posts across the month" />
+
+<img src="docs/screenshots/calendar-post-details.png" width="920" alt="Post details from the calendar: preview, cover, video name, caption, day and time" />
+
+Every scheduled post on one calendar. Open a post to preview it, change the
+cover, rewrite the caption (or use one caption for the whole day), move it, or
+remove it from the schedule.
 
 ---
 
 ## How it is put together
 
-A desktop shell on the operator's machine, and everything else on one server it reaches over
-HTTPS. The shell holds no data and runs no processes of its own.
+A **pnpm monorepo**:
 
-```mermaid
-flowchart LR
-    subgraph desktop["Your machine - Tauri 2 + React"]
-        UI["Dashboard, upload, edit,<br/>calendar, analytics,<br/>financials, reports"]
-    end
-    subgraph server["The server - Docker, reached over HTTPS"]
-        API["Fastify API"]
-        W["Workers - 9 queues<br/>media, publish, analytics, insights,<br/>research, bank, edit, analyze, knowledge"]
-        DB[("PostgreSQL<br/>data and job queues")]
-        FF["ffmpeg<br/>cut, caption, render"]
-    end
-    subgraph ext["External"]
-        PUB["Publishing provider<br/>IG, TikTok, YT, FB, Snap"]
-        CAP["Captions<br/>faster-whisper"]
-        BANK["SimpleFIN, read only"]
-        NET["Netlify<br/>report pages"]
-    end
-    UI <--> API
-    API --> DB
-    DB --> W
-    W --> FF
-    W --> PUB
-    W --> CAP
-    W --> BANK
-    W --> NET
-```
+| Path | What it is |
+|---|---|
+| `apps/api` | Fastify API (TypeScript). Auth, clients, posts, Trello, publishing, files. |
+| `apps/worker` | Background jobs: publishing confirmations, reminders, analytics syncs. |
+| `apps/desktop` | Tauri 2 + React 18 app. The same frontend is also built and served as the **web app at app.torerone.com**. |
+| `apps/captions` | Captions service. |
+| `packages/core` | Shared logic and zod schemas (e.g. `captionBlock.ts`). |
+| `packages/db` | Prisma schema and migrations (PostgreSQL). |
+| `packages/media`, `packages/publishers` | Media handling and platform publishers. |
+| `infra/` | Dockerfiles, docker compose, Caddyfile, deploy scripts. |
 
-Publishing sits behind an adapter with a dry-run provider, so the engine can move from a unified
-provider to direct platform APIs without touching the rest of the app. Competitor research sits
-behind the same kind of interface, for the same reason.
+**Deployment:** everything runs with **Docker compose on a VPS behind Caddy**
+(`infra/docker-compose.prod.yml`, `infra/Caddyfile`): Postgres, api, worker
+and webapp containers. The web app is its own container, so frontend changes
+need the webapp image rebuilt as well as api/worker.
 
-Every job queue runs on Postgres. Redis used to hold them and is gone, because there is no
-official Redis build for Windows and Postgres has to be there anyway. The worker re-queues
-anything the calendar still expects on every boot, so the queue can be replaced underneath
-the app without a scheduled post going quiet.
+> **Rule: every change ships to both surfaces.** The web app (rebuild the
+> webapp container) **and** the desktop app (bump the version, push a `v*` tag).
 
-**The installed app needs nothing on the machine.** It reads one setting, the address of the
-server, and talks to it over HTTPS. No Docker, no database, no ffmpeg, no repository: install it
-and open it. Everything below is for working on the code, not for running the app.
+## Releases and auto-update
 
----
-
-## Monorepo
-
-```
-apps/
-  desktop/     Tauri v2 + React client, the app itself
-  api/         Fastify API
-  worker/      background workers: media, publish, analytics, insights,
-               research, bank, edit, analyze, knowledge
-  captions/    Python faster-whisper service, word-level timestamps
-packages/
-  core/        pure logic and shared types, each with a runnable check beside it
-  db/          Prisma schema, hand-written migrations, the Postgres job queue
-  publishers/  publishing adapter, provider, dry-run
-  media/       encode profiles, ffmpeg helpers, edit rendering, PDF rendering
-assets/        document templates and the embedded brand fonts
-infra/         docker-compose: Postgres 16
-```
-
-### Checks, not a test framework
-
-There is no test runner in here on purpose. Anything worth defending has a `*.check.ts` beside it
-that runs under `tsx` and fails loudly:
-
-```bash
-pnpm -r test
-```
-
-Forty-nine of them, covering what would be expensive to get wrong: money arithmetic, Schedule C
-line numbers, encryption at rest, a spending ceiling that can never be exceeded, the edit decision
-list that drives every render, and one that reads the stylesheet and fails if any animation would
-cost a layout or a repaint.
-
----
+1. Bump the desktop version (`apps/desktop` package and Tauri config).
+2. Commit and push a `v*` tag, e.g. `git tag v0.3.26 && git push origin v0.3.26`.
+3. `.github/workflows/release.yml` builds the installer and publishes a GitHub
+   Release with `latest.json`.
+4. Installed desktop apps check `latest.json` and update themselves.
 
 ## Getting started
 
-**To use the app:** install it and open it. Nothing on this page is required.
-
-**To work on it,** you want a stack of your own rather than the live one, because the live one
-holds real client data.
-
-**Prereqs:** Node 20+, pnpm, Docker Desktop, Rust toolchain, ffmpeg.
-
 ```bash
 pnpm install
-cp .env.example .env      # fill in the keys you need
-pnpm infra:up             # Postgres, the only container
-pnpm db:migrate
-pnpm dev:api              # API on http://localhost:4700
-pnpm --filter @toreroflow/desktop tauri dev
+pnpm infra:up          # local Postgres etc. (infra/docker-compose.yml)
+pnpm db:generate       # Prisma client
+pnpm db:migrate        # apply migrations locally
+pnpm dev:api           # API in watch mode
+pnpm dev:desktop       # web frontend (Vite) - or `pnpm tauri dev` for the desktop shell
 ```
 
-Or run `start.cmd` at the repo root, which does all of that in order.
-
-`VITE_API_URL` in the root `.env` decides which API a build talks to, and the desktop reads
-that file rather than one of its own ([vite.config.ts](apps/desktop/vite.config.ts) sets
-`envDir` to the repo root on purpose). Point it at `http://localhost:4700` to work against
-the stack above; leave it on the server address to build something shippable.
+`pnpm typecheck` and `pnpm build` run across all packages. Each package's
+`pnpm test` runs its `*.check.ts` files (plain tsx checks, no test framework).
 
 ---
 
-<div align="center">
-  <sub>Built by <b>Torerone LLC</b></sub>
-</div>
+## AI-friendly: notes for coding agents
+
+**Repo map**
+
+- API routes: `apps/api/src/routes/*.ts`; bot allow-list: `apps/api/src/auth/botAccess.ts` (anything not listed is human only); env parsing: `apps/api/src/env.ts`
+- Trello: `apps/api/src/routes/trello.ts`, `apps/api/src/trello/labelMap.ts`
+- Frontend screens: `apps/desktop/src/screens/`, modals: `apps/desktop/src/modals/`, API client: `apps/desktop/src/lib/api.ts`, routes: `apps/desktop/src/lib/routes.ts`
+- Shared logic: `packages/core/src/` (schemas in `schemas.ts`, caption composer in `captionBlock.ts`)
+- Agent-readable state and bot API: `docs/agent-state.md`, `docs/bot-api.md`
+
+**Commands:** `pnpm typecheck`, `pnpm build`, `pnpm --filter <pkg> test`,
+`pnpm db:generate`, `pnpm db:migrate`.
+
+**Migrations:** `packages/db/prisma/migrations/<timestamp>_<name>/migration.sql`,
+schema in `packages/db/prisma/schema.prisma`. Production applies them on deploy;
+add a new folder rather than editing an applied one.
+
+**Env:** templates are `.env.example` (local) and `infra/.env.example` (server);
+the live server file is `infra/.env`, gitignored. Never commit values. Names in use include
+`API_DOMAIN`, `APP_DOMAIN`, `JWT_SECRET`, `TOKEN_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`,
+`DATABASE_URL`, `ALLOWED_ORIGINS`, `PUBLISH_PROVIDER`, `PUBLISH_PROVIDER_API_KEY`,
+`ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`RESEND_API_KEY`, `NETLIFY_AUTH_TOKEN`, `TRELLO_KEY`, `TRELLO_TOKEN`,
+`TRELLO_BOARD_ID`, `TRELLO_BOARD_NAME`, `VITE_API_URL`.
+
+**Ship rule:** every change goes to the web app and the desktop app. Docs-only
+changes need no tag.

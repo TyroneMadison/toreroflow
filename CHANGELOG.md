@@ -1,13 +1,81 @@
 # Changelog
 
-All notable changes to Toreroflow are documented in this file.
-
+All notable changes to Toreroflow are documented in this file, newest first.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Until v1.0, minor versions map to the build-spec milestones (spec §12):
-`0.1 = M0`, `0.2 = M1`, … `0.7 = M6`. Every milestone lands as one tagged
-release with its acceptance checks listed.
+Every change ships to both surfaces: the web app at app.torerone.com and the
+desktop app (a `v*` tag publishes it through auto-update).
 
-## [Unreleased]
+## [0.3.25] - 2026-10-14
+
+### Added - per-client caption block
+
+- Each client can have a **caption block**: standing text added directly under every caption and description, on every platform, with no blank line or divider. Line breaks inside the block are kept exactly
+- **Keyword lines** (optional): the first line whose keyword appears in the video title, Trello card title or caption (whole word, any case) goes between the caption and the block
+- **On by default**, with a per-post switch in the schedule window to skip the block for one post. The long-form schedule window does not have the switch yet
+- **Settings card** (Settings → Trello labels → Caption block) to edit the block and keyword lines per client, and a **live preview** in the schedule window
+- Composed **server-side** at schedule time (`composeCaption` in `packages/core/src/captionBlock.ts`), so the app and bots get the same result. A caption that already contains the block is not doubled
+- The **YouTube title is never touched**, only captions and descriptions
+- `PUT /clients/:id/caption-block` is **human only**: it is not in the bot allow-list, so bot tokens are refused
+- Migration `20261015000000_client_caption_block` adds `captionBlock`, `captionBlockOn` and `captionKeywords` to `Client`
+
+Commits: 51421a6, merge 40ffc01, release 91a4fb5.
+
+## [0.3.24] - 2026-10-14
+
+### Added - Trello upload and card move
+
+- **Upload to Trello** from the Ready queue: create a new card or attach to an existing one on the editor pipeline board, with files dropped straight in
+- Files up to **250 MB** attach to Trello directly; bigger files go up as a signed Toreroflow link instead
+- When a post is scheduled, its card moves to the **"Approved by Client/ uploaded"** list. If the move fails, a **Retry move** button appears
+- Bots gain exactly one new route: `POST /trello/cards/:id/uploaded` (moving a scheduled Ready card). Every other Trello write stays human only
+- Upload routes match cards to clients by cover color, the same way the Ready queue does
+
+Commits: a1c94a2, 77554f6, 85ca8da, merge 8706847, release 20d3791.
+
+## [0.3.23] - 2026-10-14
+
+### Changed - cover-color client matching
+
+- Trello cards are matched to clients by **card cover color**: red → Caleb, black/gray → Dud Rents (Dudley), yellow/gold → Jacoby. A label is only used as a fallback when the card has no cover
+- The mapping is editable in Settings → Trello labels (Trello cover colors). Unmapped colors are held and never scheduled automatically
+
+### Fixed
+
+- A BMW card was being matched to the wrong client; it now resolves to Dud Rents by its cover color
+
+Commits: fecb6af, merge 3a8f281, release 0d8fa95.
+
+### Changed - glass default
+
+- Default glass translucency is now **0.5** (halfway frosted) instead of 0.95 (near clear). Only affects people who never moved the slider (6ba29e3)
+
+## Polly-friendly scheduling (PR #2) - 2026-10-14
+
+### Added
+
+- **Ready queue** per client, fed from the Trello board's Ready list
+- **SOP schedule page** and an SOP panel per client; the SOP check is a gentle reminder rather than a block (528f5a8)
+- **Trello label map** in Settings, and routed Carousels and Workflows pages
+- Migration `20261014230000_client_sop_trello` adds `slug`, `sop`, `sopUpdatedAt` and `trelloLabels` to `Client`
+
+Commits: fbcc9f3, 528f5a8, merge 19bd64a.
+
+### Outside this repo
+
+- Polly's caption SOP now lives as a bot skill on the bot side, not in the app. The app enforces the caption block and SOP reminder; the skill covers how captions are written
+
+## [0.3.17 - 0.3.22] - 2026-10-13
+
+- Clear Glass redesign phase 1 and 2: tokens, dock frame, Dashboard, real routes and agent-readable state (0c1eab2, f872e65)
+- Liquid glass redesign: glass-level tokens, refraction filter, translucency slider (1a1993c)
+- Glass page layouts for Financials, Account Overview and Reports; see-through desktop window (ebdb530)
+- Analytics v6 layout with platform pill strip and section tabs (91983cf)
+- Client carousel at the top of Account Overview; "Needs you now" only when a client needs attention (92aa493, 78ef89a)
+- Full-bleed client photo cards, Analytics v6 grid with Reach ring, Posting queue and Carousels (ef05eef, 0.3.22)
+
+## Earlier
+
+### Unreleased (pre-0.3 notes)
 
 ### Added - lifetime YouTube history
 
