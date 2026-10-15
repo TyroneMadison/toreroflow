@@ -57,7 +57,7 @@ export const SECTIONS: SectionDef[] = [
       { id: "upload", label: "Upload & Schedule", slug: "upload" },
       { id: "ready", label: "Ready queue", slug: "ready" },
       { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
-      { id: "edit", label: "Edit", slug: "edit" },
+      { id: "edit", label: "Studio", slug: "edit" },
       { id: "calendar", label: "Calendar", slug: "calendar" },
       { id: "carousels", label: "Carousels", slug: "carousels" },
       { id: "workflows", label: "Workflows", slug: "workflows" },

@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
-import NicheCard, { type NicheProfile } from "./NicheCard";
-import KnowledgeSection from "./KnowledgeSection";
+import type { NicheProfile } from "./NicheCard";
+import SuperGenerate, { PlatformDot, useSuperRun } from "./SuperGenerate";
 import IdeaList from "./IdeaList";
+import SavedIdeas from "./SavedIdeas";
 import BrainstormModal from "./BrainstormModal";
+import { CREATOR_LINK_CAP, cleanCreatorLinks, parseCreatorLink } from "@toreroflow/core";
 import "./IdeasHome.css";
 
 /**
- * The Ideas area, read top to bottom: the brand's niche, the material the
- * writers draw on, the two ways to make new ideas, and the saved list.
+ * The Ideas area, in two tabs (approved mockups, 2026-10-15). Generate:
+ * 1 · the niche and up to 10 creator channel links, saved per client on the
+ * server; 2 · the three ways to make ideas: Brainstorm, Generate ideas, and
+ * Super generate. Saved ideas: everything banked, one at a time, with the
+ * full table under it.
  */
 
 /** The content styles the generator picks formats from. */
@@ -38,23 +43,99 @@ interface FormatCard {
   hooks: string[];
 }
 
+type Tab = "generate" | "saved";
+
+const NICHE_CAP = 200;
+
 export default function IdeasHome({ clientId }: { clientId: string }) {
   const toast = useToast();
+  const [tab, setTab] = useState<Tab>("generate");
   const [profile, setProfile] = useState<NicheProfile | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [niche, setNiche] = useState("");
+  const [creators, setCreators] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const [capCents, setCapCents] = useState(200);
   const [chosen, setChosen] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [line, setLine] = useState(0);
   const [formats, setFormats] = useState<FormatCard[]>([]);
   const [openInfo, setOpenInfo] = useState<string | null>(null);
-  // One name per card in flight. A single slot cannot hold two, so starting a
-  // second card re-enabled the first card's button mid request and the first
-  // response to land cleared the second card's spinner.
+  // One name per card in flight, so two cards can each load more hooks at once.
   const [moreFor, setMoreFor] = useState<string[]>([]);
   // Hooks already banked, so a second press cannot double-save one.
   const [added, setAdded] = useState<string[]>([]);
   const [chat, setChat] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [view, setView] = useState<"formats" | "super">("formats");
+  const [starting, setStarting] = useState(false);
+  const sg = useSuperRun(clientId);
+
+  useEffect(() => {
+    let live = true;
+    setDraft("");
+    void (async () => {
+      try {
+        const [p, c] = await Promise.all([
+          api.get<{ nicheProfile: NicheProfile | null }>(`/clients/${clientId}/niche-profile`),
+          api.get<{ creators: string[]; capCents: number }>(`/clients/${clientId}/idea-creators`),
+        ]);
+        if (!live) return;
+        setProfile(p.nicheProfile);
+        setNiche((p.nicheProfile?.niche ?? "").slice(0, NICHE_CAP));
+        setCreators(c.creators);
+        setCapCents(c.capCents);
+      } catch (err) {
+        if (live) toast.fail("Could not load the niche and creators", err);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [clientId, toast]);
+
+  /** The niche is the niche profile's niche: one place, merged from the old card. */
+  const saveNiche = async () => {
+    const t = niche.trim();
+    if (!t || t === (profile?.niche ?? "").trim()) return;
+    try {
+      const saved = await api.put<{ nicheProfile: NicheProfile | null }>(
+        `/clients/${clientId}/niche-profile`,
+        {
+          niche: t,
+          audience: profile?.audience?.trim() || undefined,
+          outcome: profile?.outcome?.trim() || undefined,
+          voiceTags: profile?.voiceTags ?? [],
+          filming: profile?.filming ?? [],
+          faceless: profile?.faceless ?? false,
+        },
+      );
+      setProfile(saved.nicheProfile);
+    } catch (err) {
+      toast.fail("Could not save the niche", err);
+    }
+  };
+
+  const saveCreators = async (next: string[], cap?: number) => {
+    const clean = cleanCreatorLinks(next);
+    setCreators(clean);
+    try {
+      const got = await api.put<{ creators: string[]; capCents: number }>(
+        `/clients/${clientId}/idea-creators`,
+        cap !== undefined ? { creators: clean, capCents: cap } : { creators: clean },
+      );
+      setCreators(got.creators);
+      setCapCents(got.capCents);
+    } catch (err) {
+      toast.fail("Could not save the creators", err);
+    }
+  };
+
+  const commitDraft = () => {
+    if (!draft.trim()) return;
+    const parts = draft.split(/[\s,]+/).filter(Boolean);
+    void saveCreators([...creators, ...parts]);
+    setDraft("");
+  };
 
   useEffect(() => {
     if (!loading) return;
@@ -62,15 +143,22 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     return () => clearInterval(t);
   }, [loading]);
 
-  /** Empty categories means the model picks the styles itself ("Pick for me"). */
-  const generate = async (categories: string[]) => {
-    setPicking(false);
+  /**
+   * Empty categories means the model picks the styles itself ("Pick for me").
+   * Brainstorm sends the niche and creators along; the other buttons send
+   * exactly what they always did.
+   */
+  const generate = async (
+    categories: string[],
+    extra?: { niche: string; inspirations: string[] },
+  ) => {
     setLoading(true);
     setLine(0);
+    setView("formats");
     try {
       const got = await api.post<{ formats: FormatCard[] }>(
         `/clients/${clientId}/generate-ideas`,
-        { categories },
+        extra ? { categories, ...extra } : { categories },
       );
       setFormats(got.formats);
       setOpenInfo(null);
@@ -78,6 +166,45 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
       toast.fail("Could not generate ideas", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const brainstorm = () => {
+    void saveNiche();
+    const handles = creators.map((c) => parseCreatorLink(c)?.handle ?? c).slice(0, 12);
+    void generate(chosen, { niche: niche.trim(), inspirations: handles });
+  };
+
+  const superGenerate = async () => {
+    setStarting(true);
+    try {
+      if (draft.trim()) {
+        const parts = draft.split(/[\s,]+/).filter(Boolean);
+        setDraft("");
+        await saveCreators([...creators, ...parts]);
+      }
+      void saveNiche();
+      const got = await api.post<{ run: SuperRunT }>(`/clients/${clientId}/super-generate`, {});
+      sg.setRun(got.run);
+      setView("super");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 503) {
+        toast.fail("Super generate needs a YouTube API key", err);
+      } else {
+        toast.fail("Could not start Super generate", err);
+      }
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const cancelSuper = async () => {
+    if (!sg.run) return;
+    try {
+      const got = await api.post<{ run: SuperRunT }>(`/super-generate/${sg.run.id}/cancel`, {});
+      sg.setRun(got.run);
+    } catch (err) {
+      toast.fail("Could not cancel", err);
     }
   };
 
@@ -108,138 +235,279 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     }
   };
 
-  const addIdea = async (card: FormatCard, hook: string) => {
+  const bank = async (hook: string, formatName: string, source: string) => {
     try {
       await api.post(`/clients/${clientId}/ideas`, {
         text: hook,
         hook,
-        formatName: card.name,
+        formatName,
         // The ideas route caps the niche at 200 characters; the profile allows 2000.
-        niche: (profile?.niche ?? "").slice(0, 200),
-        source: "brainstorm",
+        niche: (niche || profile?.niche || "").slice(0, 200),
+        source,
       });
       setAdded((cur) => [...cur, hook]);
       setReloadKey((n) => n + 1);
+      toast.success("Added to Saved ideas");
     } catch (err) {
       toast.fail("Could not save that idea", err);
     }
   };
 
+  const superBlocked = !sg.youtubeReady;
+  const ytCount = creators.filter((c) => parseCreatorLink(c)?.platform === "youtube").length;
+
   return (
     <div className="ideashome">
-      <NicheCard clientId={clientId} onProfile={setProfile} />
-
-      <KnowledgeSection clientId={clientId} />
-
-      <div className="ideabuttons">
-        <button className="btn ghost" onClick={() => setChat(true)}>
-          Brainstorm
+      <div className="ideatabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === "generate"}
+          className={`ideatab${tab === "generate" ? " on" : ""}`}
+          onClick={() => setTab("generate")}
+        >
+          Generate
         </button>
-        <button className="btn" disabled={loading} onClick={() => setPicking((p) => !p)}>
-          Generate ideas
+        <button
+          role="tab"
+          aria-selected={tab === "saved"}
+          className={`ideatab${tab === "saved" ? " on" : ""}`}
+          onClick={() => setTab("saved")}
+        >
+          Saved ideas{added.length > 0 ? ` (+${added.length})` : ""}
         </button>
       </div>
 
-      {picking && (
-        <div className="card glass ideapicker">
-          <h3>Pick a content style</h3>
-          <div className="sub">
-            Choose the kinds of video this brand should try, or let the studio choose.
-          </div>
-          <div className="nichechips">
-            {CATEGORIES.map((c) => (
-              <button
-                type="button"
-                key={c}
-                className={`nchip${chosen.includes(c) ? " on" : ""}`}
-                onClick={() =>
-                  setChosen((cur) =>
-                    cur.includes(c) ? cur.filter((v) => v !== c) : [...cur, c],
-                  )
-                }
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-          <div className="nicheactions">
-            <button
-              className="btn"
-              disabled={loading || chosen.length === 0}
-              onClick={() => void generate(chosen)}
-            >
-              Find formats
-            </button>
-            <button className="btn ghost" disabled={loading} onClick={() => void generate([])}>
-              Pick for me
-            </button>
-            <button className="btn ghost" onClick={() => setPicking(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {loading && (
-        <div className="card glass ideaload">
-          <b>{LOADING_LINES[line]}</b>
-          <div className="sub">Usually takes 15 to 30 seconds.</div>
-          <div className="skel ideabar" />
-        </div>
-      )}
-
-      {formats.length > 0 && (
-        <div className="stagger">
-          {formats.map((f) => (
-            <div className="fcard glass-sm" key={f.name}>
-              <div className="fhead">
-                <div className="fheadl">
-                  <span className="chip fcat">{f.category}</span>
-                  <b>{f.name}</b>
-                </div>
-                <button
-                  className="mini"
-                  onClick={() => setOpenInfo((cur) => (cur === f.name ? null : f.name))}
-                >
-                  {openInfo === f.name ? "Less info" : "More info"}
-                </button>
+      {tab === "saved" ? (
+        <>
+          <SavedIdeas clientId={clientId} reloadKey={reloadKey} />
+          <IdeaList clientId={clientId} niche={profile?.niche ?? ""} reloadKey={reloadKey} />
+        </>
+      ) : (
+        <>
+          <div className="ideagrid">
+            <div className="card glass ideacontext">
+              <h3>1 · Your niche &amp; inspiration</h3>
+              <div className="sub">Everything below writes from this. Saved per client.</div>
+              <div className="cfield nichegap">
+                <span className="lab">Niche</span>
+                <input
+                  className="field-in"
+                  maxLength={NICHE_CAP}
+                  value={niche}
+                  placeholder="e.g. Exotic car rentals in New Jersey"
+                  onChange={(e) => setNiche(e.target.value)}
+                  onBlur={() => void saveNiche()}
+                />
               </div>
-              {openInfo === f.name && <div className="fdesc">{f.description}</div>}
-              <div className="fhooks">
-                <span className="lab">Hooks for your niche</span>
-                {f.hooks.map((h) => (
-                  <div className="hookrow" key={h}>
-                    <span>{h}</span>
-                    <button
-                      className="cbtn"
-                      disabled={added.includes(h)}
-                      onClick={() => void addIdea(f, h)}
-                    >
-                      {added.includes(h) ? "Added" : "+ Ideas"}
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="btn ghost fmore"
-                  disabled={moreFor.includes(f.name)}
-                  onClick={() => void moreHooks(f)}
-                >
-                  {moreFor.includes(f.name) ? "Writing..." : "Generate more hooks"}
-                </button>
+              <div className="cfield nichegap">
+                <span className="lab">Creators that inspire you</span>
+                <div className="creatorlinks">
+                  {creators.map((c) => {
+                    const l = parseCreatorLink(c);
+                    return (
+                      <div className="creatorlink" key={c}>
+                        <PlatformDot platform={l?.platform ?? "other"} />
+                        <span className="creatorurl">{c}</span>
+                        {l?.platform !== "youtube" && <span className="creatornote">YouTube only for Super generate</span>}
+                        <button
+                          type="button"
+                          className="chipx"
+                          title={`Remove ${c}`}
+                          onClick={() => void saveCreators(creators.filter((v) => v !== c))}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {creators.length < CREATOR_LINK_CAP && (
+                    <input
+                      className="field-in"
+                      value={draft}
+                      placeholder={`Paste creator channel link (${creators.length + 1} of ${CREATOR_LINK_CAP})`}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={commitDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitDraft();
+                        }
+                      }}
+                    />
+                  )}
+                  <span className="nichenote">
+                    {creators.length >= CREATOR_LINK_CAP ? "That is the most (10)" : "+ Add creator · up to 10"}
+                  </span>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      <IdeaList clientId={clientId} niche={profile?.niche ?? ""} reloadKey={reloadKey} />
+            <div className="card glass ideapicker">
+              <h3>2 · Make ideas</h3>
+              <div className="sub">Three ways in. Pick whichever fits.</div>
+
+              <span className="lab sectlab">Brainstorm</span>
+              <div className="sub">Quick ideas from your niche + creator names.</div>
+              <div className="nicheactions tight">
+                <button className="btn" disabled={loading || !niche.trim()} onClick={brainstorm}>
+                  Brainstorm
+                </button>
+                <button className="btn ghost" onClick={() => setChat(true)}>
+                  Open brainstorm chat
+                </button>
+              </div>
+
+              <span className="lab sectlab">Generate ideas</span>
+              <div className="nichechips">
+                {CATEGORIES.map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    className={`nchip${chosen.includes(c) ? " on" : ""}`}
+                    onClick={() =>
+                      setChosen((cur) =>
+                        cur.includes(c) ? cur.filter((v) => v !== c) : [...cur, c],
+                      )
+                    }
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <div className="nicheactions tight">
+                <button
+                  className="btn"
+                  disabled={loading || chosen.length === 0}
+                  onClick={() => void generate(chosen)}
+                >
+                  Find formats
+                </button>
+                <button className="btn ghost" disabled={loading} onClick={() => void generate([])}>
+                  Pick for me
+                </button>
+              </div>
+
+              <span className="lab sectlab">Super generate</span>
+              <div className="sub">
+                Studies the last ~100 videos of every YouTube creator above (hook, framing,
+                structure, script), then writes ideas in your niche.
+              </div>
+              {superBlocked ? (
+                <div className="sgneedkey">
+                  <b>Super generate needs a YouTube API key</b>
+                  <span className="sub">Add YOUTUBE_API_KEY on the server to turn it on.</span>
+                </div>
+              ) : (
+                <div className="nicheactions tight sgstart">
+                  <button
+                    className="btn sgbtn"
+                    disabled={starting || ytCount === 0 || sg.run?.status === "running"}
+                    onClick={() => void superGenerate()}
+                  >
+                    {sg.run?.status === "running" ? "✦ Running..." : "✦ Super generate"}
+                  </button>
+                  <span className="sub">
+                    {ytCount === 0
+                      ? "Add a YouTube channel link first"
+                      : `${ytCount} creator${ytCount === 1 ? "" : "s"} · a few min first run, cached after`}
+                  </span>
+                  {sg.run && view !== "super" && (
+                    <button className="mini" onClick={() => setView("super")}>
+                      Show last run
+                    </button>
+                  )}
+                </div>
+              )}
+              <label className="sgcap">
+                <span className="sub">Spending cap per run $</span>
+                <input
+                  className="field-in"
+                  type="number"
+                  min={0.1}
+                  max={50}
+                  step={0.5}
+                  value={(capCents / 100).toFixed(2)}
+                  onChange={(e) => setCapCents(Math.round(Number(e.target.value) * 100) || 0)}
+                  onBlur={() => {
+                    const cap = Math.min(5000, Math.max(10, capCents));
+                    setCapCents(cap);
+                    void saveCreators(creators, cap);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {view === "super" && sg.run ? (
+            <SuperGenerate
+              run={sg.run}
+              onCancel={() => void cancelSuper()}
+              onAdd={(text, label) => void bank(text, label, "analysis")}
+              added={added}
+            />
+          ) : (
+            <>
+              {loading && (
+                <div className="card glass ideaload">
+                  <b>{LOADING_LINES[line]}</b>
+                  <div className="sub">Usually takes 15 to 30 seconds.</div>
+                  <div className="skel ideabar" />
+                </div>
+              )}
+
+              {formats.length > 0 && (
+                <div className="stagger">
+                  {formats.map((f) => (
+                    <div className="fcard glass-sm" key={f.name}>
+                      <div className="fhead">
+                        <div className="fheadl">
+                          <span className="chip fcat">{f.category}</span>
+                          <b>{f.name}</b>
+                        </div>
+                        <button
+                          className="mini"
+                          onClick={() => setOpenInfo((cur) => (cur === f.name ? null : f.name))}
+                        >
+                          {openInfo === f.name ? "Less info" : "More info"}
+                        </button>
+                      </div>
+                      {openInfo === f.name && <div className="fdesc">{f.description}</div>}
+                      <div className="fhooks">
+                        <span className="lab">Hooks for your niche</span>
+                        {f.hooks.map((h) => (
+                          <div className="hookrow" key={h}>
+                            <span>{h}</span>
+                            <button
+                              className="cbtn"
+                              disabled={added.includes(h)}
+                              onClick={() => void bank(h, f.name, "brainstorm")}
+                            >
+                              {added.includes(h) ? "Added" : "+ Ideas"}
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          className="btn ghost fmore"
+                          disabled={moreFor.includes(f.name)}
+                          onClick={() => void moreHooks(f)}
+                        >
+                          {moreFor.includes(f.name) ? "Writing..." : "Generate more hooks"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {chat && (
         <BrainstormModal
           clientId={clientId}
           onClose={() => {
             setChat(false);
-            // The chat can bank ideas of its own, so the list re-reads on close.
             setReloadKey((n) => n + 1);
           }}
         />
@@ -247,3 +515,5 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     </div>
   );
 }
+
+type SuperRunT = import("./SuperGenerate").SuperRun;

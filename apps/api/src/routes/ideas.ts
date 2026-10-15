@@ -5,7 +5,14 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { toPlainText } from "@toreroflow/core";
+import {
+  cleanCreatorLinks,
+  parseCreatorLink,
+  toPlainText,
+  CREATOR_LINK_CAP,
+  SUPERGEN_CAP_MAX,
+  SUPERGEN_CAP_MIN,
+} from "@toreroflow/core";
 import { getPrisma, groundingFor as grounding, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
@@ -56,6 +63,9 @@ const generateIdeasSchema = z.object({
   /** Hooks the operator can already see, so the next batch is not the same four. */
   exclude: z.array(z.string().max(200)).max(40).default([]),
   more: z.boolean().optional(),
+  /** Brainstorm context typed in the Ideas section. Absent for every other button. */
+  niche: z.string().max(200).optional(),
+  inspirations: z.array(z.string().max(300)).max(12).default([]),
 });
 
 const brainstormSchema = z.object({
@@ -385,6 +395,109 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /* ---- creator links and Super generate ---- */
+
+  const creatorsSchema = z.object({
+    creators: z.array(z.string().max(300)).max(CREATOR_LINK_CAP * 2).optional(),
+    capCents: z.number().int().min(SUPERGEN_CAP_MIN).max(SUPERGEN_CAP_MAX).optional(),
+  });
+
+  const readiness = () => ({
+    youtubeReady: Boolean(env.YOUTUBE_API_KEY),
+    modelReady: Boolean(env.ANTHROPIC_API_KEY),
+  });
+
+  app.get<{ Params: { clientId: string } }>("/clients/:clientId/idea-creators", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.clientId, agencyId: request.user.agencyId, deletedAt: null },
+      select: { ideaCreators: true, superGenCapCents: true },
+    });
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    return { creators: client.ideaCreators, capCents: client.superGenCapCents, ...readiness() };
+  });
+
+  app.put<{ Params: { clientId: string } }>("/clients/:clientId/idea-creators", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const parsed = creatorsSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "those creators could not be saved",
+        detail: parsed.error.issues[0]?.message ?? "Up to 10 channel links, and a cap between $0.10 and $50.",
+      });
+    }
+    const updated = await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        ...(parsed.data.creators ? { ideaCreators: cleanCreatorLinks(parsed.data.creators) } : {}),
+        ...(parsed.data.capCents !== undefined ? { superGenCapCents: parsed.data.capCents } : {}),
+      },
+      select: { ideaCreators: true, superGenCapCents: true },
+    });
+    return { creators: updated.ideaCreators, capCents: updated.superGenCapCents, ...readiness() };
+  });
+
+  const runView = (r: {
+    id: string; status: string; creators: unknown; ideas: unknown; capCents: number;
+    spentCents: number; error: string | null; createdAt: Date; completedAt: Date | null;
+  }) => ({ ...r });
+
+  app.get<{ Params: { clientId: string } }>("/clients/:clientId/super-generate", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const run = await prisma.superGenerateRun.findFirst({
+      where: { clientId: client.id },
+      orderBy: { createdAt: "desc" },
+    });
+    return { run: run ? runView(run) : null, ...readiness() };
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/super-generate", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.clientId, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true, ideaCreators: true, superGenCapCents: true },
+    });
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    if (!env.YOUTUBE_API_KEY) {
+      return reply.status(503).send({
+        code: "no_youtube_key",
+        error: "Super generate needs a YouTube API key",
+        detail: "Add YOUTUBE_API_KEY to infra/.env on the server and restart the API and worker.",
+      });
+    }
+    if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
+    const links = cleanCreatorLinks(client.ideaCreators);
+    if (links.length === 0) {
+      return reply.status(400).send({ error: "add a creator first", detail: "Paste at least one YouTube channel link." });
+    }
+    const busy = await prisma.superGenerateRun.findFirst({
+      where: { clientId: client.id, status: "running", createdAt: { gt: new Date(Date.now() - 30 * 60 * 1000) } },
+    });
+    if (busy) return { run: runView(busy), ...readiness() };
+    const creators = links.map((url) => {
+      const l = parseCreatorLink(url);
+      return { url, handle: l?.handle ?? url, platform: l?.platform ?? "other", status: "queued", videos: 0, note: "" };
+    });
+    const run = await prisma.superGenerateRun.create({
+      data: { clientId: client.id, creators, capCents: client.superGenCapCents },
+    });
+    await enqueue("supergen", { runId: run.id }, { key: run.id });
+    return { run: runView(run), ...readiness() };
+  });
+
+  app.post<{ Params: { id: string } }>("/super-generate/:id/cancel", async (request, reply) => {
+    const run = await prisma.superGenerateRun.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!run) return reply.status(404).send({ error: "run not found" });
+    if (run.status !== "running") return { run: runView(run) };
+    const updated = await prisma.superGenerateRun.update({
+      where: { id: run.id },
+      data: { status: "cancelled", completedAt: new Date() },
+    });
+    return { run: runView(updated) };
+  });
+
   /* ---- formats and hooks ---- */
 
   /**
@@ -411,7 +524,12 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       }
       if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
 
-      const { categories, formatId, exclude, more } = parsed.data;
+      const { categories, formatId, exclude, more, niche, inspirations } = parsed.data;
+      const context =
+        (niche?.trim() ? `Niche the operator typed for this brainstorm: ${niche.trim()}.\n` : "") +
+        (inspirations.length
+          ? `Creators that inspire this brand (borrow the shape and energy of their formats, never their words): ${inspirations.join(", ")}.\n`
+          : "");
       const job = formatId
         ? `Write 4 more hooks for the format called "${formatId}". Return that one ` +
           `format only, keeping its name, with 4 hooks the operator has not seen.` +
@@ -457,7 +575,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           messages: [
             {
               role: "user",
-              content: `Brand: ${client.name}\n${styles}\n${job}\n\n${await grounding(prisma, client.id)}`,
+              content: `Brand: ${client.name}\n${context}${styles}\n${job}\n\n${await grounding(prisma, client.id)}`,
             },
           ],
         });

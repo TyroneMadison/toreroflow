@@ -10,7 +10,7 @@ import { Empty } from "../components/states";
 type EditArea = "studio" | "analyze" | "ideas";
 
 const AREAS: { id: EditArea; label: string }[] = [
-  { id: "studio", label: "Studio" },
+  { id: "studio", label: "Edit" },
   { id: "analyze", label: "Analyze" },
   { id: "ideas", label: "Ideas" },
 ];
@@ -30,7 +30,7 @@ export default function EditScreen() {
       <section className="screen active" data-screen="edit" data-state="empty">
         <div className="topbar">
           <div className="h">
-            <h2>Edit</h2>
+            <h2>Studio</h2>
           </div>
         </div>
         <div className="stage">
@@ -48,7 +48,7 @@ export default function EditScreen() {
     <section className="screen active" data-screen="edit" data-state="ready">
       <div className="topbar">
         <div className="h">
-          <h2>Edit</h2>
+          <h2>Studio</h2>
           <p>Cut, score, and plan videos for {selectedClient.name}.</p>
         </div>
       </div>

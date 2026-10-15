@@ -22,6 +22,7 @@ import { isolateVoice, processEditAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
+import { runSuperGenerate } from "./supergen";
 import { runResearch } from "./research";
 import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
@@ -940,6 +941,10 @@ void work<{ clientId: string }>("insights", { concurrency: 1 }, async ({ clientI
   await generateInsight(clientId);
 });
 
+void work<{ runId: string }>("supergen", { concurrency: 1 }, async ({ runId }) => {
+  await runSuperGenerate(runId);
+});
+
 // One at a time, all three: each is ffmpeg or whisper on the same disk, and
 // two concurrent encodes finish later than two queued ones. The one queue
 // carries both jobs: asset processing (the default) and full renders.
@@ -1060,5 +1065,5 @@ beat();
 setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge, supergen (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

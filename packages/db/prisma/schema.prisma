@@ -250,6 +250,11 @@ model Client {
   /// Keyword lines: [{ keywords: string[], line: string }]. The first entry
   /// whose keyword appears in the title, card or caption adds its line.
   captionKeywords      Json           @default("[]")
+  /// Up to 10 creator channel links the Ideas area studies (Super generate
+  /// and Brainstorm). Order is the order typed.
+  ideaCreators         String[]       @default([])
+  /// Most a single Super generate run may spend on the model, in US cents.
+  superGenCapCents     Int            @default(200)
   revenueEntries       RevenueEntry[]
   invoices             Invoice[]
   createdAt            DateTime       @default(now())
@@ -274,6 +279,7 @@ model Client {
   contentIdeas    ContentIdea[]
   knowledgeFiles  KnowledgeFile[]
   brainstormChats BrainstormChat[]
+  superGenRuns    SuperGenerateRun[]
 
   @@index([agencyId])
 }
@@ -1234,4 +1240,40 @@ model CarouselDraft {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+}
+
+/// One Super generate run: study each creator, then write ideas from it.
+/// Progress lives in `creators` so the screen can show one row per creator.
+model SuperGenerateRun {
+  id          String    @id @default(cuid())
+  clientId    String
+  /// running | ready | failed | cancelled
+  status      String    @default("running")
+  /// [{ url, handle, platform, status, videos, note, summary }]
+  creators    Json      @default("[]")
+  /// [{ text, label }]
+  ideas       Json      @default("[]")
+  capCents    Int
+  spentCents  Int       @default(0)
+  error       String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// What one creator does that works, cached by channel link so a second run
+/// (for any brand) reuses it instead of re-reading 100 videos.
+model CreatorPlaybook {
+  id        String   @id @default(cuid())
+  /// Normalised channel link, e.g. "youtube.com/@carguy".
+  url       String   @unique
+  platform  String
+  handle    String
+  videos    Int      @default(0)
+  /// { summary, hook, framing, structure, script }
+  playbook  Json
+  updatedAt DateTime @updatedAt
 }
