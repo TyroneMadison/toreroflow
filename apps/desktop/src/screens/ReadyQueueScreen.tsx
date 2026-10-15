@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type ReadyCard, type ReadyQueue } from "../lib/api";
 import { LABEL_SWATCH, COLOR_NAME, baseColor } from "../lib/labelColors";
 import { clientPath, pathLinkProps, useRoute } from "../lib/routes";
+import TrelloUploadModal from "../modals/TrelloUploadModal";
 import "./ReadyQueue.css";
 
 /*
@@ -13,6 +14,7 @@ export default function ReadyQueueScreen() {
   const { slug } = useRoute();
   const [data, setData] = useState<ReadyQueue | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upload, setUpload] = useState<{ card: ReadyCard | null } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -47,6 +49,11 @@ export default function ReadyQueueScreen() {
         <button type="button" className="btn ghost" data-testid="ready-refresh" onClick={() => void load()}>
           Refresh
         </button>
+        {data?.configured && (
+          <button type="button" className="btn pri" data-testid="ready-upload" onClick={() => setUpload({ card: null })}>
+            Upload to Trello
+          </button>
+        )}
       </div>
 
       <nav className="rq-tabs" aria-label="Client filter">
@@ -99,7 +106,7 @@ export default function ReadyQueueScreen() {
           ) : (
             <ul className="rq-list" aria-label="Ready cards">
               {cards.map((card) => (
-                <CardRow key={card.id} card={card} clients={clients} />
+                <CardRow key={card.id} card={card} clients={clients} onUpload={() => setUpload({ card })} />
               ))}
             </ul>
           )}
@@ -112,11 +119,20 @@ export default function ReadyQueueScreen() {
           Settings › Trello labels. Held cards are never scheduled automatically.
         </p>
       )}
+      {upload && (
+        <TrelloUploadModal
+          clients={clients}
+          clientId={upload.card?.clientId ?? active?.id ?? null}
+          card={upload.card}
+          onClose={() => setUpload(null)}
+          onDone={() => void load()}
+        />
+      )}
     </section>
   );
 }
 
-function CardRow({ card, clients }: { card: ReadyCard; clients: ReadyQueue["clients"] }) {
+function CardRow({ card, clients, onUpload }: { card: ReadyCard; clients: ReadyQueue["clients"]; onUpload: () => void }) {
   const client = clients.find((c) => c.id === card.clientId) ?? null;
   return (
     <li className="rq-row" data-testid={`ready-card-${card.id}`} data-client={client?.slug ?? "held"}>
@@ -147,6 +163,11 @@ function CardRow({ card, clients }: { card: ReadyCard; clients: ReadyQueue["clie
         <a className="btn ghost" href={card.url} target="_blank" rel="noreferrer" aria-label={`Open ${card.name} in Trello`}>
           Trello
         </a>
+        {client && (
+          <button type="button" className="btn ghost" data-testid="ready-card-upload" aria-label={`Upload files to ${card.name}`} onClick={onUpload}>
+            Upload
+          </button>
+        )}
         {client && (
           <a
             {...pathLinkProps(clientPath(client.slug, card.id))}

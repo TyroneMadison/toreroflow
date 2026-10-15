@@ -987,3 +987,48 @@ export interface LabelMap {
   entries: { color: string; clientId: string; clientName: string; clientSlug: string }[];
   unlabeled: "held";
 }
+
+/* ---- Trello upload (Toreroflow -> Trello) ---- */
+export const TRELLO_MAX_BYTES = 250 * 1024 * 1024;
+export interface TrelloList { id: string; name: string }
+export interface TrelloCardRef { id: string; name: string; url: string }
+
+export const getTrelloLists = () => api.get<{ boardId: string; lists: TrelloList[] }>("/trello/lists");
+export const getTrelloCards = (listId: string, clientId: string) =>
+  api.get<{ cards: TrelloCardRef[] }>(`/trello/cards?listId=${encodeURIComponent(listId)}&clientId=${encodeURIComponent(clientId)}`);
+export const createTrelloCard = (body: { clientId: string; listId: string; name: string; desc?: string }) =>
+  api.post<TrelloCardRef>("/trello/cards", body);
+export const linkTrelloAttachment = (cardId: string, mediaId: string) =>
+  api.post<{ id: string; name: string; url: string }>(`/trello/cards/${cardId}/attachments/link`, { mediaId });
+/** Move a scheduled Ready card to "Approved by Client/ uploaded". Safe to retry. */
+export const markCardUploaded = (cardId: string, body: { clientId: string; mediaId?: string; note?: string }) =>
+  api.post<{ ok: true; alreadyMoved: boolean; url: string; list?: string }>(`/trello/cards/${cardId}/uploaded`, body);
+
+/** One file onto a Trello card, with upload progress (fetch has none, so XHR). */
+export function uploadTrelloAttachment(
+  cardId: string,
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<{ id: string; name: string; url: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/trello/cards/${cardId}/attachments`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
+    xhr.onerror = () => reject(new ApiError(0, { error: "network error" }));
+    xhr.onload = () => {
+      let data: unknown = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        /* non-JSON proxy error */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as { id: string; name: string; url: string });
+      else reject(new ApiError(xhr.status, data));
+    };
+    const form = new FormData();
+    form.append("file", file, file.name);
+    xhr.send(form);
+  });
+}
