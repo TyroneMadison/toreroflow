@@ -195,10 +195,10 @@ export async function trelloRoutes(app: FastifyInstance): Promise<void> {
       if (!b.lists.some((l) => l.id === q.listId)) return reply.status(404).send({ error: "list not on the pipeline board" });
       const clients = await loadClients(request.user.agencyId);
       const map = buildLabelMap(clients);
-      const cards = await trello<TrelloCard[]>(`/lists/${q.listId}/cards?fields=name,shortUrl,idList,labels,dateLastActivity`);
+      const cards = await trello<TrelloCard[]>(`/lists/${q.listId}/cards?fields=name,shortUrl,idList,labels,cover,dateLastActivity`);
       return {
         cards: cards
-          .filter((c) => resolveCard(c.labels.map((l) => l.color), map).clientId === q.clientId)
+          .filter((c) => resolveCardByCover(c.cover?.color, c.labels.map((l) => l.color), map).clientId === q.clientId)
           .map((c) => ({ id: c.id, name: c.name, url: c.shortUrl })),
       };
     } catch (err) {
@@ -240,11 +240,11 @@ export async function trelloRoutes(app: FastifyInstance): Promise<void> {
 
   /** A card on the pipeline board that routes to this agency's client, or an error status. */
   async function ownCard(agencyId: string, cardId: string) {
-    const card = await trello<TrelloCard & { idBoard: string }>(`/cards/${cardId}?fields=name,shortUrl,idList,idBoard,labels`);
+    const card = await trello<TrelloCard & { idBoard: string }>(`/cards/${cardId}?fields=name,shortUrl,idList,idBoard,labels,cover`);
     const b = await board();
     if (card.idBoard !== b.id) throw Object.assign(new Error("card is not on the pipeline board"), { status: 404 });
     const clients = await loadClients(agencyId);
-    const r = resolveCard(card.labels.map((l) => l.color), buildLabelMap(clients));
+    const r = resolveCardByCover(card.cover?.color, card.labels.map((l) => l.color), buildLabelMap(clients));
     if (!r.clientId) throw Object.assign(new Error(`card has no client label (${r.reason})`), { status: 409 });
     return { card, clientId: r.clientId };
   }
@@ -315,14 +315,14 @@ export async function trelloRoutes(app: FastifyInstance): Promise<void> {
     const clients = await loadClients(request.user.agencyId);
     if (!clients.some((c) => c.id === body.clientId)) return reply.status(404).send({ error: "client not found" });
     try {
-      const card = await trello<TrelloCard & { idBoard: string }>(`/cards/${request.params.id}?fields=name,shortUrl,idList,idBoard,labels`);
+      const card = await trello<TrelloCard & { idBoard: string }>(`/cards/${request.params.id}?fields=name,shortUrl,idList,idBoard,labels,cover`);
       const lists = await trello<{ id: string; name: string }[]>(`/boards/${card.idBoard}/lists?fields=name&filter=open`);
       const ready = lists.find((l) => norm(l.name) === READY_LIST);
       const done = lists.find((l) => norm(l.name) === UPLOADED_LIST);
       if (!done) return reply.status(409).send({ error: 'board has no "Approved by Client/ uploaded" list' });
       if (card.idList === done.id) return { ok: true, alreadyMoved: true, url: card.shortUrl };
       if (!ready || card.idList !== ready.id) return reply.status(409).send({ error: "card is not in Ready for posting" });
-      const r = resolveCard(card.labels.map((l) => l.color), buildLabelMap(clients));
+      const r = resolveCardByCover(card.cover?.color, card.labels.map((l) => l.color), buildLabelMap(clients));
       if (r.clientId !== body.clientId) return reply.status(409).send({ error: "card label does not match this client", reason: r.reason });
       await trello(`/cards/${card.id}`, "PUT", { idList: done.id, pos: "top" });
       const text = [`Uploaded and scheduled in Toreroflow${body.mediaId ? ` (media ${body.mediaId})` : ""}.`, body.note].filter(Boolean).join(" ");
