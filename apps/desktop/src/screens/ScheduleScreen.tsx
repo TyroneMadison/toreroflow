@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, videoLabel, type MediaAssetInfo, type ReadyQueue } from "../lib/api";
+import { api, markCardUploaded, videoLabel, type MediaAssetInfo, type ReadyQueue } from "../lib/api";
 import { clientPath, pathLinkProps, useRoute } from "../lib/routes";
 import { useAppState } from "../state/AppState";
 import SopPanel, { sopRequired } from "../components/SopPanel";
@@ -19,6 +19,8 @@ export default function ScheduleScreen() {
   const [assetId, setAssetId] = useState<string | null>(null);
   const [ack, setAck] = useState(false);
   const [done, setDone] = useState(false);
+  /** The last step: move the card to "Approved by Client/ uploaded". */
+  const [move, setMove] = useState<{ state: "idle" | "moving" | "moved" | "failed"; error?: string }>({ state: "idle" });
 
   // The modal body reads the selected client, so point it at this one.
   useEffect(() => {
@@ -49,6 +51,16 @@ export default function ScheduleScreen() {
   }
 
   const asset = assets?.find((a) => a.id === assetId) ?? null;
+  const moveCard = async (mediaId: string | null) => {
+    if (!card || !client) return;
+    setMove({ state: "moving" });
+    try {
+      await markCardUploaded(card.id, { clientId: client.id, mediaId: mediaId ?? undefined });
+      setMove({ state: "moved" });
+    } catch (e) {
+      setMove({ state: "failed", error: (e as Error).message });
+    }
+  };
   // The SOP is a gentle reminder; scheduling is never held back for it.
   const remind = sopRequired(client.sop) && !ack;
   return (
@@ -73,7 +85,22 @@ export default function ScheduleScreen() {
           {done ? (
             <div className="empty" role="status" data-testid="schedule-done">
               <b>Scheduled</b>
-              <p>Move the Trello card to Scheduled when you are ready.</p>
+              {!card ? (
+                <p>No Trello card to move.</p>
+              ) : move.state === "moved" ? (
+                <p className="tu-note ok rq-moved" data-testid="card-moved">
+                  ✓ Card moved: Ready for posting → Approved by Client/ uploaded
+                </p>
+              ) : move.state === "failed" ? (
+                <p className="tu-note warn rq-moved" role="alert" data-testid="card-move-failed">
+                  Scheduled, but the card is still in Ready for posting ({move.error}).{" "}
+                  <button type="button" className="btn ghost" onClick={() => void moveCard(assetId)}>
+                    Retry move
+                  </button>
+                </p>
+              ) : (
+                <p className="tu-sub">Moving the Trello card…</p>
+              )}
               <a className="btn" {...pathLinkProps(clientPath(client.slug))}>
                 Next ready card
               </a>
@@ -114,7 +141,10 @@ export default function ScheduleScreen() {
                   inline
                   sopAcknowledged={ack}
                   onClose={() => setAssetId(null)}
-                  onScheduled={() => setDone(true)}
+                  onScheduled={() => {
+                    setDone(true);
+                    void moveCard(asset.id);
+                  }}
                 />
               )}
             </>

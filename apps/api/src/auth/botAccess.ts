@@ -42,6 +42,11 @@ const ALLOW: Rule[] = [
   // Its own scheduled posts, so it can confirm what it just did. Read-only:
   // rescheduling, retrying and deleting stay human actions.
   { method: "GET", path: new RegExp(`^/clients/${ID}/posts$`) },
+
+  // Close the loop on the pipeline card it just scheduled: move it from
+  // Ready for posting to "Approved by Client/ uploaded". The route only moves
+  // a Ready card whose label maps to that client, nothing else on the board.
+  { method: "POST", path: new RegExp(`^/trello/cards/${ID}/uploaded$`) },
 ];
 
 /** True when a bot-role token may make this request. */

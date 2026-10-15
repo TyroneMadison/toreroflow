@@ -38,6 +38,14 @@ for (const [method, path] of [
   ["POST", "/clients/cms0qdz5t/dm-campaigns"],
   ["POST", "/auth/bot-token"],
   ["POST", "/auth/login"],
+  // Trello writes beyond the one card move.
+  ["PUT", "/trello/cards/6a7b3cc5916d5e9d219af197"],
+  ["DELETE", "/trello/cards/6a7b3cc5916d5e9d219af197"],
+  ["PUT", "/clients/cms0qdz5t/trello-labels"],
+  ["PUT", "/clients/cms0qdz5t/sop"],
+  ["POST", "/trello/cards"],
+  ["POST", "/trello/cards/6a7b3cc5916d5e9d219af197/attachments"],
+  ["POST", "/trello/cards/6a7b3cc5916d5e9d219af197/attachments/link"],
   ["GET", "/oauth/connections"],
   ["POST", "/accounts/acc1/facebook-reconnect"],
   // Nested lookalikes a sloppy regex would wave through.
