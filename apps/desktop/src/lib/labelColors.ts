@@ -1,4 +1,4 @@
-/** Swatches for Trello label colors, shared by the Ready queue and Settings. */
+/** Swatches for Trello card cover (and label) colors, shared by the Ready queue and Settings. */
 export const LABEL_SWATCH: Record<string, string> = {
   red: "#E5484D",
   black: "#3a3d44",
