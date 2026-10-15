@@ -29,9 +29,10 @@ export function loadGlassLevel(): number {
 }
 
 /** Refraction strength in px of displacement. Eases in, so the middle of the
- *  slider is mostly frosted and the last third ripples hard. */
+ *  slider is mostly frosted and the clear end warps like looking through liquid. */
 export function refractionScale(level: number): number {
-  return Math.round(70 * level * level * level);
+  // v0.3.27: never see-through. 90px of warp at 0% up to 170px (liquid, unreadable) at the clear end.
+  return Math.round(90 + 80 * level);
 }
 
 /** backdrop-filter url() is Chromium-only (WebView2 and Chrome). Elsewhere the
@@ -53,7 +54,7 @@ export function applyGlassLevel(level: number): void {
   html.style.setProperty("--glass-level", String(v));
   html.setAttribute("data-glass-level", String(v));
   const scale = refractionScale(v);
-  html.style.setProperty("--g-refract", scale > 2 && supportsRefraction() ? "url(#tf-refract)" : "");
+  html.style.setProperty("--g-refract", scale > 0 && supportsRefraction() ? "url(#tf-refract)" : "");
   document.getElementById("tf-refract-map")?.setAttribute("scale", String(scale));
   setRefraction(scale);
   applyWindowGlass(v, html.getAttribute("data-glass") === "low");

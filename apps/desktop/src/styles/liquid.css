@@ -7,19 +7,19 @@
 :root{
   --glass-level:.95;
   --L:var(--glass-level);
-  --g-blur:calc(48px - 42px * var(--L));          /* 48px frosted -> 6px clear */
-  --g-blur-2:calc(28px - 24px * var(--L));
-  --g-blur-3:calc(56px - 36px * var(--L));
+  --g-blur:0px;                                  /* v0.3.27: no frost, liquid refraction only */
+  --g-blur-2:0px;
+  --g-blur-3:0px;
   --g-sat:calc(140% + 40% * var(--L));
-  --g-tint:calc(.26 - .22 * var(--L));            /* white fill .26 -> .04 */
-  --g-tint-2:calc(.16 - .12 * var(--L));
+  --g-tint:0;                                    /* no tinted base */
+  --g-tint-2:0;
   --g-rim:calc(.85 - .25 * var(--L));
   --g-gloss:calc(.25 + .45 * var(--L));           /* wet gloss strength, subtle */
   --g-legible:calc(.05 + .40 * var(--L));         /* backing behind small text */
   --g-chroma:calc(.15 + .45 * var(--L));          /* chromatic rim strength */
   --press-bg:rgba(10,20,50,calc(.30 - .12 * var(--L)));
   --bg-base:#050505;
-  --g-smoke:.06;
+  --g-smoke:0;
 }
 
 /* ---- base: no wallpaper ----
@@ -32,14 +32,14 @@
 .tf-vig{background:radial-gradient(ellipse at 50% 45%,transparent 60%,rgba(0,0,0,.28)) !important}
 [data-theme="light"] .tf-bg{background:radial-gradient(120% 90% at 20% 0%,#fff 0%,transparent 60%),#f2f2f7 !important}
 [data-theme="light"] .tf-vig{background:none !important}
-html[data-shell="desktop"],html[data-shell="desktop"] body,html[data-shell="desktop"] #root{background:transparent !important}
-html[data-shell="desktop"] .tf-bg,html[data-shell="desktop"] .tf-vig{display:none !important}
+
+/* v0.3.27: the desktop window is opaque and shows the same in-app background as the web. */
 /* Over a real desktop the panels need a little smoke to stay readable: more when frosted, less when clear. */
-html[data-shell="desktop"]{--g-smoke:calc(.42 - .2 * var(--L))}
+
 /* The base colour every panel is smoked with: Grok-style near-black, or iPhone white. */
 :root{--g-base:5,5,5}
-[data-theme="light"]{--g-base:242,242,247;--g-smoke:.18}
-html[data-shell="desktop"][data-theme="light"]{--g-smoke:calc(.55 - .25 * var(--L))}
+[data-theme="light"]{--g-base:242,242,247;--g-smoke:0}
+
 
 /* ---- shared glass slab ---- */
 .glass-z1,.glass-z2,.glass-z3,.glass,.glass-sm,.dock{
@@ -51,8 +51,8 @@ html[data-shell="desktop"][data-theme="light"]{--g-smoke:calc(.55 - .25 * var(--
     radial-gradient(140% 140% at 50% 45%,transparent 70%,rgba(60,130,230,calc(var(--g-gloss) * .2)) 100%),
     linear-gradient(150deg,rgba(255,255,255,calc(var(--g-tint) + .05)),rgba(255,255,255,var(--g-tint)) 40%,rgba(255,255,255,calc(var(--g-tint) * .6))),
     linear-gradient(rgba(var(--g-base),var(--g-smoke)),rgba(var(--g-base),var(--g-smoke))) !important;
-  backdrop-filter:var(--g-refract,) blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
-  -webkit-backdrop-filter:blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important;
+  backdrop-filter:var(--g-refract,) saturate(var(--g-sat)) brightness(1.04) !important;
+  -webkit-backdrop-filter:saturate(var(--g-sat)) brightness(1.04) !important;
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,calc(var(--g-rim) * .65)),
     inset 3px 3px 2px -1px rgba(255,180,220,var(--g-chroma)),      /* chromatic rim: warm top-left */
@@ -60,15 +60,15 @@ html[data-shell="desktop"][data-theme="light"]{--g-smoke:calc(.55 - .25 * var(--
     inset 0 -6px 10px -6px rgba(10,30,90,.45),
     0 2px 3px rgba(5,15,50,.18),0 18px 40px rgba(5,15,50,.22),0 40px 80px rgba(5,10,40,.2) !important}
 .glass-z2,.glass-sm{
-  backdrop-filter:blur(var(--g-blur-2)) saturate(var(--g-sat)) !important;
-  -webkit-backdrop-filter:blur(var(--g-blur-2)) saturate(var(--g-sat)) !important;
+  backdrop-filter:var(--g-refract,) saturate(var(--g-sat)) !important;
+  -webkit-backdrop-filter:var(--g-refract,) saturate(var(--g-sat)) !important;
   background:
     linear-gradient(180deg,rgba(255,255,255,calc(var(--g-gloss) * .5)) 0,transparent 3px),
     rgba(255,255,255,var(--g-tint-2)) !important;
   box-shadow:inset 0 2px 5px rgba(10,20,60,.25),inset 0 -1px 0 rgba(255,255,255,calc(var(--g-rim) * .7)),
     inset 0 0 0 1px rgba(255,255,255,calc(var(--g-rim) * .4)) !important}
-.glass-z3{backdrop-filter:blur(var(--g-blur-3)) saturate(var(--g-sat)) !important;
-  -webkit-backdrop-filter:blur(var(--g-blur-3)) saturate(var(--g-sat)) !important;
+.glass-z3{backdrop-filter:var(--g-refract,) saturate(var(--g-sat)) !important;
+  -webkit-backdrop-filter:var(--g-refract,) saturate(var(--g-sat)) !important;
   background-color:rgba(20,40,100,calc(.55 - .3 * var(--L))) !important}
 /* the old masked rim from tokens.css: keep as the bright 1px edge */
 .glass-z1::before,.glass-z3::before{background:linear-gradient(140deg,rgba(255,255,255,var(--g-rim)),rgba(255,255,255,.18) 30%,rgba(255,255,255,.06) 60%,rgba(255,255,255,calc(var(--g-rim) * .6))) !important}
@@ -118,7 +118,7 @@ html[data-glass="low"] *{text-shadow:none !important}
 
 /* ---- per-panel edge bending (lib/refraction.ts) ---- */
 /* A panel with its own lens map uses it instead of the shared ripple. */
-[data-lens]{backdrop-filter:var(--lens) blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.04) !important}
+[data-lens]{backdrop-filter:var(--lens) saturate(var(--g-sat)) brightness(1.04) !important}
 html[data-glass="low"] [data-lens]{backdrop-filter:none !important}
 @media (prefers-reduced-transparency: reduce){[data-lens]{backdrop-filter:none !important}}
 

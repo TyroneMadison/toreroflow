@@ -67,12 +67,12 @@ function buildMap(w: number, h: number, r: number): string {
       const x = i * s;
       const y = j * s;
       const [lx, ly] = lensAt(x, y, w, h, r);
-      // a gentle poured-glass ripple, weaker than the rim
-      const rx = 0.18 * Math.sin(y / 46 + Math.sin(x / 90) * 2);
-      const ry = 0.16 * Math.sin(x / 58 + Math.cos(y / 80) * 2);
+      // thick poured-glass warp across the whole panel, so nothing behind reads clearly
+      const rx = 0.6 * Math.sin(y / 53 + Math.sin(x / 91) * 2.5) + 0.45 * Math.sin(y / 23 + Math.cos(x / 37) * 2) + 0.3 * Math.sin(y / 11 + x / 17);
+      const ry = 0.6 * Math.sin(x / 61 + Math.cos(y / 77) * 2.5) + 0.45 * Math.cos(x / 29 - Math.sin(y / 41) * 2) + 0.3 * Math.cos(x / 13 - y / 19);
       const o = (j * cw + i) * 4;
-      img.data[o] = Math.round(128 + 127 * Math.max(-1, Math.min(1, lx * 0.85 + rx)));
-      img.data[o + 1] = Math.round(128 + 127 * Math.max(-1, Math.min(1, ly * 0.85 + ry)));
+      img.data[o] = Math.round(128 + 127 * Math.max(-1, Math.min(1, lx * 0.7 + rx)));
+      img.data[o + 1] = Math.round(128 + 127 * Math.max(-1, Math.min(1, ly * 0.7 + ry)));
       img.data[o + 2] = 128;
       img.data[o + 3] = 255;
     }
@@ -125,7 +125,7 @@ function writeFilter(el: HTMLElement, e: Entry, w: number, h: number, r: number)
   im.setAttribute("height", String(h));
   const [d, dr] = f.querySelectorAll("feDisplacementMap");
   d!.setAttribute("scale", String(scale));
-  dr!.setAttribute("scale", String(Math.round(scale * 1.08))); // red bends a touch more: chromatic rim
+  dr!.setAttribute("scale", String(Math.round(scale * 1.12))); // red bends a touch more: chromatic rim
   el.style.setProperty("--lens", `url(#${e.id})`);
   el.setAttribute("data-lens", "");
 }

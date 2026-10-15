@@ -30,7 +30,9 @@ export function markShell(): void {
 export function applyWindowGlass(level: number, plain = false): void {
   if (!isTauri()) return;
   // Automation mode and reduced transparency get a calm frosted window.
-  const want = plain ? "acrylic" : windowEffectFor(level);
+  // v0.3.27: the window is opaque with an in-app background, so no Acrylic/Mica ever.
+  void level; void plain;
+  const want = "clear" as "acrylic" | "clear";
   // Acrylic tinted to match the mode: near-black in dark, iPhone white in light.
   const light = document.documentElement.getAttribute("data-theme") === "light";
   const key = `${want}:${light ? "light" : "dark"}`;
