@@ -36,12 +36,12 @@ Commits: a1c94a2, 77554f6, 85ca8da, merge 8706847, release 20d3791.
 
 ### Changed - cover-color client matching
 
-- Trello cards are matched to clients by **card cover color**: red → Caleb, black/gray → Dud Rents (Dudley), yellow/gold → Jacoby. A label is only used as a fallback when the card has no cover
+- Trello cards are matched to clients by **card cover color**: red → Acme Motors, black/gray → Northside Rentals, yellow/gold → Lakeview Auto. A label is only used as a fallback when the card has no cover
 - The mapping is editable in Settings → Trello labels (Trello cover colors). Unmapped colors are held and never scheduled automatically
 
 ### Fixed
 
-- A BMW card was being matched to the wrong client; it now resolves to Dud Rents by its cover color
+- A BMW card was being matched to the wrong client; it now resolves to Northside Rentals by its cover color
 
 Commits: fecb6af, merge 3a8f281, release 0d8fa95.
 

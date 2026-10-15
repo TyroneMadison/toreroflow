@@ -89,7 +89,7 @@ The editing app lives inside Toreroflow.
   <tr>
     <td><img src="docs/screenshots/edit-studio.png" alt="Edit: Studio" /></td>
     <td><img src="docs/screenshots/edit-analyze.png" alt="Edit: Analyze" /></td>
-    <td><img src="docs/screenshots/edit-ideas.png" alt="Edit: Ideas" /></td>
+    <td valign="top"><sub>Ideas redesign coming.</sub></td>
   </tr>
 </table>
 
@@ -98,7 +98,7 @@ The editing app lives inside Toreroflow.
 <img src="docs/screenshots/trello-upload.png" width="920" alt="Upload to Trello: client, list, new or existing card, title, description and file drop" />
 
 - Cards on the editor pipeline board are matched to clients by **cover color**
-  (red → Caleb, black/gray → Dud Rents, yellow/gold → Jacoby; labels only as a
+  (red → Acme Motors, black/gray → Northside Rentals, yellow/gold → Lakeview Auto; labels only as a
   fallback). Unmapped colors are held, never scheduled automatically.
 - Each client has a **Ready queue** fed from the board.
 - **Upload to Trello** creates or updates a card and attaches files (up to
