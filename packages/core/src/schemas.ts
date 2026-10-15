@@ -263,8 +263,8 @@ export const schedulePostSchema = z.object({
   youtube: youtubeOptionsSchema.optional(),
   tiktok: tiktokOptionsSchema.optional(),
   /**
-   * The scheduler (person or bot) confirms it read the client's SOP. Required
-   * by the API whenever the client has one; ignored when they have none.
+   * The scheduler (person or bot) confirms it checked the client's SOP.
+   * Optional: without it the schedule still goes through, with a reminder.
    */
   sopAcknowledged: z.boolean().optional(),
 });

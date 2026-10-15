@@ -49,7 +49,8 @@ export default function ScheduleModal({
   const hostOwnsSop = sopAcknowledged !== undefined;
   const [ownAck, setOwnAck] = useState(false);
   const sopAck = hostOwnsSop ? sopAcknowledged : ownAck;
-  const sopBlocked = sopRequired(selectedClient?.sop) && !sopAck;
+  // A gentle reminder only; never disables scheduling.
+  const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
   const toast = useToast();
   const isCarousel = asset.kind === "carousel";
   // A carousel can only go where images go: Instagram takes up to 10 as a
@@ -720,9 +721,9 @@ export default function ScheduleModal({
         )}
       </div>
       <div className="modal-foot">
-        {sopBlocked && (
-          <span className="sop-hint" role="status" data-testid="sop-required">
-            Tick “I read the SOP” to schedule
+        {sopReminder && (
+          <span className="sop-hint" role="status" data-testid="sop-reminder">
+            Reminder: check {selectedClient?.name}'s SOP
           </span>
         )}
         <button className="btn ghost" onClick={onClose}>
@@ -731,7 +732,7 @@ export default function ScheduleModal({
         {/* Publishing is irreversible, so Post now asks once before firing. */}
         <button
           className={`btn ${confirmNow ? "danger" : "ghost"}`}
-          disabled={busy !== null || accountIds.length === 0 || sopBlocked}
+          disabled={busy !== null || accountIds.length === 0}
           data-testid="schedule-post-now"
           onClick={() => {
             if (confirmNow) void submit("now");
@@ -745,8 +746,8 @@ export default function ScheduleModal({
         </button>
         <button
           className="btn"
-          disabled={busy !== null || accountIds.length === 0 || whenError !== null || sopBlocked}
-          title={sopBlocked ? "Read the SOP and tick the box first" : (whenError ?? undefined)}
+          disabled={busy !== null || accountIds.length === 0 || whenError !== null}
+          title={whenError ?? undefined}
           data-testid="schedule-submit"
           onClick={() => void submit("schedule")}
         >

@@ -4,8 +4,8 @@ import { useAppState } from "../state/AppState";
 
 /*
  * A client's posting SOP, shown wherever a post is scheduled. When the client
- * has one, scheduling waits for the acknowledgement checkbox (and the API
- * refuses without it). With none, it says so plainly: no SOP is ever invented.
+ * has one, it shows a gentle reminder and an optional "checked it" box;
+ * scheduling is never blocked. With none, it says so plainly: no SOP is ever invented.
  */
 export default function SopPanel({
   clientId,
@@ -97,11 +97,11 @@ export default function SopPanel({
             <input
               type="checkbox"
               data-testid="sop-ack"
-              aria-label={`I read ${name}'s SOP`}
+              aria-label={`I checked ${name}'s SOP`}
               checked={acknowledged}
               onChange={(e) => onAcknowledge(e.target.checked)}
             />{" "}
-            I read {name}'s SOP
+            I checked {name}'s SOP (optional)
           </label>
         </>
       ) : (
@@ -117,7 +117,7 @@ export default function SopPanel({
   );
 }
 
-/** Whether a client's schedule action must wait for the SOP checkbox. */
+/** Whether a client has an SOP worth a reminder (never a block). */
 export function sopRequired(sop: string | null | undefined): boolean {
   return Boolean(sop?.trim());
 }

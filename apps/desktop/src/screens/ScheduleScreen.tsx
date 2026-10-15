@@ -49,9 +49,10 @@ export default function ScheduleScreen() {
   }
 
   const asset = assets?.find((a) => a.id === assetId) ?? null;
-  const gated = sopRequired(client.sop) && !ack;
+  // The SOP is a gentle reminder; scheduling is never held back for it.
+  const remind = sopRequired(client.sop) && !ack;
   return (
-    <section className="screen active rq" data-screen="schedule" data-state={done ? "scheduled" : gated ? "sop-pending" : "ready"}>
+    <section className="screen active rq" data-screen="schedule" data-state={done ? "scheduled" : "ready"}>
       <nav className="rq-crumbs" aria-label="Breadcrumb">
         <a {...pathLinkProps(clientPath(client.slug))} data-testid="back-to-ready">
           {client.name} · Ready
@@ -101,12 +102,12 @@ export default function ScheduleScreen() {
                   ))}
                 </select>
               )}
-              {gated && (
-                <p className="sop-hint" role="status" data-testid="sop-required">
-                  Read {client.name}'s SOP and tick the box to unlock scheduling.
+              {remind && (
+                <p className="sop-hint" role="status" data-testid="sop-reminder">
+                  Reminder: check {client.name}'s SOP.
                 </p>
               )}
-              {asset && !gated && (
+              {asset && (
                 <ScheduleModal
                   key={asset.id}
                   asset={asset}

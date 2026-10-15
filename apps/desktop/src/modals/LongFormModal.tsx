@@ -111,7 +111,8 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [sopAck, setSopAck] = useState(false);
-  const sopBlocked = sopRequired(selectedClient?.sop) && !sopAck;
+  // A gentle reminder only; never disables publishing.
+  const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
   const stepIndex = liveOrder.indexOf(phase);
 
   // Details.
@@ -1254,9 +1255,9 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         ) : (
           <button
             className="btn"
-            disabled={busy || checksBlock || whenError !== null || ytAccounts.length === 0 || sopBlocked}
+            disabled={busy || checksBlock || whenError !== null || ytAccounts.length === 0}
             data-testid="longform-submit"
-            title={sopBlocked ? "Read the SOP and tick the box first" : checksBlock ? "The Checks phase is holding this: something above is red." : whenError ?? undefined}
+            title={checksBlock ? "The Checks phase is holding this: something above is red." : whenError ?? undefined}
             onClick={() => void submit()}
           >
             <svg>
