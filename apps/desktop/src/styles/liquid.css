@@ -5,14 +5,14 @@
    No blob shapes, no droplets: the gloss is streaks, rims and soft light only.
    ======================================================================================= */
 :root{
-  --glass-level:.95;
+  --glass-level:.25;
   --L:var(--glass-level);
   --g-blur:0px;                                  /* v0.3.27: no frost, liquid refraction only */
   --g-blur-2:0px;
   --g-blur-3:0px;
   --g-sat:calc(140% + 40% * var(--L));
-  --g-tint:0;                                    /* no tinted base */
-  --g-tint-2:0;
+  --g-tint:.06;                                  /* v0.3.28: a light glass sheen, never a black fill */
+  --g-tint-2:.04;
   --g-rim:calc(.85 - .25 * var(--L));
   --g-gloss:calc(.25 + .45 * var(--L));           /* wet gloss strength, subtle */
   --g-legible:calc(.05 + .40 * var(--L));         /* backing behind small text */
@@ -30,10 +30,12 @@
 .tf-bg{inset:0 !important;filter:none !important;
   background:radial-gradient(120% 90% at 20% 0%,#141414 0%,transparent 60%),#050505 !important}
 .tf-vig{background:radial-gradient(ellipse at 50% 45%,transparent 60%,rgba(0,0,0,.28)) !important}
-[data-theme="light"] .tf-bg{background:radial-gradient(120% 90% at 20% 0%,#fff 0%,transparent 60%),#f2f2f7 !important}
+[data-theme="light"] .tf-bg{background:radial-gradient(60% 70% at 15% 10%,rgba(255,140,120,.45),transparent 70%),radial-gradient(55% 65% at 85% 15%,rgba(110,200,255,.45),transparent 70%),radial-gradient(60% 70% at 70% 95%,rgba(180,150,255,.4),transparent 70%),#f2f2f7 !important}
 [data-theme="light"] .tf-vig{background:none !important}
 
-/* v0.3.27: the desktop window is opaque and shows the same in-app background as the web. */
+/* v0.3.28: desktop is a real glass pane over the live Windows desktop (no Acrylic/Mica). */
+html[data-shell="desktop"],html[data-shell="desktop"] body,html[data-shell="desktop"] #root{background:transparent !important}
+html[data-shell="desktop"] .tf-bg,html[data-shell="desktop"] .tf-vig{display:none !important}
 /* Over a real desktop the panels need a little smoke to stay readable: more when frosted, less when clear. */
 
 /* The base colour every panel is smoked with: Grok-style near-black, or iPhone white. */

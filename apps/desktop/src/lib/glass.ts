@@ -11,7 +11,7 @@ import { setRefraction } from "./refraction";
 import { applyWindowGlass } from "./windowGlass";
 
 export const GLASS_STORAGE_KEY = "toreroflow-glass-level";
-export const GLASS_DEFAULT = 0.5;
+export const GLASS_DEFAULT = 0.25;
 
 export function clampGlass(v: unknown): number {
   const n = typeof v === "number" ? v : Number.parseFloat(String(v));
@@ -31,8 +31,8 @@ export function loadGlassLevel(): number {
 /** Refraction strength in px of displacement. Eases in, so the middle of the
  *  slider is mostly frosted and the clear end warps like looking through liquid. */
 export function refractionScale(level: number): number {
-  // v0.3.27: never see-through. 90px of warp at 0% up to 170px (liquid, unreadable) at the clear end.
-  return Math.round(90 + 80 * level);
+  // v0.3.27: never see-through. 70px of smooth warp at 0% up to 180px (liquid, unreadable) at the clear end.
+  return Math.round(70 + 110 * level);
 }
 
 /** backdrop-filter url() is Chromium-only (WebView2 and Chrome). Elsewhere the

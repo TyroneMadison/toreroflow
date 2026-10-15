@@ -54,7 +54,7 @@ function buildMap(w: number, h: number, r: number): string {
   const hit = maps.get(key);
   if (hit) return hit;
   // Drawn at quarter resolution and scaled up by feImage: the map is smooth.
-  const s = 4;
+  const s = 2;
   const cw = Math.max(2, Math.ceil(w / s));
   const ch = Math.max(2, Math.ceil(h / s));
   const c = document.createElement("canvas");
@@ -67,12 +67,12 @@ function buildMap(w: number, h: number, r: number): string {
       const x = i * s;
       const y = j * s;
       const [lx, ly] = lensAt(x, y, w, h, r);
-      // thick poured-glass warp across the whole panel, so nothing behind reads clearly
-      const rx = 0.6 * Math.sin(y / 53 + Math.sin(x / 91) * 2.5) + 0.45 * Math.sin(y / 23 + Math.cos(x / 37) * 2) + 0.3 * Math.sin(y / 11 + x / 17);
-      const ry = 0.6 * Math.sin(x / 61 + Math.cos(y / 77) * 2.5) + 0.45 * Math.cos(x / 29 - Math.sin(y / 41) * 2) + 0.3 * Math.cos(x / 13 - y / 19);
+      // smooth liquid warp: low frequencies only, so nothing tears or stair-steps (v0.3.28)
+      const rx = 0.45 * Math.sin(y / 70 + Math.sin(x / 110) * 2) + 0.45 * Math.sin(y / 34 + Math.cos(x / 51) * 1.7);
+      const ry = 0.45 * Math.sin(x / 80 + Math.cos(y / 100) * 2) + 0.45 * Math.cos(x / 38 - Math.sin(y / 57) * 1.7);
       const o = (j * cw + i) * 4;
-      img.data[o] = Math.round(128 + 127 * Math.max(-1, Math.min(1, lx * 0.7 + rx)));
-      img.data[o + 1] = Math.round(128 + 127 * Math.max(-1, Math.min(1, ly * 0.7 + ry)));
+      img.data[o] = Math.round(128 + 127 * Math.max(-1, Math.min(1, lx * 0.6 + rx)));
+      img.data[o + 1] = Math.round(128 + 127 * Math.max(-1, Math.min(1, ly * 0.6 + ry)));
       img.data[o + 2] = 128;
       img.data[o + 3] = 255;
     }
@@ -103,12 +103,9 @@ function writeFilter(el: HTMLElement, e: Entry, w: number, h: number, r: number)
     f.id = e.id;
     f.setAttribute("color-interpolation-filters", "sRGB");
     f.innerHTML =
-      '<feImage result="map" preserveAspectRatio="none"/>' +
-      '<feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" result="d"/>' +
-      '<feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G" result="dr"/>' +
-      '<feColorMatrix in="dr" type="matrix" values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="r"/>' +
-      '<feColorMatrix in="d" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0" result="gb"/>' +
-      '<feBlend in="r" in2="gb" mode="screen"/>';
+      '<feImage result="raw" preserveAspectRatio="none"/>' +
+      '<feGaussianBlur in="raw" stdDeviation="4" edgeMode="duplicate" result="map"/>' +
+      '<feDisplacementMap in="SourceGraphic" in2="map" xChannelSelector="R" yChannelSelector="G"/>';
     ensureLayer().appendChild(f);
   }
   f.setAttribute("x", "0");
@@ -123,9 +120,8 @@ function writeFilter(el: HTMLElement, e: Entry, w: number, h: number, r: number)
   im.setAttribute("y", "0");
   im.setAttribute("width", String(w));
   im.setAttribute("height", String(h));
-  const [d, dr] = f.querySelectorAll("feDisplacementMap");
+  const d = f.querySelector("feDisplacementMap");
   d!.setAttribute("scale", String(scale));
-  dr!.setAttribute("scale", String(Math.round(scale * 1.12))); // red bends a touch more: chromatic rim
   el.style.setProperty("--lens", `url(#${e.id})`);
   el.setAttribute("data-lens", "");
 }

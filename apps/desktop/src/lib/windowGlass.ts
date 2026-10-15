@@ -19,7 +19,7 @@ export function windowEffectFor(level: number): "acrylic" | "clear" {
 /** Re-applies after the theme flips, so the acrylic tint follows it. */
 export function refreshWindowGlass(): void {
   last = null;
-  const v = Number(document.documentElement.getAttribute("data-glass-level") ?? "0.5");
+  const v = Number(document.documentElement.getAttribute("data-glass-level") ?? "0.25");
   applyWindowGlass(v, document.documentElement.getAttribute("data-glass") === "low");
 }
 
@@ -30,7 +30,7 @@ export function markShell(): void {
 export function applyWindowGlass(level: number, plain = false): void {
   if (!isTauri()) return;
   // Automation mode and reduced transparency get a calm frosted window.
-  // v0.3.27: the window is opaque with an in-app background, so no Acrylic/Mica ever.
+  // v0.3.28: transparent window over the real desktop, but never Acrylic/Mica (no frost).
   void level; void plain;
   const want = "clear" as "acrylic" | "clear";
   // Acrylic tinted to match the mode: near-black in dark, iPhone white in light.
