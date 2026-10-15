@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getPrisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
-import { baseColor, buildLabelMap, clientSlug, DEFAULT_LABEL_MAP, resolveCard } from "../trello/labelMap";
+import { baseColor, buildLabelMap, clientSlug, DEFAULT_LABEL_MAP, resolveCard, resolveCardByCover } from "../trello/labelMap";
 
 /** The list on the editor pipeline board that holds finished, unposted cards. */
 const READY_LIST = "ready for posting";
@@ -12,7 +12,7 @@ const NOT_CONFIGURED =
   "Trello is not connected. Set TRELLO_KEY and TRELLO_TOKEN on the API server (and TRELLO_BOARD_ID, or keep the board named Torone Editor Pipeline).";
 
 interface TrelloLabel { id: string; name: string; color: string | null }
-interface TrelloCard { id: string; name: string; shortUrl: string; idList: string; labels: TrelloLabel[]; dateLastActivity: string }
+interface TrelloCard { id: string; name: string; shortUrl: string; idList: string; labels: TrelloLabel[]; cover?: { color: string | null } | null; dateLastActivity: string }
 
 async function trello<T>(path: string): Promise<T> {
   const u = new URL(`https://api.trello.com/1${path}`);
@@ -111,20 +111,22 @@ export async function trelloRoutes(app: FastifyInstance): Promise<void> {
       if (!ready) {
         return { configured: false, message: 'The board has no "Ready for posting" list.', clients: clientOut, cards: [] };
       }
-      const cards = await trello<TrelloCard[]>(`/lists/${ready.id}/cards?fields=name,shortUrl,idList,labels,dateLastActivity`);
+      const cards = await trello<TrelloCard[]>(`/lists/${ready.id}/cards?fields=name,shortUrl,idList,labels,cover,dateLastActivity`);
       const map = buildLabelMap(clients);
       return {
         configured: true,
         message: null,
         clients: clientOut,
         cards: cards.map((card) => {
-          const r = resolveCard(card.labels.map((l) => l.color), map);
+          const r = resolveCardByCover(card.cover?.color, card.labels.map((l) => l.color), map);
           return {
             id: card.id,
             name: card.name,
             url: card.shortUrl,
             list: "Ready for posting",
             labels: card.labels.map((l) => ({ name: l.name, color: l.color })),
+            coverColor: card.cover?.color ?? null,
+            matchedBy: r.source,
             clientId: r.clientId,
             held: r.clientId === null,
             heldReason: r.clientId === null ? r.reason : null,

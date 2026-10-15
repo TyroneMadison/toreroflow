@@ -1,6 +1,6 @@
 /*
  * Which Toreroflow client a Trello card on the editor pipeline belongs to,
- * decided by its color label. Pure, so it is checked without Trello or a DB.
+ * decided by its cover color (label colors only as a fallback). Pure, so it is checked without Trello or a DB.
  */
 
 /** Trello's own color names, with the _dark and _light variants folded in. */
@@ -59,6 +59,24 @@ export function buildLabelMap(clients: MappableClient[]): Map<string, string> {
     if (hit) map.set(color, hit.id);
   }
   return map;
+}
+
+/**
+ * The client for a card: its cover color decides; label colors are only used
+ * when the card has no cover color. Same reasons as resolveCard.
+ */
+export function resolveCardByCover(
+  coverColor: string | null | undefined,
+  labelColors: (string | null)[],
+  map: Map<string, string>,
+): { clientId: string | null; reason: "mapped" | "unlabeled" | "unmapped" | "conflict"; source: "cover" | "label" | null } {
+  const cover = baseColor(coverColor);
+  if (cover) {
+    const id = map.get(cover);
+    return id ? { clientId: id, reason: "mapped", source: "cover" } : { clientId: null, reason: "unmapped", source: "cover" };
+  }
+  const r = resolveCard(labelColors, map);
+  return { ...r, source: r.reason === "unlabeled" ? null : "label" };
 }
 
 /**

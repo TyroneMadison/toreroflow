@@ -970,6 +970,8 @@ export interface ReadyCard {
   /** Null means held: no label, an unmapped color, or labels for two clients. */
   clientId: string | null;
   held: boolean;
+  coverColor?: string | null;
+  matchedBy?: "cover" | "label" | null;
   heldReason: "unlabeled" | "unmapped" | "conflict" | null;
   lastActivity: string;
 }

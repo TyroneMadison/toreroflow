@@ -7,8 +7,9 @@ import { useAppState } from "../state/AppState";
 const COLORS = ["red", "black", "yellow", "green", "orange", "purple", "blue", "sky", "lime", "pink"];
 
 /*
- * Settings › Trello labels. Which label color on the Torone Editor Pipeline
- * board routes a card to which client. Unlabeled or unmapped cards are held.
+ * Settings › Trello labels. Which card cover color on the Torone Editor
+ * Pipeline board routes a card to which client (label color is only a fallback
+ * for cards with no cover). Uncolored or unmapped cards are held.
  */
 export default function TrelloLabelCard() {
   const { clients, refreshClients } = useAppState();
@@ -53,10 +54,10 @@ export default function TrelloLabelCard() {
   }
 
   return (
-    <div className="card glass setsec" id="settings-trello" data-section="trello" aria-label="Trello label mapping">
-      <h3>Trello labels</h3>
+    <div className="card glass setsec" id="settings-trello" data-section="trello" aria-label="Trello cover color mapping">
+      <h3>Trello cover colors</h3>
       <div className="sub" style={{ marginBottom: 12 }}>
-        Each color label on the Torone Editor Pipeline board sends a card to one client. Cards with no label, or a
+        Each card cover color on the Torone Editor Pipeline board sends a card to one client (a label color is used only if the card has no cover). Cards with no color, or a
         color not listed, are held and never scheduled automatically.
       </div>
       {status && !status.configured && (
@@ -68,7 +69,7 @@ export default function TrelloLabelCard() {
       <table className="rq-map" style={{ width: "100%" }}>
         <thead>
           <tr>
-            <th scope="col">Label color</th>
+            <th scope="col">Cover color</th>
             <th scope="col">Toreroflow client</th>
             <th scope="col">Ready queue</th>
           </tr>
@@ -86,7 +87,7 @@ export default function TrelloLabelCard() {
                 </td>
                 <td>
                   <select
-                    aria-label={`Client for ${COLOR_NAME[color] ?? color} label`}
+                    aria-label={`Client for ${COLOR_NAME[color] ?? color} cover`}
                     data-testid={`label-map-${color}-client`}
                     value={entry?.clientId ?? ""}
                     disabled={busy !== null}
