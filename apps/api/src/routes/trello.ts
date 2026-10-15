@@ -7,6 +7,9 @@ import { baseColor, buildLabelMap, clientSlug, DEFAULT_LABEL_MAP, resolveCard } 
 
 /** The list on the editor pipeline board that holds finished, unposted cards. */
 const READY_LIST = "ready for posting";
+/** Where a card goes once its video is uploaded and scheduled. */
+const UPLOADED_LIST = "approved by client/ uploaded";
+const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
 const NOT_CONFIGURED =
   "Trello is not connected. Set TRELLO_KEY and TRELLO_TOKEN on the API server (and TRELLO_BOARD_ID, or keep the board named Torone Editor Pipeline).";
@@ -14,11 +17,12 @@ const NOT_CONFIGURED =
 interface TrelloLabel { id: string; name: string; color: string | null }
 interface TrelloCard { id: string; name: string; shortUrl: string; idList: string; labels: TrelloLabel[]; dateLastActivity: string }
 
-async function trello<T>(path: string): Promise<T> {
+async function trello<T>(path: string, method: "GET" | "PUT" | "POST" = "GET", params: Record<string, string> = {}): Promise<T> {
   const u = new URL(`https://api.trello.com/1${path}`);
   u.searchParams.set("key", env.TRELLO_KEY);
   u.searchParams.set("token", env.TRELLO_TOKEN);
-  const res = await fetch(u, { headers: { Accept: "application/json" } });
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const res = await fetch(u, { method, headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`Trello ${res.status}`);
   return (await res.json()) as T;
 }
@@ -134,6 +138,36 @@ export async function trelloRoutes(app: FastifyInstance): Promise<void> {
       };
     } catch (err) {
       request.log.warn({ err }, "trello ready fetch failed");
+      return reply.status(502).send({ error: "trello unavailable", detail: (err as Error).message });
+    }
+  });
+  /**
+   * After a Ready card's video is uploaded and scheduled, move the card to
+   * "Approved by Client/ uploaded" and leave a comment. Only a card that is in
+   * Ready for posting and whose label maps to the given client moves, so a bot
+   * cannot use this to shuffle the rest of the board.
+   */
+  app.post<{ Params: { id: string } }>("/trello/cards/:id/uploaded", async (request, reply) => {
+    const body = z.object({ clientId: z.string().min(1), mediaId: z.string().min(1).optional(), note: z.string().max(500).optional() }).parse(request.body ?? {});
+    if (!env.TRELLO_KEY || !env.TRELLO_TOKEN) return reply.status(503).send({ error: "trello not configured" });
+    const clients = await loadClients(request.user.agencyId);
+    if (!clients.some((c) => c.id === body.clientId)) return reply.status(404).send({ error: "client not found" });
+    try {
+      const card = await trello<TrelloCard & { idBoard: string }>(`/cards/${request.params.id}?fields=name,shortUrl,idList,idBoard,labels`);
+      const lists = await trello<{ id: string; name: string }[]>(`/boards/${card.idBoard}/lists?fields=name&filter=open`);
+      const ready = lists.find((l) => norm(l.name) === READY_LIST);
+      const done = lists.find((l) => norm(l.name) === UPLOADED_LIST);
+      if (!done) return reply.status(409).send({ error: 'board has no "Approved by Client/ uploaded" list' });
+      if (card.idList === done.id) return { ok: true, alreadyMoved: true, url: card.shortUrl };
+      if (!ready || card.idList !== ready.id) return reply.status(409).send({ error: "card is not in Ready for posting" });
+      const r = resolveCard(card.labels.map((l) => l.color), buildLabelMap(clients));
+      if (r.clientId !== body.clientId) return reply.status(409).send({ error: "card label does not match this client", reason: r.reason });
+      await trello(`/cards/${card.id}`, "PUT", { idList: done.id, pos: "top" });
+      const text = [`Uploaded and scheduled in Toreroflow${body.mediaId ? ` (media ${body.mediaId})` : ""}.`, body.note].filter(Boolean).join(" ");
+      await trello(`/cards/${card.id}/actions/comments`, "POST", { text }).catch((err) => request.log.warn({ err }, "trello comment failed"));
+      return { ok: true, alreadyMoved: false, url: card.shortUrl, list: done.name };
+    } catch (err) {
+      request.log.warn({ err }, "trello card move failed");
       return reply.status(502).send({ error: "trello unavailable", detail: (err as Error).message });
     }
   });
