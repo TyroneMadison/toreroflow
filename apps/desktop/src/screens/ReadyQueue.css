@@ -1,0 +1,35 @@
+/* Ready queue and the routed schedule page. Tokens from styles/tokens.css. */
+.rq-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.rq-head h2{margin:0;font-size:22px}
+.rq-head .btn{margin-left:auto}
+.rq-count{padding:4px 10px;border-radius:var(--r-pill);background:var(--tint-2);border:1px solid var(--hair);font-size:12px}
+.rq-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.rq-tab{padding:6px 12px;border-radius:var(--r-pill);background:var(--tint-1);border:1px solid var(--hair-soft);color:var(--text-2);text-decoration:none;font-size:13px}
+.rq-tab.on{background:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--text);border-color:var(--hair)}
+.rq-tab:focus-visible,.rq-row a:focus-visible{outline:2px solid var(--accent-hi);outline-offset:2px}
+.rq-list{list-style:none;margin:0;padding:0}
+.rq-row{display:grid;grid-template-columns:1fr 140px auto;gap:14px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--hair-soft)}
+.rq-row:last-child{border-bottom:0}
+.rq-labels{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:12px;color:var(--text-2)}
+.rq-label{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:var(--r-pill);background:var(--tint-1);border:1px solid var(--hair-soft)}
+.rq-dot{width:9px;height:9px;border-radius:50%;border:1px solid var(--hair)}
+.rq-pipe{font-size:12px;color:var(--text-3);margin-top:4px}
+.rq-sop{font-size:12px;color:var(--text-2)}
+.rq-actions{display:flex;gap:8px}
+.rq-note{font-size:12px;color:var(--c-warn);margin-top:10px}
+.rq-crumbs{font-size:13px;color:var(--text-2);margin-bottom:12px}
+.rq-crumbs a{color:var(--text)}
+.rq-sched{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px;align-items:start}
+.sop-body{color:var(--text-2);font-size:14px;line-height:1.5}
+.sop-ack{display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;border-radius:var(--r-tile);background:var(--tint-1);cursor:pointer}
+.sop-text{width:100%;border-radius:var(--r-tile);background:var(--tint-1);color:var(--text);border:1px solid var(--hair);padding:10px;font:inherit}
+.sop-hint{font-size:12px;color:var(--c-warn);margin-right:auto}
+.sop-panel{margin-bottom:12px}
+.modal-inline{position:static;margin-top:12px;width:100%}
+button.modal-x{border:0;font:inherit;color:inherit}
+@media (max-width:720px){
+  .rq-row{grid-template-columns:1fr;gap:8px}
+  .rq-actions .btn{flex:1;text-align:center}
+  .rq-sched{grid-template-columns:1fr}
+  .rq-head h2{font-size:18px}
+}

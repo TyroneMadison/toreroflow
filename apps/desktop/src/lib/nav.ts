@@ -15,6 +15,8 @@ export type ScreenId =
   | "financials"
   | "carousels"
   | "workflows"
+  | "ready"
+  | "schedule"
   | "settings";
 
 export type SectionId = "overview" | "create" | "measure" | "settings";
@@ -25,6 +27,8 @@ export interface PageDef {
   /** Stable name for data-testid and, later, the URL. "overview" alone would
    *  collide with the Overview section, hence account-overview. */
   slug: string;
+  /** Reached by deep link only (e.g. a card's schedule page); not a tab. */
+  hidden?: boolean;
 }
 
 export interface SectionDef {
@@ -51,6 +55,8 @@ export const SECTIONS: SectionDef[] = [
     icon: "#i-upload",
     pages: [
       { id: "upload", label: "Upload & Schedule", slug: "upload" },
+      { id: "ready", label: "Ready queue", slug: "ready" },
+      { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
       { id: "edit", label: "Edit", slug: "edit" },
       { id: "calendar", label: "Calendar", slug: "calendar" },
       { id: "carousels", label: "Carousels", slug: "carousels" },

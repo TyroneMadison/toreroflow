@@ -290,6 +290,13 @@ export interface ClientSummary {
   billingMode: "calendar" | "on_fulfilment";
   createdAt: string;
   workflowCount: number;
+  /** Deep-link handle, e.g. "caleb" in /clients/caleb/ready. */
+  slug: string;
+  /** Posting SOP written by a human. Null means none added yet. */
+  sop: string | null;
+  sopUpdatedAt: string | null;
+  /** Trello label colors routed to this client; empty means the defaults. */
+  trelloLabels: string[];
   /** Null when no account has reported a follower count yet. */
   totalFollowers: number | null;
   accounts: AccountInfo[];
@@ -951,4 +958,32 @@ export interface InboxMessage {
   direction: "incoming" | "outgoing";
   createdAt: string | null;
   attachments: Array<{ type: string | null; url: string | null }>;
+}
+
+/** One card in the Trello "Ready for posting" list, routed to a client by label. */
+export interface ReadyCard {
+  id: string;
+  name: string;
+  url: string;
+  list: string;
+  labels: { name: string; color: string | null }[];
+  /** Null means held: no label, an unmapped color, or labels for two clients. */
+  clientId: string | null;
+  held: boolean;
+  heldReason: "unlabeled" | "unmapped" | "conflict" | null;
+  lastActivity: string;
+}
+
+export interface ReadyQueue {
+  /** False when Trello is not set up; `message` says what is missing. */
+  configured: boolean;
+  message: string | null;
+  clients: { id: string; name: string; slug: string; hasSop: boolean }[];
+  cards: ReadyCard[];
+}
+
+export interface LabelMap {
+  defaults: Record<string, string>;
+  entries: { color: string; clientId: string; clientName: string; clientSlug: string }[];
+  unlabeled: "held";
 }

@@ -26,6 +26,7 @@ import {
 } from "../analytics/youtubeSync";
 import { buildMergedPosts } from "../analytics/mergedPosts";
 import { env } from "../env";
+import { clientSlug } from "../trello/labelMap";
 import { requireAuth } from "../plugins/requireAuth";
 import { withReportPage } from "../reports/onboardHook";
 import { ensureReportSlug } from "../reports/slug";
@@ -126,6 +127,10 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         billingMode: c.billingMode,
         createdAt: c.createdAt,
         workflowCount: c._count.workflows,
+        slug: clientSlug(c),
+        sop: c.sop?.trim() ? c.sop : null,
+        sopUpdatedAt: c.sopUpdatedAt,
+        trelloLabels: c.trelloLabels,
         accounts,
         // Null rather than 0 when nothing is known, so the UI can say so
         // instead of claiming a real zero.

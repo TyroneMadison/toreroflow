@@ -219,6 +219,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
             <button
               className="cbtn"
               disabled={!noteTitle.trim() || !noteBody.trim()}
+              data-testid="carousels.add-note"
               onClick={() => void addNote()}
             >
               Add to the knowledge base
@@ -297,6 +298,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
             <button
               className="cbtn"
               disabled={!topic.trim() || working}
+              data-testid="carousels.generate"
               onClick={() => void generate()}
             >
               {working ? "Writing…" : "Write it"}
@@ -311,7 +313,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
         </div>
 
         {drafts?.map((d) => (
-          <div className="card glass" style={{ marginTop: 16 }} key={d.id}>
+          <div className="card glass" style={{ marginTop: 16 }} key={d.id} data-testid={`carousel-draft-${d.id}`} aria-label={`Carousel draft: ${d.topic}`}>
             <div className="rowhead">
               <div>
                 <b style={{ fontSize: 14.5 }}>{d.topic}</b>
@@ -320,7 +322,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="cbtn" onClick={() => void downloadCsv(d)}>
+                <button className="cbtn" data-testid="carousels.download-sheet" onClick={() => void downloadCsv(d)}>
                   Download sheet
                 </button>
                 <button
@@ -334,7 +336,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
                 >
                   Upload the images
                 </button>
-                <button className="dangerbtn" onClick={() => void remove(d)}>
+                <button className="dangerbtn" aria-label={`Delete draft ${d.topic}`} data-testid="carousels.delete-draft" onClick={() => void remove(d)}>
                   Delete
                 </button>
               </div>

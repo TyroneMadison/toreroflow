@@ -20,6 +20,7 @@ import { enrichFieldsFrom } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { actingUserId } from "../auth/actingUser";
+import { sopReminder } from "../posts/sopReminder";
 
 /**
  * The name an operator typed for a video, or "" when they have not.
@@ -59,6 +60,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     if (asset.status !== "ready") {
       return reply.status(409).send({ error: "asset is still processing" });
     }
+    // The client's SOP is a gentle reminder, never a block: scheduling goes
+    // ahead, and the response nudges when the caller did not confirm it.
+    const reminder = sopReminder(asset.client, body.sopAcknowledged);
 
     const scheduledAt = new Date(body.scheduledAt);
     /*
@@ -362,6 +366,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send({
       id: post.id,
       scheduledAt,
+      ...(reminder ? { sopReminder: reminder } : {}),
       targets: post.targets.map((t) => ({
         id: t.id,
         platform: t.platform,

@@ -1,3 +1,4 @@
+import { setQuery, useRoute } from "../lib/routes";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import {
   api,
@@ -70,9 +71,29 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [departing, setDeparting] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [posts, setPosts] = useState<PostTargetInfo[]>([]);
-  const [scheduling, setScheduling] = useState<MediaAssetInfo | null>(null);
+  const [scheduling, setSchedulingState] = useState<MediaAssetInfo | null>(null);
+  // The open schedule flow is in the URL (?schedule=<asset id>), so a bot or a
+  // shared link lands straight in it, and Back closes it.
+  const setScheduling = (a: MediaAssetInfo | null) => {
+    setSchedulingState(a);
+    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
+  };
   /** A horizontal video, routed to the long-form YouTube wizard instead. */
-  const [longForm, setLongForm] = useState<MediaAssetInfo | null>(null);
+  const [longForm, setLongFormState] = useState<MediaAssetInfo | null>(null);
+  const setLongForm = (a: MediaAssetInfo | null) => {
+    setLongFormState(a);
+    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
+  };
+  const { scheduleId: routeScheduleId } = useRoute();
+  // Reopen the flow a deep link names, once its asset has loaded.
+  useEffect(() => {
+    if (!routeScheduleId || scheduling || longForm) return;
+    const a = assets.find((x) => x.id === routeScheduleId && x.status === "ready");
+    if (!a) return;
+    if (usesLongFormWizard(a)) setLongFormState(a);
+    else setSchedulingState(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeScheduleId, assets]);
   const [coverEditing, setCoverEditing] = useState<MediaAssetInfo | null>(null);
   const [dragTargetId, setDragTargetId] = useState<string | null>(null);
   const [overTargetId, setOverTargetId] = useState<string | null>(null);

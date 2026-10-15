@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import SopPanel, { sopRequired } from "../components/SopPanel";
+import { currentRoute, setQuery } from "../lib/routes";
 import BestTimes from "../components/BestTimes";
 import GlassDateTime from "../components/GlassDateTime";
 import Select from "../components/Select";
@@ -93,8 +95,24 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   );
   const [accountId, setAccountId] = useState(ytAccounts[0]?.id ?? "");
 
-  const [phase, setPhase] = useState<PhaseId>("details");
   const liveOrder: PhaseId[] = PHASES.filter((p) => p.live).map((p) => p.id);
+  // The open step lives in the URL (?step=), so a link or a bot lands on it.
+  const [phase, setPhaseState] = useState<PhaseId>(() => {
+    const s = currentRoute().step as PhaseId | null;
+    return s && liveOrder.includes(s) ? s : "details";
+  });
+  const setPhase = (p: PhaseId) => {
+    setPhaseState(p);
+    setQuery({ step: p });
+  };
+  useEffect(() => {
+    setQuery({ step: phase });
+    return () => setQuery({ step: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [sopAck, setSopAck] = useState(false);
+  // A gentle reminder only; never disables publishing.
+  const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
   const stepIndex = liveOrder.indexOf(phase);
 
   // Details.
@@ -425,6 +443,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       await api.post(`/media/${asset.id}/schedule`, {
         platforms: ["youtube"],
         accountIds: [accountId],
+        ...(sopAck ? { sopAcknowledged: true } : {}),
         scheduledAt: new Date(when).toISOString(),
         youtube: {
           title: title.trim(),
@@ -465,7 +484,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   };
 
   return (
-    <Modal maxWidth={780} onClose={onClose}>
+    <Modal maxWidth={780} onClose={onClose} label={`Upload ${asset.name} to YouTube`} testId="longform-form">
       <div className="modal-head">
         <div>
           <h3>Upload to YouTube</h3>
@@ -474,11 +493,11 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
             {asset.width && asset.height ? ` · ${ratioLabel(asset.width, asset.height)}` : ""}
           </p>
         </div>
-        <div className="modal-x" onClick={onClose}>
+        <button type="button" className="modal-x" aria-label="Close" data-testid="longform-close" onClick={onClose}>
           <svg>
             <use href="#i-x" />
           </svg>
-        </div>
+        </button>
       </div>
 
       <div className="lfsteps">
@@ -487,6 +506,8 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
             type="button"
             key={p.id}
             className={`lfstep${p.id === phase ? " on" : ""}${p.live ? "" : " off"}`}
+            aria-current={p.id === phase ? "step" : undefined}
+            data-testid={`longform-step-${p.id}`}
             disabled={!p.live}
             title={p.live ? undefined : "Arrives in a later build"}
             onClick={() => setPhase(p.id)}
@@ -495,6 +516,12 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           </button>
         ))}
       </div>
+
+      {selectedClient && (
+        <div style={{ padding: "0 24px" }}>
+          <SopPanel clientId={selectedClient.id} acknowledged={sopAck} onAcknowledge={setSopAck} compact />
+        </div>
+      )}
 
       <div className="modal-body lfbody" key={phase}>
         {phase === "details" && (
@@ -1229,6 +1256,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           <button
             className="btn"
             disabled={busy || checksBlock || whenError !== null || ytAccounts.length === 0}
+            data-testid="longform-submit"
             title={checksBlock ? "The Checks phase is holding this: something above is red." : whenError ?? undefined}
             onClick={() => void submit()}
           >

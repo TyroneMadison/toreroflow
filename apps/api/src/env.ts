@@ -67,6 +67,13 @@ export interface Env {
   API_PORT: number;
   /** Empty string means the AI suggestions endpoint returns 503 with guidance. */
   ANTHROPIC_API_KEY: string;
+  /** Trello API key and token for reading the editor pipeline board. Empty
+   *  means the Ready queue answers with a not-configured message. */
+  TRELLO_KEY: string;
+  TRELLO_TOKEN: string;
+  /** Board id; empty means look it up by TRELLO_BOARD_NAME. */
+  TRELLO_BOARD_ID: string;
+  TRELLO_BOARD_NAME: string;
   SUGGESTIONS_MODEL: string;
   /** dryrun until a real provider (Ayrshare/Blotato/Zernio/Postiz) is chosen in M1. */
   PUBLISH_PROVIDER: string;
@@ -146,6 +153,10 @@ export const env: Env = {
   JWT_SECRET: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
   API_PORT: Number.parseInt(process.env.API_PORT ?? "", 10) || 4700,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+  TRELLO_KEY: process.env.TRELLO_KEY ?? "",
+  TRELLO_TOKEN: process.env.TRELLO_TOKEN ?? "",
+  TRELLO_BOARD_ID: process.env.TRELLO_BOARD_ID ?? "",
+  TRELLO_BOARD_NAME: process.env.TRELLO_BOARD_NAME ?? "Torone Editor Pipeline",
   SUGGESTIONS_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
