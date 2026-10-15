@@ -912,7 +912,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
             </div>
             <div className={`switch${autostart ? " on" : ""}`} style={{ marginLeft: "auto" }} />
           </div>
-          <div className="pt" style={{ maxWidth: 420, marginTop: 8, width: "100%", display: "block" }}>
+          <div className="pt" style={{ maxWidth: 420, marginTop: 8, width: "100%", display: "none" }} hidden>
             <div className="info">
               <b>Glass translucency</b>
               <span>Frosted blur to clear liquid glass. Changes the whole app at once.</span>

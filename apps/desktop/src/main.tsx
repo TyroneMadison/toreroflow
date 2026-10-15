@@ -12,6 +12,7 @@ import "./styles.css";
 import "./styles/frame.css";
 import "./styles/liquid.css";
 import "./styles/glass-pages.css";
+import "./styles/solid.css";
 
 // Apply persisted theme before first paint to avoid a flash of the wrong theme.
 applyTheme(loadTheme());
