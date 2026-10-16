@@ -26,11 +26,18 @@ export interface CreatorRow {
   playbook?: Playbook;
 }
 
+export interface SuperIdea {
+  text: string;
+  label: string;
+  script?: string;
+  creator?: string;
+}
+
 export interface SuperRun {
   id: string;
   status: "running" | "ready" | "failed" | "cancelled";
   creators: CreatorRow[];
-  ideas: Array<{ text: string; label: string }>;
+  ideas: SuperIdea[];
   capCents: number;
   spentCents: number;
   error: string | null;
@@ -58,7 +65,7 @@ export default function SuperGenerate({
 }: {
   run: SuperRun;
   onCancel: () => void;
-  onAdd: (text: string, label: string) => void;
+  onAdd: (idea: SuperIdea) => void;
   added: string[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -141,11 +148,18 @@ export default function SuperGenerate({
           <div className="sgideas">
             {run.ideas.map((i) => (
               <div className="card glass sgidea" key={i.text}>
+                {i.creator && (
+                  <span className="sgcreator">
+                    <PlatformDot platform="youtube" />
+                    From {i.creator}
+                  </span>
+                )}
                 <div className="sgideatext">{i.text}</div>
+                {i.script && <div className="sgscript">{i.script.replace(/^HOOK\s*:\s*/im, "Say this · Hook: ")}</div>}
                 <div className="sgideafoot">
                   <span className="sub">{i.label}</span>
-                  <button className="cbtn" disabled={added.includes(i.text)} onClick={() => onAdd(i.text, i.label)}>
-                    {added.includes(i.text) ? "✓ Added" : "+ Add idea"}
+                  <button className="cbtn" disabled={added.includes(i.text)} onClick={() => onAdd(i)}>
+                    {added.includes(i.text) ? "Added" : "+ Add idea"}
                   </button>
                 </div>
               </div>

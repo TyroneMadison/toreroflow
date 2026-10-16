@@ -11,7 +11,7 @@ import "./IdeasHome.css";
 
 /**
  * The Ideas area, in two tabs (approved mockups, 2026-10-15). Generate:
- * 1 · the niche and up to 10 creator channel links, saved per client on the
+ * 1 · the niche and up to 15 creator channel links, saved per client on the
  * server; 2 · the three ways to make ideas: Brainstorm, Generate ideas, and
  * Super generate. Saved ideas: everything banked, one at a time, with the
  * full table under it.
@@ -175,7 +175,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     void generate(chosen, { niche: niche.trim(), inspirations: handles });
   };
 
-  const superGenerate = async () => {
+  const superGenerate = async (creator?: string) => {
     setStarting(true);
     try {
       if (draft.trim()) {
@@ -184,7 +184,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
         await saveCreators([...creators, ...parts]);
       }
       void saveNiche();
-      const got = await api.post<{ run: SuperRunT }>(`/clients/${clientId}/super-generate`, {});
+      const got = await api.post<{ run: SuperRunT }>(`/clients/${clientId}/super-generate`, creator ? { creator } : {});
       sg.setRun(got.run);
       setView("super");
     } catch (err) {
@@ -235,7 +235,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     }
   };
 
-  const bank = async (hook: string, formatName: string, source: string) => {
+  const bank = async (hook: string, formatName: string, source: string, scriptText?: string, creator?: string) => {
     try {
       await api.post(`/clients/${clientId}/ideas`, {
         text: hook,
@@ -244,6 +244,8 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
         // The ideas route caps the niche at 200 characters; the profile allows 2000.
         niche: (niche || profile?.niche || "").slice(0, 200),
         source,
+        ...(scriptText ? { scriptText: scriptText.slice(0, 4000) } : {}),
+        ...(creator ? { creator: creator.slice(0, 120) } : {}),
       });
       setAdded((cur) => [...cur, hook]);
       setReloadKey((n) => n + 1);
@@ -309,6 +311,19 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
                         <PlatformDot platform={l?.platform ?? "other"} />
                         <span className="creatorurl">{c}</span>
                         {l?.platform !== "youtube" && <span className="creatornote">YouTube only for Super generate</span>}
+                        {l?.platform === "youtube" && !superBlocked && (
+                          <button
+                            type="button"
+                            className="creatorgen"
+                            title={`Study ${l.handle} and write ideas from them alone`}
+                            disabled={starting || sg.run?.status === "running"}
+                            onClick={() => void superGenerate(c)}
+                          >
+                            {sg.run?.status === "running" && sg.run.creators.length === 1 && sg.run.creators[0]?.url === c
+                              ? "Generating..."
+                              : "Generate"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="chipx"
@@ -336,7 +351,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
                     />
                   )}
                   <span className="nichenote">
-                    {creators.length >= CREATOR_LINK_CAP ? "That is the most (10)" : "+ Add creator · up to 10"}
+                    {creators.length >= CREATOR_LINK_CAP ? `That is the most (${CREATOR_LINK_CAP})` : `+ Add creator · up to ${CREATOR_LINK_CAP}`}
                   </span>
                 </div>
               </div>
@@ -442,7 +457,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
             <SuperGenerate
               run={sg.run}
               onCancel={() => void cancelSuper()}
-              onAdd={(text, label) => void bank(text, label, "analysis")}
+              onAdd={(i) => void bank(i.text, i.label, "analysis", i.script, i.creator)}
               added={added}
             />
           ) : (

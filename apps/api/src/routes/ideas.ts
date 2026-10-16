@@ -39,12 +39,15 @@ const ideaCreateSchema = z.object({
   formatName: z.string().max(120).optional(),
   niche: z.string().max(200).optional(),
   source: z.enum(["brainstorm", "analysis", "overview", "custom"]).optional(),
+  scriptText: z.string().max(4000).optional(),
+  creator: z.string().max(120).optional(),
 });
 
 const ideaPatchSchema = z.object({
   status: z.enum(IDEA_STATUSES).optional(),
   text: z.string().min(1).max(500).optional(),
   hook: z.string().max(500).optional(),
+  completed: z.boolean().optional(),
 });
 
 const nicheProfileSchema = z.object({
@@ -423,7 +426,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
     if (!parsed.success) {
       return reply.status(400).send({
         error: "those creators could not be saved",
-        detail: parsed.error.issues[0]?.message ?? "Up to 10 channel links, and a cap between $0.10 and $50.",
+        detail: parsed.error.issues[0]?.message ?? "Up to 15 channel links, and a cap between $0.10 and $50.",
       });
     }
     const updated = await prisma.client.update({
@@ -466,7 +469,15 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
-    const links = cleanCreatorLinks(client.ideaCreators);
+    const only = typeof (request.body as { creator?: unknown } | null)?.creator === "string"
+      ? String((request.body as { creator: string }).creator)
+      : null;
+    const all = cleanCreatorLinks(client.ideaCreators);
+    const onlyKey = only ? (parseCreatorLink(only)?.url ?? only.trim().toLowerCase()) : null;
+    const links = onlyKey ? all.filter((u) => (parseCreatorLink(u)?.url ?? u.trim().toLowerCase()) === onlyKey) : all;
+    if (onlyKey && links.length === 0) {
+      return reply.status(400).send({ error: "that creator is not in your list", detail: "Add the link first, then generate." });
+    }
     if (links.length === 0) {
       return reply.status(400).send({ error: "add a creator first", detail: "Paste at least one YouTube channel link." });
     }

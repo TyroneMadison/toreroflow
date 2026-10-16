@@ -187,3 +187,72 @@
 .sgideafoot{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .sgideafoot .sub{margin:0}
 .sgideafoot .cbtn:disabled{background:rgba(87,214,160,.16);color:var(--green)}
+
+/* ---- Ideas v2 (2026-10-16): saved idea cards, selector, done tick ---- */
+.sv2{max-width:880px;margin:0 auto;width:100%}
+.sv2counter{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.sv2n{white-space:nowrap;font-size:15px;color:var(--text-2,#c7c7cc)}.sv2n b{font-size:20px;color:var(--text,#fff)}
+.sv2filter{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.sv2filter::-webkit-scrollbar{display:none}
+.sv2chip{flex:none;padding:6px 12px;border-radius:999px;background:var(--panel-2,#17171a);border:1px solid var(--line,#26262b);font-size:12.5px;color:inherit;cursor:pointer}
+.sv2chip.on{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff)}
+.sv2card{background:var(--panel,#0f0f11);border:1px solid var(--line,#232327);border-radius:20px;overflow:hidden;transition:border-color .3s,box-shadow .3s;animation:sv2in .22s ease}
+@keyframes sv2in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.sv2head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line,#1d1d20)}
+.sv2av{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff}
+.sv2who{min-width:0}.sv2who b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sv2who span{font-size:12.5px;opacity:.6}
+.sv2tags{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.sv2tag{font-size:12px;padding:5px 10px;border-radius:8px;background:var(--panel-2,#1a1a1d)}
+.sv2tag.g{background:rgba(52,199,89,.15);color:#34c759}
+.sv2check{flex:none;width:44px;height:44px;border-radius:50%;border:2px solid var(--line-2,#3a3a3f);background:transparent;display:grid;place-items:center;cursor:pointer;transition:background .25s,border-color .25s,transform .15s}
+.sv2check svg{width:24px;height:24px;fill:none;stroke:transparent;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .35s ease .05s}
+.sv2check:active{transform:scale(.92)}
+.done .sv2check{background:#34c759;border-color:#34c759}
+.done .sv2check svg{stroke:#000;stroke-dashoffset:0}
+.checking .sv2check{animation:sv2pop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes sv2pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.sv2card.done{border-color:rgba(52,199,89,.5)}
+.sv2topic{font-size:24px;font-weight:700;line-height:1.25;margin:0 0 18px;text-decoration:line-through;text-decoration-color:transparent;transition:text-decoration-color .35s,opacity .35s}
+.done .sv2topic{text-decoration-color:#34c759;opacity:.65}
+.done .sv2script{opacity:.55}
+.unchecking .sv2topic,.unchecking .sv2script{animation:sv2back .5s ease}
+@keyframes sv2back{0%{opacity:.4;filter:blur(1px)}100%{opacity:1;filter:none}}
+.sv2body{padding:20px}
+.sv2lab{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;margin-bottom:8px}
+.sv2sub{margin:-8px 0 16px}
+.sv2script{background:var(--panel-2,#151518);border-radius:14px;padding:14px 16px;font-size:15px;line-height:1.6;transition:opacity .35s}
+.sv2script p{margin:0 0 8px}.sv2script p:last-child{margin:0}
+.sv2script i{font-style:normal;font-size:12px;font-weight:600;letter-spacing:.05em;opacity:.55;margin-right:8px}
+.sv2acts{display:flex;gap:8px;padding:0 20px 18px;flex-wrap:wrap}
+.sv2ab{padding:9px 14px;border-radius:10px;background:var(--panel-2,#18181b);border:1px solid var(--line,#26262b);font-size:13px;color:inherit;cursor:pointer}
+.sv2sel{display:flex;gap:14px;margin-top:16px}
+.sv2big{flex:1;height:56px;border-radius:16px;border:1px solid var(--line,#2a2a2f);background:var(--panel-2,#161619);color:inherit;font-size:16px;font-weight:600;cursor:pointer}
+.sv2big.p{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff)}
+.sv2big:disabled{opacity:.35;cursor:default}
+.sv2hint{text-align:center;font-size:12px;opacity:.5;margin-top:10px}.sv2phone{display:none}
+.sv2dots{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.sv2dots button{width:7px;height:7px;padding:0;border:0;border-radius:9px;background:var(--line-2,#3a3a3f);cursor:pointer;transition:width .2s}
+.sv2dots button.on{width:22px;background:var(--text,#fff)}
+.confetticanvas{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9999}
+.confettifade{position:fixed;inset:0;pointer-events:none;z-index:9999;background:radial-gradient(circle,rgba(212,175,55,.18),transparent 70%);animation:cfade .7s ease forwards}
+@keyframes cfade{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion: reduce){
+  .sv2card,.checking .sv2check,.unchecking .sv2topic,.unchecking .sv2script{animation:none}
+  .sv2topic,.sv2script,.sv2check,.sv2check svg{transition:opacity .3s}
+}
+/* Super generate idea cards (topic + script + creator) and per-creator generate */
+.sgidea .sgcreator{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;opacity:.75;margin-bottom:6px}
+.sgidea .sgscript{font-size:13.5px;line-height:1.55;opacity:.8;margin-top:8px;white-space:pre-line}
+.sggroup{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:.55;margin:14px 0 8px}
+.creatorgen{margin-left:auto;flex:none;padding:6px 12px;border-radius:9px;border:1px solid var(--line,#2a2a2f);background:var(--panel-2,#161619);color:inherit;font-size:12.5px;font-weight:600;cursor:pointer;min-height:34px}
+.creatorgen:disabled{opacity:.4;cursor:default}
+@media (max-width:640px){
+  .sv2topic{font-size:21px}.sv2body{padding:16px}.sv2head{padding:14px 16px;flex-wrap:wrap}
+  .sv2tags{order:3;width:100%;justify-content:flex-start;margin-left:50px}
+  .sv2check{margin-left:auto}
+  .sv2sel{position:sticky;bottom:0;padding:12px 0 calc(12px + env(safe-area-inset-bottom));background:var(--bg,#000);margin-top:12px}
+  .sv2desk{display:none}.sv2phone{display:inline}
+  .creatorlink{flex-wrap:wrap}.creatorurl{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .creatorgen{min-height:40px}
+  .sgideas{grid-template-columns:1fr!important}
+}

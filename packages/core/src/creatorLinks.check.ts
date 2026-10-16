@@ -16,7 +16,7 @@ assert.deepEqual(
   cleanCreatorLinks(["youtube.com/@a", " https://youtube.com/@A ", "", "tiktok.com/@b"]),
   ["youtube.com/@a", "tiktok.com/@b"],
 );
-assert.equal(cleanCreatorLinks(Array.from({ length: 14 }, (_, i) => `youtube.com/@c${i}`)).length, 10);
+assert.equal(cleanCreatorLinks(Array.from({ length: 20 }, (_, i) => `youtube.com/@c${i}`)).length, 15);
 assert.equal(costCents(0, 0), 0);
 assert.equal(costCents(1_000_000, 0), 1500);
 console.log("creatorLinks ok");

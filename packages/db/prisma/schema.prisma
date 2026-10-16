@@ -250,7 +250,7 @@ model Client {
   /// Keyword lines: [{ keywords: string[], line: string }]. The first entry
   /// whose keyword appears in the title, card or caption adds its line.
   captionKeywords      Json           @default("[]")
-  /// Up to 10 creator channel links the Ideas area studies (Super generate
+  /// Up to 15 creator channel links the Ideas area studies (Super generate
   /// and Brainstorm). Order is the order typed.
   ideaCreators         String[]       @default([])
   /// Most a single Super generate run may spend on the model, in US cents.
@@ -1162,6 +1162,12 @@ model ContentIdea {
   hook       String?
   /// Generated script or storyboard, once the operator asks for one.
   script     Json?
+  /// The short spoken script that came with a generated idea (Super generate).
+  scriptText String?
+  /// Handle of the creator the idea was drawn from, e.g. "@carguy".
+  creator    String?
+  /// Ticked off as done on the Saved ideas card.
+  completed  Boolean  @default(false)
   /// idea | scripting | ready | posted | analyzed
   status     String   @default("idea")
   /// brainstorm | analysis | overview | custom
@@ -1251,7 +1257,7 @@ model SuperGenerateRun {
   status      String    @default("running")
   /// [{ url, handle, platform, status, videos, note, summary }]
   creators    Json      @default("[]")
-  /// [{ text, label }]
+  /// [{ text, label, script, creator }]
   ideas       Json      @default("[]")
   capCents    Int
   spentCents  Int       @default(0)

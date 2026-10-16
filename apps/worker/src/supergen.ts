@@ -61,8 +61,13 @@ const IDEAS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["text", "label"],
-        properties: { text: { type: "string" }, label: { type: "string" } },
+        required: ["text", "label", "script", "creator"],
+        properties: {
+          text: { type: "string" },
+          label: { type: "string" },
+          script: { type: "string" },
+          creator: { type: "string" },
+        },
       },
     },
   },
@@ -301,24 +306,34 @@ export async function runSuperGenerate(runId: string): Promise<void> {
     const books = rows.filter((r) => r.playbook);
     if (books.length === 0) return fail("None of the creators could be read. Check the links are YouTube channels.");
     const niche = String((run.client.nicheProfile as { niche?: string } | null)?.niche ?? "");
-    const got = await ask<{ ideas: Array<{ text: string; label: string }> }>(
+    // 20 ideas split across the creators (10 when generating for one creator).
+    const total = rows.length === 1 ? 10 : 20;
+    const quota = books.map((b, i) => ({
+      handle: b.handle,
+      n: Math.floor(total / books.length) + (i < total % books.length ? 1 : 0),
+    })).filter((q) => q.n > 0);
+    const got = await ask<{ ideas: Array<{ text: string; label: string; script: string; creator: string }> }>(
       "You write short form video ideas for one brand, borrowing what works for the " +
         "creators studied below. Each idea is the opening line of the video, spoken out " +
         "loud, six to fifteen words, specific to this brand's niche. label is the " +
         "creator move it borrows, two to four words (e.g. Number-first hook). No hashtags, " +
         "no emoji, never an em dash, en dash or arrow. Do not invent prices or facts that " +
-        "are not in the brand material. Write 8 ideas.",
+        "are not in the brand material. text is the topic: the opening line, spoken. " +
+        "script is the short video script for it, 40 to 90 words, as four lines starting " +
+        "HOOK:, SETUP:, PAYOFF:, CTA: separated by newlines. creator is the exact handle of " +
+        "the creator whose playbook the idea borrows from. Write exactly this many ideas per " +
+        "creator: " + quota.map((q) => `${q.handle} ${q.n}`).join(", ") + ".",
       `Brand: ${run.client.name}\nNiche: ${niche || "(see brand material)"}\n\n` +
         books
           .map((b) => `${b.handle}: ${b.playbook!.summary}\nHook: ${b.playbook!.hook}\nFraming: ${b.playbook!.framing}\nStructure: ${b.playbook!.structure}\nScript: ${b.playbook!.script}`)
           .join("\n\n") +
         `\n\n${await groundingFor(prisma, run.clientId)}`,
       IDEAS_SCHEMA,
-      1500,
+      Math.min(8000, 400 + total * 260),
     );
     await save({
       status: "ready",
-      ideas: (got.ideas ?? []).slice(0, 12) as unknown as Prisma.InputJsonValue,
+      ideas: tagIdeas(got.ideas ?? [], quota.map((q) => q.handle)).slice(0, total) as unknown as Prisma.InputJsonValue,
       completedAt: new Date(),
     });
   } catch (err) {
@@ -332,4 +347,13 @@ export async function runSuperGenerate(runId: string): Promise<void> {
     }
     return fail((err as Error).message.slice(0, 300));
   }
+}
+
+/** Keeps each idea's creator to one of the studied handles (case-insensitive), so the screen can group them. */
+export function tagIdeas<T extends { creator: string }>(ideas: T[], handles: string[]): T[] {
+  const by = new Map(handles.map((h) => [h.toLowerCase().replace(/^@/, ""), h]));
+  return ideas.map((i, n) => ({
+    ...i,
+    creator: by.get(String(i.creator ?? "").toLowerCase().replace(/^@/, "")) ?? handles[n % Math.max(1, handles.length)] ?? "",
+  }));
 }

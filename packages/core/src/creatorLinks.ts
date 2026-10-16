@@ -4,7 +4,7 @@
  * the same channel typed two ways is cached once.
  */
 
-export const CREATOR_LINK_CAP = 10;
+export const CREATOR_LINK_CAP = 15;
 
 export type CreatorPlatform = "youtube" | "instagram" | "tiktok" | "other";
 
@@ -42,7 +42,7 @@ export function parseCreatorLink(raw: string): CreatorLink | null {
   return null;
 }
 
-/** Tidies a list: trims, drops blanks and duplicates (same normalised link), caps at 10. */
+/** Tidies a list: trims, drops blanks and duplicates (same normalised link), caps at CREATOR_LINK_CAP (15). */
 export function cleanCreatorLinks(list: string[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
