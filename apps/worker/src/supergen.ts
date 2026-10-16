@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { costCents, parseCreatorLink, type CreatorLink } from "@toreroflow/core";
 import { getPrisma, groundingFor, Prisma } from "@toreroflow/db";
 import { env } from "./env";
+import { SHOT_SCHEMA, SHOT_RULES } from "./ideagifsJob";
+import { cleanShot } from "./ideagifs";
 
 /**
  * Super generate: for each creator link, read their last ~100 YouTube videos
@@ -61,12 +63,13 @@ const IDEAS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["text", "label", "script", "creator"],
+        required: ["text", "label", "script", "creator", "shots"],
         properties: {
           text: { type: "string" },
           label: { type: "string" },
           script: { type: "string" },
           creator: { type: "string" },
+          shots: { type: "array", items: SHOT_SCHEMA },
         },
       },
     },
@@ -312,7 +315,7 @@ export async function runSuperGenerate(runId: string): Promise<void> {
       handle: b.handle,
       n: Math.floor(total / books.length) + (i < total % books.length ? 1 : 0),
     })).filter((q) => q.n > 0);
-    const got = await ask<{ ideas: Array<{ text: string; label: string; script: string; creator: string }> }>(
+    const got = await ask<{ ideas: Array<{ text: string; label: string; script: string; creator: string; shots: Array<Record<string, string>> }> }>(
       "You write short form video ideas for one brand, borrowing what works for the " +
         "creators studied below. Each idea is the opening line of the video, spoken out " +
         "loud, six to fifteen words, specific to this brand's niche. label is the " +
@@ -321,7 +324,7 @@ export async function runSuperGenerate(runId: string): Promise<void> {
         "are not in the brand material. text is the topic: the opening line, spoken. " +
         "script is the short video script for it, 40 to 90 words, as four lines starting " +
         "HOOK:, SETUP:, PAYOFF:, CTA: separated by newlines. creator is the exact handle of " +
-        "the creator whose playbook the idea borrows from. Write exactly this many ideas per " +
+        "the creator whose playbook the idea borrows from. " + SHOT_RULES + "  Write exactly this many ideas per " +
         "creator: " + quota.map((q) => `${q.handle} ${q.n}`).join(", ") + ".",
       `Brand: ${run.client.name}\nNiche: ${niche || "(see brand material)"}\n\n` +
         books
@@ -329,11 +332,11 @@ export async function runSuperGenerate(runId: string): Promise<void> {
           .join("\n\n") +
         `\n\n${await groundingFor(prisma, run.clientId)}`,
       IDEAS_SCHEMA,
-      Math.min(8000, 400 + total * 260),
+      Math.min(14000, 400 + total * 420),
     );
     await save({
       status: "ready",
-      ideas: tagIdeas(got.ideas ?? [], quota.map((q) => q.handle)).slice(0, total) as unknown as Prisma.InputJsonValue,
+      ideas: tagIdeas((got.ideas ?? []).map((i) => ({ ...i, shots: (i.shots ?? []).slice(0, 5).map((s, n) => cleanShot(s, n)) })), quota.map((q) => q.handle)).slice(0, total) as unknown as Prisma.InputJsonValue,
       completedAt: new Date(),
     });
   } catch (err) {

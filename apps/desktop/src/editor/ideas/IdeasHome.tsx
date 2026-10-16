@@ -235,7 +235,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     }
   };
 
-  const bank = async (hook: string, formatName: string, source: string, scriptText?: string, creator?: string) => {
+  const bank = async (hook: string, formatName: string, source: string, scriptText?: string, creator?: string, shots?: Array<Record<string, string>>) => {
     try {
       await api.post(`/clients/${clientId}/ideas`, {
         text: hook,
@@ -246,6 +246,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
         source,
         ...(scriptText ? { scriptText: scriptText.slice(0, 4000) } : {}),
         ...(creator ? { creator: creator.slice(0, 120) } : {}),
+        ...(shots?.length ? { shots: shots.slice(0, 8) } : {}),
       });
       setAdded((cur) => [...cur, hook]);
       setReloadKey((n) => n + 1);
@@ -457,7 +458,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
             <SuperGenerate
               run={sg.run}
               onCancel={() => void cancelSuper()}
-              onAdd={(i) => void bank(i.text, i.label, "analysis", i.script, i.creator)}
+              onAdd={(i) => void bank(i.text, i.label, "analysis", i.script, i.creator, i.shots)}
               added={added}
             />
           ) : (

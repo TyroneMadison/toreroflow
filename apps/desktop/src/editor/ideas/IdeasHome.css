@@ -261,3 +261,12 @@
 .sv2av{width:38px;height:38px}.sv2check{width:44px;height:44px}
 .sv2card{min-width:0}.sv2who{flex:1 1 0}
 @media (max-width:640px){.sv2{overflow-x:hidden}.sv2script{padding:12px 14px;font-size:14.5px}.sv2acts{padding:0 16px 16px}.sv2card{border-radius:16px}.sv2big{height:52px}}
+
+/* idea GIFs (hook + one per shot), 2 up on desktop, 1 up on phone */
+.sv2gaplab{margin-top:18px}
+.ideagifs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ideagif{margin:0;min-width:0}
+.ideagif img{width:100%;height:auto;aspect-ratio:16/9;border-radius:12px;display:block;background:var(--panel-2,#151518)}
+.ideagif figcaption{font-size:12px;opacity:.7;margin-top:6px;line-height:1.4}
+.ideagifwait{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel-2,#151518);border-radius:12px;padding:12px 14px}
+@media (max-width:640px){.ideagifs{grid-template-columns:1fr}}

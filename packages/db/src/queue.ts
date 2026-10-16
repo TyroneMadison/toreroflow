@@ -38,6 +38,7 @@ export const QUEUE_NAMES = [
   "analyze",
   "knowledge",
   "supergen",
+  "ideagifs",
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];

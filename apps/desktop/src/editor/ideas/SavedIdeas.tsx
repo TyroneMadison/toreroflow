@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../../lib/api";
+import { api, API_URL } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { stepIndex } from "../../lib/ideaContext";
 import { burstConfetti } from "./confetti";
@@ -22,6 +22,7 @@ interface SavedIdea {
   scriptText: string | null;
   creator: string | null;
   completed: boolean;
+  gifs: Array<{ kind: string; key: string; caption: string }> | null;
   createdAt: string;
 }
 
@@ -78,6 +79,24 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
       live = false;
     };
   }, [clientId, reloadKey, toast]);
+
+  // While the worker draws the GIFs for this idea, look again every few seconds.
+  const waitingId = ideas?.[index] && ideas[index].scriptText && !ideas[index].gifs ? ideas[index].id : null;
+  const tries = useRef(0);
+  useEffect(() => {
+    if (!waitingId) return;
+    if (tries.current > 20) return;
+    const t = setTimeout(async () => {
+      tries.current += 1;
+      try {
+        const got = await api.get<SavedIdea[]>(`/clients/${clientId}/ideas`);
+        setIdeas((cur) => (cur ? cur.map((i) => got.find((g) => g.id === i.id) ?? i) : got));
+      } catch {
+        /* try again next tick */
+      }
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [waitingId, ideas, clientId]);
 
   const shown = (ideas ?? []).filter((i) => !filter || i.creator === filter);
   const creators = [...new Set((ideas ?? []).map((i) => i.creator).filter((c): c is string => Boolean(c)))];
@@ -222,6 +241,35 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
               <>
                 <div className="sv2lab">Script</div>
                 <ScriptLines text={idea.scriptText} />
+                <div className="sv2lab sv2gaplab">See it</div>
+                {idea.gifs && idea.gifs.length > 0 ? (
+                  <div className="ideagifs">
+                    {idea.gifs.map((g) => (
+                      <figure className="ideagif" key={g.key}>
+                        <img src={`${API_URL}/idea-gifs/${g.key}.gif`} alt={g.caption} loading="lazy" width={480} height={270} />
+                        <figcaption>{g.caption}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ideagifwait">
+                    <span className="sub">Drawing the hook and shot GIFs...</span>
+                    <button
+                      className="sv2ab"
+                      onClick={async () => {
+                        tries.current = 0;
+                        try {
+                          await api.post(`/ideas/${idea.id}/gifs`, {});
+                          setIdeas((cur) => (cur ?? []).map((i) => (i.id === idea.id ? { ...i, gifs: null } : i)));
+                        } catch (err) {
+                          toast.fail("Could not start the GIFs", err);
+                        }
+                      }}
+                    >
+                      Make GIFs
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

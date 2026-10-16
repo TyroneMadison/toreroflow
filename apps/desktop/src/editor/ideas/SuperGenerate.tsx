@@ -31,6 +31,7 @@ export interface SuperIdea {
   label: string;
   script?: string;
   creator?: string;
+  shots?: Array<Record<string, string>>;
 }
 
 export interface SuperRun {

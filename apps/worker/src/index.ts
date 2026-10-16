@@ -23,6 +23,7 @@ import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
 import { runSuperGenerate } from "./supergen";
+import { runIdeaGifs } from "./ideagifsJob";
 import { runResearch } from "./research";
 import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
@@ -943,6 +944,10 @@ void work<{ clientId: string }>("insights", { concurrency: 1 }, async ({ clientI
 
 void work<{ runId: string }>("supergen", { concurrency: 1 }, async ({ runId }) => {
   await runSuperGenerate(runId);
+});
+
+void work<{ ideaId: string }>("ideagifs", { concurrency: 1 }, async ({ ideaId }) => {
+  await runIdeaGifs(ideaId);
 });
 
 // One at a time, all three: each is ffmpeg or whisper on the same disk, and

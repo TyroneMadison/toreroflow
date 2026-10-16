@@ -1152,6 +1152,13 @@ model VideoAnalysis {
   @@index([clientId])
 }
 
+/// A code-drawn idea GIF, cached by content hash.
+model IdeaGif {
+  key       String   @id
+  bytes     Bytes
+  createdAt DateTime @default(now())
+}
+
 /// One idea in a brand's ideas list, from first thought to posted video.
 model ContentIdea {
   id         String   @id @default(cuid())
@@ -1168,6 +1175,10 @@ model ContentIdea {
   creator    String?
   /// Ticked off as done on the Saved ideas card.
   completed  Boolean  @default(false)
+  /// Shot list: [{ title, framing, angle, move, pose, time, sign }].
+  shots      Json?
+  /// Drawn GIFs: [{ kind: hook | shot, key, caption }] (bytes in IdeaGif).
+  gifs       Json?
   /// idea | scripting | ready | posted | analyzed
   status     String   @default("idea")
   /// brainstorm | analysis | overview | custom

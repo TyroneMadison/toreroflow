@@ -13,7 +13,7 @@ import {
   SUPERGEN_CAP_MAX,
   SUPERGEN_CAP_MIN,
 } from "@toreroflow/core";
-import { getPrisma, groundingFor as grounding, enqueue } from "@toreroflow/db";
+import { getPrisma, groundingFor as grounding, enqueue, Prisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -41,6 +41,7 @@ const ideaCreateSchema = z.object({
   source: z.enum(["brainstorm", "analysis", "overview", "custom"]).optional(),
   scriptText: z.string().max(4000).optional(),
   creator: z.string().max(120).optional(),
+  shots: z.array(z.record(z.string(), z.string().max(120))).max(8).optional(),
 });
 
 const ideaPatchSchema = z.object({
@@ -244,11 +245,11 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           detail: parsed.error.issues[0]?.message ?? "An idea is a line of text, up to 500 characters.",
         });
       }
-      return reply.status(201).send(
-        await prisma.contentIdea.create({
-          data: { clientId: client.id, ...parsed.data },
-        }),
-      );
+      const created = await prisma.contentIdea.create({
+        data: { clientId: client.id, ...parsed.data },
+      });
+      if (created.scriptText) await enqueue("ideagifs", { ideaId: created.id }, { key: `gifs-${created.id}` });
+      return reply.status(201).send(created);
     },
   );
 
@@ -266,6 +267,17 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return prisma.contentIdea.update({ where: { id: existing.id }, data: parsed.data });
+  });
+
+  app.post<{ Params: { id: string } }>("/ideas/:id/gifs", async (request, reply) => {
+    const idea = await prisma.contentIdea.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      select: { id: true },
+    });
+    if (!idea) return reply.status(404).send({ error: "idea not found" });
+    await prisma.contentIdea.update({ where: { id: idea.id }, data: { gifs: Prisma.DbNull } });
+    await enqueue("ideagifs", { ideaId: idea.id }, { key: `gifs-${idea.id}-${Date.now()}` });
+    return { ok: true };
   });
 
   app.delete<{ Params: { id: string } }>("/ideas/:id", async (request, reply) => {
