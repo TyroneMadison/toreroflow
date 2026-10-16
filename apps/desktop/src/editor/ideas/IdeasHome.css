@@ -256,3 +256,8 @@
   .creatorgen{min-height:40px}
   .sgideas{grid-template-columns:1fr!important}
 }
+/* phone fixes: true circles, nothing overflows at 375/390 */
+.sv2av,.sv2check{flex-shrink:0;aspect-ratio:1}
+.sv2av{width:38px;height:38px}.sv2check{width:44px;height:44px}
+.sv2card{min-width:0}.sv2who{flex:1 1 0}
+@media (max-width:640px){.sv2{overflow-x:hidden}.sv2script{padding:12px 14px;font-size:14.5px}.sv2acts{padding:0 16px 16px}.sv2card{border-radius:16px}.sv2big{height:52px}}
