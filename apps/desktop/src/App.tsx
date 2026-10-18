@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import IconDefs from "./components/IconDefs";
 import GlassFilter from "./components/GlassFilter";
 import Dock from "./components/Dock";
+import MobileNav from "./components/MobileNav";
 import PageHeader from "./components/PageHeader";
 import DashboardScreen from "./screens/DashboardScreen";
 import UploadSchedule from "./screens/UploadSchedule";
@@ -164,6 +165,15 @@ function Shell() {
           onToggleTheme={toggleTheme}
           onOpenConnect={openConnect}
           reportNotice={reportNotice}
+          alertCount={visibleAlerts.length}
+          alertIsError={visibleAlerts.some((a) => a.severity === "error")}
+        />
+        <MobileNav
+          activeScreen={activeScreen}
+          api={apiStatus}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenConnect={openConnect}
           alertCount={visibleAlerts.length}
           alertIsError={visibleAlerts.some((a) => a.severity === "error")}
         />

@@ -56,8 +56,12 @@ const TABS: Array<{ id: Tab; label: string; folio: string; h: [string, string]; 
 
 const NICHE_CAP = 200;
 
-export default function IdeasHome({ clientId }: { clientId: string }) {
+export default function IdeasHome({ clientId, focusSuper = false }: { clientId: string; focusSuper?: boolean }) {
   const toast = useToast();
+  const superRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (focusSuper) superRef.current?.scrollIntoView({ block: "center" });
+  }, [focusSuper]);
   const [tab, setTab] = useState<Tab>("generate");
   const [profile, setProfile] = useState<NicheProfile | null>(null);
   const [niche, setNiche] = useState("");
@@ -460,7 +464,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
                 </button>
               </div>
 
-              <span className="lab sectlab">Super generate</span>
+              <span className="lab sectlab" ref={superRef}>Super generate</span>
               <div className="sub">
                 Studies the last ~100 videos of every YouTube creator above (hook, framing,
                 structure, script), then writes ideas in your niche.

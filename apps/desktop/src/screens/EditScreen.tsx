@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAppState } from "../state/AppState";
+import { setQuery, useRoute } from "../lib/routes";
 import StudioHome from "../editor/StudioHome";
 import StudioEditor from "../editor/StudioEditor";
 import AnalyzeHome from "../editor/analyze/AnalyzeHome";
@@ -17,7 +18,11 @@ const AREAS: { id: EditArea; label: string }[] = [
 
 export default function EditScreen() {
   const { selectedClient } = useAppState();
-  const [area, setArea] = useState<EditArea>("studio");
+  // The open area lives in ?area so the phone tab bar can link straight to Ideas.
+  const routeArea = useRoute().area;
+  // "super" is Ideas scrolled to Super generate (the phone Create sheet).
+  const area: EditArea = routeArea === "super" ? "ideas" : AREAS.find((a) => a.id === routeArea)?.id ?? "studio";
+  const setArea = (a: EditArea) => setQuery({ area: a === "studio" ? null : a });
   // The Studio project being edited. The screen remounts per brand (keyed in
   // App.tsx), so a project never survives a brand switch.
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
@@ -83,7 +88,7 @@ export default function EditScreen() {
             <AnalyzeHome clientId={selectedClient.id} onOpen={setOpenAnalysisId} />
           )
         ) : (
-          <IdeasHome clientId={selectedClient.id} />
+          <IdeasHome clientId={selectedClient.id} focusSuper={routeArea === "super"} />
         )}
       </div>
     </section>

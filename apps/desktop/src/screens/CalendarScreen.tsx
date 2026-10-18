@@ -10,6 +10,8 @@ import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/p
 import { useAppState } from "../state/AppState";
 import PostDetailModal from "../modals/PostDetailModal";
 import { Empty, ErrorState, Loading } from "../components/states";
+import { useIsPhone } from "../lib/phone";
+import { navigate } from "../lib/routes";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -71,6 +73,7 @@ const fmtTime = (iso: string): string =>
 export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const { selectedClient } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [view, setView] = useState<CalView>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
@@ -305,6 +308,170 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       })
     : [];
 
+  const detailModal = detail && (
+    <PostDetailModal
+      target={detail}
+      // Same local-day rule the grid uses to place cards, so the button's
+      // count is exactly the cards in that day's cell.
+      dayTargets={
+        detail.scheduledAt
+          ? targets.filter(
+              (t) =>
+                t.scheduledAt &&
+                new Date(t.scheduledAt).toDateString() ===
+                  new Date(detail.scheduledAt!).toDateString(),
+            )
+          : undefined
+      }
+      onClose={() => setDetail(null)}
+      onChanged={() => void load()}
+    />
+  );
+
+  /*
+   * Phones (Direction C): the week strip and the chosen day's agenda sit above
+   * the fold, the views are chips, and a failed post carries Retry (the detail
+   * sheet, where retry lives) and Reconnect (Settings, Connected Accounts)
+   * inline. Dragging has no phone equivalent; Reschedule is in the detail.
+   */
+  if (isPhone) {
+    const strip = view === "month" ? [] : DOW.map((_, i) => {
+      const d = mondayOf(anchor);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+    const dayEvents = eventsFor(anchor).sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+    const dayButton = (day: Date, key: string | number, label?: string) => {
+      const n = eventsFor(day).length;
+      const on = day.toDateString() === anchor.toDateString();
+      return (
+        <button
+          type="button"
+          key={key}
+          className={`mcal-day${on ? " on" : ""}${day.toDateString() === today ? " today" : ""}`}
+          aria-pressed={on}
+          aria-label={`${day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}, ${n} ${n === 1 ? "post" : "posts"}`}
+          onClick={() => setAnchor(startOfDay(day))}
+        >
+          {label && <small>{label}</small>}
+          <b>{day.getDate()}</b>
+          <span className="mcal-dots" aria-hidden="true">
+            {Array.from({ length: Math.min(n, 3) }, (_, k) => <i key={k} />)}
+          </span>
+        </button>
+      );
+    };
+    return (
+      <section className="screen active mcal" data-screen="calendar" data-state={state}>
+        <div className="mcal-head">
+          <div className="mcal-titles">
+            <div className="mcal-eyebrow">Calendar · {selectedClient?.name ?? "No brand"}</div>
+            <h2 className="mcal-title">
+              {view === "day"
+                ? anchor.toLocaleDateString([], { month: "long", day: "numeric" })
+                : `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
+            </h2>
+          </div>
+          <div className="mcal-nav">
+            <button type="button" className="mcal-ib" aria-label="Previous" onClick={() => step(-1)}>
+              <svg aria-hidden="true" style={{ transform: "rotate(90deg)" }}><use href="#i-chev" /></svg>
+            </button>
+            <button type="button" className="mcal-ib" aria-label="Next" onClick={() => step(1)}>
+              <svg aria-hidden="true" style={{ transform: "rotate(-90deg)" }}><use href="#i-chev" /></svg>
+            </button>
+          </div>
+        </div>
+        <div className="mcal-views" role="tablist" aria-label="Calendar view">
+          {(["day", "week", "month"] as CalView[]).map((v) => (
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : undefined} onClick={() => setView(v)}>
+              {v[0]!.toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+          <button type="button" onClick={() => setAnchor(startOfDay(new Date()))}>Today</button>
+        </div>
+
+        {state === "empty" && <Empty screen="calendar" title="No brand selected" hint="Pick a brand at the top to see its calendar." />}
+        {state === "loading" && <Loading screen="calendar" label="Loading the calendar" />}
+        {state === "error" && (
+          <ErrorState
+            screen="calendar"
+            message="Could not load the calendar. Check that the API is online, then try again."
+            onRetry={() => {
+              setLoadError(false);
+              void load({ announce: true });
+            }}
+          />
+        )}
+
+        {state === "ready" && (
+          <>
+            {view === "week" && (
+              <div className="mcal-strip">{strip.map((d, i) => dayButton(d, i, DOW[i]![0]))}</div>
+            )}
+            {view === "month" && (
+              <div className="mcal-month">
+                {DOW.map((d) => <span key={d} className="mcal-dow">{d[0]}</span>)}
+                {monthCells.map((d, i) => (d ? dayButton(d, i) : <span key={`b${i}`} />))}
+              </div>
+            )}
+            <div className="mcal-dayhead">
+              <h3>{anchor.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}</h3>
+              <span className="tf-lbl">{dayEvents.length} {dayEvents.length === 1 ? "post" : "posts"}</span>
+            </div>
+            {holidayRow(anchor)}
+            <div className="mcal-agenda card glass">
+              {dayEvents.length === 0 && (
+                <div className="mcal-none">
+                  Nothing on this day yet.
+                  <button type="button" className="btn ghost" onClick={onNewPost}>+ Add post</button>
+                </div>
+              )}
+              {dayEvents.map((t) => {
+                const [hm, ap] = (t.scheduledAt ? fmtTime(t.scheduledAt) : "").split(" ");
+                const reconnect = t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? "");
+                return (
+                  <div className={`mcal-item st-${t.status}`} key={t.id}>
+                    <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
+                    <div className="mcal-body">
+                      <div className="mcal-name"><Pf p={PF_ID[t.platform]} size="sm" /> <span>{t.assetName}</span></div>
+                      <div className={`mcal-st st-${t.status}`}>
+                        <StatusIcon status={t.status} />
+                        {POST_STATUS[t.status].label}
+                        {t.status === "failed" && t.error ? ` · ${t.error}` : canMove(t.status) ? " · can move" : ""}
+                      </div>
+                      <div className="mcal-acts">
+                        {t.status === "failed" ? (
+                          <>
+                            <button type="button" className="btn" onClick={() => setDetail(t)}>Retry</button>
+                            {reconnect && (
+                              <button type="button" className="btn ghost" onClick={() => navigate("settings", "accounts")}>Reconnect</button>
+                            )}
+                          </>
+                        ) : (
+                          <button type="button" className="btn ghost" onClick={() => setDetail(t)}>
+                            {canMove(t.status) ? "Reschedule" : "Details"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="mb-actionbar">
+          <button type="button" className="tf-btn pri" onClick={onNewPost} data-testid="calendar.new-post">
+            <svg aria-hidden="true"><use href="#i-plus" /></svg>
+            New post
+          </button>
+        </div>
+        {detailModal}
+      </section>
+    );
+  }
+
   return (
     <section className="screen active" data-screen="calendar" data-state={state}>
       <div className="topbar">
@@ -526,25 +693,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         </div>
       </div>
 
-      {detail && (
-        <PostDetailModal
-          target={detail}
-          // Same local-day rule the grid uses to place cards, so the button's
-          // count is exactly the cards in that day's cell.
-          dayTargets={
-            detail.scheduledAt
-              ? targets.filter(
-                  (t) =>
-                    t.scheduledAt &&
-                    new Date(t.scheduledAt).toDateString() ===
-                      new Date(detail.scheduledAt!).toDateString(),
-                )
-              : undefined
-          }
-          onClose={() => setDetail(null)}
-          onChanged={() => void load()}
-        />
-      )}
+      {detailModal}
     </section>
   );
 }

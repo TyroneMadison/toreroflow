@@ -67,6 +67,8 @@ export interface Route {
   step: string | null;
   /** The media asset whose schedule flow is open (?schedule=). */
   scheduleId: string | null;
+  /** Studio's open area (?area=ideas), so the phone tab bar can open Ideas. */
+  area: string | null;
 }
 
 const SEG = "([A-Za-z0-9_-]+)";
@@ -111,6 +113,7 @@ export function parseUrl(url: string): Route {
     cardId,
     step: u.searchParams.get("step") || null,
     scheduleId: u.searchParams.get("schedule") || null,
+    area: u.searchParams.get("area") || null,
   };
 }
 
@@ -187,9 +190,16 @@ export function useRoute(): Route {
   return useMemo(() => parseUrl(url), [url]);
 }
 
+/** The query a link to `screen` carries over; ?area belongs to Studio alone. */
+function carriedQuery(screen: ScreenId): string {
+  const u = new URL(readUrl(), BASE);
+  if (screen !== "edit") u.searchParams.delete("area");
+  return u.search;
+}
+
 /** Opens a screen as a new history entry, keeping ?client and ?range. */
 export function navigate(screen: ScreenId, section?: SettingsSection | null): void {
-  const next = pathFor(screen, section) + new URL(readUrl(), BASE).search;
+  const next = pathFor(screen, section) + carriedQuery(screen);
   if (next !== readUrl()) writeUrl(next, false);
 }
 
@@ -199,6 +209,7 @@ export function setQuery(patch: {
   range?: Range | null;
   step?: string | null;
   schedule?: string | null;
+  area?: string | null;
 }): void {
   const u = new URL(readUrl(), BASE);
   for (const [k, v] of Object.entries(patch)) {
@@ -215,7 +226,7 @@ export function setQuery(patch: {
  * in a new tab and copying the link both work.
  */
 export function linkProps(screen: ScreenId, section?: SettingsSection | null) {
-  const path = pathFor(screen, section) + new URL(readUrl(), BASE).search;
+  const path = pathFor(screen, section) + carriedQuery(screen);
   return {
     href: HASH_ROUTES ? `#${path}` : path,
     onClick(e: MouseEvent<HTMLAnchorElement>) {
