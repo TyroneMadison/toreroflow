@@ -4,15 +4,17 @@ import { useToast } from "../../components/Toasts";
 import { stepIndex } from "../../lib/ideaContext";
 import { burstConfetti } from "./confetti";
 import RemixSheet from "./RemixSheet";
+import { Avatar, FormatTag, Icon, NeedChips, Pills } from "./coralBits";
 
 /**
- * Saved ideas, one card at a time (Ideas v2 mockup): source creator on top,
- * the topic, then the script. Big Previous / Next, swipe on the phone, the
- * arrow keys on desktop, an "n of N" counter, a creator filter, and a check
- * to mark an idea done (full-screen confetti; a soft fade-back when unticked).
+ * Saved ideas, one card at a time (Coral Edition): the giant issue-style
+ * counter, creator filter chips, then the card with its coral spine, topic,
+ * the hook as a pull-quote, Setup / Payoff / CTA, why it works, the GIFs and
+ * the actions. Big Previous / Next, swipe on the phone, the arrow keys on
+ * desktop, and a done tick (full-screen confetti; a soft fade-back when unticked).
  */
 
-interface SavedIdea {
+export interface SavedIdea {
   id: string;
   text: string;
   hook: string | null;
@@ -22,43 +24,37 @@ interface SavedIdea {
   source: string;
   scriptText: string | null;
   creator: string | null;
+  funnelStage?: string | null;
   whyItWorks?: string | null;
   difficulty?: string | null;
   needs?: Array<{ type: string; label: string }> | null;
   completed: boolean;
   gifs: Array<{ kind: string; key: string; caption: string }> | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
 const LINE = /^(HOOK|SETUP|PAYOFF|CTA)\s*:\s*/i;
+const SOURCE: Record<string, string> = { analysis: "Super generate", brainstorm: "Brainstorm", overview: "Overview", custom: "Your idea" };
 
-function ScriptLines({ text }: { text: string }) {
-  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  return (
-    <div className="sv2script">
-      {lines.map((l, i) => {
-        const m = l.match(LINE);
-        return (
-          <p key={i}>
-            {m && <i>{m[1].toUpperCase() === "HOOK" ? "Say this · Hook:" : m[1].toUpperCase()}</i>}
-            {m ? l.replace(LINE, "") : l}
-          </p>
-        );
-      })}
-    </div>
-  );
+/** Splits a script into its HOOK line, the labelled beats, and any loose lines. */
+function parseScript(text: string) {
+  let hook = "";
+  const beats: Array<{ label: string; body: string }> = [];
+  const loose: string[] = [];
+  for (const l of text.split(/\n+/).map((x) => x.trim()).filter(Boolean)) {
+    const m = l.match(LINE);
+    const body = l.replace(LINE, "");
+    if (!m) loose.push(l);
+    else if (m[1]!.toUpperCase() === "HOOK") hook = body;
+    else beats.push({ label: m[1]!.toUpperCase() === "CTA" ? "CTA" : m[1]![0]!.toUpperCase() + m[1]!.slice(1).toLowerCase(), body });
+  }
+  return { hook, beats, loose };
 }
 
-function initials(h: string) {
-  return h.replace(/^@/, "").slice(0, 2).toUpperCase() || "?";
-}
-function hue(h: string) {
-  let n = 0;
-  for (const c of h) n = (n * 31 + c.charCodeAt(0)) % 360;
-  return n;
-}
+const pad = (n: number) => String(n).padStart(2, "0");
 
-export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; reloadKey: number }) {
+export default function SavedIdeas({ clientId, reloadKey, onFolio }: { clientId: string; reloadKey: number; onFolio?: (folio: string) => void }) {
   const toast = useToast();
   const [ideas, setIdeas] = useState<SavedIdea[] | null>(null);
   const [index, setIndex] = useState(0);
@@ -107,15 +103,20 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
   const shown = (ideas ?? []).filter((i) => !filter || i.creator === filter);
   const creators = [...new Set((ideas ?? []).map((i) => i.creator).filter((c): c is string => Boolean(c)))];
   const count = shown.length;
+  const at = Math.min(index, Math.max(0, count - 1));
   const step = (d: number) => {
     setAnim("");
     setIndex((i) => stepIndex(i, d, count));
   };
 
   useEffect(() => {
+    onFolio?.(pad(count ? at + 1 : 0));
+  }, [at, count, onFolio]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (remixId || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA"))) return;
       if (e.key === "ArrowLeft") step(-1);
       if (e.key === "ArrowRight") step(1);
     };
@@ -126,19 +127,19 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
   if (!ideas) return <div className="skel nicheskel" />;
   if (ideas.length === 0) {
     return (
-      <div className="card glass savedstep">
-        <h3>No saved ideas yet</h3>
-        <div className="sub">Press + Add idea on an idea in the Generate tab and it lands here.</div>
+      <div className="co-empty">
+        <h3 className="co-d">No saved ideas yet</h3>
+        <p>Press Save idea on an idea in the Generate tab and it lands here.</p>
       </div>
     );
   }
-  const at = Math.min(index, Math.max(0, count - 1));
   const idea = shown[at];
+  const done = ideas.filter((i) => i.completed).length;
 
   const toggleDone = async () => {
     if (!idea) return;
     const next = !idea.completed;
-    setIdeas((cur) => (cur ?? []).map((i) => (i.id === idea.id ? { ...i, completed: next } : i)));
+    setIdeas((cur) => (cur ?? []).map((i) => (i.id === idea.id ? { ...i, completed: next, updatedAt: new Date().toISOString() } : i)));
     setAnim(next ? "checking" : "unchecking");
     if (next) burstConfetti(checkRef.current);
     try {
@@ -170,20 +171,30 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
     }
   };
 
+  const title = idea ? idea.hook || idea.text : "";
+  const script = idea?.scriptText ? parseScript(idea.scriptText) : null;
+  const sayThis = script?.hook || (idea && idea.hook && idea.text !== idea.hook ? idea.text : "");
+  const source = idea ? SOURCE[idea.source] ?? idea.source : "";
+  const stampDate = idea?.completed
+    ? new Date(idea.updatedAt ?? idea.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()
+    : "";
+  const stamp = idea?.completed ? <div className="co-stamp" aria-hidden="true"><b>SHOT</b><span>{stampDate} · DONE</span></div> : null;
+
   return (
-    <div className="sv2">
-      <div className="sv2counter">
-        <div className="sv2n">
-          <b>{count ? at + 1 : 0}</b> of {count}
+    <div className="co-saved">
+      <div className="co-bar">
+        <div className="co-num">
+          <b aria-hidden="true">{pad(count ? at + 1 : 0)}</b>
+          <span><em>{count ? at + 1 : 0} of {count}</em>saved ideas{done ? ` · ${done} done` : ""}</span>
         </div>
         {creators.length > 0 && (
-          <div className="sv2filter">
-            <button className={`sv2chip${filter === "" ? " on" : ""}`} onClick={() => { setFilter(""); setIndex(0); }}>
-              All
+          <div className="co-chips">
+            <button type="button" className={`co-chip${filter === "" ? " on" : ""}`} onClick={() => { setFilter(""); setIndex(0); }}>
+              All {ideas.length}
             </button>
             {creators.map((c) => (
-              <button key={c} className={`sv2chip${filter === c ? " on" : ""}`} onClick={() => { setFilter(c); setIndex(0); }}>
-                {c}
+              <button type="button" key={c} className={`co-chip${filter === c ? " on" : ""}`} onClick={() => { setFilter(c); setIndex(0); }}>
+                <Avatar handle={c} small />{c}
               </button>
             ))}
           </div>
@@ -191,9 +202,9 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
       </div>
 
       {idea && (
-        <div
+        <article
           key={idea.id}
-          className={`sv2card${idea.completed ? " done" : ""}${anim ? ` ${anim}` : ""}`}
+          className={`co-sv${idea.completed ? " done" : ""}${anim ? ` ${anim}` : ""}`}
           onTouchStart={(e) => {
             touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
           }}
@@ -206,69 +217,64 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
             if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
           }}
         >
-          <div className="sv2head">
-            {idea.creator ? (
-              <>
-                <div className="sv2av" style={{ background: `hsl(${hue(idea.creator)} 70% 58%)` }}>
-                  {initials(idea.creator)}
-                </div>
-                <div className="sv2who">
-                  <b>From {idea.creator}</b>
-                  <span>{idea.source === "analysis" ? "Super generate" : idea.source}</span>
-                </div>
-              </>
-            ) : (
-              <div className="sv2who">
-                <b>{idea.source === "custom" ? "Your idea" : idea.source}</b>
-                {idea.niche && <span>{idea.niche}</span>}
+          <div className="co-crops" aria-hidden="true" />
+          <div className="co-spine">
+            <span>No. {pad(at + 1)} · Saved idea<span className="co-desk"> · {source}</span></span>
+            <span className="co-phone">{source}</span>
+          </div>
+          <div className="co-svin">
+            <div className="co-ch">
+              {idea.creator && <Avatar handle={idea.creator} />}
+              <div className="co-who">
+                <b>{idea.creator ? `From ${idea.creator}` : source}</b>
+                <span>{[idea.creator ? source : "", idea.niche].filter(Boolean).join(" · ")}</span>
+              </div>
+              <Pills stage={idea.funnelStage} level={idea.difficulty} />
+            </div>
+            <div className="co-tl"><span className="co-lab">Topic</span><FormatTag name={idea.formatName} /></div>
+            <h2 className="co-d co-topic">{title}</h2>
+            <NeedChips needs={idea.needs} />
+            {sayThis && (
+              <div className="co-hook">
+                <span className="co-q" aria-hidden="true">&#8220;</span>
+                <div className="co-lab">Say this · Hook:</div>
+                <blockquote>{sayThis}</blockquote>
               </div>
             )}
-            <div className="sv2tags">
-              {idea.formatName && <span className="sv2tag">{idea.formatName}</span>}
-              {idea.difficulty && <span className="sv2tag difftag">{idea.difficulty[0]!.toUpperCase() + idea.difficulty.slice(1)}</span>}
-              {idea.completed && <span className="sv2tag g">Done</span>}
-            </div>
-            <button
-              ref={checkRef}
-              className="sv2check"
-              aria-pressed={idea.completed}
-              title={idea.completed ? "Mark not done" : "Mark done"}
-              onClick={() => void toggleDone()}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden>
-                <path d="M5 12.5l4.5 4.5L19 7.5" />
-              </svg>
-            </button>
-          </div>
-          <div className="sv2body">
-            {idea.needs && idea.needs.length > 0 && (
-              <div className="needs"><span className="needslab">Needs:</span>{idea.needs.map((n) => <span className="needchip" key={n.label}>{n.label.replace(/^Needs\s+/i, "")}</span>)}</div>
+            {script && script.beats.length > 0 && (
+              <div className="co-steps">
+                {script.beats.map((b, k) => (
+                  <div key={k}><div className="co-lab">{b.label}<em>{pad(k + 2)}</em></div>{b.body}</div>
+                ))}
+              </div>
             )}
-            <div className="sv2lab">Topic</div>
-            <h2 className="sv2topic">{idea.hook || idea.text}</h2>
-            {idea.hook && idea.text !== idea.hook && <div className="sub sv2sub">{idea.text}</div>}
+            {script && script.loose.length > 0 && (
+              <div className="co-loose">{script.loose.map((l, k) => <p key={k}>{l}</p>)}</div>
+            )}
             {idea.whyItWorks && (
-              <div className="whyline"><span className="whylab">Why this works</span>{idea.whyItWorks}</div>
+              <div className="co-why"><span className="co-lab">Why this works</span><p>{idea.whyItWorks}</p></div>
             )}
             {idea.scriptText && (
-              <>
-                <div className="sv2lab">Script</div>
-                <ScriptLines text={idea.scriptText} />
-                <div className="sv2lab sv2gaplab">See it</div>
+              <div className="co-sec">
+                <div className="co-lab">See it</div>
                 {idea.gifs && idea.gifs.length > 0 ? (
-                  <div className="ideagifs">
-                    {idea.gifs.map((g) => (
-                      <figure className="ideagif" key={g.key}>
-                        <img src={`${API_URL}/idea-gifs/${g.key}.gif`} alt={g.caption} loading="lazy" width={480} height={270} />
-                        <figcaption>{g.caption}</figcaption>
-                      </figure>
-                    ))}
+                  <div className="co-see">
+                    {idea.gifs.map((g, k) => {
+                      const m = g.caption.match(/^(Say this · Hook:|Shot \d+)\s*(?:·\s*)?(.*)$/);
+                      return (
+                        <figure key={g.key}>
+                          <img src={`${API_URL}/idea-gifs/${g.key}.gif`} alt={g.caption} loading="lazy" width={480} height={270} />
+                          <figcaption><i>Fig. {k + 1}</i>{m ? <><b>{m[1]}</b> {m[2]}</> : g.caption}</figcaption>
+                        </figure>
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div className="ideagifwait">
-                    <span className="sub">Drawing the hook and shot GIFs...</span>
+                  <div className="co-gifwait">
+                    <span>Drawing the hook and shot GIFs...</span>
                     <button
-                      className="sv2ab"
+                      type="button"
+                      className="co-gb"
                       onClick={async () => {
                         tries.current = 0;
                         try {
@@ -283,37 +289,47 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
                     </button>
                   </div>
                 )}
-              </>
+              </div>
             )}
+            <div className="co-foot">
+              <button type="button" className="co-gb" onClick={() => void copy()}>Copy script</button>
+              <button type="button" className="co-rb" onClick={() => setRemixId(idea.id)}><Icon n="shuffle" />Remix</button>
+              <button type="button" className="co-gb" onClick={() => void remove()}>Remove</button>
+              <span className={`co-done${idea.completed ? " on" : ""}`}>
+                <span>{idea.completed ? "Done" : "Mark done"}</span>
+                <span className="co-phone">{stamp}</span>
+                <button
+                  type="button"
+                  ref={checkRef}
+                  className="co-tick"
+                  role="checkbox"
+                  aria-checked={idea.completed}
+                  aria-label={idea.completed ? "Mark not done" : "Mark done"}
+                  onClick={() => void toggleDone()}
+                >
+                  <Icon n="check" s={20} w={3} />
+                </button>
+              </span>
+            </div>
+            <span className="co-desk">{stamp}</span>
+            <div className="co-folio">Toreroflow Ideas · p. {pad(at + 1)}</div>
           </div>
-          <div className="sv2acts">
-            <button className="sv2ab" onClick={() => setRemixId(idea.id)}>Remix</button>
-            <button className="sv2ab" onClick={() => void copy()}>Copy script</button>
-            {remixId === idea.id && <RemixSheet ideaId={idea.id} niche={idea.niche} onClose={() => setRemixId(null)} onSaved={() => setBump((n) => n + 1)} />}
-            <button className="sv2ab" onClick={() => void remove()}>Remove</button>
-          </div>
-        </div>
+        </article>
+      )}
+      {idea && remixId === idea.id && (
+        <RemixSheet ideaId={idea.id} title={title} niche={idea.niche} onClose={() => setRemixId(null)} onSaved={() => setBump((n) => n + 1)} />
       )}
 
-      <div className="sv2sel">
-        <button className="sv2big" disabled={at === 0} onClick={() => step(-1)}>
-          ‹ Previous
-        </button>
-        <button className="sv2big p" disabled={at >= count - 1} onClick={() => step(1)}>
-          Next ›
-        </button>
-      </div>
-      <div className="sv2hint">
-        <span className="sv2desk">← → arrow keys also work</span>
-        <span className="sv2phone">Swipe left or right to switch ideas</span>
-      </div>
-      {count > 1 && (
-        <div className="sv2dots">
-          {shown.slice(0, 30).map((v, i) => (
-            <button key={v.id} className={i === at ? "on" : ""} title={`Idea ${i + 1}`} onClick={() => setIndex(i)} />
-          ))}
+      <div className="co-stick">
+        <div className="co-pn">
+          <button type="button" className="co-big" disabled={at === 0} onClick={() => step(-1)}>‹ Previous</button>
+          <button type="button" className="co-big p" disabled={at >= count - 1} onClick={() => step(1)}>Next ›</button>
         </div>
-      )}
+      </div>
+      <p className="co-hint">
+        <span className="co-desk">Swipe or use the arrow keys to switch ideas</span>
+        <span className="co-phone">Swipe left or right to switch ideas</span>
+      </p>
     </div>
   );
 }

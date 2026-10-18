@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
+import { FormatTag, Icon, NeedChips, Pills, hookLine } from "./coralBits";
 
 export interface RemixVariant {
   text: string;
@@ -15,10 +16,11 @@ export interface RemixVariant {
   creator?: string;
 }
 
-const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
-
-/** Three remixes of one saved idea, each with Save. A sheet from the bottom on phones. */
-export default function RemixSheet({ ideaId, niche, onClose, onSaved }: { ideaId: string; niche: string; onClose: () => void; onSaved: () => void }) {
+/**
+ * Three remixes of one saved idea, each with Save, plus Remix again. A modal
+ * over the dimmed saved card on desktop, a bottom sheet with a grabber on phones.
+ */
+export default function RemixSheet({ ideaId, title, niche, onClose, onSaved }: { ideaId: string; title: string; niche: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
@@ -43,18 +45,31 @@ export default function RemixSheet({ ideaId, niche, onClose, onSaved }: { ideaId
     }).catch(() => undefined);
   };
 
-  const close = () => {
-    // Variants shown but not saved count as skips in the learning loop.
+  /** Variants shown but not saved count as skips in the learning loop. */
+  const skipUnsaved = () => {
     if (data) for (const v of data.variants) if (!saved.includes(v.text)) feedback(v, false);
+  };
+  const close = () => {
+    skipUnsaved();
     onClose();
   };
+  const again = () => {
+    skipUnsaved();
+    setTries((n) => n + 1);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const save = async (v: RemixVariant) => {
     if (!data) return;
     try {
       await api.post(`/clients/${data.clientId}/ideas`, {
         text: v.text,
-        formatName: v.format ? `${v.format} \u00b7 ${v.label}` : v.label,
+        formatName: v.format ? `${v.format} · ${v.label}` : v.label,
         niche: niche.slice(0, 200),
         source: "analysis",
         scriptText: v.script,
@@ -76,39 +91,48 @@ export default function RemixSheet({ ideaId, niche, onClose, onSaved }: { ideaId
   };
 
   return (
-    <div className="remixback" onClick={close}>
-      <div className="remixsheet" role="dialog" aria-label="Remix" onClick={(e) => e.stopPropagation()}>
-        <div className="remixhead">
-          <b>Remix</b>
-          <button className="cbtn" onClick={close}>Close</button>
+    <div className="co-scrim" onClick={close}>
+      <div className="co-modal" role="dialog" aria-modal="true" aria-label="Remix" onClick={(e) => e.stopPropagation()}>
+        <div className="co-grab" aria-hidden="true" />
+        <div className="co-mh">
+          <button type="button" className="co-x" aria-label="Close" onClick={close}><Icon n="x" s={18} /></button>
+          <div className="co-lab acc">Remix · 3 variants</div>
+          <h2 className="co-d">Remix<Icon n="shuffle" s={40} w={2.4} /></h2>
+          <p>Remixed from: <b>{title}</b></p>
         </div>
-        {state === "loading" && <div className="remixstate">Writing 3 fresh takes...</div>}
+        {state === "loading" && <div className="co-mstate">Writing 3 fresh takes...</div>}
         {state === "error" && (
-          <div className="remixstate">
+          <div className="co-mstate">
             {error}
-            <button className="cbtn" onClick={() => setTries((n) => n + 1)}>Try again</button>
+            <button type="button" className="co-gb" onClick={() => setTries((n) => n + 1)}>Try again</button>
           </div>
         )}
-        {state === "ready" && data && data.variants.map((v) => (
-          <div className="remixcard" key={v.text}>
-            <div className="remixtop">
-              {v.format && <span className="sgformat">{v.format}</span>}
-              {v.difficulty && <span className="difftag">{cap(v.difficulty)}</span>}
+        {state === "ready" && data && data.variants.map((v, k) => {
+          const L = "ABCDE"[k] ?? String(k + 1);
+          const hook = hookLine(v.script);
+          return (
+            <div className="co-rv" key={v.text}>
+              <div className="co-L">{L}<small>Variant {L}</small></div>
+              <div className="co-rvb">
+                <div className="co-rvt"><FormatTag name={v.format} /><Pills stage={v.funnelStage} level={v.difficulty} /></div>
+                <h3>{v.text}</h3>
+                {hook && <div className="co-hk"><span className="co-lab">Say this · Hook:</span><p>{hook}</p></div>}
+                <NeedChips needs={v.needs} />
+                {v.whyItWorks && <p className="co-wy"><b>Why this works</b>{v.whyItWorks}</p>}
+                <div className="co-rvf">
+                  <span className="co-lab">{v.label}</span>
+                  <button type="button" className="co-sb" disabled={saved.includes(v.text)} onClick={() => void save(v)}>
+                    <Icon n={saved.includes(v.text) ? "check" : "bookmark"} s={14} />{saved.includes(v.text) ? "Saved" : "Save"}
+                  </button>
+                </div>
+              </div>
             </div>
-            {v.needs.length > 0 && (
-              <div className="needs"><span className="needslab">Needs:</span>{v.needs.map((n) => <span className="needchip" key={n.label}>{n.label.replace(/^Needs\s+/i, "")}</span>)}</div>
-            )}
-            <div className="remixtext">{v.text}</div>
-            {v.whyItWorks && <div className="whyline"><span className="whylab">Why this works</span>{v.whyItWorks}</div>}
-            {v.script && <div className="sgscript">{v.script.replace(/^HOOK\s*:\s*/im, "Say this \u00b7 Hook: ")}</div>}
-            <div className="remixfoot">
-              <span className="sub">{v.label}</span>
-              <button className="cbtn" disabled={saved.includes(v.text)} onClick={() => void save(v)}>
-                {saved.includes(v.text) ? "Saved" : "Save"}
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
+        <div className="co-mf">
+          <span>New hooks and formats, same idea. Save the ones you like.</span>
+          <button type="button" className="co-rb" disabled={state === "loading"} onClick={again}><Icon n="shuffle" />Remix again</button>
+        </div>
       </div>
     </div>
   );

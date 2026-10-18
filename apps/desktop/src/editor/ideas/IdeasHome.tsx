@@ -6,9 +6,15 @@ import SuperGenerate, { PlatformDot, useSuperRun, type SuperIdea as SuperIdeaT }
 import IdeaList from "./IdeaList";
 import SavedIdeas from "./SavedIdeas";
 import ShootPlan from "./ShootPlan";
+import HookLibrary from "./HookLibrary";
+import FormatPicker from "./FormatPicker";
+import { Masthead } from "./coralBits";
 import BrainstormModal from "./BrainstormModal";
 import { CREATOR_LINK_CAP, VIDEO_FORMATS, cleanCreatorLinks, parseCreatorLink } from "@toreroflow/core";
+import "@fontsource-variable/fraunces/wght.css";
+import "@fontsource-variable/fraunces/wght-italic.css";
 import "./IdeasHome.css";
+import "./coral.css";
 
 /**
  * The Ideas area, in two tabs (approved mockups, 2026-10-15). Generate:
@@ -37,7 +43,16 @@ interface FormatCard {
   hooks: string[];
 }
 
-type Tab = "generate" | "saved" | "shoot";
+type Tab = "generate" | "saved" | "shoot" | "hooks" | "formats";
+
+/** The five numbered tabs, each a page of the magazine with its own cover line. */
+const TABS: Array<{ id: Tab; label: string; folio: string; h: [string, string]; lede: string }> = [
+  { id: "generate", label: "Generate", folio: "02", h: ["Generate", "ideas"], lede: "Fresh ideas from your niche and the creators you follow, each tagged with its funnel stage, its difficulty and what you need to shoot it." },
+  { id: "saved", label: "Saved ideas", folio: "09", h: ["Saved", "ideas"], lede: "Every idea you kept, with its script, its shots and where it sits in the funnel." },
+  { id: "shoot", label: "Shoot plan", folio: "05", h: ["Shoot", "plan"], lede: "Your saved ideas grouped into filming sessions, so each setup gets used for more than one video." },
+  { id: "hooks", label: "Hook library", folio: "06", h: ["Hook", "library"], lede: "Opening lines worth stealing: from your own best posts, from creators you follow and from what is trending on the web." },
+  { id: "formats", label: "Formats", folio: "07", h: ["Format", "picker"], lede: "Seventeen formats and where each one lands in the funnel. Pick the ones you want the next generate to use." },
+];
 
 const NICHE_CAP = 200;
 
@@ -62,6 +77,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [view, setView] = useState<"formats" | "super">("formats");
   const [starting, setStarting] = useState(false);
+  const [savedFolio, setSavedFolio] = useState("09");
   const sg = useSuperRun(clientId);
 
   useEffect(() => {
@@ -286,40 +302,44 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
   const superBlocked = !sg.youtubeReady;
   const ytCount = creators.filter((c) => parseCreatorLink(c)?.platform === "youtube").length;
 
-  return (
-    <div className="ideashome">
-      <div className="ideatabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === "generate"}
-          className={`ideatab${tab === "generate" ? " on" : ""}`}
-          onClick={() => setTab("generate")}
-        >
-          Generate
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "saved"}
-          className={`ideatab${tab === "saved" ? " on" : ""}`}
-          onClick={() => setTab("saved")}
-        >
-          Saved ideas{added.length > 0 ? ` (+${added.length})` : ""}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "shoot"}
-          className={`ideatab${tab === "shoot" ? " on" : ""}`}
-          onClick={() => setTab("shoot")}
-        >
-          Shoot plan
-        </button>
-      </div>
+  const page = TABS.find((t) => t.id === tab)!;
 
-      {tab === "shoot" ? (
+  return (
+    <div className="ideashome coral">
+      <Masthead
+        folio={tab === "saved" ? savedFolio : page.folio}
+        word1={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1 ? "Super" : page.h[0]}
+        word2={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1 ? "generate" : page.h[1]}
+        lede={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1
+          ? "Ideas split evenly across all your creators, balanced across the funnel. Or let us pick one for you."
+          : page.lede}
+      />
+      <nav className="co-tabs" role="tablist">
+        {TABS.map((t, k) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "on" : ""}
+            onClick={() => setTab(t.id)}
+          >
+            <small>{String(k + 1).padStart(2, "0")}</small>
+            {t.label}
+            {t.id === "saved" && added.length > 0 ? ` (+${added.length})` : ""}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "hooks" ? (
+        <HookLibrary />
+      ) : tab === "formats" ? (
+        <FormatPicker chosen={chosen} setChosen={setChosen} onUse={() => setTab("generate")} />
+      ) : tab === "shoot" ? (
         <ShootPlan clientId={clientId} reloadKey={reloadKey} />
       ) : tab === "saved" ? (
         <>
-          <SavedIdeas clientId={clientId} reloadKey={reloadKey} />
+          <SavedIdeas clientId={clientId} reloadKey={reloadKey} onFolio={setSavedFolio} />
           <IdeaList clientId={clientId} niche={profile?.niche ?? ""} reloadKey={reloadKey} />
         </>
       ) : (
@@ -497,6 +517,8 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
               onCancel={() => void cancelSuper()}
               onAdd={(i) => { sendFeedback(sg.run?.id ?? "", [i], true); void bank(i.text, i.format ? `${i.format} · ${i.label}` : i.label, "analysis", i.script, i.creator, i.shots, i.funnelStage, i.whyItWorks, i.difficulty, i.needs); }}
               added={added}
+              busy={starting || sg.run?.status === "running"}
+              onRerun={(c) => void superGenerate(c)}
             />
           ) : (
             <>

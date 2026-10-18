@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
+import { Avatar, Icon, IdeaCard, StatBand, hookLine, stageCounts } from "./coralBits";
 
 /**
  * The Super generate results, laid out as in the approved v2 mockup: one row
@@ -31,7 +32,7 @@ export interface SuperIdea {
   label: string;
   /** The video format, from VIDEO_FORMATS (runs before v0.3.33 have none). */
   format?: string;
-  /** top | middle | bottom, stored on save; no badge yet (pending approval). */
+  /** top | middle | bottom, shown as the funnel pill and stored on save. */
   funnelStage?: string;
   /** One sentence on why the idea works (runs before v0.3.33 have none). */
   whyItWorks?: string;
@@ -73,15 +74,34 @@ export default function SuperGenerate({
   onCancel,
   onAdd,
   added,
+  onRerun,
+  busy,
 }: {
   run: SuperRun;
   onCancel: () => void;
   onAdd: (idea: SuperIdea) => void;
   added: string[];
+  /** Runs again: one creator (per-creator Generate) or all of them. */
+  onRerun?: (creator?: string) => void;
+  busy?: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
   const finished = run.creators.filter((c) => c.status === "done" || c.status === "skipped" || c.status === "failed").length;
   const books = run.creators.filter((c) => c.playbook);
+  const single = run.creators.length === 1 ? run.creators[0] : undefined;
+  const perCreator: Record<string, number> = {};
+  for (const i of run.ideas) if (i.creator) perCreator[i.creator] = (perCreator[i.creator] ?? 0) + 1;
+  const handles = Object.keys(perCreator);
+  /* Highlights one unsaved idea from this run; nothing is generated or saved. */
+  const pickOne = () => {
+    const pool = run.ideas.filter((i) => !added.includes(i.text) && i.text !== picked);
+    const got = pool[Math.floor(Math.random() * pool.length)];
+    if (!got) return;
+    setPicked(got.text);
+    if (run.ideas.indexOf(got) >= 10) setAll(true);
+  };
 
   useEffect(() => {
     if (open === null && books[0]) setOpen(books[0].url);
@@ -155,34 +175,62 @@ export default function SuperGenerate({
 
       {run.ideas.length > 0 && (
         <>
-          <div className="sglab">Ideas for your niche · {run.ideas.length}</div>
-          <div className="sgideas">
-            {run.ideas.map((i) => (
-              <div className="card glass sgidea" key={i.text}>
-                {i.creator && (
-                  <span className="sgcreator">
-                    <PlatformDot platform="youtube" />
-                    From {i.creator}
-                  </span>
-                )}
-                {i.difficulty && <span className="difftag">{i.difficulty[0]!.toUpperCase() + i.difficulty.slice(1)}</span>}
-                {i.needs && i.needs.length > 0 && (
-                  <div className="needs"><span className="needslab">Needs:</span>{i.needs.map((n) => <span className="needchip" key={n.label}>{n.label.replace(/^Needs\s+/i, "")}</span>)}</div>
-                )}
-                <div className="sgideatext">{i.text}</div>
-                {i.whyItWorks && (
-                  <div className="whyline"><span className="whylab">Why this works</span>{i.whyItWorks}</div>
-                )}
-                {i.script && <div className="sgscript">{i.script.replace(/^HOOK\s*:\s*/im, "Say this · Hook: ")}</div>}
-                <div className="sgideafoot">
-                  <span className="sub">{i.format ? <span className="sgformat">{i.format}</span> : null}{i.label}</span>
-                  <button className="cbtn" disabled={added.includes(i.text)} onClick={() => onAdd(i)}>
-                    {added.includes(i.text) ? "Added" : "+ Add idea"}
-                  </button>
-                </div>
-              </div>
+          {single ? (
+            <div className="co-crow">
+              <Avatar handle={single.handle} />
+              <div className="co-who"><b>{single.handle}</b><span>{single.platform === "youtube" ? "YouTube" : single.platform}{single.videos > 0 ? ` · ${single.videos} videos analyzed` : ""}</span></div>
+              {onRerun && (
+                <button type="button" className="co-btn" disabled={busy} onClick={() => onRerun(single.url)}>
+                  <Icon n="spark" />Generate
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="co-row">
+              {onRerun && (
+                <button type="button" className="co-btn" disabled={busy} onClick={() => onRerun()}>
+                  <Icon n="spark" />Super generate
+                </button>
+              )}
+              <button type="button" className="co-btn ghost" onClick={pickOne}>
+                <Icon n="dice" s={18} />Pick for me
+              </button>
+            </div>
+          )}
+          <StatBand
+            total={run.ideas.length}
+            totalLabel={single ? "new ideas" : "ideas"}
+            stages={stageCounts(run.ideas)}
+            extra={single ? undefined : <div><b>{handles.length}</b>creators</div>}
+          />
+          {!single && handles.length > 0 && (
+            <div className="co-spread">
+              <span className="co-lab">Spread</span>
+              {handles.map((h) => (
+                <span className="it" key={h} title={h}>
+                  <Avatar handle={h} small />
+                  {perCreator[h]! > 1 && <em>×{perCreator[h]}</em>}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className={`co-grid${all ? " all" : ""}`}>
+            {run.ideas.map((i, k) => (
+              <IdeaCard
+                key={i.text}
+                no={k + 1}
+                picked={picked === i.text}
+                idea={{ title: i.text, creator: i.creator, funnelStage: i.funnelStage, difficulty: i.difficulty, needs: i.needs, hook: hookLine(i.script), why: i.whyItWorks, format: i.format || i.label }}
+                saved={added.includes(i.text)}
+                onSave={() => onAdd(i)}
+              />
             ))}
           </div>
+          {run.ideas.length > 10 && !all && (
+            <button type="button" className="co-btn ghost co-more" onClick={() => setAll(true)}>
+              Show {run.ideas.length - 10} more ideas
+            </button>
+          )}
         </>
       )}
     </div>

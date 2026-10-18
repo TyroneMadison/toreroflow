@@ -42,8 +42,14 @@ if (scrubbed) {
 // "/" and unknown paths become /dashboard, without a history entry.
 normalizeUrl();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// Dev-only placeholder demo of the Ideas area (src/demo). import.meta.env.DEV
+// is false in production builds, so this branch and its chunk are dropped.
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "coral") {
+  void import("./demo/coralDemo");
+} else {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
