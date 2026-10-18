@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import type { NicheProfile } from "./NicheCard";
-import SuperGenerate, { PlatformDot, useSuperRun } from "./SuperGenerate";
+import SuperGenerate, { PlatformDot, useSuperRun, type SuperIdea as SuperIdeaT } from "./SuperGenerate";
 import IdeaList from "./IdeaList";
 import SavedIdeas from "./SavedIdeas";
+import ShootPlan from "./ShootPlan";
 import BrainstormModal from "./BrainstormModal";
-import { CREATOR_LINK_CAP, cleanCreatorLinks, parseCreatorLink } from "@toreroflow/core";
+import { CREATOR_LINK_CAP, VIDEO_FORMATS, cleanCreatorLinks, parseCreatorLink } from "@toreroflow/core";
 import "./IdeasHome.css";
 
 /**
@@ -18,14 +19,7 @@ import "./IdeasHome.css";
  */
 
 /** The content styles the generator picks formats from. */
-const CATEGORIES = [
-  "Challenge",
-  "Educational",
-  "Storytelling",
-  "Skits",
-  "Wait for it",
-  "Talking head POV",
-];
+const CATEGORIES: readonly string[] = VIDEO_FORMATS;
 
 /** Shown one at a time while the model works. Plain, not a personality. */
 const LOADING_LINES = [
@@ -43,7 +37,7 @@ interface FormatCard {
   hooks: string[];
 }
 
-type Tab = "generate" | "saved";
+type Tab = "generate" | "saved" | "shoot";
 
 const NICHE_CAP = 200;
 
@@ -235,7 +229,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
     }
   };
 
-  const bank = async (hook: string, formatName: string, source: string, scriptText?: string, creator?: string, shots?: Array<Record<string, string>>) => {
+  const bank = async (hook: string, formatName: string, source: string, scriptText?: string, creator?: string, shots?: Array<Record<string, string>>, funnelStage?: string, whyItWorks?: string, difficulty?: string, needs?: Array<{ type: string; label: string }>) => {
     try {
       await api.post(`/clients/${clientId}/ideas`, {
         text: hook,
@@ -247,6 +241,10 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
         ...(scriptText ? { scriptText: scriptText.slice(0, 4000) } : {}),
         ...(creator ? { creator: creator.slice(0, 120) } : {}),
         ...(shots?.length ? { shots: shots.slice(0, 8) } : {}),
+        ...(funnelStage === "top" || funnelStage === "middle" || funnelStage === "bottom" ? { funnelStage } : {}),
+        ...(whyItWorks ? { whyItWorks: whyItWorks.slice(0, 400) } : {}),
+        ...(difficulty === "easy" || difficulty === "medium" || difficulty === "hard" ? { difficulty } : {}),
+        ...(needs?.length ? { needs: needs.slice(0, 4).map((n) => ({ type: n.type, label: n.label.slice(0, 40) })) } : {}),
       });
       setAdded((cur) => [...cur, hook]);
       setReloadKey((n) => n + 1);
@@ -255,6 +253,35 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
       toast.fail("Could not save that idea", err);
     }
   };
+
+  /* Quiet save vs skip feedback: a batch replaced by a new run counts its unsaved ideas as skipped. */
+  const sendFeedback = (runId: string, ideas: SuperIdeaT[], saved: boolean) => {
+    if (!ideas.length) return;
+    void api.post(`/clients/${clientId}/idea-feedback`, {
+      runId,
+      events: ideas.slice(0, 40).map((i) => ({
+        text: i.text.slice(0, 500),
+        ...(i.format ? { format: i.format } : {}),
+        ...(i.funnelStage ? { funnelStage: i.funnelStage } : {}),
+        ...(i.label ? { hookStyle: i.label.slice(0, 120) } : {}),
+        ...(i.creator ? { creator: i.creator.slice(0, 120) } : {}),
+        saved,
+      })),
+    }).catch(() => undefined);
+  };
+  const lastBatch = useRef<{ id: string; ideas: SuperIdeaT[] } | null>(null);
+  const addedRef = useRef<string[]>([]);
+  addedRef.current = added;
+  useEffect(() => {
+    const r = sg.run;
+    if (!r || r.status !== "ready") return;
+    const prev = lastBatch.current;
+    if (prev && prev.id !== r.id) {
+      sendFeedback(prev.id, prev.ideas.filter((i) => !addedRef.current.includes(i.text)), false);
+    }
+    lastBatch.current = { id: r.id, ideas: r.ideas ?? [] };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sg.run?.id, sg.run?.status]);
 
   const superBlocked = !sg.youtubeReady;
   const ytCount = creators.filter((c) => parseCreatorLink(c)?.platform === "youtube").length;
@@ -278,9 +305,19 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
         >
           Saved ideas{added.length > 0 ? ` (+${added.length})` : ""}
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === "shoot"}
+          className={`ideatab${tab === "shoot" ? " on" : ""}`}
+          onClick={() => setTab("shoot")}
+        >
+          Shoot plan
+        </button>
       </div>
 
-      {tab === "saved" ? (
+      {tab === "shoot" ? (
+        <ShootPlan clientId={clientId} reloadKey={reloadKey} />
+      ) : tab === "saved" ? (
         <>
           <SavedIdeas clientId={clientId} reloadKey={reloadKey} />
           <IdeaList clientId={clientId} niche={profile?.niche ?? ""} reloadKey={reloadKey} />
@@ -458,7 +495,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
             <SuperGenerate
               run={sg.run}
               onCancel={() => void cancelSuper()}
-              onAdd={(i) => void bank(i.text, i.label, "analysis", i.script, i.creator, i.shots)}
+              onAdd={(i) => { sendFeedback(sg.run?.id ?? "", [i], true); void bank(i.text, i.format ? `${i.format} · ${i.label}` : i.label, "analysis", i.script, i.creator, i.shots, i.funnelStage, i.whyItWorks, i.difficulty, i.needs); }}
               added={added}
             />
           ) : (

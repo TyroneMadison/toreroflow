@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPrisma, Prisma } from "@toreroflow/db";
 import { env } from "./env";
 import {
-  ANGLES, FRAMINGS, MOVES, POSES, cleanShot, gifKey, hookFromScript, renderHookGif, renderShotGif, type Shot,
+  ANGLES, FRAMINGS, MOVES, POSES, cleanShot, gifKey, hookFromScript, renderHookGif, renderShotGif, shotLine, type Shot,
 } from "./ideagifs";
 
 /**
@@ -78,8 +78,9 @@ export async function runIdeaGifs(ideaId: string): Promise<void> {
   await ensure(hk, () => renderHookGif(hook, seed));
   gifs.push({ kind: "hook", key: hk, caption: "Say this \u00b7 Hook: medium close-up, captions on" });
   for (const [i, s] of shots.entries()) {
-    const key = gifKey("shot", { s, i, seed });
-    await ensure(key, () => renderShotGif(s, i, seed));
+    const line = shotLine(idea.scriptText, s, i);
+    const key = gifKey("shot", { s, i, seed, line });
+    await ensure(key, () => renderShotGif(s, i, seed, line));
     gifs.push({ kind: "shot", key, caption: `Shot ${i + 1} \u00b7 ${s.title}${s.time ? ` \u00b7 ${s.time}` : ""}` });
   }
   await prisma.contentIdea.update({

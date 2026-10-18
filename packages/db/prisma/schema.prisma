@@ -1160,6 +1160,12 @@ model IdeaGif {
 }
 
 /// One idea in a brand's ideas list, from first thought to posted video.
+enum FunnelStage {
+  top
+  middle
+  bottom
+}
+
 model ContentIdea {
   id         String   @id @default(cuid())
   clientId   String
@@ -1177,6 +1183,16 @@ model ContentIdea {
   completed  Boolean  @default(false)
   /// Shot list: [{ title, framing, angle, move, pose, time, sign }].
   shots      Json?
+  /// Funnel stage the generator assigned: top | middle | bottom (null for older ideas).
+  funnelStage FunnelStage?
+  /// One sentence on the psychology or trend behind a generated idea.
+  whyItWorks String?
+  /// easy | medium | hard to film, from the rubric plus the core sanity check.
+  difficulty String?
+  /// What the shoot needs: [{ type: prop | location | people, label }], max 4.
+  needs      Json?
+  /// The saved idea this one was remixed from (the original is never changed).
+  remixedFromId String?
   /// Drawn GIFs: [{ kind: hook | shot, key, caption }] (bytes in IdeaGif).
   gifs       Json?
   /// idea | scripting | ready | posted | analyzed
@@ -1293,4 +1309,23 @@ model CreatorPlaybook {
   /// { summary, hook, framing, structure, script }
   playbook  Json
   updatedAt DateTime @updatedAt
+}
+
+/// Save vs skip per generated idea, for the quiet preference profile (v0.3.33).
+model IdeaFeedback {
+  id          String   @id @default(cuid())
+  clientId    String
+  runId       String   @default("")
+  textKey     String
+  format      String?
+  funnelStage String?
+  hookStyle   String?
+  creator     String?
+  keywords    String[] @default([])
+  saved       Boolean
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, runId, textKey])
+  @@index([clientId, createdAt])
 }

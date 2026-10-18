@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { costCents, parseCreatorLink, type CreatorLink } from "@toreroflow/core";
+import { cleanNeeds, needsLoad, NEEDS_RULES, checkDifficulty, DIFFICULTIES, DIFFICULTY_RUBRIC, batchCaps, enforceMix, preferencePrompt, preferenceProfile, FUNNEL_STAGES, funnelPromptGuide, reconcileFunnel, costCents, parseCreatorLink, VIDEO_FORMATS, VIDEO_FORMAT_GUIDE, type CreatorLink } from "@toreroflow/core";
 import { getPrisma, groundingFor, Prisma } from "@toreroflow/db";
 import { env } from "./env";
 import { SHOT_SCHEMA, SHOT_RULES } from "./ideagifsJob";
@@ -63,10 +63,25 @@ const IDEAS_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["text", "label", "script", "creator", "shots"],
+        required: ["text", "label", "format", "funnelStage", "whyItWorks", "difficulty", "actors", "locations", "needs", "script", "creator", "shots"],
         properties: {
           text: { type: "string" },
           label: { type: "string" },
+          format: { type: "string", enum: [...VIDEO_FORMATS] },
+          funnelStage: { type: "string", enum: [...FUNNEL_STAGES] },
+          whyItWorks: { type: "string" },
+          difficulty: { type: "string", enum: [...DIFFICULTIES] },
+          actors: { type: "integer" },
+          locations: { type: "integer" },
+          needs: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["type", "label"],
+              properties: { type: { type: "string", enum: ["prop", "location", "people"] }, label: { type: "string" } },
+            },
+          },
           script: { type: "string" },
           creator: { type: "string" },
           shots: { type: "array", items: SHOT_SCHEMA },
@@ -315,7 +330,16 @@ export async function runSuperGenerate(runId: string): Promise<void> {
       handle: b.handle,
       n: Math.floor(total / books.length) + (i < total % books.length ? 1 : 0),
     })).filter((q) => q.n > 0);
-    const got = await ask<{ ideas: Array<{ text: string; label: string; script: string; creator: string; shots: Array<Record<string, string>> }> }>(
+    const caps = batchCaps(total);
+    const recent = await prisma.ideaFeedback.findMany({
+      where: { clientId: run.clientId }, orderBy: { createdAt: "desc" }, take: 400,
+      select: { format: true, funnelStage: true, hookStyle: true, creator: true, saved: true },
+    });
+    const prefs = preferencePrompt(preferenceProfile(recent));
+    const savedTexts = (await prisma.contentIdea.findMany({
+      where: { clientId: run.clientId }, orderBy: { createdAt: "desc" }, take: 300, select: { text: true },
+    })).map((r) => r.text);
+    const got = await ask<{ ideas: Array<{ text: string; label: string; format?: string; funnelStage?: string; whyItWorks?: string; difficulty?: string; actors?: number; locations?: number; needs?: unknown; script: string; creator: string; shots: Array<Record<string, string>> }> }>(
       "You write short form video ideas for one brand, borrowing what works for the " +
         "creators studied below. Each idea is the opening line of the video, spoken out " +
         "loud, six to fifteen words, specific to this brand's niche. label is the " +
@@ -324,7 +348,19 @@ export async function runSuperGenerate(runId: string): Promise<void> {
         "are not in the brand material. text is the topic: the opening line, spoken. " +
         "script is the short video script for it, 40 to 90 words, as four lines starting " +
         "HOOK:, SETUP:, PAYOFF:, CTA: separated by newlines. creator is the exact handle of " +
-        "the creator whose playbook the idea borrows from. " + SHOT_RULES + "  Write exactly this many ideas per " +
+        "the creator whose playbook the idea borrows from. format is the video format the idea " +
+        "is filmed in, exactly one of: " + VIDEO_FORMATS.map((f) => `${f} (${VIDEO_FORMAT_GUIDE[f]})`).join("; ") +
+        ". Pick the format that best fits each idea and the creator's playbook, and spread the " +
+        "ideas across several formats, including the newer ones like Comparison and Ranking, " +
+        "instead of repeating one. funnelStage is the funnel stage the idea serves: top, middle " +
+        "or bottom. Decide the stage first, then pick a format that suits it:\n" + funnelPromptGuide() +
+        "\nMix the stages: about half top, a third middle, the rest bottom. Keep the batch distinct: " +
+        `at most ${caps.perFormat} ideas per format, at most ${caps.perStage} per stage, at most ${caps.perHook} ` +
+        "per hook style (label), every label different where you can, and no two ideas on the same " +
+        "topic or angle. whyItWorks is one specific sentence, under 25 words, naming the psychology " +
+        "or trend that makes this idea stop the scroll (e.g. curiosity gap, social proof, loss " +
+        "aversion, a verdict people want to argue with). No fluff, no em dash. " +
+        (prefs ? prefs + " " : "") + DIFFICULTY_RUBRIC + " " + NEEDS_RULES + " " + SHOT_RULES + "  Write exactly this many ideas per " +
         "creator: " + quota.map((q) => `${q.handle} ${q.n}`).join(", ") + ".",
       `Brand: ${run.client.name}\nNiche: ${niche || "(see brand material)"}\n\n` +
         books
@@ -336,7 +372,7 @@ export async function runSuperGenerate(runId: string): Promise<void> {
     );
     await save({
       status: "ready",
-      ideas: tagIdeas((got.ideas ?? []).map((i) => ({ ...i, shots: (i.shots ?? []).slice(0, 5).map((s, n) => cleanShot(s, n)) })), quota.map((q) => q.handle)).slice(0, total) as unknown as Prisma.InputJsonValue,
+      ideas: enforceMix(tagIdeas((got.ideas ?? []).map((i) => { const shots = (i.shots ?? []).slice(0, 5).map((s, n) => cleanShot(s, n)); const fit = reconcileFunnel(i.format, i.funnelStage); const needs = cleanNeeds(i.needs, shots.map((s) => String((s as { title?: string }).title ?? ""))); const load = needsLoad(needs); const { actors, locations, ...rest } = i; return { ...rest, ...fit, needs, difficulty: checkDifficulty(i.difficulty, fit.format, shots.length, Math.max(Number(actors) || 1, load.actors), Math.max(Number(locations) || 1, load.locations), load.props), shots }; }), quota.map((q) => q.handle)), total, savedTexts).slice(0, total) as unknown as Prisma.InputJsonValue,
       completedAt: new Date(),
     });
   } catch (err) {

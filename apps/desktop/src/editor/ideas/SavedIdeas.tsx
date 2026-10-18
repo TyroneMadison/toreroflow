@@ -3,6 +3,7 @@ import { api, API_URL } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { stepIndex } from "../../lib/ideaContext";
 import { burstConfetti } from "./confetti";
+import RemixSheet from "./RemixSheet";
 
 /**
  * Saved ideas, one card at a time (Ideas v2 mockup): source creator on top,
@@ -21,6 +22,9 @@ interface SavedIdea {
   source: string;
   scriptText: string | null;
   creator: string | null;
+  whyItWorks?: string | null;
+  difficulty?: string | null;
+  needs?: Array<{ type: string; label: string }> | null;
   completed: boolean;
   gifs: Array<{ kind: string; key: string; caption: string }> | null;
   createdAt: string;
@@ -59,6 +63,8 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
   const [ideas, setIdeas] = useState<SavedIdea[] | null>(null);
   const [index, setIndex] = useState(0);
   const [filter, setFilter] = useState<string>("");
+  const [remixId, setRemixId] = useState<string | null>(null);
+  const [bump, setBump] = useState(0);
   const [anim, setAnim] = useState<"" | "checking" | "unchecking">("");
   const touch = useRef<{ x: number; y: number } | null>(null);
   const checkRef = useRef<HTMLButtonElement | null>(null);
@@ -78,7 +84,7 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
     return () => {
       live = false;
     };
-  }, [clientId, reloadKey, toast]);
+  }, [clientId, reloadKey, toast, bump]);
 
   // While the worker draws the GIFs for this idea, look again every few seconds.
   const waitingId = ideas?.[index] && ideas[index].scriptText && !ideas[index].gifs ? ideas[index].id : null;
@@ -219,6 +225,7 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
             )}
             <div className="sv2tags">
               {idea.formatName && <span className="sv2tag">{idea.formatName}</span>}
+              {idea.difficulty && <span className="sv2tag difftag">{idea.difficulty[0]!.toUpperCase() + idea.difficulty.slice(1)}</span>}
               {idea.completed && <span className="sv2tag g">Done</span>}
             </div>
             <button
@@ -234,9 +241,15 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
             </button>
           </div>
           <div className="sv2body">
+            {idea.needs && idea.needs.length > 0 && (
+              <div className="needs"><span className="needslab">Needs:</span>{idea.needs.map((n) => <span className="needchip" key={n.label}>{n.label.replace(/^Needs\s+/i, "")}</span>)}</div>
+            )}
             <div className="sv2lab">Topic</div>
             <h2 className="sv2topic">{idea.hook || idea.text}</h2>
             {idea.hook && idea.text !== idea.hook && <div className="sub sv2sub">{idea.text}</div>}
+            {idea.whyItWorks && (
+              <div className="whyline"><span className="whylab">Why this works</span>{idea.whyItWorks}</div>
+            )}
             {idea.scriptText && (
               <>
                 <div className="sv2lab">Script</div>
@@ -274,7 +287,9 @@ export default function SavedIdeas({ clientId, reloadKey }: { clientId: string; 
             )}
           </div>
           <div className="sv2acts">
+            <button className="sv2ab" onClick={() => setRemixId(idea.id)}>Remix</button>
             <button className="sv2ab" onClick={() => void copy()}>Copy script</button>
+            {remixId === idea.id && <RemixSheet ideaId={idea.id} niche={idea.niche} onClose={() => setRemixId(null)} onSaved={() => setBump((n) => n + 1)} />}
             <button className="sv2ab" onClick={() => void remove()}>Remove</button>
           </div>
         </div>

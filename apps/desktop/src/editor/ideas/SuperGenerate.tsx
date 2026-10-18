@@ -29,6 +29,16 @@ export interface CreatorRow {
 export interface SuperIdea {
   text: string;
   label: string;
+  /** The video format, from VIDEO_FORMATS (runs before v0.3.33 have none). */
+  format?: string;
+  /** top | middle | bottom, stored on save; no badge yet (pending approval). */
+  funnelStage?: string;
+  /** One sentence on why the idea works (runs before v0.3.33 have none). */
+  whyItWorks?: string;
+  /** easy | medium | hard to film. */
+  difficulty?: string;
+  /** What the shoot needs, max 4. */
+  needs?: Array<{ type: string; label: string }>;
   script?: string;
   creator?: string;
   shots?: Array<Record<string, string>>;
@@ -155,10 +165,17 @@ export default function SuperGenerate({
                     From {i.creator}
                   </span>
                 )}
+                {i.difficulty && <span className="difftag">{i.difficulty[0]!.toUpperCase() + i.difficulty.slice(1)}</span>}
+                {i.needs && i.needs.length > 0 && (
+                  <div className="needs"><span className="needslab">Needs:</span>{i.needs.map((n) => <span className="needchip" key={n.label}>{n.label.replace(/^Needs\s+/i, "")}</span>)}</div>
+                )}
                 <div className="sgideatext">{i.text}</div>
+                {i.whyItWorks && (
+                  <div className="whyline"><span className="whylab">Why this works</span>{i.whyItWorks}</div>
+                )}
                 {i.script && <div className="sgscript">{i.script.replace(/^HOOK\s*:\s*/im, "Say this · Hook: ")}</div>}
                 <div className="sgideafoot">
-                  <span className="sub">{i.label}</span>
+                  <span className="sub">{i.format ? <span className="sgformat">{i.format}</span> : null}{i.label}</span>
                   <button className="cbtn" disabled={added.includes(i.text)} onClick={() => onAdd(i)}>
                     {added.includes(i.text) ? "Added" : "+ Add idea"}
                   </button>

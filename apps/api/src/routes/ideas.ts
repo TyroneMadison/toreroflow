@@ -10,6 +10,18 @@ import {
   parseCreatorLink,
   toPlainText,
   CREATOR_LINK_CAP,
+  topicKeywords,
+  VIDEO_FORMATS,
+  FUNNEL_STAGES,
+  DIFFICULTIES,
+  DIFFICULTY_RUBRIC,
+  NEEDS_RULES,
+  funnelPromptGuide,
+  reconcileFunnel,
+  cleanNeeds,
+  needsLoad,
+  checkDifficulty,
+  enforceMix,
   SUPERGEN_CAP_MAX,
   SUPERGEN_CAP_MIN,
 } from "@toreroflow/core";
@@ -41,6 +53,11 @@ const ideaCreateSchema = z.object({
   source: z.enum(["brainstorm", "analysis", "overview", "custom"]).optional(),
   scriptText: z.string().max(4000).optional(),
   creator: z.string().max(120).optional(),
+  funnelStage: z.enum(["top", "middle", "bottom"]).optional(),
+  whyItWorks: z.string().max(400).optional(),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  remixedFromId: z.string().max(40).optional(),
+  needs: z.array(z.object({ type: z.enum(["prop", "location", "people"]), label: z.string().min(1).max(40) })).max(4).optional(),
   shots: z.array(z.record(z.string(), z.string().max(120))).max(8).optional(),
 });
 
@@ -61,7 +78,7 @@ const nicheProfileSchema = z.object({
 });
 
 const generateIdeasSchema = z.object({
-  categories: z.array(z.string().min(1).max(40)).max(8).default([]),
+  categories: z.array(z.string().min(1).max(40)).max(20).default([]),
   /** The format to write more hooks for, by name. Absent means a fresh set. */
   formatId: z.string().max(120).optional(),
   /** Hooks the operator can already see, so the next batch is not the same four. */
@@ -410,6 +427,42 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /* ---- save vs skip feedback (quiet preference profile) ---- */
+
+  const feedbackSchema = z.object({
+    runId: z.string().max(64).default(""),
+    events: z.array(z.object({
+      text: z.string().min(1).max(500),
+      format: z.string().max(60).optional(),
+      funnelStage: z.string().max(10).optional(),
+      hookStyle: z.string().max(120).optional(),
+      creator: z.string().max(120).optional(),
+      saved: z.boolean(),
+    })).max(40),
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/idea-feedback", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const parsed = feedbackSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "feedback not recorded" });
+    const { runId, events } = parsed.data;
+    for (const e of events) {
+      const textKey = e.text.trim().toLowerCase().slice(0, 300);
+      const data = {
+        format: e.format ?? null, funnelStage: e.funnelStage ?? null, hookStyle: e.hookStyle ?? null,
+        creator: e.creator ?? null, keywords: topicKeywords(e.text),
+      };
+      await prisma.ideaFeedback.upsert({
+        where: { clientId_runId_textKey: { clientId: client.id, runId, textKey } },
+        create: { clientId: client.id, runId, textKey, saved: e.saved, ...data },
+        // A save always wins over an earlier skip; a skip never undoes a save.
+        update: e.saved ? { saved: true } : {},
+      });
+    }
+    return { ok: true, recorded: events.length };
+  });
+
   /* ---- creator links and Super generate ---- */
 
   const creatorsSchema = z.object({
@@ -734,6 +787,113 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
         error: "could not write the script",
         detail: err instanceof Error ? err.message : String(err),
       });
+    }
+  });
+
+  /* ---- remix a saved idea ---- */
+
+  const REMIX_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["variants"],
+    properties: {
+      variants: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["text", "label", "format", "funnelStage", "whyItWorks", "difficulty", "actors", "locations", "needs", "script", "shots"],
+          properties: {
+            text: { type: "string" },
+            label: { type: "string" },
+            format: { type: "string", enum: [...VIDEO_FORMATS] },
+            funnelStage: { type: "string", enum: [...FUNNEL_STAGES] },
+            whyItWorks: { type: "string" },
+            difficulty: { type: "string", enum: [...DIFFICULTIES] },
+            actors: { type: "integer" },
+            locations: { type: "integer" },
+            needs: { type: "array", items: { type: "object", additionalProperties: false, required: ["type", "label"], properties: { type: { type: "string", enum: ["prop", "location", "people"] }, label: { type: "string" } } } },
+            script: { type: "string" },
+            shots: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "framing", "angle", "move", "pose", "time", "sign"], properties: {
+              title: { type: "string" },
+              framing: { type: "string", enum: ["close-up", "medium", "wide", "over-the-shoulder"] },
+              angle: { type: "string", enum: ["eye", "low", "high"] },
+              move: { type: "string", enum: ["push", "pull", "pan", "tilt", "static"] },
+              pose: { type: "string", enum: ["talk", "point", "measure", "hold", "walk"] },
+              time: { type: "string" },
+              sign: { type: "string" },
+            } } },
+          },
+        },
+      },
+    },
+  } as const;
+
+  /**
+   * Three fresh takes on one saved idea: same core topic, a new hook and/or a
+   * new format each. Nothing is saved here; the screen saves the ones the
+   * operator picks as new ideas linked by remixedFromId.
+   */
+  app.post<{ Params: { id: string } }>("/ideas/:id/remix", async (request, reply) => {
+    const idea = await prisma.contentIdea.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      include: { client: { select: { name: true } } },
+    });
+    if (!idea) return reply.status(404).send({ error: "idea not found" });
+    if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
+    try {
+      const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: env.SUGGESTIONS_MODEL,
+        max_tokens: 5000,
+        output_config: { effort: "low", format: { type: "json_schema", schema: REMIX_SCHEMA } },
+        system:
+          "You remix one short form video idea for a brand. Write 4 variants that keep the same core " +
+          "idea and topic but each changes the hook, the format, or both, and no two variants alike. " +
+          "text is the new opening line, spoken, six to fifteen words, never the same as the original. " +
+          "label is the hook style, two to four words, different for every variant. format is exactly one " +
+          "of the listed formats; funnelStage is top, middle or bottom, and the format must suit the stage:\n" +
+          funnelPromptGuide() + "\n" +
+          "whyItWorks is one specific sentence, under 25 words, on the psychology or trend behind it. " +
+          DIFFICULTY_RUBRIC + " " + NEEDS_RULES + " " +
+          "script is 40 to 90 words as four lines starting HOOK:, SETUP:, PAYOFF:, CTA:. shots is exactly 3 " +
+          "shots: title under 8 words, time like 0:00-0:03, sign is short on-screen text or empty. " +
+          "No hashtags, no emoji, never an em dash, en dash or arrow. Do not invent prices or facts.",
+        messages: [{
+          role: "user",
+          content:
+            `Brand: ${idea.client.name}\nOriginal idea: ${idea.hook || idea.text}\n` +
+            (idea.formatName ? `Original format: ${idea.formatName}\n` : "") +
+            (idea.scriptText ? `Original script:\n${idea.scriptText}\n` : "") +
+            `\n${await grounding(prisma, idea.clientId)}`,
+        }],
+      } as Anthropic.MessageCreateParamsNonStreaming);
+      if (response.stop_reason === "refusal") return reply.status(502).send(REFUSED);
+      const raw = JSON.parse(textOf(response) || "{}") as { variants?: Array<Record<string, unknown>> };
+      const cleaned = (raw.variants ?? []).map((v) => {
+        const shots = (Array.isArray(v.shots) ? v.shots : []).slice(0, 5) as Array<Record<string, string>>;
+        const fit = reconcileFunnel(v.format, v.funnelStage);
+        const needs = cleanNeeds(v.needs, shots.map((s) => String(s.title ?? "")));
+        const load = needsLoad(needs);
+        return {
+          text: toPlainText(String(v.text ?? "")).slice(0, 500),
+          label: toPlainText(String(v.label ?? "")).slice(0, 60),
+          format: fit.format,
+          funnelStage: fit.funnelStage,
+          whyItWorks: toPlainText(String(v.whyItWorks ?? "")).slice(0, 400),
+          difficulty: checkDifficulty(v.difficulty, fit.format, shots.length, Math.max(Number(v.actors) || 1, load.actors), Math.max(Number(v.locations) || 1, load.locations), load.props),
+          needs,
+          script: toPlainText(String(v.script ?? "")).slice(0, 4000),
+          shots,
+          creator: idea.creator ?? undefined,
+        };
+      }).filter((v) => v.text);
+      const variants = enforceMix(cleaned, 3, [idea.hook || idea.text]).slice(0, 3);
+      if (variants.length === 0) return reply.status(502).send({ error: "could not remix this idea", detail: "Try again." });
+      return { clientId: idea.clientId, originalId: idea.id, variants };
+    } catch (err) {
+      request.log.error({ err }, "could not remix the idea");
+      return reply.status(502).send({ error: "could not remix this idea", detail: err instanceof Error ? err.message : String(err) });
     }
   });
 

@@ -18,7 +18,7 @@ const { GIFEncoder, quantize, applyPalette } = gifencMod as {
   applyPalette: (d: Uint8ClampedArray | Uint8Array, p: number[][]) => Uint8Array;
 };
 
-export const GIF_RENDER_VERSION = "v3-1";
+export const GIF_RENDER_VERSION = "v3-2";
 export const FRAMINGS = ["close-up", "medium", "wide", "over-the-shoulder"] as const;
 export const ANGLES = ["eye", "low", "high"] as const;
 export const MOVES = ["push", "pull", "pan", "tilt", "static"] as const;
@@ -317,7 +317,50 @@ export function lookFor(seed: string): Look {
   return { skin: pick(SKINS, seed), shirt: pick(SHIRTS, `${seed}s`), hair: pick(["afro", "locs", "fade"] as const, `${seed}h`) };
 }
 
-export function renderShotGif(shot: Shot, index: number, seed: string): Buffer {
+/** Caption pages: the line wrapped to the safe width, two lines per page. */
+export function captionPages(ctx: SKRSContext2D, text: string, max: number): string[][] {
+  const lines = wrap(ctx, text.trim(), max);
+  const pages: string[][] = [];
+  for (let i = 0; i < lines.length; i += 2) pages.push(lines.slice(i, i + 2));
+  return pages;
+}
+
+/**
+ * Burned-in caption: bold white with a dark outline on a dark box, at most two
+ * lines, in the lower safe area above the REC tag and below the move tag.
+ */
+function caption(ctx: SKRSContext2D, lines: string[]) {
+  if (!lines.length) return;
+  const max = OW - 120;
+  ctx.font = font(17);
+  const lh = 21;
+  const w = Math.min(max, Math.max(...lines.map((l) => ctx.measureText(l).width)));
+  const boxH = lines.length * lh + 12;
+  const bottom = OH - 40;
+  ctx.fillStyle = "rgba(0,0,0,0.62)";
+  rr(ctx, OW / 2 - w / 2 - 10, bottom - boxH, w + 20, boxH, 8);
+  ctx.fill();
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(0,0,0,0.9)";
+  ctx.fillStyle = "#fff";
+  lines.forEach((l, k) => {
+    const lw = Math.min(max, ctx.measureText(l).width);
+    const y = bottom - boxH + 6 + lh * (k + 1) - 5;
+    ctx.strokeText(l, OW / 2 - lw / 2, y, max);
+    ctx.fillText(l, OW / 2 - lw / 2, y, max);
+  });
+}
+
+/** The spoken line for a shot: shot 1 SETUP, 2 PAYOFF, 3 CTA, else the shot's action. */
+export function shotLine(script: string | null | undefined, shot: Shot, index: number): string {
+  const order = ["SETUP", "PAYOFF", "CTA"];
+  const want = order[index];
+  const line = want ? (script ?? "").split(/\n+/).find((l) => new RegExp(`^\\s*${want}\\s*:`, "i").test(l)) : undefined;
+  return (line ? line.replace(/^\s*[A-Z]+\s*:\s*/i, "") : shot.title).trim();
+}
+
+export function renderShotGif(shot: Shot, index: number, seed: string, line = ""): Buffer {
   fonts();
   const look = lookFor(seed);
   const { scene, start, end } = shotScene(shot, look);
@@ -326,15 +369,21 @@ export function renderShotGif(shot: Shot, index: number, seed: string): Buffer {
   const n = 18;
   const frames: Array<{ data: Uint8ClampedArray; delay: number }> = [];
   const label = `Shot ${index + 1} \u00b7 ${FRAMING_LABEL[shot.framing]} \u00b7 ${ANGLE_LABEL[shot.angle]} \u00b7 ${shot.time}`;
-  for (let i = 0; i < n; i++) {
+  // Ping-pong camera over 2n-2 frames, drawn out so captions keep moving forward.
+  ctx.font = font(17);
+  const pages = line ? captionPages(ctx, line, OW - 120) : [];
+  const total = 2 * n - 2;
+  for (let f = 0; f < total; f++) {
+    const i = f < n ? f : 2 * n - 2 - f;
     const t = (1 - Math.cos((Math.PI * i) / (n - 1))) / 2;
     const [x, y, w] = start.map((a, k) => a + (end[k] - a) * t);
     const h = (w * OH) / OW;
     ctx.drawImage(scene, x, y, w, h, 0, 0, OW, OH);
     overlay(ctx, label, MOVE_TAG[shot.move]);
-    frames.push({ data: ctx.getImageData(0, 0, OW, OH).data, delay: 90 });
+    if (pages.length) caption(ctx, pages[Math.min(pages.length - 1, Math.floor((f * pages.length) / total))]!);
+    frames.push({ data: ctx.getImageData(0, 0, OW, OH).data, delay: pages.length > 1 ? 110 : 90 });
   }
-  return encode([...frames, ...frames.slice(1, -1).reverse()]);
+  return encode(frames);
 }
 
 export function renderHookGif(hook: string, seed: string): Buffer {

@@ -270,3 +270,41 @@
 .ideagif figcaption{font-size:12px;opacity:.7;margin-top:6px;line-height:1.4}
 .ideagifwait{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--panel-2,#151518);border-radius:12px;padding:12px 14px}
 @media (max-width:640px){.ideagifs{grid-template-columns:1fr}}
+
+/* Video format chip on generated ideas (v0.3.33). */
+.sgformat{display:inline-block;margin-right:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,111,97,.4);color:#FF6F61;font-size:11.5px;font-weight:600;white-space:nowrap}
+
+/* Why this works line on generated and saved ideas (v0.3.33). */
+.whyline{margin:8px 0 12px;font-size:13px;line-height:1.5;opacity:.85;overflow-wrap:anywhere;max-width:100%}
+.whylab{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#FF6F61;margin-bottom:2px}
+
+/* Difficulty tag, neutral (v0.3.33). */
+.difftag{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(128,128,128,.35);font-size:11.5px;font-weight:600;opacity:.85;white-space:nowrap;margin-left:6px}
+.sv2tag.difftag{margin-left:0}
+
+/* Needs chips, up front on idea cards (v0.3.33). */
+.needs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px;max-width:100%}
+.needslab{font-size:11.5px;font-weight:600;opacity:.7}
+.needchip{font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid rgba(128,128,128,.35);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+
+/* Remix sheet (v0.3.33): centred modal on desktop, bottom sheet on phones. */
+.remixback{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+.remixsheet{background:var(--bg,#000);border:1px solid rgba(128,128,128,.3);border-radius:18px;width:min(560px,100%);max-height:86vh;overflow:auto;padding:16px}
+.remixhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.remixstate{padding:28px 8px;text-align:center;opacity:.8;display:flex;flex-direction:column;gap:12px;align-items:center}
+.remixcard{border:1px solid rgba(128,128,128,.25);border-radius:14px;padding:14px;margin-bottom:10px;overflow-wrap:anywhere}
+.remixtop{display:flex;gap:6px;align-items:center;margin-bottom:6px}.remixtop .difftag{margin-left:0}
+.remixtext{font-weight:700;font-size:15.5px;line-height:1.35;margin-bottom:4px}
+.remixfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
+@media (max-width:600px){.remixback{align-items:flex-end;padding:0}.remixsheet{border-radius:18px 18px 0 0;width:100%;max-height:88vh}}
+
+/* Shoot plan (v0.3.33). */
+.shootplan{display:flex;flex-direction:column;gap:14px}
+.shoothead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.shootgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.shootcard{padding:14px;overflow-wrap:anywhere}
+.shootcardhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.shootmeta{font-size:13px;margin:3px 0;opacity:.9}
+.shootlist{margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.shootlist li span:first-child{margin-right:4px}
+@media (max-width:600px){.shootgrid{grid-template-columns:1fr}}

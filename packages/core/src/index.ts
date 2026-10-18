@@ -38,3 +38,8 @@ export * from "./dataProvenance";
 export * as tokens from "./tokens";
 export * from "./results";
 export * from "./creatorLinks";
+export * from "./videoFormats";
+export * from "./ideaMix";
+export * from "./difficulty";
+export * from "./needs";
+export * from "./shootPlan";
