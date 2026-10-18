@@ -118,3 +118,20 @@ export const DEMO_REMIX = [
   text, label, format, funnelStage, difficulty, needs, whyItWorks, creator: "@lotlifejay",
   script: `HOOK: ${hook as string}\nSETUP: Show it.\nPAYOFF: Land it.\nCTA: Save this.`, shots: [],
 }));
+
+/** Hook library rows (v0.3.34). Placeholder accounts and example.com links only. */
+type HookSeed = [string, string, string | null, string, string, number, Record<string, number> | null, string | null, string | null];
+const HOOKS: HookSeed[] = [
+  ["OWN", "Same car, same weekend. One price is almost double.", null, "Comparison", "middle", 0.92, { views: 48200, likes: 3100, comments: 214, er: 7.1, lift: 2.1 }, null, null],
+  ["CREATOR", "Before you book any rental car, do these 3 things first.", "Stop. Before you rent a car this weekend, check these three things.", "Faceless listicle", "top", 0.81, { views: 120000, likes: 8800 }, "@creator_one", "https://example.com/creator_one/video/1"],
+  ["WEB", "Tell me you work in sales without telling me you work in sales.", "Tell me you rent cars without telling me you rent cars.", "Tell me without telling me", "top", 0.74, null, null, "https://example.com/trends/tell-me-without"],
+  ["OWN", "Only four cars left for Friday. This is the cheaper one.", null, "This is your sign", "bottom", 0.88, { views: 22900, likes: 1400, er: 6.4, lift: 1.6 }, null, null],
+  ["WEB", "Item number one on this list should not be legal.", "Fee number one on this list should not be legal.", "Ranking", "middle", 0.7, null, null, "https://example.com/trending/ranking-hooks"],
+  ["CREATOR", "POV: you expected a ten minute pickup.", "What you think pickup is like. What it is actually like.", "Expectation vs reality", "top", 0.66, { views: 64000 }, "@creator_two", "https://example.com/creator_two/video/7"],
+  ["OWN", "Watch the airport total load. Then watch ours.", null, "Loading reveal", "bottom", 0.9, { views: 31800, saves: 920, er: 5.2, lift: 3.4 }, null, null],
+  ["CREATOR", "I asked 100 people what they hate about checkout.", "I asked 100 renters what they hate about the counter.", "Storytelling", "middle", 0.58, { views: 210000, likes: 15000 }, "@creator_three", "https://example.com/creator_three/video/3"],
+];
+export const DEMO_HOOKS = HOOKS.map(([sourceType, text, reworded, format, funnelStage, nicheScore, stats, sourceAccount, sourceUrl], i) => ({
+  id: `h${i + 1}`, sourceType, text, reworded, format, funnelStage, nicheScore, stats, sourceAccount, sourceUrl,
+  sourceVideoId: null, usedCount: 0, createdAt: "2026-10-18T09:00:00.000Z",
+}));

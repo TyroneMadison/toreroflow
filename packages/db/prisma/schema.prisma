@@ -277,6 +277,8 @@ model Client {
   editProjects    EditProject[]
   videoAnalyses   VideoAnalysis[]
   contentIdeas    ContentIdea[]
+  hooks           Hook[]
+  hookSeen        HookSeenVideo[]
   knowledgeFiles  KnowledgeFile[]
   brainstormChats BrainstormChat[]
   superGenRuns    SuperGenerateRun[]
@@ -463,13 +465,18 @@ model Post {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
+  /// The saved idea this post was made from, when it was made from one.
+  /// Lets the hook library read the idea's own hook for a post that performed.
+  ideaId       String?
 
   client     Client       @relation(fields: [clientId], references: [id])
   mediaAsset MediaAsset?  @relation(fields: [mediaAssetId], references: [id])
   createdBy  User         @relation(fields: [createdById], references: [id])
+  idea       ContentIdea? @relation(fields: [ideaId], references: [id], onDelete: SetNull)
   targets    PostTarget[]
 
   @@index([clientId, status])
+  @@index([ideaId])
 }
 
 model PostTarget {
@@ -1203,8 +1210,63 @@ model ContentIdea {
   updatedAt  DateTime @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  posts  Post[]
 
   @@index([clientId])
+}
+
+/// Where a library hook came from: our own posts, the web, or a followed creator.
+enum HookSource {
+  OWN
+  WEB
+  CREATOR
+}
+
+/// One opening line in a brand's hook library (v0.3.34). Mined on demand only,
+/// when the operator presses Brainstorm, Generate or Super generate.
+model Hook {
+  id            String       @id @default(cuid())
+  clientId      String
+  /// The hook as it was found.
+  text          String
+  /// Rewritten into this brand's niche, keeping the sentence shape. Creator and web hooks.
+  reworded      String?
+  sourceType    HookSource
+  sourceUrl     String?
+  /// "@handle" for creator hooks.
+  sourceAccount String?
+  sourceVideoId String?
+  /// One of VIDEO_FORMATS.
+  format        String
+  funnelStage   FunnelStage?
+  /// How well it fits the brand's niche, 0 to 1.
+  nicheScore    Float        @default(0)
+  /// { views, likes, comments, shares, saves, er, lift } where known.
+  stats         Json?
+  /// sha1 of the normalised text, for the dedupe key.
+  textHash      String
+  usedCount     Int          @default(0)
+  createdAt     DateTime     @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, sourceType, textHash])
+  @@index([clientId, createdAt])
+}
+
+/// A video (or web day) the hook miner has already looked at, so it is never paid for twice.
+model HookSeenVideo {
+  id       String   @id @default(cuid())
+  clientId String
+  /// youtube | instagram | tiktok | own | web
+  platform String
+  /// The platform video id, or a url, or a day key for web runs.
+  videoId  String
+  seenAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, platform, videoId])
 }
 
 /// A file dropped into a brand's knowledge base. Its contents are extracted

@@ -28,6 +28,7 @@ import {
 import { getPrisma, groundingFor as grounding, enqueue, Prisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { inspirationFor, mineHooksBounded } from "../hooks/mine";
 
 /**
  * The ideas list, the niche profile, the files side of the knowledge base, and
@@ -550,6 +551,8 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       where: { clientId: client.id, status: "running", createdAt: { gt: new Date(Date.now() - 30 * 60 * 1000) } },
     });
     if (busy) return { run: runView(busy), ...readiness() };
+    // On-demand hook mining, bounded so Super generate is never held up long.
+    await mineHooksBounded(client.id, request.log);
     const creators = links.map((url) => {
       const l = parseCreatorLink(url);
       return { url, handle: l?.handle ?? url, platform: l?.platform ?? "other", status: "queued", videos: 0, note: "" };
@@ -601,6 +604,10 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
 
       const { categories, formatId, exclude, more, niche, inspirations } = parsed.data;
+      // A fresh press (Brainstorm, Find formats, Pick for me) mines hooks first,
+      // bounded; "more hooks" for one card does not.
+      if (!formatId) await mineHooksBounded(client.id, request.log);
+      const library = await inspirationFor(client.id).catch(() => "");
       const context =
         (niche?.trim() ? `Niche the operator typed for this brainstorm: ${niche.trim()}.\n` : "") +
         (inspirations.length
@@ -651,7 +658,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           messages: [
             {
               role: "user",
-              content: `Brand: ${client.name}\n${context}${styles}\n${job}\n\n${await grounding(prisma, client.id)}`,
+              content: `Brand: ${client.name}\n${context}${styles}\n${job}\n\n${library ? `${library}\n\n` : ""}${await grounding(prisma, client.id)}`,
             },
           ],
         });

@@ -299,10 +299,15 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const createdById = await actingUserId(request);
     if (!createdById) return reply.status(401).send({ error: "unknown user" });
 
+    const idea = body.ideaId
+      ? await prisma.contentIdea.findFirst({ where: { id: body.ideaId, clientId: asset.clientId }, select: { id: true } })
+      : null;
+
     const post = await prisma.post.create({
       data: {
         clientId: asset.clientId,
         mediaAssetId: asset.id,
+        ideaId: idea?.id ?? null,
         createdById,
         status: "scheduled",
         targets: {

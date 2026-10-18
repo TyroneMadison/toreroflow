@@ -332,7 +332,7 @@ export default function IdeasHome({ clientId }: { clientId: string }) {
       </nav>
 
       {tab === "hooks" ? (
-        <HookLibrary />
+        <HookLibrary clientId={clientId} onUsed={() => { setReloadKey((n) => n + 1); setTab("saved"); }} />
       ) : tab === "formats" ? (
         <FormatPicker chosen={chosen} setChosen={setChosen} onUse={() => setTab("generate")} />
       ) : tab === "shoot" ? (

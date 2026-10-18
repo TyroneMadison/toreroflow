@@ -271,6 +271,8 @@ export const schedulePostSchema = z.object({
    * Optional: without it the schedule still goes through, with a reminder.
    */
   sopAcknowledged: z.boolean().optional(),
+  /** The saved idea this post was made from, if any. Ignored when it is not this client's. */
+  ideaId: z.string().max(40).optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 

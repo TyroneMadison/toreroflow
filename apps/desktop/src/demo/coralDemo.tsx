@@ -9,7 +9,7 @@ import ReactDOM from "react-dom/client";
 import { ToastProvider } from "../components/Toasts";
 import IdeasHome from "../editor/ideas/IdeasHome";
 import { applyTheme } from "../lib/theme";
-import { DEMO_CREATORS, DEMO_REMIX, DEMO_RUN, DEMO_SAVED } from "./coralDemoData";
+import { DEMO_CREATORS, DEMO_HOOKS, DEMO_REMIX, DEMO_RUN, DEMO_SAVED } from "./coralDemoData";
 
 const params = new URLSearchParams(location.search);
 applyTheme(params.get("theme") === "light" ? "light" : "dark");
@@ -48,6 +48,23 @@ window.fetch = async (input, init) => {
     return json({ ok: true });
   }
   if (path.includes("/idea-feedback")) return json({ ok: true });
+  if (path.endsWith("/clients/demo/hooks")) {
+    const p = url.searchParams;
+    const q = (p.get("q") ?? "").toLowerCase();
+    const hooks = DEMO_HOOKS.filter((h) =>
+      (!p.get("source") || h.sourceType === p.get("source")) &&
+      (!p.get("stage") || h.funnelStage === p.get("stage")) &&
+      (!p.get("format") || h.format === p.get("format")) &&
+      (!q || `${h.text} ${h.reworded ?? ""}`.toLowerCase().includes(q)));
+    return json({ hooks, total: DEMO_HOOKS.length });
+  }
+  if (path.endsWith("/hooks/refresh")) return json({ own: 0, web: 0, creator: 0, webStatus: "skipped" });
+  if (/\/hooks\/[^/]+\/use$/.test(path)) {
+    const h = DEMO_HOOKS.find((x) => path.includes(`/hooks/${x.id}/`))!;
+    const line = h.reworded || h.text;
+    saved = [{ ...saved[0]!, id: `u${Date.now()}`, source: "custom", text: line, hook: line, formatName: h.format, funnelStage: h.funnelStage, creator: h.sourceAccount ?? "", scriptText: "", whyItWorks: "", needs: [], gifs: [], completed: false }, ...saved];
+    return json({ id: saved[0]!.id }, 201);
+  }
   if (path.includes("/idea-gifs/")) return realFetch(input, init);
   return json({ error: "not in the demo" }, 404);
 };

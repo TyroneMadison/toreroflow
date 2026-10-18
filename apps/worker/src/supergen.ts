@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { cleanNeeds, needsLoad, NEEDS_RULES, checkDifficulty, DIFFICULTIES, DIFFICULTY_RUBRIC, batchCaps, enforceMix, preferencePrompt, preferenceProfile, FUNNEL_STAGES, funnelPromptGuide, reconcileFunnel, costCents, parseCreatorLink, VIDEO_FORMATS, VIDEO_FORMAT_GUIDE, type CreatorLink } from "@toreroflow/core";
+import { cleanNeeds, needsLoad, NEEDS_RULES, checkDifficulty, DIFFICULTIES, DIFFICULTY_RUBRIC, batchCaps, enforceMix, preferencePrompt, preferenceProfile, FUNNEL_STAGES, funnelPromptGuide, reconcileFunnel, costCents, parseCreatorLink, VIDEO_FORMATS, VIDEO_FORMAT_GUIDE, inspirationPrompt, sampleInspiration, type HookStats, type CreatorLink } from "@toreroflow/core";
 import { getPrisma, groundingFor, Prisma } from "@toreroflow/db";
 import { env } from "./env";
 import { SHOT_SCHEMA, SHOT_RULES } from "./ideagifsJob";
@@ -336,6 +336,11 @@ export async function runSuperGenerate(runId: string): Promise<void> {
       select: { format: true, funnelStage: true, hookStyle: true, creator: true, saved: true },
     });
     const prefs = preferencePrompt(preferenceProfile(recent));
+    // Hook library sample (v0.3.34): soft inspiration, never copied.
+    const library = inspirationPrompt(sampleInspiration((await prisma.hook.findMany({
+      where: { clientId: run.clientId }, orderBy: { createdAt: "desc" }, take: 200,
+      select: { text: true, reworded: true, sourceType: true, format: true, funnelStage: true, nicheScore: true, stats: true },
+    })).map((h) => ({ ...h, stats: h.stats as HookStats | null })), 8));
     const savedTexts = (await prisma.contentIdea.findMany({
       where: { clientId: run.clientId }, orderBy: { createdAt: "desc" }, take: 300, select: { text: true },
     })).map((r) => r.text);
@@ -366,6 +371,7 @@ export async function runSuperGenerate(runId: string): Promise<void> {
         books
           .map((b) => `${b.handle}: ${b.playbook!.summary}\nHook: ${b.playbook!.hook}\nFraming: ${b.playbook!.framing}\nStructure: ${b.playbook!.structure}\nScript: ${b.playbook!.script}`)
           .join("\n\n") +
+        (library ? `\n\n${library}` : "") +
         `\n\n${await groundingFor(prisma, run.clientId)}`,
       IDEAS_SCHEMA,
       Math.min(14000, 400 + total * 420),

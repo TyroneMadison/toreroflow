@@ -274,6 +274,38 @@
 .co-search input::placeholder{color:var(--co-muted)}
 .co-search kbd{font-family:var(--co-body);font-size:12px;padding:3px 8px;border-radius:6px;background:var(--co-chip);color:var(--co-muted)}
 .co-filt{display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px 14px;align-items:center;margin:22px 0 34px}
+.co-hbar{display:flex;gap:12px;align-items:center}.co-hbar .co-search{flex:1;min-width:0}.co-hbar .co-gb{height:58px;border-radius:16px;padding:0 20px;background:var(--co-surface);box-shadow:var(--co-sh)}
+.co-hgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}
+.co-hc{position:relative;background:var(--co-surface);border-radius:var(--co-r);box-shadow:var(--co-sh);padding:26px 28px 22px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.co-hct{display:flex;justify-content:space-between;align-items:center;gap:10px;min-width:0}
+.co-hc blockquote{margin:0;font-family:var(--co-disp);font-weight:700;font-size:30px;line-height:1.15;letter-spacing:-.025em;text-indent:-.42em;overflow-wrap:anywhere}
+.co-hc blockquote::before{content:"\201C";color:var(--co-cdisp)}
+.co-srcb{display:flex;flex-direction:column;gap:6px;font-size:13px;min-width:0}
+.co-badge{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:7px;font-size:12px;font-weight:700;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.co-badge.perf{background:var(--co-ink);color:var(--co-bg)}
+.co-badge.insp{box-shadow:inset 0 0 0 1px var(--co-ink);color:var(--co-ink)}
+.co-badge.web{background:var(--co-raised);color:var(--co-ink);box-shadow:inset 0 0 0 1px var(--co-hair)}
+.co-stat{font-size:13px;color:var(--co-muted)}
+.co-stat b{font-family:var(--co-disp);font-size:22px;color:var(--co-ink);letter-spacing:-.02em;margin-right:4px}
+.co-orig{margin:0;font-size:13px;color:var(--co-muted);font-style:italic;overflow-wrap:anywhere}
+.co-lnk{color:var(--co-acc);text-decoration:underline;text-underline-offset:3px;font-weight:600;font-size:13px;overflow-wrap:anywhere}
+.co-hmeta{font-size:12px;color:var(--co-muted)}
+.co-hcf{margin-top:auto;display:flex;align-items:flex-end;gap:12px;padding-top:14px;box-shadow:inset 0 1px 0 var(--co-hair);min-width:0}
+.co-hcf .co-sb{margin-left:auto}
+.co-hc.feat{grid-column:1/-1;background:var(--co-coral);color:var(--co-oncoral);padding:40px 48px 30px;box-shadow:var(--co-glow)}
+.co-hc.feat blockquote{font-size:52px;line-height:1.04;max-width:880px}
+.co-hc.feat blockquote::before{color:var(--co-oncoral)}
+.co-hc.feat .co-fmt{background:transparent;color:var(--co-oncoral);box-shadow:inset 0 0 0 1px var(--co-oncoral)}
+.co-hc.feat .co-fmt svg{color:var(--co-oncoral)}
+.co-hc.feat .co-lab,.co-hc.feat .co-stat,.co-hc.feat .co-stat b,.co-hc.feat .co-hmeta,.co-hc.feat .co-orig,.co-hc.feat .co-lnk{color:var(--co-oncoral)}
+.co-hc.feat .co-badge.perf{background:var(--co-oncoral);color:#FF6F61}
+.co-hc.feat .co-badge.insp{box-shadow:inset 0 0 0 1px var(--co-oncoral);color:var(--co-oncoral)}
+.co-hc.feat .co-badge.web{background:transparent;color:var(--co-oncoral);box-shadow:inset 0 0 0 1px var(--co-oncoral)}
+.co-hc.feat .co-hcf{box-shadow:inset 0 1px 0 rgba(26,8,6,.25)}
+.co-hc.feat .co-sb{background:#1A0806;color:#FFFFFF}
+.co-hc.feat .co-fp.m{background:#FFFFFF;color:#9C2D22;box-shadow:none}
+.co-hc.feat .co-fp.t{background:#FFFFFF;color:#B4372B}
+.co-hc.feat .co-fp.b{background:#1A0806;color:#FF8A7E}
 
 /* ---- formats ---- */
 .co-fhead{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
@@ -383,6 +415,11 @@
   .co-filt{grid-template-columns:minmax(0,1fr);gap:6px;margin:18px 0 26px}
   .co-filt .co-chips{margin:0 -20px 8px;padding:0 20px;max-width:none}
   .co-search input{font-size:15px}.co-search kbd{display:none}
+  .co-hbar .co-search,.co-hbar .co-gb{height:52px}
+  .co-hgrid{grid-template-columns:minmax(0,1fr);gap:18px}
+  .co-hc{padding:20px 20px 18px;border-radius:18px;gap:14px}.co-hc blockquote{font-size:25px}
+  .co-hc.feat{padding:24px 20px 20px}.co-hc.feat blockquote{font-size:32px}
+  .co-hcf{flex-direction:column;align-items:stretch}.co-hcf .co-sb{margin-left:0;width:100%;justify-content:center;height:44px}
   .co-empty{padding:24px 20px}
   .co-empty.big{padding:20px 20px 24px}
   .co-empty.big .co-q{position:static;display:block;font-size:90px;line-height:.6;height:40px}
