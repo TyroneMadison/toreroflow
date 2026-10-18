@@ -97,7 +97,7 @@ export function hookLine(script?: string | null): string {
 }
 
 /** The magazine page header: issue kicker with folio, cover headline, lede. */
-export function Masthead({ folio, word1, word2, lede }: { folio: string; word1: string; word2: string; lede: string }) {
+export function Masthead({ folio, word1, word2, lede, aside }: { folio: string; word1: string; word2: string; lede: string; aside?: ReactNode }) {
   const now = new Date();
   const start = new Date(now.getFullYear(), 0, 1);
   const issue = Math.ceil(((now.getTime() - start.getTime()) / 864e5 + start.getDay() + 1) / 7);
@@ -107,7 +107,7 @@ export function Masthead({ folio, word1, word2, lede }: { folio: string; word1: 
       <div className="co-rule" />
       <div className="co-kick">
         <span className="k1">Ideas · Issue {issue} · {month}</span>
-        <span className="k2">p. {folio}</span>
+        {aside ?? <span className="k2">p. {folio}</span>}
       </div>
       <section className="co-hero">
         <div className="co-vlab"><b>Vol. {now.getFullYear() - 2023}</b> · No. {issue}</div>

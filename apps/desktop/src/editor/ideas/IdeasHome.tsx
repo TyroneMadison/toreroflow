@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import type { NicheProfile } from "./NicheCard";
@@ -56,7 +56,7 @@ const TABS: Array<{ id: Tab; label: string; folio: string; h: [string, string]; 
 
 const NICHE_CAP = 200;
 
-export default function IdeasHome({ clientId, focusSuper = false }: { clientId: string; focusSuper?: boolean }) {
+export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: { clientId: string; focusSuper?: boolean; areaSwitch?: ReactNode }) {
   const toast = useToast();
   const superRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -317,6 +317,7 @@ export default function IdeasHome({ clientId, focusSuper = false }: { clientId: 
         lede={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1
           ? "Ideas split evenly across all your creators, balanced across the funnel. Or let us pick one for you."
           : page.lede}
+        aside={areaSwitch}
       />
       <nav className="co-tabs" role="tablist">
         {TABS.map((t, k) => (

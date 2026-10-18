@@ -236,4 +236,21 @@
   .mcal-st.st-publishing,.mcal-st.st-reminded{color:var(--text-2)}
   .mcal-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .mcal-acts .btn{min-height:44px;padding:0 18px}
+
+  /* ---- Ideas: the tab bar already says Ideas, so no Studio header or page and
+     area chips; the area switch is a dropdown in the masthead line and the
+     masthead is compact, so the first idea shows above the fold ---- */
+  .main:has(.ideashome)>.tf-head,.screen:has(.ideashome)>.topbar,.stage:has(>.ideashome)>.seg{display:none !important}
+  html .main .ideashome.coral{padding:0 0 24px;border-radius:0;background:none}
+  html .main .ideashome .co-mast{padding-top:0}
+  html .main .ideashome .co-rule,html .main .ideashome .co-hero>p{display:none}
+  html .main .ideashome .co-kick{padding:0 0 6px}
+  html .main .ideashome .co-hero{padding:8px 0 14px}
+  html .main .ideashome .co-hero h1{font-size:38px;line-height:1}
+  html .main .ideashome .co-tabs{margin-bottom:14px}
+  html .main .ideashome .co-bar{gap:10px;margin-bottom:14px}
+  html .main .ideashome .co-num b{font-size:64px}
+  html .main .ideashome .co-tl{margin-top:12px}
+  .mb-area{flex:none;height:44px;padding:0 12px;border:0;border-radius:999px;background:var(--mb-chip);color:var(--mb-ink);
+    font:inherit;font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;cursor:pointer}
 }

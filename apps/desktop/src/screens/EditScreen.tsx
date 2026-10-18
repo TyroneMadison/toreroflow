@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppState } from "../state/AppState";
 import { setQuery, useRoute } from "../lib/routes";
+import { useIsPhone } from "../lib/phone";
 import StudioHome from "../editor/StudioHome";
 import StudioEditor from "../editor/StudioEditor";
 import AnalyzeHome from "../editor/analyze/AnalyzeHome";
@@ -23,6 +24,7 @@ export default function EditScreen() {
   // "super" is Ideas scrolled to Super generate (the phone Create sheet).
   const area: EditArea = routeArea === "super" ? "ideas" : AREAS.find((a) => a.id === routeArea)?.id ?? "studio";
   const setArea = (a: EditArea) => setQuery({ area: a === "studio" ? null : a });
+  const isPhone = useIsPhone();
   // The Studio project being edited. The screen remounts per brand (keyed in
   // App.tsx), so a project never survives a brand switch.
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
@@ -88,7 +90,20 @@ export default function EditScreen() {
             <AnalyzeHome clientId={selectedClient.id} onOpen={setOpenAnalysisId} />
           )
         ) : (
-          <IdeasHome clientId={selectedClient.id} focusSuper={routeArea === "super"} />
+          <IdeasHome
+            clientId={selectedClient.id}
+            focusSuper={routeArea === "super"}
+            areaSwitch={
+              // Phones: the area chips give way to this dropdown in the masthead line.
+              isPhone ? (
+                <select className="mb-area" aria-label="Studio area" value={area} onChange={(e) => setArea(e.target.value as EditArea)}>
+                  {AREAS.map((a) => (
+                    <option key={a.id} value={a.id}>{a.label}</option>
+                  ))}
+                </select>
+              ) : undefined
+            }
+          />
         )}
       </div>
     </section>

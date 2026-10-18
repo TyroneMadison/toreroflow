@@ -8,6 +8,7 @@ declare const process: { cwd(): string };
 // purpose (see motion.check.ts). This file runs under tsx, never in the bundle.
 import { readFileSync } from "node:fs";
 import { PHONE_MAX, PHONE_QUERY } from "./phone";
+import { initials } from "./avatar";
 
 const css = (readFileSync(`${process.cwd()}/src/styles/mobile.css`, "utf8") as string).replace(/\/\*[\s\S]*?\*\//g, "");
 const queries = css.match(/@media[^{]*/g) ?? [];
@@ -27,4 +28,7 @@ for (let i = 0; i < css.length; i++) {
 }
 if (outside.replace(/@media[^{]*/g, "").trim()) throw new Error(`mobile.css has rules outside the phone query: ${outside.trim().slice(0, 80)}`);
 if (PHONE_QUERY !== `(max-width: ${PHONE_MAX}px)`) throw new Error("PHONE_QUERY drifted from PHONE_MAX");
+// Phone avatars show at most two initials, so the text fits the circle.
+for (const [name, want] of [["Northwind Studio", "NS"], ["acme", "A"], ["Lumen Fitness Club", "LF"], ["  ", "?"]] as const)
+  if (initials(name) !== want) throw new Error(`initials(${JSON.stringify(name)}) is ${initials(name)}, want ${want}`);
 console.log("phone: all checks passed");
