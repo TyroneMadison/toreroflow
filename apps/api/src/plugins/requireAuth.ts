@@ -21,7 +21,7 @@ export async function requireAuth(
   }
   if (request.user.role === "bot" && !botAllowed(request.method, request.url)) {
     await reply.status(403).send({
-      error: "bot tokens can upload, write copy and schedule; this route needs the operator",
+      error: "bot tokens can upload, write copy, set covers and schedule; this route needs the operator",
     });
   }
 }

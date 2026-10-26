@@ -14,6 +14,8 @@ for (const [method, path] of [
   ["GET", "/media/cms84z50v"],
   ["PATCH", "/media/cms84z50v/draft"],
   ["POST", "/media/cms84z50v/schedule"],
+  ["PATCH", "/media/cms84z50v/cover"],
+  ["POST", "/media/cms84z50v/cover-image"],
   ["GET", "/clients/cms0qdz5t/posts"],
   ["GET", "/clients/cms0qdz5t/posts?from=2026-09-01"],
   ["GET", "/trello/ready"],
@@ -53,7 +55,8 @@ for (const [method, path] of [
   // Nested lookalikes a sloppy regex would wave through.
   ["POST", "/clients/cms0qdz5t/media/../../financials"],
   ["GET", "/media/cms84z50v/transcript"],
-  ["POST", "/media/cms84z50v/cover-image"],
+  ["POST", "/media/cms84z50v/cover-image/../../financials"],
+  ["DELETE", "/media/cms84z50v/cover"],
 ] as const) {
   assert.equal(botAllowed(method, path), false, `${method} ${path} must be refused`);
 }
