@@ -80,7 +80,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     setSchedulingState(a);
     setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
   };
-  /** A horizontal video, routed to the long-form YouTube wizard instead. */
+  /** A video toggled to long-form, routed to the long-form wizard instead. */
   const [longForm, setLongFormState] = useState<MediaAssetInfo | null>(null);
   const setLongForm = (a: MediaAssetInfo | null) => {
     setLongFormState(a);
@@ -886,25 +886,25 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       </>
                     )}
 
-                    {/* Quota controls: format decides which target it spends,
-                        and revisions spend nothing. */}
+                    {/* Short or long decides the door (scheduler or long-form
+                        wizard, whatever the shape) and which quota it spends.
+                        Unset reads as short-form, the default. */}
+                    {asset.kind !== "carousel" && (
+                      <div className="fmtseg">
+                      <Seg
+                        label={`Format of ${asset.name}`}
+                        testId={`fmt-${asset.id}`}
+                        value={asset.format ?? "short_form"}
+                        options={[
+                          { id: "short_form", label: "This is a short-form video" },
+                          { id: "long_form", label: "This is a long-form video" },
+                        ]}
+                        onChange={(f) => void setFormat(asset, f)}
+                      />
+                      </div>
+                    )}
+                    {/* Revisions spend nothing. */}
                     <div className="revrow">
-                      <span className="fmtpick">
-                        {(["short_form", "long_form"] as const).map((f) => (
-                          <span
-                            key={f}
-                            className={`fmtopt${asset.format === f ? " on" : ""}`}
-                            title={
-                              f === "short_form"
-                                ? "Counts toward the short-form target. Schedules to every connected platform, landscape included."
-                                : "Counts toward the long-form target. A landscape video opens the YouTube wizard instead."
-                            }
-                            onClick={() => void setFormat(asset, f)}
-                          >
-                            {f === "short_form" ? "Short" : "Long"}
-                          </span>
-                        ))}
-                      </span>
                       <span
                         className={`revtoggle${asset.isRevision ? " on" : ""}`}
                         title={
@@ -1037,13 +1037,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           setSchedBusy(asset.id);
                           void saveDraft(asset)
                             .then((ok) => {
-                              // The Short/Long switch decides the door, and
-                              // shape only narrows it. Horizontal used to mean
-                              // the YouTube wizard on its own, back when no
-                              // other platform took a 16:9 frame; Instagram and
-                              // TikTok both do now, so a landscape short-form
-                              // cut goes to the ordinary scheduler with every
-                              // platform on offer.
+                              // The short/long toggle alone decides the door.
                               if (ok) {
                                 if (usesLongFormWizard(asset)) setLongForm(asset);
                                 else setScheduling(asset);

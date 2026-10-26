@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import {
   carouselTargetSize,
   explainPublishFailure,
-  formatFromDuration,
+  defaultFormat,
   instagramCopyKbps,
   instagramLongformFit,
   QUOTA_DEFERRALS_MAX,
@@ -120,8 +120,8 @@ async function processAsset(assetId: string): Promise<void> {
   });
 
   try {
-    // 1. Probe. Duration also decides short vs long form for the client's
-    // quota, but never overrides a format the operator already set.
+    // 1. Probe. Shape and duration pick the starting format (short-form
+    // unless landscape and long), never overriding one already set.
     const meta = await probe(sourcePath);
     await prisma.mediaAsset.update({
       where: { id: asset.id },
@@ -130,7 +130,7 @@ async function processAsset(assetId: string): Promise<void> {
         width: meta.width,
         height: meta.height,
         ...(asset.format === null
-          ? { format: formatFromDuration(meta.durationSec) }
+          ? { format: defaultFormat(meta) }
           : {}),
       },
     });

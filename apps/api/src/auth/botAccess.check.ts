@@ -13,6 +13,7 @@ for (const [method, path] of [
   ["GET", "/clients/cms0qdz5t/media"],
   ["GET", "/media/cms84z50v"],
   ["PATCH", "/media/cms84z50v/draft"],
+  ["PATCH", "/media/cms84z50v/format"],
   ["POST", "/media/cms84z50v/schedule"],
   ["PATCH", "/media/cms84z50v/cover"],
   ["POST", "/media/cms84z50v/cover-image"],

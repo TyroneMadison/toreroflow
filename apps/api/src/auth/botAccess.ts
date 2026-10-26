@@ -37,6 +37,9 @@ const ALLOW: Rule[] = [
   { method: "GET", path: new RegExp(`^/clients/${ID}/media$`) },
   { method: "GET", path: new RegExp(`^/media/${ID}$`) },
   { method: "PATCH", path: new RegExp(`^/media/${ID}/draft$`) },
+  // Short-form or long-form ("short" | "long"): which quota it spends and
+  // which flow schedules it. Also settable at upload with ?format=.
+  { method: "PATCH", path: new RegExp(`^/media/${ID}/format$`) },
   { method: "POST", path: new RegExp(`^/media/${ID}/schedule$`) },
   // Long-form Instagram pre-check: file size, fit, publishing allowance. Read-only.
   { method: "GET", path: new RegExp(`^/media/${ID}/instagram-fit$`) },

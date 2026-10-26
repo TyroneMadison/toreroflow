@@ -18,6 +18,28 @@ export function formatFromDuration(
 }
 
 /**
+ * The format an upload starts with, before anyone flips the toggle. Short-form
+ * unless the file is landscape, where duration still decides as it always
+ * has: a vertical video is short-form however long it runs, because the
+ * toggle, not the clock, sends it to the long-form wizard.
+ */
+export function defaultFormat(meta: {
+  durationSec: number | null | undefined;
+  width: number | null | undefined;
+  height: number | null | undefined;
+}): VideoFormatValue | null {
+  const landscape = (meta.width ?? 0) > (meta.height ?? 0) && (meta.height ?? 0) > 0;
+  return landscape ? formatFromDuration(meta.durationSec) : "short_form";
+}
+
+/** "short" | "long" | "short_form" | "long_form" -> the stored value; anything else null. */
+export function parseVideoFormat(v: unknown): VideoFormatValue | null {
+  if (v === "short" || v === "short_form") return "short_form";
+  if (v === "long" || v === "long_form") return "long_form";
+  return null;
+}
+
+/**
  * Trailing tokens that mark a re-export rather than a new video:
  * "Interview v2", "Interview final", "Interview (1)", "Interview revised".
  */

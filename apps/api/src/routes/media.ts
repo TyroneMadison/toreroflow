@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
-import { CAROUSEL_ABSOLUTE_MAX, decodeEscapes, looksLikeRevisionOf } from "@toreroflow/core";
+import { CAROUSEL_ABSOLUTE_MAX, decodeEscapes, looksLikeRevisionOf, parseVideoFormat } from "@toreroflow/core";
 import { getPrisma, Prisma, cancelByKey, enqueue } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
@@ -18,8 +18,9 @@ const revisionSchema = z.object({
   replaceScheduled: z.boolean().optional(),
 });
 
+/** Bots may send the short spelling: "short" | "long". */
 const formatSchema = z.object({
-  format: z.enum(["short_form", "long_form"]),
+  format: z.enum(["short", "long", "short_form", "long_form"]).transform((v) => parseVideoFormat(v)!),
 });
 
 /**
@@ -164,7 +165,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
     };
   };
 
-  app.post<{ Params: { id: string } }>("/clients/:id/media", async (request, reply) => {
+  app.post<{ Params: { id: string }; Querystring: { format?: string } }>("/clients/:id/media", async (request, reply) => {
     const client = await prisma.client.findFirst({
       where: {
         id: request.params.id,
@@ -176,6 +177,16 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
 
     const file = await request.file();
     if (!file) return reply.status(400).send({ error: "no file uploaded" });
+
+    // Optional "short" | "long" (query string, or a form field sent before the
+    // file). Unset lets the worker pick the default once it knows the shape.
+    const field = (file.fields as Record<string, { value?: unknown } | undefined>).format?.value;
+    const askedFormat = request.query.format ?? field;
+    const format = askedFormat === undefined ? null : parseVideoFormat(askedFormat);
+    if (askedFormat !== undefined && !format) {
+      file.file.resume();
+      return reply.status(400).send({ error: 'format must be "short" or "long"' });
+    }
 
     const ext = path.extname(file.filename || ".mp4") || ".mp4";
     const originalName = file.filename ?? `upload${ext}`;
@@ -200,6 +211,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         status: "uploaded",
         isRevision: rootId !== null,
         revisionOfId: rootId,
+        ...(format ? { format } : {}),
       },
     });
     const storageKey = `${client.id}/${asset.id}/source${ext}`;
