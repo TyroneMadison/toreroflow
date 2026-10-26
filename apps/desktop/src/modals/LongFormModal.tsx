@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import CoverModal from "./CoverModal";
 import SopPanel, { sopRequired } from "../components/SopPanel";
 import { currentRoute, setQuery } from "../lib/routes";
 import BestTimes from "../components/BestTimes";
@@ -36,11 +37,30 @@ import {
   suggestTags,
 } from "@toreroflow/core";
 import { useAppState } from "../state/AppState";
+import {
+  DESTS,
+  fmtBytes,
+  fmtClock,
+  hasInstagram,
+  hasYouTube,
+  instagramRows,
+  parseDest,
+  parseHandles,
+  phasesFor,
+  type Dest,
+  type IgFitInfo,
+} from "../lib/longform";
+import { AudioNameField, CaptionField, HandleChips, LocationField, SwitchRow, TrialChoice } from "../components/PostDetails";
 
 interface LongFormModalProps {
   asset: MediaAssetInfo;
   onClose: () => void;
   onScheduled: () => void;
+}
+
+/** Instagram's starting caption: the draft description, as the scheduler uses. */
+function draft0Caption(a: MediaAssetInfo): string {
+  return a.draftCopy?.description ?? "";
 }
 
 /** Local-time value for the picker, minutes precision. */
@@ -50,21 +70,10 @@ function localInputValue(d: Date): string {
 }
 
 /**
- * The five phases of the long-form upload, in Tyrone's order.
- *
- * The list is data so later pieces splice their phase in without touching the
- * navigation. A phase that is not live yet is shown but disabled, because a
- * stepper that silently grows steps release by release reads as a bug, while
- * one that shows where it is going reads as a plan.
+ * The phases of the long-form upload, in Tyrone's order, per destination
+ * (lib/longform.ts). YouTube alone keeps its original five.
  */
-const PHASES = [
-  { id: "details", label: "Details", live: true },
-  { id: "suitability", label: "Ad suitability", live: true },
-  { id: "elements", label: "Video elements", live: true },
-  { id: "checks", label: "Checks", live: true },
-  { id: "visibility", label: "Visibility", live: true },
-] as const;
-type PhaseId = (typeof PHASES)[number]["id"];
+type PhaseId = "details" | "suitability" | "elements" | "instagram" | "checks" | "visibility";
 
 /** YouTube counts the tag pool as the tags joined with commas, capped at 500. */
 const TAG_POOL_MAX = 500;
@@ -81,9 +90,24 @@ type Visibility = "public" | "unlisted" | "private" | "members";
  * Studio-side (ad suitability, video elements) arrive with the machinery
  * that makes them honest.
  */
-export default function LongFormModal({ asset, onClose, onScheduled }: LongFormModalProps) {
+export default function LongFormModal({ asset: initialAsset, onClose, onScheduled }: LongFormModalProps) {
   const { selectedClient } = useAppState();
   const toast = useToast();
+  /** Refetched after a cover change, so the thumbnail and the checks follow it. */
+  const [asset, setAsset] = useState(initialAsset);
+  const refreshAsset = () =>
+    void api
+      .get<MediaAssetInfo>(`/media/${asset.id}`)
+      .then(setAsset)
+      .catch(() => undefined);
+  /** The shared cover flow (frame or image), or Instagram's own frame. */
+  const [coverEdit, setCoverEdit] = useState<"shared" | "igframe" | null>(null);
+
+  // Where it goes: YouTube, Instagram or both, in the URL (?dest=) like the step.
+  const [dest, setDestState] = useState<Dest>(() => parseDest(currentRoute().dest));
+  const PHASES = phasesFor(dest);
+  const yt = hasYouTube(dest);
+  const ig = hasInstagram(dest);
 
   /*
    * Long-form goes strictly to YouTube, which makes the account picker a
@@ -94,8 +118,13 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
     (a) => a.platform === "youtube" && a.status === "connected",
   );
   const [accountId, setAccountId] = useState(ytAccounts[0]?.id ?? "");
+  const igAccounts = (selectedClient?.accounts ?? []).filter(
+    (a) => a.platform === "instagram" && a.status === "connected",
+  );
+  const [igAccountId, setIgAccountId] = useState(igAccounts[0]?.id ?? "");
+  const noAccount = (yt && ytAccounts.length === 0) || (ig && igAccounts.length === 0);
 
-  const liveOrder: PhaseId[] = PHASES.filter((p) => p.live).map((p) => p.id);
+  const liveOrder = PHASES.map((p) => p.id as PhaseId);
   // The open step lives in the URL (?step=), so a link or a bot lands on it.
   const [phase, setPhaseState] = useState<PhaseId>(() => {
     const s = currentRoute().step as PhaseId | null;
@@ -107,9 +136,48 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   };
   useEffect(() => {
     setQuery({ step: phase });
-    return () => setQuery({ step: null });
+    return () => setQuery({ step: null, dest: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const setDest = (d: Dest) => {
+    setDestState(d);
+    setQuery({ dest: d === "youtube" ? null : d });
+    // Stay on the open phase when the new destination has it.
+    const order = phasesFor(d).map((p) => p.id as PhaseId);
+    if (!order.includes(phase)) setPhase(order[0]!);
+  };
+
+  // Instagram's own fields.
+  const [igCaption, setIgCaption] = useState(draft0Caption(initialAsset));
+  const [igCollabs, setIgCollabs] = useState("");
+  const [igLocation, setIgLocation] = useState("");
+  const [igAudioName, setIgAudioName] = useState("");
+  const [igUserTags, setIgUserTags] = useState("");
+  const [igShareToFeed, setIgShareToFeed] = useState(true);
+  const [igTrial, setIgTrial] = useState(false);
+  const [igGraduate, setIgGraduate] = useState<"MANUAL" | "SS_PERFORMANCE">("MANUAL");
+  const [igCrop, setIgCrop] = useState(false);
+  /** Instagram's own cover frame in "Both"; null means the shared cover. */
+  const [igFrameMs, setIgFrameMs] = useState<number | null>(null);
+  const [fit, setFit] = useState<IgFitInfo | null>(null);
+  useEffect(() => {
+    if (!ig) return;
+    setFit(null);
+    const q = new URLSearchParams({ ...(igAccountId ? { accountId: igAccountId } : {}), ...(igCrop ? { crop916: "1" } : {}) });
+    api
+      .get<IgFitInfo>(`/media/${asset.id}/instagram-fit?${q}`)
+      .then(setFit)
+      .catch(() => setFit({ bytes: null, blocks: [], warnings: [], needsCopy: false, is916: false, limit: null }));
+  }, [ig, igAccountId, igCrop, asset.id]);
+  const igCollabList = parseHandles(igCollabs);
+  const coverKind: "frame" | "image" | "igframe" | "auto" =
+    igFrameMs != null
+      ? "igframe"
+      : asset.coverOffsetMs != null
+        ? "frame"
+        : asset.thumbUrl && /cover\.(jpg|png)/.test(asset.thumbUrl)
+          ? "image"
+          : "auto";
   const [sopAck, setSopAck] = useState(false);
   // A gentle reminder only; never disables publishing.
   const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
@@ -313,6 +381,17 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
    */
   const checks = useMemo(() => {
     const rows: Array<{ ok: boolean | null; text: string }> = [];
+    const igRows = ig
+      ? instagramRows({
+          handle: igAccounts.find((a) => a.id === igAccountId)?.handle ?? null,
+          caption: igCaption,
+          collaborators: igCollabList,
+          locationId: igLocation.trim(),
+          fit,
+          cover: coverKind,
+        })
+      : [];
+    if (!yt) return igRows;
     rows.push(
       ytAccounts.length
         ? { ok: true, text: `Publishing to @${ytAccounts.find((a) => a.id === accountId)?.handle ?? ytAccounts[0]?.handle}` }
@@ -412,13 +491,14 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
       ok: null,
       text: "Copyright and monetization checks run on YouTube's side after upload; no API can run them earlier. Anything they flag appears in Studio.",
     });
-    return rows;
-  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length, captionsInfo, iq]);
+    return [...rows, ...igRows];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytAccounts, accountId, title, description, tagPool, tags, thumbName, asset, connections, license, embeddable, recordingDate, language, paidPromotion, certSubmitted, certRating, certFlags.length, captionsInfo, iq, yt, ig, igAccountId, igCaption, igCollabs, igLocation, fit, coverKind]);
 
   const checksBlock = checks.some((c) => c.ok === false);
 
   const submit = async () => {
-    if (!selectedClient || !accountId) return;
+    if (!selectedClient || (yt && !accountId) || (ig && !igAccountId)) return;
     setBusy(true);
     setError(null);
     try {
@@ -440,12 +520,27 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         relatedVideoTitle: relatedTitle,
         productTag,
       });
+      const igTags = parseHandles(igUserTags);
+      const instagram = {
+        longform: true,
+        shareToFeed: igShareToFeed,
+        ...(igTrial ? { trial: true, graduationStrategy: igGraduate } : {}),
+        ...(igCrop ? { crop916: true } : {}),
+        ...(igCollabList.length ? { collaborators: igCollabList } : {}),
+        ...(igLocation.trim() ? { locationId: igLocation.trim() } : {}),
+        ...(igAudioName.trim() ? { audioName: igAudioName.trim() } : {}),
+        ...(igTags.length ? { userTags: igTags } : {}),
+        ...(dest === "both" && igFrameMs != null ? { thumbOffsetMs: igFrameMs } : {}),
+      };
       await api.post(`/media/${asset.id}/schedule`, {
-        platforms: ["youtube"],
-        accountIds: [accountId],
+        platforms: [...(yt ? ["youtube"] : []), ...(ig ? ["instagram"] : [])],
+        accountIds: [...(yt ? [accountId] : []), ...(ig ? [igAccountId] : [])],
         ...(sopAck ? { sopAcknowledged: true } : {}),
         scheduledAt: new Date(when).toISOString(),
-        youtube: {
+        // Instagram's caption; YouTube's description below wins for YouTube.
+        ...(ig && igCaption.trim() ? { caption: igCaption } : {}),
+        ...(ig ? { instagram } : {}),
+        ...(yt ? { youtube: {
           title: title.trim(),
           ...(description.trim() ? { description: description } : {}),
           visibility: visibility === "members" ? "private" : visibility,
@@ -464,13 +559,13 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           ...(captionsInfo
             ? { captions: { key: captionsInfo.key, language: captionsInfo.language, name: captionsInfo.name } }
             : {}),
-        },
+        } } : {}),
       });
       onScheduled();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "scheduling failed");
-      toast.fail("Could not schedule the video", err);
+      toast.fail(dest === "both" ? "Could not schedule the posts" : "Could not schedule the video", err);
     } finally {
       setBusy(false);
     }
@@ -484,13 +579,20 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
   };
 
   return (
-    <Modal maxWidth={780} onClose={onClose} label={`Upload ${asset.name} to YouTube`} testId="longform-form">
+    <Modal
+      maxWidth={ig ? 980 : 780}
+      // The cover dialog above this one takes Escape first.
+      onClose={coverEdit ? () => undefined : onClose}
+      label={`Long-form upload of ${asset.name}`}
+      testId="longform-form"
+    >
       <div className="modal-head">
         <div>
-          <h3>Upload to YouTube</h3>
+          <h3>{dest === "youtube" ? "Upload to YouTube" : dest === "instagram" ? "Upload to Instagram" : "Upload to YouTube and Instagram"}</h3>
           <p>
             {asset.name} · long-form
             {asset.width && asset.height ? ` · ${ratioLabel(asset.width, asset.height)}` : ""}
+            {dest !== "youtube" ? " · Instagram long-form posts go out as reels, up to 15 minutes" : ""}
           </p>
         </div>
         <button type="button" className="modal-x" aria-label="Close" data-testid="longform-close" onClick={onClose}>
@@ -500,17 +602,41 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         </button>
       </div>
 
+      <div className="lfdest" role="radiogroup" aria-label="Post to" data-testid="longform-dest">
+        {DESTS.map((d) => (
+          <button
+            type="button"
+            key={d.id}
+            role="radio"
+            aria-checked={dest === d.id}
+            tabIndex={dest === d.id ? 0 : -1}
+            className={dest === d.id ? "on" : undefined}
+            data-testid={`longform-dest-${d.id}`}
+            onClick={() => setDest(d.id)}
+            onKeyDown={(e) => {
+              const i = DESTS.findIndex((x) => x.id === dest);
+              const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+              if (!step) return;
+              e.preventDefault();
+              const next = DESTS[(i + step + DESTS.length) % DESTS.length]!;
+              setDest(next.id);
+              (e.currentTarget.parentElement?.children[DESTS.indexOf(next)] as HTMLElement | undefined)?.focus();
+            }}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+
       <div className="lfsteps">
         {PHASES.map((p) => (
           <button
             type="button"
             key={p.id}
-            className={`lfstep${p.id === phase ? " on" : ""}${p.live ? "" : " off"}`}
+            className={`lfstep${p.id === phase ? " on" : ""}`}
             aria-current={p.id === phase ? "step" : undefined}
             data-testid={`longform-step-${p.id}`}
-            disabled={!p.live}
-            title={p.live ? undefined : "Arrives in a later build"}
-            onClick={() => setPhase(p.id)}
+            onClick={() => setPhase(p.id as PhaseId)}
           >
             {p.label}
           </button>
@@ -690,6 +816,9 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
               {(thumbPreview ?? fileUrl(asset.thumbUrl)) && (
                 <img className="lfthumb" src={thumbPreview ?? fileUrl(asset.thumbUrl)!} alt="" />
               )}
+              <button type="button" className="revtoggle" onClick={() => setCoverEdit("shared")}>
+                Pick a frame
+              </button>
               <label className="revtoggle" style={{ cursor: "pointer" }}>
                 {thumbBusy ? "Uploading…" : thumbName ? "Replace image" : "Upload an image"}
                 <input
@@ -1154,6 +1283,158 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
           </div>
         )}
 
+        {phase === "instagram" && (
+          <div className="lfphase lfig">
+            <div className="lfig-src">
+              <video
+                className={`lfig-prev${fit?.is916 || igCrop ? " v" : ""}`}
+                src={fileUrl(asset.videoUrl) ?? undefined}
+                poster={fileUrl(asset.thumbUrl) ?? undefined}
+                controls
+                muted
+                playsInline
+                preload="metadata"
+              />
+              <div className="lfig-chips">
+                <span>{asset.name}</span>
+                {asset.durationSec != null && <span>{fmtClock(asset.durationSec)}</span>}
+                {asset.width && asset.height ? <span>{asset.width}×{asset.height}</span> : null}
+                {fit?.bytes != null && <span>{fmtBytes(fit.bytes)}</span>}
+              </div>
+              {fit === null ? (
+                <div className="lfnote">Checking the file against Instagram's limits…</div>
+              ) : (
+                <>
+                  {fit.blocks.map((b) => (
+                    <div className="lfnote bad" role="alert" key={b}>
+                      {b}
+                    </div>
+                  ))}
+                  {fit.warnings.map((w) => (
+                    <div className="lfnote warn" key={w}>
+                      {w}
+                      {/bars/.test(w) && (
+                        <button type="button" className="btn ghost" onClick={() => setIgCrop(true)}>
+                          Make 9:16 crop
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {igCrop && (
+                    <div className="lfnote warn">
+                      Instagram gets a centre 9:16 crop. YouTube gets the original.
+                      <button type="button" className="btn ghost" onClick={() => setIgCrop(false)}>
+                        Keep the full frame
+                      </button>
+                    </div>
+                  )}
+                  {!fit.blocks.length && !fit.warnings.length && !igCrop && (
+                    <div className="lfnote ok">Fits Instagram: 3 s to 15 min, under 300 MB.</div>
+                  )}
+                  {fit.limit && fit.limit.total > 0 && (
+                    <p className="lnote">
+                      {fit.limit.used} of {fit.limit.total} Instagram API posts used in the last 24 hours.
+                    </p>
+                  )}
+                </>
+              )}
+
+              <label className="flabel" style={{ marginTop: 14 }}>
+                Cover
+                <span className="hint">{yt ? "one choice for YouTube and Instagram" : "a frame of the video or your own image"}</span>
+              </label>
+              <div className="lfthumbrow">
+                {fileUrl(asset.thumbUrl) && <img className="lfthumb" src={fileUrl(asset.thumbUrl)!} alt="Current cover" />}
+                <div className="lfcover">
+                  <span>
+                    {coverKind === "image"
+                      ? "Your uploaded image."
+                      : asset.coverOffsetMs != null
+                        ? `Frame at ${fmtClock(asset.coverOffsetMs / 1000)}.`
+                        : "None picked: Instagram uses the first frame."}
+                  </span>
+                  <button type="button" className="btn ghost" onClick={() => setCoverEdit("shared")}>
+                    Edit cover
+                  </button>
+                </div>
+              </div>
+              {dest === "both" && (
+                <div className="lfcover" style={{ marginTop: 8 }}>
+                  <span>
+                    {igFrameMs != null
+                      ? `Instagram uses its own frame at ${fmtClock(igFrameMs / 1000)}.`
+                      : "Instagram uses the same cover."}
+                  </span>
+                  <button type="button" className="btn ghost" onClick={() => setCoverEdit("igframe")}>
+                    {igFrameMs != null ? "Change Instagram frame" : "Different frame for Instagram"}
+                  </button>
+                  {igFrameMs != null && (
+                    <button type="button" className="btn ghost" onClick={() => setIgFrameMs(null)}>
+                      Use the same cover
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="lfig-fields">
+              {igAccounts.length === 0 && (
+                <div className="autherr">
+                  This client has no connected Instagram account, so nothing here can publish.
+                  Connect one in Settings first.
+                </div>
+              )}
+              {igAccounts.length > 1 && (
+                <>
+                  <label className="flabel">Instagram account</label>
+                  <Select
+                    value={igAccountId}
+                    onChange={setIgAccountId}
+                    aria-label="Instagram account"
+                    options={igAccounts.map((a) => ({ value: a.id, label: `@${a.handle}` }))}
+                  />
+                </>
+              )}
+              <CaptionField
+                id="lf-ig-caption"
+                value={igCaption}
+                onChange={setIgCaption}
+                platforms={["instagram"]}
+                rows={4}
+              />
+              <HandleChips
+                id="lf-ig-collabs"
+                label="Collaborators"
+                max={3}
+                value={igCollabList}
+                onChange={(v) => setIgCollabs(v.join(" "))}
+                note="Collaborators get an invite. The post shows on their profile once they accept."
+              />
+              <HandleChips
+                id="lf-ig-tags"
+                label="Tag people"
+                hint="usernames"
+                value={parseHandles(igUserTags)}
+                onChange={(v) => setIgUserTags(v.join(" "))}
+              />
+              <div className="dmgrid" style={{ marginTop: 12 }}>
+                <LocationField id="lf-ig-loc" value={igLocation} onChange={setIgLocation} />
+                <AudioNameField id="lf-ig-audio" value={igAudioName} onChange={setIgAudioName} />
+              </div>
+              <SwitchRow checked={igShareToFeed} onChange={setIgShareToFeed}>
+                Also show in main feed
+              </SwitchRow>
+              <p className="lnote">Off means Reels tab only.</p>
+              <TrialChoice trial={igTrial} onTrial={setIgTrial} graduate={igGraduate} onGraduate={setIgGraduate} />
+              <p className="lnote">
+                {yt
+                  ? "The post time is shared with YouTube, under Visibility. Toreroflow sends both together."
+                  : "Toreroflow posts it at the time you pick next. Instagram has no built-in scheduling."}
+              </p>
+            </div>
+          </div>
+        )}
+
         {phase === "checks" && (
           <div className="lfphase">
             <p className="lnote" style={{ marginTop: 0 }}>
@@ -1172,6 +1453,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
 
         {phase === "visibility" && (
           <div className="lfphase">
+            {yt && (<>
             <label className="flabel">Visibility</label>
             <div className="igrow">
               {(
@@ -1198,15 +1480,18 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
                 lands on the post's card once it publishes.
               </p>
             )}
-            <label className="flabel" style={{ marginTop: 14 }}>
-              Publish at
+            </>)}
+            <label className="flabel" style={{ marginTop: yt ? 14 : 0 }}>
+              {yt && ig ? "Post time (both)" : "Publish at"}
             </label>
             <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
             {whenError && <div className="autherr">{whenError}</div>}
-            <p className="lnote" style={{ marginTop: 6 }}>
-              Before you publish: do kids appear in the video? If so, "Made for kids" back in
-              Details is the setting reviewers look for.
-            </p>
+            {yt && (
+              <p className="lnote" style={{ marginTop: 6 }}>
+                Before you publish: do kids appear in the video? If so, "Made for kids" back in
+                Details is the setting reviewers look for.
+              </p>
+            )}
             <div style={{ marginTop: 14 }}>
               <BestTimes posts={bestTimePosts} />
             </div>
@@ -1242,7 +1527,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         {stepIndex < liveOrder.length - 1 ? (
           <button
             className="btn"
-            disabled={ytAccounts.length === 0 || (phase === "suitability" && !certSubmitted)}
+            disabled={noAccount || (phase === "suitability" && !certSubmitted)}
             title={
               phase === "suitability" && !certSubmitted
                 ? "Submit the rating to continue"
@@ -1255,7 +1540,7 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
         ) : (
           <button
             className="btn"
-            disabled={busy || checksBlock || whenError !== null || ytAccounts.length === 0}
+            disabled={busy || checksBlock || whenError !== null || noAccount}
             data-testid="longform-submit"
             title={checksBlock ? "The Checks phase is holding this: something above is red." : whenError ?? undefined}
             onClick={() => void submit()}
@@ -1263,10 +1548,24 @@ export default function LongFormModal({ asset, onClose, onScheduled }: LongFormM
             <svg>
               <use href="#i-bolt" />
             </svg>{" "}
-            {busy ? "Scheduling…" : "Schedule"}
+            {busy ? "Scheduling…" : dest === "both" ? "Schedule both" : dest === "instagram" ? "Schedule on Instagram" : "Schedule"}
           </button>
         )}
       </div>
+      {coverEdit && (
+        <CoverModal
+          asset={asset}
+          title={coverEdit === "igframe" ? "Instagram's own cover frame" : undefined}
+          initialMs={coverEdit === "igframe" ? igFrameMs : undefined}
+          onPick={coverEdit === "igframe" ? setIgFrameMs : undefined}
+          onClose={() => setCoverEdit(null)}
+          onChanged={() => {
+            setThumbName(null);
+            setThumbPreview(null);
+            refreshAsset();
+          }}
+        />
+      )}
     </Modal>
   );
 }

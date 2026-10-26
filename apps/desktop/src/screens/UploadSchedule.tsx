@@ -1,4 +1,7 @@
-import { setQuery, useRoute } from "../lib/routes";
+import { linkProps, setQuery, useRoute } from "../lib/routes";
+import { igLimitText, Seg } from "../components/PostDetails";
+import { COMPOSER_TYPES, type ComposerType } from "../lib/postDetails";
+import PhotoComposer from "../components/PhotoComposer";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import {
   api,
@@ -18,7 +21,6 @@ import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import LongFormModal from "../modals/LongFormModal";
-import CarouselBuilderModal from "../modals/CarouselBuilderModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
 import { usesLongFormWizard } from "../lib/youtube";
@@ -78,11 +80,11 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     setSchedulingState(a);
     setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
   };
-  /** A horizontal video, routed to the long-form YouTube wizard instead. */
+  /** A video toggled to long-form, routed to the long-form wizard instead. */
   const [longForm, setLongFormState] = useState<MediaAssetInfo | null>(null);
   const setLongForm = (a: MediaAssetInfo | null) => {
     setLongFormState(a);
-    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
+    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null, dest: null }) });
   };
   const { scheduleId: routeScheduleId } = useRoute();
   // Reopen the flow a deep link names, once its asset has loaded.
@@ -102,10 +104,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [clearing, setClearing] = useState(false);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
-  const carouselInput = useRef<HTMLInputElement>(null);
-  /** Files handed to the carousel builder; non-null opens it. */
-  const [builderFiles, setBuilderFiles] = useState<File[] | null>(null);
-  const [carouselDragOver, setCarouselDragOver] = useState(false);
+  /** The composer's post type. Images coming back from the Carousels tab land on Carousel. */
+  const [ctype, setCtype] = useState<ComposerType>(pendingCarouselDraft ? "carousel" : "reel");
+  /** Instagram's rolling 24 hour allowance, from Zernio, for the counter line. */
+  const [igAllowance, setIgAllowance] = useState<{ used: number; total: number } | null>(null);
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -201,6 +203,26 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
       cancelled = true;
     };
   }, [selectedClient]);
+
+  const hasInstagram = (selectedClient?.accounts ?? []).some(
+    (a) => a.platform === "instagram" && a.status === "connected",
+  );
+  useEffect(() => {
+    if (!selectedClient || !hasInstagram) return;
+    let cancelled = false;
+    api
+      .get<{ limit: { used: number; total: number } | null }>(`/clients/${selectedClient.id}/instagram-limit`)
+      .then((r) => !cancelled && setIgAllowance(r.limit))
+      .catch(() => !cancelled && setIgAllowance(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient, hasInstagram]);
+  const igLimit = igLimitText(igAllowance);
+  const igLimitTotal = igAllowance?.total ?? null;
+
+  /** Ready carousels not yet scheduled: the Carousels tab's finished images included. */
+  const finished = assets.filter((a) => a.kind === "carousel" && a.status === "ready");
 
   // Poll while anything is still working its way through the pipeline.
   useEffect(() => {
@@ -504,20 +526,49 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         </div>
       </div>
       <div className="stage">
-        <div className="split">
-          <div>
+        {/*
+          One composer for every post type (mockup ig-05), full width.
+          Reel is the video drop that was here before. Image and Carousel
+          carry their own details and post time, so a picture goes from
+          picked to scheduled in one press, with no card in between.
+        */}
+        <div className="postcomposer card glass" data-testid="composer">
+          <div className="postcomposer-head">
+            <h3>New post</h3>
+            {igLimit && (
+              <span className="postcomposer-limit" data-testid="composer-limit">
+                {igLimit}
+              </span>
+            )}
+          </div>
+          <Seg
+            label="Post type"
+            value={ctype}
+            onChange={setCtype}
+            testId="composer-type"
+            options={COMPOSER_TYPES}
+          />
+
+          {ctype === "reel" ? (
             <div
               className="drop"
               style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+              role="button"
+              tabIndex={0}
+              aria-label="Add videos"
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
               }}
               onDragLeave={() => setDragOver(false)}
               onDrop={onDrop}
-              onClick={() =>
-                selectedClient ? fileInput.current?.click() : onOpenConnect()
-              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInput.current?.click();
+                }
+              }}
+              onClick={() => (selectedClient ? fileInput.current?.click() : onOpenConnect())}
             >
               <input
                 ref={fileInput}
@@ -542,73 +593,36 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 <span className="mini">Video never re-encoded</span>
               </div>
             </div>
-
-            {/*
-              Its own drop zone rather than the video one: a carousel is a
-              deliberate choice about a set of images, and inferring it from
-              whatever landed on a zone marked "drop videos" would post the
-              wrong thing on a client's account. Dropping here opens the
-              builder, where the set is arranged, cropped and captioned
-              before anything uploads.
-            */}
-            <input
-              ref={carouselInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files?.length) setBuilderFiles(Array.from(e.target.files));
-                e.target.value = "";
+          ) : (
+            <PhotoComposer
+              key={ctype}
+              type={ctype}
+              finished={finished}
+              igLimitTotal={igLimitTotal}
+              onOpenConnect={onOpenConnect}
+              onDone={() => {
+                void load();
+                void loadPosts();
               }}
             />
-            <div
-              className={`drop cbld-dropzone${carouselDragOver ? " over" : ""}`}
-              onClick={() => (selectedClient ? carouselInput.current?.click() : onOpenConnect())}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setCarouselDragOver(true);
-              }}
-              onDragLeave={() => setCarouselDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setCarouselDragOver(false);
-                if (!selectedClient) return onOpenConnect();
-                if (e.dataTransfer.files.length) setBuilderFiles(Array.from(e.dataTransfer.files));
-              }}
-            >
-              <div className="ring">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                  <circle cx="9" cy="10" r="1.6" fill="currentColor" />
-                  <path d="M5 17l4.5-4.5 3 3L17 11l2 2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <b>Drop carousel images here</b>
-              <p>
-                or click to browse. JPG, PNG or WebP images; MP4 or MOV video (Instagram only).
-                Up to 35, first item sets the shape.
-              </p>
-              <div className="pills">
-                <span className="mini">Drag to reorder</span>
-                <span className="mini">Crop with a grid</span>
-                <span className="mini">AI caption from the slides</span>
-              </div>
-            </div>
+          )}
+        </div>
 
-            {pendingCarouselDraft && (
-              <p className="insworking" style={{ marginTop: 8 }}>
-                Adding the images for "{pendingCarouselDraft.topic}" from the Carousels tab. Its
-                caption and hashtags will be attached to the upload.{" "}
-                <span
-                  className="link"
-                  onClick={() => setPendingCarouselDraft(null)}
-                  title="Upload these images without attaching that carousel's words"
-                >
-                  Not these images? Detach.
-                </span>
-              </p>
-            )}
+        {pendingCarouselDraft && (
+          <p className="insworking" style={{ marginTop: 8 }}>
+            Adding the images for "{pendingCarouselDraft.topic}" from the Carousels tab. Its
+            caption and hashtags will be attached to the upload.{" "}
+            <span
+              className="link"
+              onClick={() => setPendingCarouselDraft(null)}
+              title="Upload these images without attaching that carousel's words"
+            >
+              Not these images? Detach.
+            </span>
+          </p>
+        )}
+        <div className="split">
+          <div>
 
             {state === "loading" && <Loading screen="upload" label="Loading videos" />}
             {state === "error" && (
@@ -765,25 +779,25 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                       </>
                     )}
 
-                    {/* Quota controls: format decides which target it spends,
-                        and revisions spend nothing. */}
+                    {/* Short or long decides the door (scheduler or long-form
+                        wizard, whatever the shape) and which quota it spends.
+                        Unset reads as short-form, the default. */}
+                    {asset.kind !== "carousel" && (
+                      <div className="fmtseg">
+                      <Seg
+                        label={`Format of ${asset.name}`}
+                        testId={`fmt-${asset.id}`}
+                        value={asset.format ?? "short_form"}
+                        options={[
+                          { id: "short_form", label: "This is a short-form video" },
+                          { id: "long_form", label: "This is a long-form video" },
+                        ]}
+                        onChange={(f) => void setFormat(asset, f)}
+                      />
+                      </div>
+                    )}
+                    {/* Revisions spend nothing. */}
                     <div className="revrow">
-                      <span className="fmtpick">
-                        {(["short_form", "long_form"] as const).map((f) => (
-                          <span
-                            key={f}
-                            className={`fmtopt${asset.format === f ? " on" : ""}`}
-                            title={
-                              f === "short_form"
-                                ? "Counts toward the short-form target. Schedules to every connected platform, landscape included."
-                                : "Counts toward the long-form target. A landscape video opens the YouTube wizard instead."
-                            }
-                            onClick={() => void setFormat(asset, f)}
-                          >
-                            {f === "short_form" ? "Short" : "Long"}
-                          </span>
-                        ))}
-                      </span>
                       <span
                         className={`revtoggle${asset.isRevision ? " on" : ""}`}
                         title={
@@ -916,13 +930,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           setSchedBusy(asset.id);
                           void saveDraft(asset)
                             .then((ok) => {
-                              // The Short/Long switch decides the door, and
-                              // shape only narrows it. Horizontal used to mean
-                              // the YouTube wizard on its own, back when no
-                              // other platform took a 16:9 frame; Instagram and
-                              // TikTok both do now, so a landscape short-form
-                              // cut goes to the ordinary scheduler with every
-                              // platform on offer.
+                              // The short/long toggle alone decides the door.
                               if (ok) {
                                 if (usesLongFormWizard(asset)) setLongForm(asset);
                                 else setScheduling(asset);
@@ -1100,14 +1108,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
         </div>
       </div>
-
-      {builderFiles && (
-        <CarouselBuilderModal
-          initialFiles={builderFiles}
-          onClose={() => setBuilderFiles(null)}
-          onCreated={() => void load()}
-        />
-      )}
 
       {scheduling && (
         <ScheduleModal

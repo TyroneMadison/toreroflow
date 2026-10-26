@@ -13,6 +13,7 @@ import ReportsScreen from "./screens/ReportsScreen";
 import AccountOverviewScreen from "./screens/AccountOverviewScreen";
 import FinancialsScreen from "./screens/FinancialsScreen";
 import CarouselsScreen from "./screens/CarouselsScreen";
+import CommentsScreen from "./screens/CommentsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import ReadyQueueScreen from "./screens/ReadyQueueScreen";
@@ -226,6 +227,9 @@ function Shell() {
               key={`carousels-${selectedClientId ?? "none"}`}
               onUploadImages={() => navigate("upload")}
             />
+          )}
+          {activeScreen === "comments" && (
+            <CommentsScreen key={`comments-${selectedClientId ?? "none"}`} />
           )}
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />

@@ -3,7 +3,9 @@ import fs from "node:fs/promises";
 import {
   carouselTargetSize,
   explainPublishFailure,
-  formatFromDuration,
+  defaultFormat,
+  instagramCopyKbps,
+  instagramLongformFit,
   QUOTA_DEFERRALS_MAX,
   quotaDeferralAt,
 } from "@toreroflow/core";
@@ -16,7 +18,7 @@ import {
   upsertExternalVideo,
   work,
 } from "@toreroflow/db";
-import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
+import { conformSlide, extractThumbnail, instagramCopy, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
 import { isolateVoice, processEditAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
@@ -118,8 +120,8 @@ async function processAsset(assetId: string): Promise<void> {
   });
 
   try {
-    // 1. Probe. Duration also decides short vs long form for the client's
-    // quota, but never overrides a format the operator already set.
+    // 1. Probe. Shape and duration pick the starting format (short-form
+    // unless landscape and long), never overriding one already set.
     const meta = await probe(sourcePath);
     await prisma.mediaAsset.update({
       where: { id: asset.id },
@@ -128,7 +130,7 @@ async function processAsset(assetId: string): Promise<void> {
         width: meta.width,
         height: meta.height,
         ...(asset.format === null
-          ? { format: formatFromDuration(meta.durationSec) }
+          ? { format: defaultFormat(meta) }
           : {}),
       },
     });
@@ -166,7 +168,9 @@ async function processAsset(assetId: string): Promise<void> {
 /* ---- publish pipeline (spec Section 10) ---- */
 
 import {
+  botZernioKey,
   buildPostExtras,
+  combinePostParts,
   DryRunPublisher,
   YouTubeProvider,
   ZernioProvider,
@@ -178,6 +182,16 @@ const zernio =
     ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
     : null;
 const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
+
+/**
+ * The client a post goes out through: the bot's own key (ZERNIO_API_KEY_POLLY
+ * for Polly's posts) when one is set, the agency key otherwise. Media uploads
+ * and status reads stay on the agency key, which sees every profile.
+ */
+function posterFor(bot: string | undefined): ZernioProvider | null {
+  const key = botZernioKey(bot, process.env);
+  return key ? new ZernioProvider(key) : zernio;
+}
 
 /**
  * Refresh lifetime YouTube catalogues for every connected channel.
@@ -226,6 +240,7 @@ async function refreshYouTubeCatalogues(): Promise<void> {
 const mediaUrlCache = new Map<string, string>();
 
 async function zernioMediaUrl(assetId: string, filePath: string): Promise<string> {
+  // assetId is a cache key: the Instagram copy passes its own.
   const cached = mediaUrlCache.get(assetId);
   if (cached) return cached;
   const { uploadUrl, publicUrl } = await zernio!.presignMedia(
@@ -269,6 +284,43 @@ async function zernioImageUrl(coverKey: string): Promise<string> {
   return publicUrl;
 }
 
+/**
+ * The file a long-form Instagram reel publishes: the original when it fits,
+ * otherwise an Instagram copy (under 300MB, at most 1920 wide, or a centre
+ * 9:16 crop) made once beside the source and reused.
+ *
+ * Queued at schedule time on its own "igcopy" queue so publish finds it
+ * ready; made here inline when it is not, rather than failing the slot.
+ */
+async function instagramFile(
+  asset: {
+    id: string;
+    clientId: string;
+    storageKey: string;
+    durationSec: number | null;
+    width: number | null;
+    height: number | null;
+  },
+  crop916: boolean,
+): Promise<{ filePath: string; cacheKey: string }> {
+  const src = path.join(env.STORAGE_DIR, asset.storageKey);
+  const bytes = (await fs.stat(src)).size;
+  const fit = instagramLongformFit({ ...asset, bytes, crop916 });
+  if (!fit.needsCopy) return { filePath: src, cacheKey: asset.id };
+  const mode = crop916 && !fit.is916 ? "crop916" : "fit";
+  const out = path.join(env.STORAGE_DIR, asset.clientId, asset.id, `ig-${mode}.mp4`);
+  const exists = await fs.access(out).then(
+    () => true,
+    () => false,
+  );
+  if (!exists) {
+    const duration = asset.durationSec ?? (await probe(src)).durationSec;
+    await instagramCopy(src, out, { crop916: mode === "crop916", videoKbps: instagramCopyKbps(duration) });
+    console.log(`[worker] instagram copy ${mode} made for asset ${asset.id}`);
+  }
+  return { filePath: out, cacheKey: `${asset.id}:ig-${mode}` };
+}
+
 const PUBLISH_ATTEMPTS = 3;
 
 async function publishTarget(targetId: string, attemptsMade: number): Promise<void> {
@@ -284,10 +336,19 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   if (target.status !== "scheduled") return;
   if (target.scheduledAt && target.scheduledAt.getTime() - Date.now() > 60_000) return;
 
-  await prisma.postTarget.update({
-    where: { id: target.id },
+  /*
+   * Claimed only if still scheduled. A long-form "Both" post publishes its
+   * partner target in the same request, and the partner's own job must then
+   * find nothing to do rather than post the video a second time.
+   */
+  const claimed = await prisma.postTarget.updateMany({
+    where: { id: target.id, status: "scheduled" },
     data: { status: "publishing" },
   });
+  if (claimed.count === 0) return;
+
+  /** Partner targets published inside this target's request, if any. */
+  const partnerIds: string[] = [];
 
   try {
     const caption = [
@@ -307,6 +368,10 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         tiktokTitle?: string;
         /** Set by the fallback after Instagram refused this as a reel. */
         instagramFeedPost?: boolean;
+        /** Long-form "Both": publish with the sibling targets in one provider post. */
+        combined?: boolean;
+        /** The named bot that scheduled it, for its own Zernio key. */
+        bot?: string;
       } | null) ?? {};
 
     let remotePostId: string;
@@ -368,42 +433,116 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
           )
         : undefined;
 
-      const mediaUrl = isCarousel
-        ? undefined
-        : await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      /** The video a platform publishes: an Instagram copy for long-form reels when needed. */
+      const videoUrlFor = async (platform: string, opts: typeof targetOptions): Promise<string> => {
+        if (platform === "instagram" && opts.instagram?.longform) {
+          const f = await instagramFile(asset!, opts.instagram.crop916 === true);
+          return zernioMediaUrl(f.cacheKey, f.filePath);
+        }
+        return zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      };
+      const mediaUrl = isCarousel ? undefined : await videoUrlFor(target.platform, targetOptions);
       const coverUrl = asset?.coverKey ? await zernioImageUrl(asset.coverKey) : null;
-      const extras = buildPostExtras({
-        platform: target.platform as Platform,
-        format: asset?.format ?? null,
-        durationSec: asset?.durationSec ?? null,
-        instagramFeedPost: targetOptions.instagramFeedPost === true,
-        coverUrl,
-        carousel: isCarousel,
-        caption,
-        instagram: targetOptions.instagram ?? null,
-        youtube: targetOptions.youtube ?? null,
-        tiktok: targetOptions.tiktok ?? null,
-        youtubeTitle: targetOptions.youtubeTitle ?? null,
-        tiktokTitle: targetOptions.tiktokTitle ?? null,
-      });
-      const result = await zernio.createPost({
-        // A TikTok photo post reads content as its title; the builder moves
-        // the caption into tiktokSettings.description and says so here.
-        content: extras.contentOverride ?? caption,
-        mediaUrl,
-        slideItems,
-        mediaThumbnail: extras.mediaThumbnail,
-        targets: [
-          {
-            platform: target.platform as Platform,
-            accountId: target.socialAccount.providerAccountId ?? "",
-            platformSpecificData: extras.platformSpecificData,
-          },
-        ],
-        tiktokSettings: extras.tiktokSettings,
-        publishNow: true,
-      });
-      remotePostId = result.remotePostId;
+      const extrasFor = (platform: string, opts: typeof targetOptions, words: string) =>
+        buildPostExtras({
+          platform: platform as Platform,
+          format: asset?.format ?? null,
+          durationSec: asset?.durationSec ?? null,
+          instagramFeedPost: opts.instagramFeedPost === true,
+          coverUrl,
+          coverOffsetMs: asset?.coverOffsetMs ?? null,
+          carousel: isCarousel,
+          caption: words,
+          instagram: opts.instagram ?? null,
+          youtube: opts.youtube ?? null,
+          tiktok: opts.tiktok ?? null,
+          youtubeTitle: opts.youtubeTitle ?? null,
+          tiktokTitle: opts.tiktokTitle ?? null,
+        });
+      const extras = extrasFor(target.platform, targetOptions, caption);
+
+      /*
+       * Long-form "Both": the sibling targets still waiting go out in this
+       * same provider post, YouTube and Instagram in one request, each with
+       * its own words and video. Each is claimed only if still scheduled, so
+       * a sibling already published (or retried alone after the Instagram
+       * fallback) is never sent twice.
+       */
+      let combinedId: string | null = null;
+      if (targetOptions.combined && mediaUrl) {
+        const siblings = await prisma.postTarget.findMany({
+          where: { postId: target.postId, id: { not: target.id }, status: "scheduled" },
+          include: { socialAccount: true },
+        });
+        for (const s of siblings) {
+          const opts = (s.options as typeof targetOptions | null) ?? {};
+          if (!opts.combined || s.socialAccount.tokensEncrypted !== "provider:zernio") continue;
+          if (s.scheduledAt && s.scheduledAt.getTime() - Date.now() > 60_000) continue;
+          const got = await prisma.postTarget.updateMany({
+            where: { id: s.id, status: "scheduled" },
+            data: { status: "publishing" },
+          });
+          if (got.count) partnerIds.push(s.id);
+        }
+        if (partnerIds.length) {
+          const parts = [
+            {
+              platform: target.platform as Platform,
+              accountId: target.socialAccount.providerAccountId ?? "",
+              caption,
+              mediaUrl,
+              extras,
+            },
+          ];
+          for (const s of siblings.filter((x) => partnerIds.includes(x.id))) {
+            const opts = (s.options as typeof targetOptions | null) ?? {};
+            const words = [s.caption ?? "", s.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")]
+              .filter(Boolean)
+              .join("\n\n");
+            parts.push({
+              platform: s.platform as Platform,
+              accountId: s.socialAccount.providerAccountId ?? "",
+              caption: words,
+              mediaUrl: await videoUrlFor(s.platform, opts),
+              extras: extrasFor(s.platform, opts, words),
+            });
+          }
+          const result = await posterFor(targetOptions.bot)!.createPost({ ...combinePostParts(parts), publishNow: true });
+          for (const r of result.platformResults ?? []) {
+            if (r.status === "failed") {
+              console.warn(`[worker] post ${target.postId} ${r.platform} failed inline: ${r.error}`);
+            }
+          }
+          await prisma.postTarget.updateMany({
+            where: { id: { in: partnerIds } },
+            data: { remotePostId: result.remotePostId, error: null },
+          });
+          combinedId = result.remotePostId;
+        }
+      }
+
+      if (combinedId) {
+        remotePostId = combinedId;
+      } else {
+        const result = await posterFor(targetOptions.bot)!.createPost({
+          // A TikTok photo post reads content as its title; the builder moves
+          // the caption into tiktokSettings.description and says so here.
+          content: extras.contentOverride ?? caption,
+          mediaUrl,
+          slideItems,
+          mediaThumbnail: extras.mediaThumbnail,
+          targets: [
+            {
+              platform: target.platform as Platform,
+              accountId: target.socialAccount.providerAccountId ?? "",
+              platformSpecificData: extras.platformSpecificData,
+            },
+          ],
+          tiktokSettings: extras.tiktokSettings,
+          publishNow: true,
+        });
+        remotePostId = result.remotePostId;
+      }
     } else if (env.PUBLISH_PROVIDER !== "dryrun") {
       /*
        * A configured provider this target cannot reach is a broken account,
@@ -442,6 +581,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         durationSec: asset?.durationSec ?? null,
         instagramFeedPost: targetOptions.instagramFeedPost === true,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
+        coverOffsetMs: asset?.coverOffsetMs ?? null,
         carousel: asset?.kind === "carousel" && drySlides.length > 0,
         caption,
         instagram: targetOptions.instagram ?? null,
@@ -552,6 +692,14 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         error: message.slice(0, 500),
       },
     });
+    // Partners claimed for a combined post that never went out share its fate:
+    // back to scheduled for this job's retry to pick up, or failed with it.
+    if (partnerIds.length) {
+      await prisma.postTarget.updateMany({
+        where: { id: { in: partnerIds }, status: "publishing", remotePostId: null },
+        data: { status: finalAttempt ? "failed" : "scheduled", error: message.slice(0, 500) },
+      });
+    }
     if (finalAttempt) {
       await prisma.post.update({
         where: { id: target.postId },
@@ -848,6 +996,15 @@ async function ingestAnalytics(): Promise<void> {
 
 void work<{ assetId: string }>("media", { concurrency: 1 }, async ({ assetId }) => {
   await processAsset(assetId);
+});
+
+// The Instagram copy of a long-form video, made at schedule time so the
+// publish slot finds it ready. Its own queue: a 15 minute encode must not
+// hold up new uploads on "media".
+void work<{ assetId: string; crop916?: boolean }>("igcopy", { concurrency: 1 }, async ({ assetId, crop916 }) => {
+  const asset = await prisma.mediaAsset.findUnique({ where: { id: assetId } });
+  if (!asset || asset.sourceDeletedAt) return;
+  await instagramFile(asset, crop916 === true);
 });
 
 // retryCount is what attemptsMade used to be: how many times this job has

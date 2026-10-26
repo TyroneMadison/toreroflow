@@ -46,11 +46,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       // A real user id, so whatever the bot creates has a real creator.
       const sub = await actingUserId(request);
       if (!sub) return reply.status(401).send({ error: "unknown user" });
+      // An optional name ("polly") identifies the bot: its own Zernio key and,
+      // when listed in BOT_FULL_ACCESS, the operator's full access.
+      const rawName = (request.body as { name?: unknown } | undefined)?.name;
+      const name = typeof rawName === "string" ? rawName.trim().toLowerCase() : "";
+      if (name && !/^[a-z0-9_-]{1,40}$/.test(name)) {
+        return reply.status(400).send({ error: "bot name: letters, digits, - and _ only, up to 40" });
+      }
       const token = app.jwt.sign(
-        { sub, agencyId: request.user.agencyId, role: "bot" },
+        { sub, agencyId: request.user.agencyId, role: "bot", ...(name ? { bot: name } : {}) },
         { expiresIn: "365d" },
       );
-      return { token, role: "bot", expiresInDays: 365 };
+      return { token, role: "bot", ...(name ? { bot: name } : {}), expiresInDays: 365 };
     },
   );
 

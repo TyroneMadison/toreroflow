@@ -34,6 +34,7 @@ export const PATHS: Record<ScreenId, string> = {
   schedule: "/create/schedule",
   analytics: "/analytics",
   reports: "/reports",
+  comments: "/comments",
   settings: "/settings",
 };
 
@@ -67,6 +68,8 @@ export interface Route {
   step: string | null;
   /** The media asset whose schedule flow is open (?schedule=). */
   scheduleId: string | null;
+  /** Where a long-form upload goes (?dest=youtube|instagram|both). */
+  dest: string | null;
   /** Studio's open area (?area=ideas), so the phone tab bar can open Ideas. */
   area: string | null;
 }
@@ -113,6 +116,7 @@ export function parseUrl(url: string): Route {
     cardId,
     step: u.searchParams.get("step") || null,
     scheduleId: u.searchParams.get("schedule") || null,
+    dest: u.searchParams.get("dest") || null,
     area: u.searchParams.get("area") || null,
   };
 }
@@ -210,6 +214,7 @@ export function setQuery(patch: {
   step?: string | null;
   schedule?: string | null;
   area?: string | null;
+  dest?: string | null;
 }): void {
   const u = new URL(readUrl(), BASE);
   for (const [k, v] of Object.entries(patch)) {

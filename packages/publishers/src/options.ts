@@ -35,6 +35,16 @@ export interface InstagramScheduleOptions {
    * first comment, and the caption is not shown at all.
    */
   story?: boolean;
+  /** A long-form reel (up to 15 minutes) from the long-form screen. */
+  longform?: boolean;
+  /** Instagram's own cover frame, in ms, overriding the shared cover. */
+  thumbOffsetMs?: number;
+  /** A Facebook Page id with location data. */
+  locationId?: string;
+  /** Usernames tagged in the reel. */
+  userTags?: string[];
+  /** Read by the worker, which makes the 9:16 copy; nothing goes on the wire. */
+  crop916?: boolean;
 }
 
 /** Options the operator can pick at schedule time for a YouTube target. */
@@ -69,6 +79,13 @@ export interface TikTokScheduleOptions {
    * that fails twice and reads as the fallback being broken.
    */
   draft?: boolean;
+  /** One of the account's privacy options from TikTok's creator info. */
+  privacyLevel?: string;
+  allowComment?: boolean;
+  /** Video only. */
+  allowDuet?: boolean;
+  /** Video only. */
+  allowStitch?: boolean;
 }
 
 export interface TargetOptionsInput {
@@ -77,6 +94,12 @@ export interface TargetOptionsInput {
   format: string | null;
   /** Public URL of the uploaded cover image, when one was chosen. */
   coverUrl: string | null;
+  /**
+   * The picked frame's offset when the cover is a frame of the video rather
+   * than an uploaded image. A long-form reel sends this as thumbOffset, which
+   * stays right on a cropped Instagram copy where the 16:9 frame image would not.
+   */
+  coverOffsetMs?: number | null;
   /** True when the asset is a set of images rather than a video. */
   carousel?: boolean;
   /** The caption, needed only for TikTok photo posts (see below). */
@@ -153,7 +176,23 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
      * latent bug: every Instagram target used to get contentType "reels"
      * unconditionally, and a carousel publish had never actually run.
      */
-    if (input.carousel) return out;
+    if (input.carousel) {
+      /*
+       * Post details a carousel (or a single image) does take: collaborators,
+       * a location for the whole post, and people tagged on the first item.
+       * A photo tag needs a spot on the picture or Instagram skips it, so it
+       * goes in the middle. Nothing reel-shaped (trial, audio, feed toggle).
+       */
+      const ig = input.instagram;
+      const psd: Record<string, unknown> = {};
+      const collaborators = (ig?.collaborators ?? []).map((c) => c.trim()).filter(Boolean).slice(0, 3);
+      if (collaborators.length) psd.collaborators = collaborators;
+      if (ig?.locationId) psd.locationId = ig.locationId;
+      const tags = (ig?.userTags ?? []).map((u) => u.trim().replace(/^@/, "")).filter(Boolean);
+      if (tags.length) psd.userTags = tags.map((username) => ({ username, x: 0.5, y: 0.5, mediaIndex: 0 }));
+      if (Object.keys(psd).length) out.platformSpecificData = psd;
+      return out;
+    }
 
     /*
      * A reel, unless the video is too long to be one.
@@ -169,12 +208,23 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
      * where the reach is. Longer videos trade that placement for existing at
      * all.
      */
+    /*
+     * The long-form screen's reels (up to 15 minutes) declare no contentType
+     * either: the provider makes a reel of a video by default, and "reels"
+     * is the declaration that held a 106 second video at the old limit. They
+     * are reels all the same, so trials and audio stay on offer.
+     */
+    const ig = input.instagram;
+    const lf = ig?.longform === true;
     const longForm =
       input.instagramFeedPost === true ||
-      (input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS);
-    const psd: Record<string, unknown> = longForm ? {} : { contentType: "reels" };
-    if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
-    const ig = input.instagram;
+      (!lf && input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS);
+    const psd: Record<string, unknown> = longForm || lf ? {} : { contentType: "reels" };
+    // Long-form: a frame goes as an offset into the video Instagram actually
+    // gets (it may be a 9:16 crop), an uploaded image as the image.
+    const frameMs = lf ? (ig?.thumbOffsetMs ?? input.coverOffsetMs ?? null) : null;
+    if (frameMs != null) psd.thumbOffset = frameMs;
+    else if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
     if (ig) {
       // Trials are a Reels feature. Sending them on a feed post is asking the
       // provider to reject the whole thing over an option nobody can use here.
@@ -204,6 +254,9 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
       if (ig.shareToFeed !== undefined) psd.shareToFeed = ig.shareToFeed;
       if (ig.firstComment) psd.firstComment = ig.firstComment;
       if (ig.aiLabel) psd.isAiGenerated = true;
+      if (ig.locationId) psd.locationId = ig.locationId;
+      const tags = (ig.userTags ?? []).map((u) => u.trim().replace(/^@/, "")).filter(Boolean);
+      if (tags.length) psd.userTags = tags.map((username) => ({ username }));
     }
     // An empty object is not a declaration. A long-form video with no options
     // sends nothing, exactly like a carousel, rather than an empty bag the
@@ -220,6 +273,17 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
      * moves into description. auto_add_music is the whole music story; TikTok
      * picks the track and no API allows choosing one.
      */
+    // Who can see it and how people can respond: TikTok's own post settings.
+    // Duet and stitch are video features, so a photo post never carries them.
+    const tk = input.tiktok;
+    const audience: Record<string, unknown> = {};
+    if (tk?.privacyLevel) audience.privacy_level = tk.privacyLevel;
+    if (tk?.allowComment !== undefined) audience.allow_comment = tk.allowComment;
+    if (!input.carousel) {
+      if (tk?.allowDuet !== undefined) audience.allow_duet = tk.allowDuet;
+      if (tk?.allowStitch !== undefined) audience.allow_stitch = tk.allowStitch;
+    }
+
     if (input.carousel) {
       out.tiktokSettings = {
         media_type: "photo",
@@ -227,13 +291,16 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
         express_consent_given: true,
         ...(input.tiktok?.autoAddMusic ? { auto_add_music: true } : {}),
         ...(input.caption ? { description: input.caption } : {}),
+        ...audience,
       };
       if (input.tiktokTitle) out.contentOverride = input.tiktokTitle;
       return out;
     }
 
-    const settings: Record<string, unknown> = {};
+    const settings: Record<string, unknown> = { ...audience };
+    // An uploaded image wins; otherwise a picked frame goes as its offset.
     if (input.coverUrl) settings.video_cover_image_url = input.coverUrl;
+    else if (input.coverOffsetMs != null) settings.video_cover_timestamp_ms = input.coverOffsetMs;
     if (input.tiktok?.draft) settings.draft = true;
     if (Object.keys(settings).length) out.tiktokSettings = settings;
     return out;
@@ -262,4 +329,50 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
   }
 
   return out;
+}
+
+/** One target's share of a provider post. */
+export interface PostPart {
+  platform: Platform;
+  accountId: string;
+  caption: string;
+  /** The video this platform gets: the original, or an Instagram copy. */
+  mediaUrl: string;
+  extras: BuiltPostExtras;
+}
+
+/**
+ * Several targets as ONE provider post: the long-form "Both" case, YouTube and
+ * Instagram in a single POST /posts.
+ *
+ * The first part (YouTube, sorted first) owns the shared content, media and
+ * thumbnail. Every other part carries its own text as customContent and its
+ * own video as customMedia, always, so the YouTube thumbnail on the shared
+ * item never leaks onto Instagram and an Instagram copy never reaches YouTube.
+ */
+export function combinePostParts(parts: PostPart[]): {
+  content: string;
+  mediaUrl: string;
+  mediaThumbnail?: string;
+  targets: Array<{
+    platform: Platform;
+    accountId: string;
+    platformSpecificData?: Record<string, unknown>;
+    customContent?: string;
+    customMedia?: Array<{ url: string; type: "video" }>;
+  }>;
+} {
+  const sorted = [...parts].sort((a, b) => Number(b.platform === "youtube") - Number(a.platform === "youtube"));
+  const lead = sorted[0]!;
+  return {
+    content: lead.caption,
+    mediaUrl: lead.mediaUrl,
+    ...(lead.extras.mediaThumbnail ? { mediaThumbnail: lead.extras.mediaThumbnail } : {}),
+    targets: sorted.map((p, i) => ({
+      platform: p.platform,
+      accountId: p.accountId,
+      ...(p.extras.platformSpecificData ? { platformSpecificData: p.extras.platformSpecificData } : {}),
+      ...(i === 0 ? {} : { customContent: p.caption, customMedia: [{ url: p.mediaUrl, type: "video" as const }] }),
+    })),
+  };
 }

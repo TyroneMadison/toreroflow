@@ -17,6 +17,24 @@ import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 import { INSTAGRAM_REEL_MAX_SECONDS, captionFor, composeCaption, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
 import { YT_CATEGORIES } from "../lib/youtube";
+import {
+  AudioNameField,
+  CaptionField,
+  HandleChips,
+  LocationField,
+  SwitchRow,
+  TikTokFields,
+  TrialChoice,
+} from "../components/PostDetails";
+import {
+  captionProblems,
+  igPhotoBody,
+  imagePostBlocked,
+  TIKTOK_DEFAULTS,
+  tiktokBody,
+  tkTouched,
+  type TikTokChoice,
+} from "../lib/postDetails";
 
 interface ScheduleModalProps {
   asset: MediaAssetInfo;
@@ -53,22 +71,26 @@ export default function ScheduleModal({
   const hasBlock = Boolean(selectedClient?.captionBlock?.trim() || selectedClient?.captionKeywords?.length);
   const draft = asset.draftCopy ?? {};
   const originalCaption = captionFor("instagram", draft);
+  // The caption every platform gets, editable here; the live checker counts
+  // what actually posts (the client's block and the hashtags included).
+  const [caption, setCaption] = useState(originalCaption);
+  const captionEdited = caption !== originalCaption;
   const finalCaption = selectedClient
-    ? composeCaption({ caption: originalCaption, title: draft.name, useBlock }, selectedClient)
-    : originalCaption;
+    ? composeCaption({ caption, title: draft.name, useBlock }, selectedClient)
+    : caption;
+  const hashtagLine = (draft.hashtags ?? []).map((h) => `#${h.replace(/^#/, "")}`).join(" ");
+  const postedWords = [finalCaption, hashtagLine].filter(Boolean).join("\n\n");
   const sopAck = hostOwnsSop ? sopAcknowledged : ownAck;
   // A gentle reminder only; never disables scheduling.
   const sopReminder = sopRequired(selectedClient?.sop) && !sopAck;
   const toast = useToast();
   const isCarousel = asset.kind === "carousel";
-  // A carousel can only go where images go: Instagram takes up to 10 as a
-  // media list, TikTok takes them as a photo post. Offering the rest here
-  // would only bounce off the server's refusal at schedule time.
-  const connected = (selectedClient?.accounts ?? []).filter(
-    (a) =>
-      a.status === "connected" &&
-      (!isCarousel || a.platform === "instagram" || a.platform === "tiktok"),
-  );
+  // A carousel or image post can only go where images go: Instagram takes up
+  // to 10 as a media list, TikTok takes them as a photo post. The rest are
+  // shown switched off with the reason, never silently missing.
+  const allConnected = (selectedClient?.accounts ?? []).filter((a) => a.status === "connected");
+  const blockedWhy = (platform: Platform): string | null => (isCarousel ? imagePostBlocked(platform) : null);
+  const connected = allConnected.filter((a) => !blockedWhy(a.platform));
   // The exact accounts ticked. Platform alone stopped being an address the
   // day a client got a second page on the same platform.
   const [accountIds, setAccountIds] = useState<string[]>(connected.map((a) => a.id));
@@ -86,8 +108,10 @@ export default function ScheduleModal({
 
   // Instagram-only options, applied to this scheduling action.
   const [igTrial, setIgTrial] = useState(false);
-  const [igGraduate, setIgGraduate] = useState(false);
-  const [igCollaborators, setIgCollaborators] = useState(["", "", ""]);
+  const [igGraduate, setIgGraduate] = useState<"MANUAL" | "SS_PERFORMANCE">("MANUAL");
+  const [igCollaborators, setIgCollaborators] = useState<string[]>([]);
+  const [igUserTags, setIgUserTags] = useState<string[]>([]);
+  const [igLocation, setIgLocation] = useState("");
   const [igAudioName, setIgAudioName] = useState("");
   /** A catalog track, its two volumes, and the picker's own state. */
   const [igTrack, setIgTrack] = useState<AudioTrack | null>(null);
@@ -113,10 +137,13 @@ export default function ScheduleModal({
   const [ytPlaylistId, setYtPlaylistId] = useState("");
   const [ytPlaylists, setYtPlaylists] = useState<YouTubePlaylistInfo[] | null>(null);
 
-  // The reel options make no sense on a set of images, so a carousel shows
-  // neither the Instagram nor the YouTube section.
+  // The reel options make no sense on a set of images: a carousel or image
+  // gets only collaborators, people tags and a location, and no YouTube.
   const igSelected = platforms.includes("instagram") && !isCarousel;
+  const igPhoto = platforms.includes("instagram") && isCarousel;
   const ytSelected = platforms.includes("youtube") && !isCarousel;
+  const tkSelected = platforms.includes("tiktok");
+  const [tk, setTk] = useState<TikTokChoice>(TIKTOK_DEFAULTS);
   /*
    * Catalog audio is a Reels feature and nothing else. A video too long to be
    * a reel goes as a feed post, which Instagram refuses audio on at creation,
@@ -203,15 +230,16 @@ export default function ScheduleModal({
 
   /** Only what was actually chosen; untouched controls send nothing. */
   const instagramBody = () => {
+    if (igPhoto) return igPhotoBody({ collaborators: igCollaborators, userTags: igUserTags, locationId: igLocation });
     if (!igSelected) return undefined;
-    const collaborators = igCollaborators
-      .map((c) => c.trim().replace(/^@/, ""))
-      .filter(Boolean);
+    const collaborators = igCollaborators.slice(0, 3);
     const body: Record<string, unknown> = {};
     if (igTrial) {
       body.trial = true;
-      body.graduationStrategy = igGraduate ? "SS_PERFORMANCE" : "MANUAL";
+      body.graduationStrategy = igGraduate;
     }
+    if (igUserTags.length) body.userTags = igUserTags;
+    if (igLocation.trim()) body.locationId = igLocation.trim();
     if (collaborators.length) body.collaborators = collaborators;
     if (igAudioName.trim()) body.audioName = igAudioName.trim();
     // The picker is hidden off a reel, but a track chosen before the duration
@@ -259,6 +287,14 @@ export default function ScheduleModal({
    * because it sends the present rather than this field.
    */
   const whenError = scheduleTimeError(new Date(when));
+  // Over a caption limit, or a location that is not a place id: nothing posts.
+  const problems = [
+    ...captionProblems(platforms, postedWords, isCarousel),
+    ...((igSelected || igPhoto) && igLocation.trim() && !/^\d+$/.test(igLocation.trim())
+      ? ["Location must be the number of a Facebook place page."]
+      : []),
+  ];
+  const blocked = problems.length > 0;
 
   const submit = async (mode: "schedule" | "now") => {
     setBusy(mode);
@@ -270,9 +306,13 @@ export default function ScheduleModal({
         scheduledAt: (mode === "now" ? new Date() : new Date(when)).toISOString(),
         ...(sopAck ? { sopAcknowledged: true } : {}),
         ...(hasBlock && !useBlock ? { captionBlock: false } : {}),
+        ...(captionEdited ? { caption } : {}),
         instagram: instagramBody(),
         youtube: youtubeBody(),
-        ...(tkCarousel && tkAutoMusic ? { tiktok: { autoAddMusic: true } } : {}),
+        // Untouched TikTok settings send nothing, exactly as before; Zernio's defaults stand.
+        ...(tkSelected && (tkTouched(tk) || (tkCarousel && tkAutoMusic))
+          ? { tiktok: tiktokBody(tk, isCarousel, tkCarousel && tkAutoMusic ? { autoAddMusic: true } : {}) }
+          : {}),
       });
       onScheduled();
       onClose();
@@ -338,7 +378,22 @@ export default function ScheduleModal({
             </p>
           </div>
         )}
-        <label className="flabel">Post at</label>
+        <CaptionField
+          id="sched-caption"
+          value={caption}
+          onChange={setCaption}
+          counted={postedWords}
+          platforms={platforms}
+          photo={isCarousel}
+          label={
+            <>
+              Caption<span className="hint">counts include the caption block and hashtags</span>
+            </>
+          }
+        />
+        <label className="flabel" style={{ marginTop: 14 }}>
+          Post at
+        </label>
         <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
         {whenError && <div className="autherr">{whenError}</div>}
         <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
@@ -389,7 +444,61 @@ export default function ScheduleModal({
               </div>
             );
           })}
+          {allConnected
+            .filter((a) => blockedWhy(a.platform))
+            .map((account) => (
+              <div
+                key={account.id}
+                className="pt off"
+                aria-disabled="true"
+                data-testid={`schedule-blocked-${account.platform}`}
+              >
+                <Pf p={PF_ID[account.platform]} />
+                <div className="info">
+                  <b>{SURFACE_LABEL[account.platform]}</b>
+                  <span>{blockedWhy(account.platform)}</span>
+                </div>
+              </div>
+            ))}
         </div>
+
+        {tkSelected && (
+          <div className="igopts">
+            <label className="flabel" style={{ marginTop: 18 }}>
+              TikTok {isCarousel ? "photo post" : "video"}
+            </label>
+            <TikTokFields value={tk} onChange={setTk} photo={isCarousel} />
+            {!isCarousel && (
+              <p className="lnote">
+                Cover: the one set with Edit cover on the video card (an uploaded image, or the picked frame).
+              </p>
+            )}
+          </div>
+        )}
+
+        {igPhoto && (
+          <div className="igopts">
+            <label className="flabel" style={{ marginTop: 18 }}>
+              Instagram post details
+            </label>
+            <HandleChips
+              id="sched-ig-collabs"
+              label="Collaborators"
+              max={3}
+              value={igCollaborators}
+              onChange={setIgCollaborators}
+              note="Collaborators get an invite. The post shows on their profile once they accept."
+            />
+            <HandleChips
+              id="sched-ig-tags"
+              label="Tag people"
+              hint="on the first picture"
+              value={igUserTags}
+              onChange={setIgUserTags}
+            />
+            <LocationField id="sched-ig-loc" value={igLocation} onChange={setIgLocation} />
+          </div>
+        )}
 
         {tkCarousel && (
           <div className="igopts">
@@ -419,30 +528,22 @@ export default function ScheduleModal({
             <label className="flabel" style={{ marginTop: 18 }}>
               Instagram options
             </label>
-            <div className="igrow">
-              <span
-                className={`revtoggle${igTrial ? " on" : ""}`}
-                title="Show this reel to non-followers first; it will not appear on the profile unless it graduates"
-                onClick={() => setIgTrial((v) => !v)}
-              >
-                Trial reel
-              </span>
-              {igTrial && (
-                <span
-                  className={`revtoggle${igGraduate ? " on" : ""}`}
-                  title="Share to everyone automatically if the trial performs"
-                  onClick={() => setIgGraduate((v) => !v)}
-                >
-                  Auto-share if it performs
-                </span>
-              )}
-              <span
-                className={`revtoggle${igShareToFeed ? " on" : ""}`}
-                title="Also show the reel in the main feed"
-                onClick={() => setIgShareToFeed((v) => !v)}
-              >
-                Share to feed
-              </span>
+            <HandleChips
+              id="sched-ig-collabs"
+              label="Collaborators"
+              max={3}
+              value={igCollaborators}
+              onChange={setIgCollaborators}
+              note="Collaborators get an invite. The post shows on their profile once they accept."
+            />
+            <HandleChips id="sched-ig-tags" label="Tag people" hint="usernames" value={igUserTags} onChange={setIgUserTags} />
+            <LocationField id="sched-ig-loc" value={igLocation} onChange={setIgLocation} />
+            <SwitchRow checked={igShareToFeed} onChange={setIgShareToFeed}>
+              Also show in main feed
+            </SwitchRow>
+            <p className="lnote">Off means Reels tab only.</p>
+            <TrialChoice trial={igTrial} onTrial={setIgTrial} graduate={igGraduate} onGraduate={setIgGraduate} />
+            <div className="igrow" style={{ marginTop: 12 }}>
               <span
                 className={`revtoggle${igAiLabel ? " on" : ""}`}
                 title="Label this post as AI-generated content"
@@ -466,36 +567,9 @@ export default function ScheduleModal({
                 after 24 hours, show no caption, and Instagram refuses anything over 60 seconds.
               </p>
             )}
-            <label className="flabel" style={{ marginTop: 12 }}>
-              Collaborators
-              <span className="hint">up to 3 public business or creator accounts</span>
-            </label>
-            <div className="igcollabs">
-              {igCollaborators.map((value, i) => (
-                <input
-                  key={i}
-                  className="field-in"
-                  placeholder={`@username ${i + 1}`}
-                  value={value}
-                  onChange={(e) =>
-                    setIgCollaborators((prev) =>
-                      prev.map((v, j) => (j === i ? e.target.value : v)),
-                    )
-                  }
-                />
-              ))}
+            <div style={{ marginTop: 12 }}>
+              <AudioNameField id="sched-ig-audio" value={igAudioName} onChange={setIgAudioName} />
             </div>
-            <label className="flabel" style={{ marginTop: 12 }}>
-              Rename audio
-              <span className="hint">replaces "Original Audio"</span>
-            </label>
-            <input
-              className="field-in"
-              placeholder="e.g. Torerone Original"
-              maxLength={120}
-              value={igAudioName}
-              onChange={(e) => setIgAudioName(e.target.value)}
-            />
             <label className="flabel" style={{ marginTop: 12 }}>
               Catalog audio
               <span className="hint">
@@ -759,7 +833,8 @@ export default function ScheduleModal({
         {/* Publishing is irreversible, so Post now asks once before firing. */}
         <button
           className={`btn ${confirmNow ? "danger" : "ghost"}`}
-          disabled={busy !== null || accountIds.length === 0}
+          disabled={busy !== null || accountIds.length === 0 || blocked}
+          title={blocked ? problems[0] : undefined}
           data-testid="schedule-post-now"
           onClick={() => {
             if (confirmNow) void submit("now");
@@ -773,8 +848,8 @@ export default function ScheduleModal({
         </button>
         <button
           className="btn"
-          disabled={busy !== null || accountIds.length === 0 || whenError !== null}
-          title={whenError ?? undefined}
+          disabled={busy !== null || accountIds.length === 0 || whenError !== null || blocked}
+          title={whenError ?? (blocked ? problems[0] : undefined)}
           data-testid="schedule-submit"
           onClick={() => void submit("schedule")}
         >

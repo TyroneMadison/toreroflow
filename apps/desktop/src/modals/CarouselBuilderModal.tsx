@@ -31,7 +31,7 @@ import { useAppState } from "../state/AppState";
  * manages both is loudly unpostable.
  */
 
-interface CropRect {
+export interface CropRect {
   x: number;
   y: number;
   width: number;
@@ -51,6 +51,17 @@ interface CarouselBuilderModalProps {
   onClose(): void;
   onCreated(): void;
   initialFiles: File[];
+  /** The composer's cap: 1 for an image post, 10 for a carousel. */
+  maxItems?: number;
+  /** Arrange only: hand the order, crops and words back instead of uploading. */
+  onArranged?(items: ArrangedItem[], words: { description: string; hashtags: string[] }): void;
+  initialCrops?: Array<CropRect | null>;
+  initialWords?: { description: string; hashtags: string[] };
+}
+
+export interface ArrangedItem {
+  file: File;
+  crop: CropRect | null;
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -88,14 +99,23 @@ export default function CarouselBuilderModal({
   onClose,
   onCreated,
   initialFiles,
+  maxItems = CAROUSEL_ABSOLUTE_MAX,
+  onArranged,
+  initialCrops,
+  initialWords,
 }: CarouselBuilderModalProps) {
   const toast = useToast();
   const { selectedClient, pendingCarouselDraft, setPendingCarouselDraft } = useAppState();
   const [items, setItems] = useState<BuilderItem[]>(() =>
-    initialFiles.map(makeItem).filter((i): i is BuilderItem => i !== null),
+    initialFiles
+      .map((f, i) => {
+        const item = makeItem(f);
+        return item && { ...item, crop: initialCrops?.[i] ?? null };
+      })
+      .filter((i): i is BuilderItem => i !== null),
   );
-  const [description, setDescription] = useState("");
-  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [description, setDescription] = useState(initialWords?.description ?? "");
+  const [hashtags, setHashtags] = useState<string[]>(initialWords?.hashtags ?? []);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -128,11 +148,11 @@ export default function CarouselBuilderModal({
     const incoming = Array.from(files).map(makeItem).filter((i): i is BuilderItem => i !== null);
     if (!incoming.length) return;
     setItems((list) => {
-      const room = CAROUSEL_ABSOLUTE_MAX - list.length;
+      const room = maxItems - list.length;
       if (incoming.length > room) {
         toast.fail(
           "Too many items",
-          new Error(`nothing takes more than ${CAROUSEL_ABSOLUTE_MAX}; the first ${room} were added`),
+          new Error(`this post takes ${maxItems}; the first ${Math.max(0, room)} were added`),
         );
       }
       return [...list, ...incoming.slice(0, Math.max(0, room))];
@@ -319,6 +339,11 @@ export default function CarouselBuilderModal({
 
   const upload = async () => {
     if (!selectedClient || !items.length) return;
+    if (onArranged) {
+      onArranged(items.map((i) => ({ file: i.file, crop: i.crop })), { description, hashtags });
+      onClose();
+      return;
+    }
     if (items[0]!.kind !== "image") {
       toast.fail(
         "The first item must be an image",
@@ -370,7 +395,7 @@ export default function CarouselBuilderModal({
     <Modal maxWidth={980} onClose={onClose}>
       <div className="modal-head">
         <div>
-          <h3>Build the carousel</h3>
+          <h3>{maxItems === 1 ? "Image post" : "Build the carousel"}</h3>
           <p>
             Drag the cards into order, press one to crop it. The first item sets the shape of
             every slide.
@@ -464,7 +489,7 @@ export default function CarouselBuilderModal({
                 );
               })}
 
-              {items.length < CAROUSEL_ABSOLUTE_MAX && (
+              {items.length < maxItems && (
                 <button
                   className="cbld-add"
                   title="Add more images or video"
@@ -480,7 +505,7 @@ export default function CarouselBuilderModal({
                 ‹
               </button>
               <span className="cbld-count">
-                {items.length} / {CAROUSEL_ABSOLUTE_MAX}
+                {items.length} / {maxItems}
               </span>
               <button className="cbld-arrow" title="Later slides" onClick={() => scrollTray(1)}>
                 ›
@@ -569,7 +594,9 @@ export default function CarouselBuilderModal({
                 disabled={uploading || items.length === 0 || verdict.unpostable}
                 onClick={() => void upload()}
               >
-                {uploading
+                {onArranged
+                  ? "Done"
+                  : uploading
                   ? "Uploading…"
                   : `Upload ${items.length || ""} item${items.length === 1 ? "" : "s"}`}
               </button>

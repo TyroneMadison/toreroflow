@@ -11,6 +11,7 @@ export type ScreenId =
   | "calendar"
   | "analytics"
   | "reports"
+  | "comments"
   | "overview"
   | "financials"
   | "carousels"
@@ -70,6 +71,7 @@ export const SECTIONS: SectionDef[] = [
     pages: [
       { id: "analytics", label: "Analytics", slug: "analytics" },
       { id: "reports", label: "Reports", slug: "reports" },
+      { id: "comments", label: "Comments", slug: "comments" },
     ],
   },
   {

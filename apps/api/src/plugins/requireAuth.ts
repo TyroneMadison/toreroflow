@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { botAllowed } from "../auth/botAccess";
+import { botAllowed, isFullAccessBot } from "../auth/botAccess";
 
 /**
  * onRequest hook: rejects requests without a valid operator JWT, and holds
@@ -19,7 +19,11 @@ export async function requireAuth(
     await reply.status(401).send({ error: "unauthorized" });
     return;
   }
-  if (request.user.role === "bot" && !botAllowed(request.method, request.url)) {
+  if (
+    request.user.role === "bot" &&
+    !isFullAccessBot(request.user.bot) &&
+    !botAllowed(request.method, request.url)
+  ) {
     await reply.status(403).send({
       error: "bot tokens can upload, write copy, set covers and schedule; this route needs the operator",
     });
