@@ -373,8 +373,9 @@ export interface CommentAutomationInput {
  * scoped to its clients' profiles instead of the agency's full key.
  *
  * Read from ZERNIO_API_KEY_<BOT> (ZERNIO_API_KEY_POLLY for the bot named
- * "polly"). Null when the name is odd or the key is not set, and the caller
- * falls back to the agency key, which is how every post worked before.
+ * "polly"). Optional: null when the name is odd or the key is not set, and
+ * the caller uses the agency key. Access (Polly's full role) never depends
+ * on this key, only on BOT_FULL_ACCESS.
  */
 export function botZernioKey(
   bot: string | null | undefined,

@@ -1967,6 +1967,39 @@
 .postcomposer-pick-thumb{display:block;aspect-ratio:4/5;border-radius:10px;background:linear-gradient(160deg,#3a2a3a,#5b2b2b) center/cover}
 .postcomposer-pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .postcomposer-pick-meta{font-size:11.5px;color:var(--txt-2)}
+.postcomposer-pick.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+/* Image and Carousel in the composer (mockup ig-05): items | details, then the footer. */
+.pcomp{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;margin-top:14px;align-items:start}
+.pcomp-col{padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.pcomp-col h4{margin:0;font:700 16px var(--font);color:var(--txt)}
+.pcomp-col h4 small{font-weight:600;font-size:13px;color:var(--txt-2)}
+.pcomp-col .lfnote,.pcomp-col .drop{margin-top:0}
+.pcomp-frames{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;border-radius:14px}
+.pcomp-frames.over{outline:2px dashed var(--accent);outline-offset:4px}
+.pcomp-frames>div{position:relative;aspect-ratio:4/5;border-radius:12px;overflow:hidden;border:1px solid var(--brd-soft);
+  background:linear-gradient(160deg,#3a2a3a,#5b2b2b) center/cover}
+.pcomp-frames>div.on{border:2px solid var(--accent)}
+.pcomp-frames img,.pcomp-frames video{width:100%;height:100%;object-fit:cover;display:block}
+.pcomp-num{position:absolute;top:6px;left:6px;min-width:22px;height:22px;border-radius:999px;display:grid;place-items:center;
+  background:rgba(10,10,20,.7);color:#fff;font:700 11px var(--font)}
+.pcomp-x{position:absolute;top:2px;right:2px;width:44px;height:44px;border:0;background:none;color:#fff;cursor:pointer;
+  font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.pcomp-x:focus-visible{outline:2px solid var(--accent);outline-offset:-6px;border-radius:10px}
+.pcomp-name{position:absolute;left:8px;right:8px;bottom:8px;color:#fff;font:600 12px var(--font);text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.pcomp-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pcomp-actions .btn,.pcomp-foot .btn,.pcomp-go{min-height:44px}
+.pcomp-go{padding:0 26px;font-size:14px}
+.pcomp-go:disabled{opacity:.5;cursor:not-allowed}
+.pcomp-col .cfield{display:flex;flex-direction:column;gap:6px}
+.pcomp-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.pcomp-foot .btn:disabled{opacity:.5;cursor:not-allowed}
+.pcomp-why{margin-right:auto;font-size:13px;color:var(--txt-2)}
+@media (max-width:900px){
+  .pcomp{grid-template-columns:minmax(0,1fr)}
+  .pcomp-foot{flex-direction:column;align-items:stretch}
+  .pcomp-foot .btn,.pcomp-go{width:100%}
+  .pcomp-why{margin-right:0}
+}
 @media (max-width:768px){
   .pd-meter{grid-template-columns:1fr 1fr 1fr;gap:6px}
   .pd-stat{padding:10px}

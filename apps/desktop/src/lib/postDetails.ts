@@ -123,3 +123,23 @@ export function igPhotoBody(d: { collaborators: string[]; userTags: string[]; lo
   if (d.locationId.trim()) body.locationId = d.locationId.trim();
   return Object.keys(body).length ? body : undefined;
 }
+
+/**
+ * Wait for an upload to finish processing so it can be scheduled in the same
+ * press. The schedule route refuses anything not ready, so this is the bridge
+ * between "uploaded" and "on the calendar". Null when it is still working
+ * after the last try: the upload is saved and can be scheduled later.
+ */
+export async function waitReady<T extends { status: string }>(
+  get: () => Promise<T>,
+  tries = 90,
+  sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T | null> {
+  for (let i = 0; i < tries; i++) {
+    const a = await get();
+    if (a.status === "ready") return a;
+    if (a.status === "failed") throw new Error("the files could not be processed");
+    await sleep(2000);
+  }
+  return null;
+}

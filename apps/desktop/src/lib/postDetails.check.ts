@@ -22,6 +22,7 @@ import {
   tiktokBody,
   tkTouched,
   TIKTOK_DEFAULTS,
+  waitReady,
 } from "./postDetails";
 
 // Untouched TikTok settings send nothing; any change does.
@@ -99,4 +100,17 @@ assert.deepEqual(igPhotoBody({ collaborators: ["a", "b", "c", "d"], userTags: ["
   locationId: "123",
 });
 
-console.log("postDetails.check: all checks passed");
+// Upload then schedule: waits through processing, stops on failure, gives up as null.
+const seq = (...st: string[]) => {
+  let i = 0;
+  return () => Promise.resolve({ status: st[Math.min(i++, st.length - 1)]! });
+};
+const noSleep = () => Promise.resolve();
+void (async () => {
+  assert.equal((await waitReady(seq("uploaded", "processing", "ready"), 5, noSleep))?.status, "ready");
+  assert.equal(await waitReady(seq("processing"), 3, noSleep), null);
+  let threw = false;
+  await waitReady(seq("processing", "failed"), 5, noSleep).catch(() => (threw = true));
+  assert.equal(threw, true, "failed processing throws");
+  console.log("postDetails.check: all checks passed");
+})();

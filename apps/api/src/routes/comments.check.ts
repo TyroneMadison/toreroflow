@@ -1,6 +1,7 @@
 // The comments inbox through the real auth hook and routes, Zernio mocked:
 // every bot reads, only the operator and Polly (full access) reply, hide and
-// delete, Polly's calls use her own key, and another client's account is not
+// delete, Polly's calls use her own key (or the agency key when she has
+// none), and another client's account is not
 // reachable at all. Also pins that Polly's full access is hers alone.
 import assert from "node:assert/strict";
 
@@ -119,6 +120,22 @@ res = await app.inject({
 });
 assert.equal(res.statusCode, 200, res.body);
 assert.equal(calls.at(-1)!.url, "https://zernio.com/api/v1/inbox/comments/p1/c1/hide");
+
+// No separate key needed: with ZERNIO_API_KEY_POLLY unset Polly keeps full
+// access and her calls go out on the agency key.
+delete process.env.ZERNIO_API_KEY_POLLY;
+res = await app.inject({ method: "GET", url: "/clients/client1/comments", headers: as(polly) });
+assert.equal(res.json().canModerate, true);
+assert.equal(calls.at(-1)!.auth, "Bearer sk_agency");
+res = await app.inject({
+  method: "POST",
+  url: "/clients/client1/comments/p1/c1/hide",
+  headers: as(polly),
+  payload: { accountId: "z-ig", hidden: true },
+});
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(calls.at(-1)!.auth, "Bearer sk_agency");
+process.env.ZERNIO_API_KEY_POLLY = "sk_polly";
 
 // The operator deletes on the agency key.
 res = await app.inject({ method: "DELETE", url: "/clients/client1/comments/p1/c1?accountId=z-ig", headers: as(operator) });

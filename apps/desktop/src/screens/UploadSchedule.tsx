@@ -1,6 +1,7 @@
 import { linkProps, setQuery, useRoute } from "../lib/routes";
 import { igLimitText, Seg } from "../components/PostDetails";
-import { COMPOSER_MAX, COMPOSER_TYPES, intake, type ComposerType } from "../lib/postDetails";
+import { COMPOSER_TYPES, type ComposerType } from "../lib/postDetails";
+import PhotoComposer from "../components/PhotoComposer";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import {
   api,
@@ -20,7 +21,6 @@ import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import LongFormModal from "../modals/LongFormModal";
-import CarouselBuilderModal from "../modals/CarouselBuilderModal";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
 import { usesLongFormWizard } from "../lib/youtube";
@@ -104,15 +104,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [clearing, setClearing] = useState(false);
   const [bestTimePosts, setBestTimePosts] = useState<ClientPost[]>([]);
   const [quotaKey, setQuotaKey] = useState(0);
-  const carouselInput = useRef<HTMLInputElement>(null);
-  /** Files handed to the carousel builder; non-null opens it. */
-  const [builderFiles, setBuilderFiles] = useState<File[] | null>(null);
   /** The composer's post type. Images coming back from the Carousels tab land on Carousel. */
   const [ctype, setCtype] = useState<ComposerType>(pendingCarouselDraft ? "carousel" : "reel");
-  const [builderMax, setBuilderMax] = useState(COMPOSER_MAX.carousel);
   /** Instagram's rolling 24 hour allowance, from Zernio, for the counter line. */
   const [igAllowance, setIgAllowance] = useState<{ used: number; total: number } | null>(null);
-  const [carouselDragOver, setCarouselDragOver] = useState(false);
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -228,17 +223,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
 
   /** Ready carousels not yet scheduled: the Carousels tab's finished images included. */
   const finished = assets.filter((a) => a.kind === "carousel" && a.status === "ready");
-  const openSchedule = (a: MediaAssetInfo) => setScheduling(a);
-
-  /** Pictures picked in the composer go to the builder, within the type's limits. */
-  const pickImages = (files: File[]) => {
-    if (ctype === "reel") return;
-    const r = intake(ctype, 0, files);
-    if (r.notes.length) toast.fail("Some files were left out", new Error(r.notes.join(" ")));
-    if (!r.accepted.length) return;
-    setBuilderMax(COMPOSER_MAX[ctype]);
-    setBuilderFiles(r.accepted.map((i) => files[i]!));
-  };
 
   // Poll while anything is still working its way through the pipeline.
   useEffect(() => {
@@ -542,194 +526,103 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         </div>
       </div>
       <div className="stage">
+        {/*
+          One composer for every post type (mockup ig-05), full width.
+          Reel is the video drop that was here before. Image and Carousel
+          carry their own details and post time, so a picture goes from
+          picked to scheduled in one press, with no card in between.
+        */}
+        <div className="postcomposer card glass" data-testid="composer">
+          <div className="postcomposer-head">
+            <h3>New post</h3>
+            {igLimit && (
+              <span className="postcomposer-limit" data-testid="composer-limit">
+                {igLimit}
+              </span>
+            )}
+          </div>
+          <Seg
+            label="Post type"
+            value={ctype}
+            onChange={setCtype}
+            testId="composer-type"
+            options={COMPOSER_TYPES}
+          />
+
+          {ctype === "reel" ? (
+            <div
+              className="drop"
+              style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+              role="button"
+              tabIndex={0}
+              aria-label="Add videos"
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  fileInput.current?.click();
+                }
+              }}
+              onClick={() => (selectedClient ? fileInput.current?.click() : onOpenConnect())}
+            >
+              <input
+                ref={fileInput}
+                type="file"
+                accept="video/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <div className="ring">
+                <svg>
+                  <use href="#i-up" />
+                </svg>
+              </div>
+              <b>Drop videos here</b>
+              <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
+              <div className="pills">
+                <span className="mini">AI title &amp; description</span>
+                <span className="mini">Video never re-encoded</span>
+              </div>
+            </div>
+          ) : (
+            <PhotoComposer
+              key={ctype}
+              type={ctype}
+              finished={finished}
+              igLimitTotal={igLimitTotal}
+              onOpenConnect={onOpenConnect}
+              onDone={() => {
+                void load();
+                void loadPosts();
+              }}
+            />
+          )}
+        </div>
+
+        {pendingCarouselDraft && (
+          <p className="insworking" style={{ marginTop: 8 }}>
+            Adding the images for "{pendingCarouselDraft.topic}" from the Carousels tab. Its
+            caption and hashtags will be attached to the upload.{" "}
+            <span
+              className="link"
+              onClick={() => setPendingCarouselDraft(null)}
+              title="Upload these images without attaching that carousel's words"
+            >
+              Not these images? Detach.
+            </span>
+          </p>
+        )}
         <div className="split">
           <div>
-            {/*
-              One composer for every post type (mockup ig-05). Reel is the
-              video drop that was here before; Image and Carousel replace the
-              old "drop carousel images" zone. Picked pictures open the same
-              builder (order, crop to the first item's shape, caption), and
-              the finished post is scheduled from its card like any video, so
-              the scheduler, the calendar and the counter are untouched.
-            */}
-            <div className="postcomposer card glass" data-testid="composer">
-              <div className="postcomposer-head">
-                <h3>New post</h3>
-                {igLimit && (
-                  <span className="postcomposer-limit" data-testid="composer-limit">
-                    {igLimit}
-                  </span>
-                )}
-              </div>
-              <Seg
-                label="Post type"
-                value={ctype}
-                onChange={setCtype}
-                testId="composer-type"
-                options={COMPOSER_TYPES}
-              />
-
-              {ctype === "reel" ? (
-                <div
-                  className="drop"
-                  style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Add videos"
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={onDrop}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      fileInput.current?.click();
-                    }
-                  }}
-                  onClick={() => (selectedClient ? fileInput.current?.click() : onOpenConnect())}
-                >
-                  <input
-                    ref={fileInput}
-                    type="file"
-                    accept="video/*"
-                    multiple
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      if (e.target.files) void addFiles(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                  <div className="ring">
-                    <svg>
-                      <use href="#i-up" />
-                    </svg>
-                  </div>
-                  <b>Drop videos here</b>
-                  <p>or click to browse. MP4, MOV up to 4K. Batch drops welcome.</p>
-                  <div className="pills">
-                    <span className="mini">AI title &amp; description</span>
-                    <span className="mini">Video never re-encoded</span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <input
-                    ref={carouselInput}
-                    type="file"
-                    accept={
-                      ctype === "image"
-                        ? "image/jpeg,image/png,image/webp"
-                        : "image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
-                    }
-                    multiple={ctype === "carousel"}
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      if (e.target.files?.length) pickImages(Array.from(e.target.files));
-                      e.target.value = "";
-                    }}
-                  />
-                  {ctype === "carousel" && finished.length > 0 && (
-                    <div className="postcomposer-finished">
-                      <label className="flabel">
-                        Finished carousels<span className="hint">from the Carousels tab or uploaded here</span>
-                      </label>
-                      <div className="postcomposer-picks">
-                        {finished.map((a) => (
-                          <button
-                            type="button"
-                            key={a.id}
-                            className="postcomposer-pick"
-                            data-testid={`composer-pick-${a.id}`}
-                            title="Add the post details and a time"
-                            onClick={() => openSchedule(a)}
-                          >
-                            <span
-                              className="postcomposer-pick-thumb"
-                              style={a.thumbUrl ? { backgroundImage: `url(${fileUrl(a.thumbUrl)})` } : undefined}
-                            />
-                            <span className="postcomposer-pick-name">{videoLabel(a)}</span>
-                            <span className="postcomposer-pick-meta">
-                              {a.slideCount} item{a.slideCount === 1 ? "" : "s"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div
-                    className={`drop cbld-dropzone${carouselDragOver ? " over" : ""}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={ctype === "image" ? "Add a picture" : "Add photos or videos"}
-                    onClick={() => (selectedClient ? carouselInput.current?.click() : onOpenConnect())}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        carouselInput.current?.click();
-                      }
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setCarouselDragOver(true);
-                    }}
-                    onDragLeave={() => setCarouselDragOver(false)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setCarouselDragOver(false);
-                      if (!selectedClient) return onOpenConnect();
-                      if (e.dataTransfer.files.length) pickImages(Array.from(e.dataTransfer.files));
-                    }}
-                  >
-                    <div className="ring">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
-                        <circle cx="9" cy="10" r="1.6" fill="currentColor" />
-                        <path d="M5 17l4.5-4.5 3 3L17 11l2 2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                    <b>{ctype === "image" ? "Add a picture" : "Add photos or videos"}</b>
-                    <p>
-                      {ctype === "image"
-                        ? "or drop one here. JPG, PNG or WebP."
-                        : "or drop them here. Up to 10: JPG, PNG or WebP, and MP4 or MOV clips (Instagram only)."}
-                    </p>
-                  </div>
-                  {ctype === "carousel" && (
-                    <div className="lfnote warn">
-                      Every item is cropped to the first item's shape. Reels can't go in a carousel.
-                    </div>
-                  )}
-                  <div className="lfnote ok">
-                    {ctype === "carousel" ? "A carousel" : "An image post"} counts as 1 post toward today's
-                    Instagram limit{igLimitTotal ? ` of ${igLimitTotal}` : ""}.
-                  </div>
-                  <p className="lnote">
-                    Image posts go to Instagram and TikTok. YouTube only takes videos, so it's switched off for them.{" "}
-                    {ctype === "carousel" && (
-                      <a {...linkProps("carousels")} className="link" data-testid="composer-carousels-link">
-                        Write a new carousel in Carousels
-                      </a>
-                    )}
-                  </p>
-                </>
-              )}
-            </div>
-
-            {pendingCarouselDraft && (
-              <p className="insworking" style={{ marginTop: 8 }}>
-                Adding the images for "{pendingCarouselDraft.topic}" from the Carousels tab. Its
-                caption and hashtags will be attached to the upload.{" "}
-                <span
-                  className="link"
-                  onClick={() => setPendingCarouselDraft(null)}
-                  title="Upload these images without attaching that carousel's words"
-                >
-                  Not these images? Detach.
-                </span>
-              </p>
-            )}
 
             {state === "loading" && <Loading screen="upload" label="Loading videos" />}
             {state === "error" && (
@@ -1215,15 +1108,6 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
         </div>
       </div>
-
-      {builderFiles && (
-        <CarouselBuilderModal
-          initialFiles={builderFiles}
-          maxItems={builderMax}
-          onClose={() => setBuilderFiles(null)}
-          onCreated={() => void load()}
-        />
-      )}
 
       {scheduling && (
         <ScheduleModal

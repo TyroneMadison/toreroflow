@@ -31,7 +31,7 @@ import { useAppState } from "../state/AppState";
  * manages both is loudly unpostable.
  */
 
-interface CropRect {
+export interface CropRect {
   x: number;
   y: number;
   width: number;
@@ -53,6 +53,15 @@ interface CarouselBuilderModalProps {
   initialFiles: File[];
   /** The composer's cap: 1 for an image post, 10 for a carousel. */
   maxItems?: number;
+  /** Arrange only: hand the order, crops and words back instead of uploading. */
+  onArranged?(items: ArrangedItem[], words: { description: string; hashtags: string[] }): void;
+  initialCrops?: Array<CropRect | null>;
+  initialWords?: { description: string; hashtags: string[] };
+}
+
+export interface ArrangedItem {
+  file: File;
+  crop: CropRect | null;
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -91,14 +100,22 @@ export default function CarouselBuilderModal({
   onCreated,
   initialFiles,
   maxItems = CAROUSEL_ABSOLUTE_MAX,
+  onArranged,
+  initialCrops,
+  initialWords,
 }: CarouselBuilderModalProps) {
   const toast = useToast();
   const { selectedClient, pendingCarouselDraft, setPendingCarouselDraft } = useAppState();
   const [items, setItems] = useState<BuilderItem[]>(() =>
-    initialFiles.map(makeItem).filter((i): i is BuilderItem => i !== null),
+    initialFiles
+      .map((f, i) => {
+        const item = makeItem(f);
+        return item && { ...item, crop: initialCrops?.[i] ?? null };
+      })
+      .filter((i): i is BuilderItem => i !== null),
   );
-  const [description, setDescription] = useState("");
-  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [description, setDescription] = useState(initialWords?.description ?? "");
+  const [hashtags, setHashtags] = useState<string[]>(initialWords?.hashtags ?? []);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -322,6 +339,11 @@ export default function CarouselBuilderModal({
 
   const upload = async () => {
     if (!selectedClient || !items.length) return;
+    if (onArranged) {
+      onArranged(items.map((i) => ({ file: i.file, crop: i.crop })), { description, hashtags });
+      onClose();
+      return;
+    }
     if (items[0]!.kind !== "image") {
       toast.fail(
         "The first item must be an image",
@@ -572,7 +594,9 @@ export default function CarouselBuilderModal({
                 disabled={uploading || items.length === 0 || verdict.unpostable}
                 onClick={() => void upload()}
               >
-                {uploading
+                {onArranged
+                  ? "Done"
+                  : uploading
                   ? "Uploading…"
                   : `Upload ${items.length || ""} item${items.length === 1 ? "" : "s"}`}
               </button>
