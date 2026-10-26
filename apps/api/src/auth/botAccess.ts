@@ -1,6 +1,6 @@
 /**
- * What a bot token is allowed to do: upload a video, write its copy, schedule
- * it, and read just enough to do those three things.
+ * What a bot token is allowed to do: upload a video, write its copy, set its
+ * cover, schedule it, and read just enough to do those things.
  *
  * The operator JWT can also read financials, delete media, and message
  * clients from the inbox. A bot exists to automate one workflow, and an
@@ -38,6 +38,10 @@ const ALLOW: Rule[] = [
   { method: "GET", path: new RegExp(`^/media/${ID}$`) },
   { method: "PATCH", path: new RegExp(`^/media/${ID}/draft$`) },
   { method: "POST", path: new RegExp(`^/media/${ID}/schedule$`) },
+  // Set the cover: pick a frame or upload an image. The routes keep their own
+  // checks (JPEG/PNG only, size cap, asset must be in the token's agency).
+  { method: "PATCH", path: new RegExp(`^/media/${ID}/cover$`) },
+  { method: "POST", path: new RegExp(`^/media/${ID}/cover-image$`) },
 
   // Its own scheduled posts, so it can confirm what it just did. Read-only:
   // rescheduling, retrying and deleting stay human actions.
