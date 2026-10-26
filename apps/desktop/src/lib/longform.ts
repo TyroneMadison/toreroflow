@@ -1,4 +1,4 @@
-import { hashtagCount, IG_CAPTION_MAX, IG_HASHTAG_MAX } from "@toreroflow/core";
+import { hashtagCount, IG_CAPTION_MAX, IG_HASHTAG_MAX, IG_MENTION_MAX, mentionCount } from "@toreroflow/core";
 
 /** Where a long-form upload goes. */
 export const DESTS = [
@@ -71,12 +71,15 @@ export function instagramRows(input: {
       : { ok: false, text: "No Instagram account is connected for this client. Connect one in Settings." },
   );
   const tags = hashtagCount(input.caption);
+  const mentions = mentionCount(input.caption);
   rows.push(
     input.caption.length > IG_CAPTION_MAX
       ? { ok: false, text: `The caption is ${input.caption.length} characters; Instagram stops at 2,200.` }
       : tags > IG_HASHTAG_MAX
         ? { ok: false, text: `${tags} hashtags; Instagram allows 30.` }
-        : { ok: true, text: `Caption: ${input.caption.length}/2,200 characters, ${tags}/30 hashtags.` },
+        : mentions > IG_MENTION_MAX
+          ? { ok: false, text: `${mentions} mentions; Instagram allows 20.` }
+          : { ok: true, text: `Caption: ${input.caption.length}/2,200 characters, ${tags}/30 hashtags, ${mentions}/20 mentions.` },
   );
   if (input.collaborators.length > 3) {
     rows.push({ ok: false, text: `${input.collaborators.length} collaborators; Instagram allows 3.` });

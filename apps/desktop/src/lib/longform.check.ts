@@ -71,3 +71,17 @@ assert.equal(fmtBytes(284 * 1024 ** 2), "284 MB");
 assert.equal(fmtClock(768), "12:48");
 
 console.log("longform: all checks passed");
+
+// Mentions: 21 is red, like 31 hashtags.
+{
+  const rows = instagramRows({
+    handle: "dudrents",
+    caption: Array.from({ length: 21 }, (_, i) => `@u${i}`).join(" "),
+    collaborators: [],
+    locationId: "",
+    fit: null,
+    cover: "auto",
+  });
+  assert.ok(rows.some((r) => r.ok === false && /21 mentions; Instagram allows 20/.test(r.text)));
+}
+console.log("longform mentions check passed");

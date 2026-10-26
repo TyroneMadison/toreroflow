@@ -51,6 +51,8 @@ interface CarouselBuilderModalProps {
   onClose(): void;
   onCreated(): void;
   initialFiles: File[];
+  /** The composer's cap: 1 for an image post, 10 for a carousel. */
+  maxItems?: number;
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -88,6 +90,7 @@ export default function CarouselBuilderModal({
   onClose,
   onCreated,
   initialFiles,
+  maxItems = CAROUSEL_ABSOLUTE_MAX,
 }: CarouselBuilderModalProps) {
   const toast = useToast();
   const { selectedClient, pendingCarouselDraft, setPendingCarouselDraft } = useAppState();
@@ -128,11 +131,11 @@ export default function CarouselBuilderModal({
     const incoming = Array.from(files).map(makeItem).filter((i): i is BuilderItem => i !== null);
     if (!incoming.length) return;
     setItems((list) => {
-      const room = CAROUSEL_ABSOLUTE_MAX - list.length;
+      const room = maxItems - list.length;
       if (incoming.length > room) {
         toast.fail(
           "Too many items",
-          new Error(`nothing takes more than ${CAROUSEL_ABSOLUTE_MAX}; the first ${room} were added`),
+          new Error(`this post takes ${maxItems}; the first ${Math.max(0, room)} were added`),
         );
       }
       return [...list, ...incoming.slice(0, Math.max(0, room))];
@@ -370,7 +373,7 @@ export default function CarouselBuilderModal({
     <Modal maxWidth={980} onClose={onClose}>
       <div className="modal-head">
         <div>
-          <h3>Build the carousel</h3>
+          <h3>{maxItems === 1 ? "Image post" : "Build the carousel"}</h3>
           <p>
             Drag the cards into order, press one to crop it. The first item sets the shape of
             every slide.
@@ -464,7 +467,7 @@ export default function CarouselBuilderModal({
                 );
               })}
 
-              {items.length < CAROUSEL_ABSOLUTE_MAX && (
+              {items.length < maxItems && (
                 <button
                   className="cbld-add"
                   title="Add more images or video"
@@ -480,7 +483,7 @@ export default function CarouselBuilderModal({
                 ‹
               </button>
               <span className="cbld-count">
-                {items.length} / {CAROUSEL_ABSOLUTE_MAX}
+                {items.length} / {maxItems}
               </span>
               <button className="cbld-arrow" title="Later slides" onClick={() => scrollTray(1)}>
                 ›

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/lib/phone.check.ts && tsx src/lib/keymap.check.ts && tsx src/lib/appUpdate.check.ts && tsx src/lib/viewTiers.check.ts && tsx src/lib/financials.check.ts && tsx src/lib/queue.check.ts && tsx src/lib/motion.check.ts && tsx src/lib/postStatus.check.ts && tsx src/lib/datePlacement.check.ts && tsx src/lib/watchTime.check.ts && tsx src/lib/datePicker.check.ts && tsx src/lib/seekQueue.check.ts && tsx src/lib/youtube.check.ts && tsx src/lib/automation.check.ts && tsx src/lib/brandTrend.check.ts && tsx src/lib/routes.check.ts && tsx src/lib/agentState.check.ts && tsx src/lib/ideaContext.check.ts && tsx src/lib/longform.check.ts"
+    "test": "tsx src/lib/phone.check.ts && tsx src/lib/keymap.check.ts && tsx src/lib/appUpdate.check.ts && tsx src/lib/viewTiers.check.ts && tsx src/lib/financials.check.ts && tsx src/lib/queue.check.ts && tsx src/lib/motion.check.ts && tsx src/lib/postStatus.check.ts && tsx src/lib/datePlacement.check.ts && tsx src/lib/watchTime.check.ts && tsx src/lib/datePicker.check.ts && tsx src/lib/seekQueue.check.ts && tsx src/lib/youtube.check.ts && tsx src/lib/automation.check.ts && tsx src/lib/brandTrend.check.ts && tsx src/lib/routes.check.ts && tsx src/lib/agentState.check.ts && tsx src/lib/ideaContext.check.ts && tsx src/lib/longform.check.ts && tsx src/lib/postDetails.check.ts"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",

@@ -14,7 +14,7 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 // Every screen has a unique path that parses back to it.
 const screens = SECTIONS.flatMap((s) => s.pages.map((p) => p.id));
-eq(new Set(screens.map((s) => PATHS[s])).size, 13, "thirteen screens, thirteen paths");
+eq(new Set(screens.map((s) => PATHS[s])).size, 14, "fourteen screens, fourteen paths");
 for (const s of screens) eq(parseUrl(pathFor(s)).screen, s, `${PATHS[s]} round-trips to ${s}`);
 for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));
@@ -62,3 +62,6 @@ eq(parseUrl("/create/upload?schedule=m1&dest=both").dest, "both", "a long-form d
 eq(parseUrl("/create/edit?area=ideas").area, "ideas", "Studio's open area is in the URL");
 
 console.log("routes: all checks passed");
+
+// The comments inbox has its own address.
+eq(parseUrl("/comments").screen, "comments", "/comments opens the comments inbox");

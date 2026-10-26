@@ -50,7 +50,7 @@ import {
   type Dest,
   type IgFitInfo,
 } from "../lib/longform";
-import { hashtagCount } from "@toreroflow/core";
+import { AudioNameField, CaptionField, HandleChips, LocationField, SwitchRow, TrialChoice } from "../components/PostDetails";
 
 interface LongFormModalProps {
   asset: MediaAssetInfo;
@@ -155,6 +155,7 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
   const [igUserTags, setIgUserTags] = useState("");
   const [igShareToFeed, setIgShareToFeed] = useState(true);
   const [igTrial, setIgTrial] = useState(false);
+  const [igGraduate, setIgGraduate] = useState<"MANUAL" | "SS_PERFORMANCE">("MANUAL");
   const [igCrop, setIgCrop] = useState(false);
   /** Instagram's own cover frame in "Both"; null means the shared cover. */
   const [igFrameMs, setIgFrameMs] = useState<number | null>(null);
@@ -523,7 +524,7 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
       const instagram = {
         longform: true,
         shareToFeed: igShareToFeed,
-        ...(igTrial ? { trial: true } : {}),
+        ...(igTrial ? { trial: true, graduationStrategy: igGraduate } : {}),
         ...(igCrop ? { crop916: true } : {}),
         ...(igCollabList.length ? { collaborators: igCollabList } : {}),
         ...(igLocation.trim() ? { locationId: igLocation.trim() } : {}),
@@ -1394,86 +1395,37 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
                   />
                 </>
               )}
-              <label className="flabel" htmlFor="lf-ig-caption">
-                Caption
-              </label>
-              <textarea
+              <CaptionField
                 id="lf-ig-caption"
-                className="field-in lfdesc"
-                rows={4}
                 value={igCaption}
-                onChange={(e) => setIgCaption(e.target.value)}
-                aria-describedby="lf-ig-caption-count"
+                onChange={setIgCaption}
+                platforms={["instagram"]}
+                rows={4}
               />
-              <p className="lnote" id="lf-ig-caption-count">
-                {igCaption.length.toLocaleString()} / 2,200 characters, {hashtagCount(igCaption)} / 30 hashtags
-              </p>
-              <label className="flabel" htmlFor="lf-ig-collabs" style={{ marginTop: 12 }}>
-                Collaborators (up to 3)
-              </label>
-              <input
+              <HandleChips
                 id="lf-ig-collabs"
-                className="field-in"
-                placeholder="@username"
-                value={igCollabs}
-                onChange={(e) => setIgCollabs(e.target.value)}
+                label="Collaborators"
+                max={3}
+                value={igCollabList}
+                onChange={(v) => setIgCollabs(v.join(" "))}
+                note="Collaborators get an invite. The post shows on their profile once they accept."
+              />
+              <HandleChips
+                id="lf-ig-tags"
+                label="Tag people"
+                hint="usernames"
+                value={parseHandles(igUserTags)}
+                onChange={(v) => setIgUserTags(v.join(" "))}
               />
               <div className="dmgrid" style={{ marginTop: 12 }}>
-                <div>
-                  <label className="flabel" htmlFor="lf-ig-loc">
-                    Location ID<span className="hint">Facebook place page id</span>
-                  </label>
-                  <input
-                    id="lf-ig-loc"
-                    className="field-in"
-                    inputMode="numeric"
-                    placeholder="e.g. 105890561436614"
-                    value={igLocation}
-                    onChange={(e) => setIgLocation(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="flabel" htmlFor="lf-ig-audio">
-                    Audio name
-                  </label>
-                  <input
-                    id="lf-ig-audio"
-                    className="field-in"
-                    maxLength={120}
-                    placeholder="Original audio"
-                    value={igAudioName}
-                    onChange={(e) => setIgAudioName(e.target.value)}
-                  />
-                </div>
+                <LocationField id="lf-ig-loc" value={igLocation} onChange={setIgLocation} />
+                <AudioNameField id="lf-ig-audio" value={igAudioName} onChange={setIgAudioName} />
               </div>
-              <label className="flabel" htmlFor="lf-ig-tags" style={{ marginTop: 12 }}>
-                Tag people<span className="hint">usernames</span>
-              </label>
-              <input
-                id="lf-ig-tags"
-                className="field-in"
-                placeholder="@username"
-                value={igUserTags}
-                onChange={(e) => setIgUserTags(e.target.value)}
-              />
-              <button
-                type="button"
-                role="switch"
-                aria-checked={igShareToFeed}
-                className="lfswitch"
-                onClick={() => setIgShareToFeed((v) => !v)}
-              >
-                Also show in main feed <i aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={igTrial}
-                className="lfswitch"
-                onClick={() => setIgTrial((v) => !v)}
-              >
-                Trial reel (non-followers first) <i aria-hidden="true" />
-              </button>
+              <SwitchRow checked={igShareToFeed} onChange={setIgShareToFeed}>
+                Also show in main feed
+              </SwitchRow>
+              <p className="lnote">Off means Reels tab only.</p>
+              <TrialChoice trial={igTrial} onTrial={setIgTrial} graduate={igGraduate} onGraduate={setIgGraduate} />
               <p className="lnote">
                 {yt
                   ? "The post time is shared with YouTube, under Visibility. Toreroflow sends both together."

@@ -4,6 +4,7 @@ import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import { useAppState } from "../state/AppState";
 import { Empty, ErrorState, Loading } from "../components/states";
+import CarouselPostCard from "../components/CarouselPostCard";
 
 /**
  * Carousels, and the knowledge they are written from.
@@ -311,6 +312,8 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
             )}
           </div>
         </div>
+
+        <CarouselPostCard />
 
         {drafts?.map((d) => (
           <div className="card glass" style={{ marginTop: 16 }} key={d.id} data-testid={`carousel-draft-${d.id}`} aria-label={`Carousel draft: ${d.topic}`}>

@@ -34,6 +34,7 @@ export const PATHS: Record<ScreenId, string> = {
   schedule: "/create/schedule",
   analytics: "/analytics",
   reports: "/reports",
+  comments: "/comments",
   settings: "/settings",
 };
 
