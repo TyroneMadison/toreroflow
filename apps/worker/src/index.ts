@@ -168,6 +168,7 @@ async function processAsset(assetId: string): Promise<void> {
 /* ---- publish pipeline (spec Section 10) ---- */
 
 import {
+  botZernioKey,
   buildPostExtras,
   combinePostParts,
   DryRunPublisher,
@@ -181,6 +182,16 @@ const zernio =
     ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
     : null;
 const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
+
+/**
+ * The client a post goes out through: the bot's own key (ZERNIO_API_KEY_POLLY
+ * for Polly's posts) when one is set, the agency key otherwise. Media uploads
+ * and status reads stay on the agency key, which sees every profile.
+ */
+function posterFor(bot: string | undefined): ZernioProvider | null {
+  const key = botZernioKey(bot, process.env);
+  return key ? new ZernioProvider(key) : zernio;
+}
 
 /**
  * Refresh lifetime YouTube catalogues for every connected channel.
@@ -359,6 +370,8 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         instagramFeedPost?: boolean;
         /** Long-form "Both": publish with the sibling targets in one provider post. */
         combined?: boolean;
+        /** The named bot that scheduled it, for its own Zernio key. */
+        bot?: string;
       } | null) ?? {};
 
     let remotePostId: string;
@@ -494,7 +507,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
               extras: extrasFor(s.platform, opts, words),
             });
           }
-          const result = await zernio.createPost({ ...combinePostParts(parts), publishNow: true });
+          const result = await posterFor(targetOptions.bot)!.createPost({ ...combinePostParts(parts), publishNow: true });
           for (const r of result.platformResults ?? []) {
             if (r.status === "failed") {
               console.warn(`[worker] post ${target.postId} ${r.platform} failed inline: ${r.error}`);
@@ -511,7 +524,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
       if (combinedId) {
         remotePostId = combinedId;
       } else {
-        const result = await zernio.createPost({
+        const result = await posterFor(targetOptions.bot)!.createPost({
           // A TikTok photo post reads content as its title; the builder moves
           // the caption into tiktokSettings.description and says so here.
           content: extras.contentOverride ?? caption,

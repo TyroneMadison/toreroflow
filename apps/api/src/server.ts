@@ -21,6 +21,7 @@ import { onboardingRoutes } from "./routes/onboarding";
 import { bankRoutes } from "./routes/bank";
 import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
+import { commentRoutes } from "./routes/comments";
 import { dmCampaignRoutes } from "./routes/dmCampaigns";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
@@ -36,8 +37,9 @@ import { trelloRoutes } from "./routes/trello";
 declare module "@fastify/jwt" {
   interface FastifyJWT {
     /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
-    payload: { sub: string; agencyId: string; role?: "bot" };
-    user: { sub: string; agencyId: string; role?: "bot" };
+    /** `bot` names a bot token (e.g. "polly"); full-access bots are listed in BOT_FULL_ACCESS. */
+    payload: { sub: string; agencyId: string; role?: "bot"; bot?: string };
+    user: { sub: string; agencyId: string; role?: "bot"; bot?: string };
   }
 }
 
@@ -163,6 +165,7 @@ export async function buildServer(
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
   await app.register(dmCampaignRoutes);
+  await app.register(commentRoutes);
   await app.register(mediaRoutes);
   await app.register(postRoutes);
   await app.register(reportRoutes);

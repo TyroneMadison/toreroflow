@@ -368,6 +368,72 @@ export interface CommentAutomationInput {
  * Model: one Zernio "profile" per Toreroflow client; accounts OAuth-connect to
  * that profile via a hosted authUrl; tokens live with Zernio, never with us.
  */
+/**
+ * A bot's own Zernio key, so its posts and comment actions go out under a key
+ * scoped to its clients' profiles instead of the agency's full key.
+ *
+ * Read from ZERNIO_API_KEY_<BOT> (ZERNIO_API_KEY_POLLY for the bot named
+ * "polly"). Null when the name is odd or the key is not set, and the caller
+ * falls back to the agency key, which is how every post worked before.
+ */
+export function botZernioKey(
+  bot: string | null | undefined,
+  envs: Record<string, string | undefined>,
+): string | null {
+  if (!bot || !/^[a-z0-9_-]{1,40}$/i.test(bot)) return null;
+  return envs[`ZERNIO_API_KEY_${bot.toUpperCase().replace(/-/g, "_")}`] || null;
+}
+
+/** A post that has comments, from GET /inbox/comments. */
+export interface CommentedPost {
+  id: string;
+  platform: string;
+  accountId: string;
+  accountUsername: string | null;
+  content: string | null;
+  picture: string | null;
+  permalink: string | null;
+  createdTime: string | null;
+  commentCount: number;
+}
+
+/** One comment, from GET /inbox/comments/{postId}. */
+export interface PostComment {
+  id: string;
+  message: string;
+  createdTime: string | null;
+  username: string | null;
+  name: string | null;
+  picture: string | null;
+  isOwner: boolean;
+  likeCount: number;
+  canReply: boolean;
+  canDelete: boolean;
+  canHide: boolean;
+  isHidden: boolean;
+  replies: PostComment[];
+}
+
+function postComment(raw: unknown): PostComment {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  const from = (c.from ?? {}) as Record<string, unknown>;
+  return {
+    id: String(c.id ?? ""),
+    message: String(c.message ?? ""),
+    createdTime: str(c.createdTime),
+    username: str(from.username),
+    name: str(from.name),
+    picture: str(from.picture),
+    isOwner: from.isOwner === true,
+    likeCount: num(c.likeCount),
+    canReply: c.canReply !== false,
+    canDelete: c.canDelete === true,
+    canHide: c.canHide === true,
+    isHidden: c.isHidden === true,
+    replies: Array.isArray(c.replies) ? c.replies.map(postComment) : [],
+  };
+}
+
 export class ZernioProvider {
   constructor(private readonly apiKey: string) {}
 
@@ -1013,5 +1079,70 @@ export class ZernioProvider {
       if (error instanceof ZernioError && error.status === 404) return null;
       throw error;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Comments on published posts. Read-through like the DM inbox: Zernio caches
+  // for up to 10 minutes and is the store, nothing is copied locally.
+  // ---------------------------------------------------------------------------
+
+  /** Posts with comments on one profile, newest first. */
+  async commentedPosts(
+    profileId: string,
+    opts: { platform?: string; limit?: number } = {},
+  ): Promise<CommentedPost[]> {
+    const query = new URLSearchParams({ profileId, limit: String(Math.min(opts.limit ?? 50, 100)) });
+    if (opts.platform) query.set("platform", opts.platform);
+    const data = await this.request<{ data?: unknown }>("GET", `/inbox/comments?${query}`);
+    const rows = Array.isArray(data.data) ? data.data : [];
+    return rows.map((raw) => {
+      const p = (raw ?? {}) as Record<string, unknown>;
+      return {
+        id: String(p.id ?? ""),
+        platform: String(p.platform ?? ""),
+        accountId: String(p.accountId ?? ""),
+        accountUsername: str(p.accountUsername),
+        content: str(p.content),
+        picture: str(p.picture),
+        permalink: str(p.permalink),
+        createdTime: str(p.createdTime),
+        commentCount: num(p.commentCount),
+      };
+    });
+  }
+
+  /** The comments on one post, as the connected account sees them. */
+  async postComments(postId: string, accountId: string, limit = 50): Promise<PostComment[]> {
+    const query = new URLSearchParams({ accountId, limit: String(Math.min(limit, 100)) });
+    const data = await this.request<{ comments?: unknown }>(
+      "GET",
+      `/inbox/comments/${encodeURIComponent(postId)}?${query}`,
+    );
+    return Array.isArray(data.comments) ? data.comments.map(postComment) : [];
+  }
+
+  /** Reply to a comment (or the post when commentId is absent). */
+  async replyToComment(
+    postId: string,
+    input: { accountId: string; message: string; commentId?: string },
+  ): Promise<{ commentId: string | null }> {
+    const data = await this.request<{ data?: { commentId?: unknown } }>(
+      "POST",
+      `/inbox/comments/${encodeURIComponent(postId)}`,
+      input,
+    );
+    return { commentId: str(data?.data?.commentId) };
+  }
+
+  async deleteComment(postId: string, accountId: string, commentId: string): Promise<void> {
+    const query = new URLSearchParams({ accountId, commentId });
+    await this.request("DELETE", `/inbox/comments/${encodeURIComponent(postId)}?${query}`);
+  }
+
+  /** Hide (or, with hidden false, unhide) a comment. Instagram, TikTok Business and Meta only. */
+  async setCommentHidden(postId: string, commentId: string, accountId: string, hidden: boolean): Promise<void> {
+    const path = `/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/hide`;
+    if (hidden) await this.request("POST", path, { accountId });
+    else await this.request("DELETE", `${path}?${new URLSearchParams({ accountId })}`);
   }
 }

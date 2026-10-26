@@ -7,6 +7,7 @@ import {
   captionFor,
   composeCaption,
   carouselVerdict,
+  checkCaption,
   decodeEscapes,
   INSTAGRAM_FEED_MAX_SECONDS,
   INSTAGRAM_STORY_MAX_SECONDS,
@@ -351,8 +352,27 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    /*
+     * Caption limits, on the words that actually post: the caption with the
+     * client's block under it and the hashtags after it, the way the worker
+     * joins them. The screens block the same thing live; this is the refusal
+     * for anything that skipped them, a bot included.
+     */
+    const tagLine = hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ");
+    const photo = asset.kind === "carousel";
+    for (const { platform } of accounts) {
+      if (platform !== "instagram" && platform !== "tiktok") continue;
+      const words = [withBlock(captionOverride || captionFor(platform, draft)), tagLine].filter(Boolean).join("\n\n");
+      const problems = checkCaption(platform, words, { photo }).problems;
+      if (problems.length) {
+        return reply.status(400).send({ error: `caption too long for ${platform}`, detail: problems.join(" ") });
+      }
+    }
+
     const createdById = await actingUserId(request);
     if (!createdById) return reply.status(401).send({ error: "unknown user" });
+    // A named bot's posts go out under its own Zernio key when one is set.
+    const viaBot = request.user.role === "bot" && request.user.bot ? { bot: request.user.bot } : {};
 
     const idea = body.ideaId
       ? await prisma.contentIdea.findFirst({ where: { id: body.ideaId, clientId: asset.clientId }, select: { id: true } })
@@ -378,22 +398,28 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             status: "scheduled",
             options:
               platform === "instagram" && igOptions
-                ? { instagram: igOptions, ...(combined ? { combined: true } : {}) }
+                ? { instagram: igOptions, ...(combined ? { combined: true } : {}), ...viaBot }
                 : platform === "youtube"
                   ? {
                       youtubeTitle: ytOptions?.title || youtubeTitleFor(draft),
                       ...(ytOptions ? { youtube: ytOptions } : {}),
                       ...(combined ? { combined: true } : {}),
+                      ...viaBot,
                     }
                   : platform === "tiktok" && asset.kind === "carousel"
                     ? {
                         // A TikTok photo post has a title of its own (90
                         // chars, hashtags stripped by the platform) separate
                         // from the caption. The video's name is that title.
-                        tiktokTitle: draft.name || null,
+                        tiktokTitle: draft.name ? draft.name.slice(0, 90) : null,
                         ...(body.tiktok ? { tiktok: body.tiktok } : {}),
+                        ...viaBot,
                       }
-                    : undefined,
+                    : platform === "tiktok" && body.tiktok
+                      ? { tiktok: body.tiktok, ...viaBot }
+                      : Object.keys(viaBot).length
+                        ? viaBot
+                        : undefined,
           })),
         },
       },
@@ -414,7 +440,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             hashtags: [],
             scheduledAt,
             status: "scheduled",
-            options: { instagram: { story: true } },
+            options: { instagram: { story: true }, ...viaBot },
           },
         })
       : null;

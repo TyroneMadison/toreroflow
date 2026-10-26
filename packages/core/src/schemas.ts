@@ -160,6 +160,14 @@ export function uploadSizeError(platform: Platform, bytes: number): string | nul
   );
 }
 
+/** TikTok's privacy levels, as its creator info API names them. */
+export const TIKTOK_PRIVACY_LEVELS = [
+  "PUBLIC_TO_EVERYONE",
+  "MUTUAL_FOLLOW_FRIENDS",
+  "FOLLOWER_OF_CREATOR",
+  "SELF_ONLY",
+] as const;
+
 export const tiktokOptionsSchema = z.object({
   /**
    * Let TikTok attach a recommended track to a photo carousel. TikTok picks
@@ -169,6 +177,16 @@ export const tiktokOptionsSchema = z.object({
   autoAddMusic: z.boolean().optional(),
   /** Deliver to the creator's TikTok inbox instead of publishing. */
   draft: z.boolean().optional(),
+  /**
+   * Who sees it. TikTok's values; the account's creator info decides which
+   * it allows, and Business-app accounts publish videos public only.
+   */
+  privacyLevel: z.enum(TIKTOK_PRIVACY_LEVELS).optional(),
+  allowComment: z.boolean().optional(),
+  /** Video posts only. */
+  allowDuet: z.boolean().optional(),
+  /** Video posts only. */
+  allowStitch: z.boolean().optional(),
 });
 
 export const youtubeOptionsSchema = z.object({

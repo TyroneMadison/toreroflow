@@ -22,6 +22,10 @@ for (const [method, path] of [
   ["GET", "/trello/ready"],
   ["GET", "/clients/label-map"],
   ["GET", "/clients/cms0qdz5t/sop"],
+  // Comments: reading is open to every bot.
+  ["GET", "/clients/cms0qdz5t/comments"],
+  ["GET", "/clients/cms0qdz5t/comments/p1?accountId=a1"],
+  ["GET", "/clients/cms0qdz5t/instagram-limit"],
 ] as const) {
   assert.equal(botAllowed(method, path), true, `${method} ${path} is the workflow`);
 }
@@ -64,6 +68,10 @@ for (const [method, path] of [
 
 // The query string never changes the verdict.
 assert.equal(botAllowed("GET", "/financials/summary?x=1"), false, "query cannot smuggle");
+// Moderating comments is not on the whitelist; only a full-access bot gets it.
+assert.equal(botAllowed("POST", "/clients/c1/comments/p1/reply"), false, "reply needs the operator");
+assert.equal(botAllowed("DELETE", "/clients/c1/comments/p1/c1"), false, "delete needs the operator");
+assert.equal(botAllowed("POST", "/clients/c1/comments/p1/c1/hide"), false, "hide needs the operator");
 assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/sop"), false, "editing an SOP stays human");
 assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/trello-labels"), false, "label routing stays human");
 
