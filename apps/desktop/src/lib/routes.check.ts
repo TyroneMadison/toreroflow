@@ -58,6 +58,7 @@ eq(clientPath("caleb", "c9"), "/clients/caleb/schedule/c9", "clientPath builds t
 eq(clientPath(null), "/create/ready", "no client is the all-clients queue");
 eq(parseUrl("/clients/a b/ready").screen, "dashboard", "an unsafe slug is not a route");
 eq(parseUrl("/create/upload?schedule=m1&step=details").scheduleId, "m1", "an open schedule flow is in the URL");
+eq(parseUrl("/create/upload?schedule=m1&dest=both").dest, "both", "a long-form destination is in the URL");
 eq(parseUrl("/create/edit?area=ideas").area, "ideas", "Studio's open area is in the URL");
 
 console.log("routes: all checks passed");

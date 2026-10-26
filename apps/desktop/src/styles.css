@@ -1773,6 +1773,49 @@
 .lfstep.on{color:#ffc46b;background:rgba(255,196,107,.12);border-color:rgba(255,196,107,.38)}
 .lfstep.off{opacity:.4;cursor:default}
 .lfbody{min-height:340px}
+/* Where a long-form upload goes: YouTube, Instagram or Both. Coral when on,
+   dark ink on it (8:1), 44px targets. */
+.lfdest{display:inline-flex;gap:4px;padding:4px;margin:0 22px 10px;border-radius:999px;
+  background:var(--glass);border:1px solid var(--brd-soft);backdrop-filter:blur(14px)}
+.lfdest button{min-height:44px;min-width:104px;padding:0 20px;border-radius:999px;border:0;background:none;
+  font:600 13px var(--font);color:var(--txt-2);cursor:pointer;transition:.18s}
+.lfdest button:hover{color:var(--txt);background:var(--glass-2)}
+.lfdest button.on{background:var(--accent);color:#1a0f0d;box-shadow:0 6px 18px rgba(255,111,97,.35)}
+.lfdest button:focus-visible,.lfswitch:focus-visible,.lfcover .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lfstep{min-height:36px}
+/* Instagram phase: the source on the left, the fields on the right. */
+.lfig{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;align-items:start}
+.lfig-prev{width:100%;max-height:340px;border-radius:14px;background:#000;border:1px solid var(--brd-soft);object-fit:contain}
+.lfig-prev.v{aspect-ratio:9/16;max-height:420px;width:auto;max-width:100%;display:block;margin:0 auto}
+.lfig-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.lfig-chips span{padding:6px 12px;border-radius:999px;font-size:12px;color:var(--txt);
+  background:var(--glass);border:1px solid var(--brd-soft);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lfnote{margin-top:10px;padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.45;color:var(--txt);
+  background:var(--glass);border:1px solid var(--brd-soft);display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.lfnote.ok{background:rgba(74,222,154,.12);border-color:rgba(74,222,154,.45)}
+.lfnote.warn{background:rgba(224,164,88,.14);border-color:rgba(224,164,88,.55)}
+.lfnote.bad{background:rgba(240,80,110,.12);border-color:rgba(240,80,110,.6)}
+.lfnote .btn,.lfcover .btn{min-height:44px}
+.lfcover{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;color:var(--txt-2)}
+.lfcover span{flex:1 1 160px}
+.lfthumbrow .revtoggle{min-height:44px;padding:0 14px}
+.lfswitch{display:flex;width:100%;align-items:center;justify-content:space-between;min-height:48px;margin-top:6px;
+  padding:0 2px;border:0;border-bottom:1px solid var(--brd-soft);background:none;font:500 14px var(--font);color:var(--txt);cursor:pointer;text-align:left}
+.lfswitch i{flex:0 0 auto;width:46px;height:28px;border-radius:999px;background:var(--glass-3);border:1px solid var(--brd);position:relative;transition:.2s}
+.lfswitch i::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 4px rgba(0,0,0,.35);transition:.2s}
+.lfswitch[aria-checked="true"] i{background:var(--accent);border-color:var(--accent)}
+.lfswitch[aria-checked="true"] i::after{left:21px}
+[data-theme="light"] .lfswitch i{background:rgba(30,30,70,.18)}
+[data-theme="light"] .lfswitch[aria-checked="true"] i{background:var(--accent-lo);border-color:var(--accent-lo)}
+.lfig .lnote{margin:6px 0 0}
+/* The amber chip is unreadable on white; a darker amber passes AA there. */
+[data-theme="light"] .lfstep.on{color:#7a4a00;background:rgba(224,164,88,.2);border-color:rgba(160,100,20,.45)}
+@media (max-width:768px){
+  .lfig{grid-template-columns:1fr}
+  .lfdest{display:flex;margin:0 14px 10px}
+  .lfdest button{flex:1;min-width:0;padding:0 8px}
+}
 /* Each phase slides in when Next or Back lands; keyed remount retriggers it. */
 .lfphase{animation:lfslide .28s cubic-bezier(.2,.8,.25,1)}
 @keyframes lfslide{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}

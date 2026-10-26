@@ -82,7 +82,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [longForm, setLongFormState] = useState<MediaAssetInfo | null>(null);
   const setLongForm = (a: MediaAssetInfo | null) => {
     setLongFormState(a);
-    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null }) });
+    setQuery({ schedule: a?.id ?? null, ...(a ? {} : { step: null, dest: null }) });
   };
   const { scheduleId: routeScheduleId } = useRoute();
   // Reopen the flow a deep link names, once its asset has loaded.

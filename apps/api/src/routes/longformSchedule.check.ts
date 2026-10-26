@@ -51,7 +51,8 @@ const ASSET = {
     ],
   },
 };
-let created: { data: { targets: { create: Array<Record<string, any>> } } } | null = null;
+type Created = { data: { targets: { create: Array<Record<string, any>> } } };
+let created = null as Created | null;
 const prisma = getPrisma();
 const stub = (name: string, value: unknown) => Object.defineProperty(prisma, name, { value });
 stub("mediaAsset", {
@@ -61,7 +62,7 @@ stub("mediaAsset", {
 stub("user", { findFirst: async () => ({ id: "owner1" }) });
 stub("contentIdea", { findFirst: async () => null });
 stub("post", {
-  create: async (args: typeof created) => {
+  create: async (args: Created) => {
     created = args;
     // Stop before the job queue, which needs Postgres.
     throw new Error("stop-before-enqueue");
@@ -112,7 +113,7 @@ res = await schedule({
   instagram: { longform: true, crop916: true, collaborators: ["@dudthecarguy"], locationId: "105890561436614", shareToFeed: true },
 });
 assert.ok(created, res.body);
-const targets = created!.data.targets.create;
+const targets = (created as Created | null)!.data.targets.create;
 const yt = targets.find((t) => t.platform === "youtube")!;
 const ig = targets.find((t) => t.platform === "instagram")!;
 assert.equal(yt.options.combined, true);
