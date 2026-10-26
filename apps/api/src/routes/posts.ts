@@ -10,6 +10,7 @@ import {
   decodeEscapes,
   INSTAGRAM_FEED_MAX_SECONDS,
   INSTAGRAM_STORY_MAX_SECONDS,
+  instagramLongformFit,
   schedulePostSchema,
   scheduleTimeError,
   uploadSizeError,
@@ -17,7 +18,7 @@ import {
   type Platform,
 } from "@toreroflow/core";
 import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
-import { enrichFieldsFrom } from "@toreroflow/publishers";
+import { enrichFieldsFrom, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { actingUserId } from "../auth/actingUser";
@@ -42,8 +43,42 @@ export function draftName(draft: unknown): string {
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
+  const zernio =
+    env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
+      ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
+      : null;
 
   app.addHook("onRequest", requireAuth);
+
+  /**
+   * Whether this video fits a long-form Instagram reel, with the file size
+   * the screen cannot see and, given an Instagram account, how much of its
+   * 24 hour publishing allowance is left. The same check the schedule route
+   * refuses on, so the warning and the refusal agree.
+   */
+  app.get<{ Params: { id: string }; Querystring: { accountId?: string; crop916?: string } }>(
+    "/media/:id/instagram-fit",
+    async (request, reply) => {
+      const asset = await prisma.mediaAsset.findFirst({
+        where: { id: request.params.id, client: { agencyId: request.user.agencyId, deletedAt: null } },
+        include: { client: { include: { socialAccounts: { where: { deletedAt: null } } } } },
+      });
+      if (!asset) return reply.status(404).send({ error: "asset not found" });
+      const bytes = await fs
+        .stat(nodePath.join(env.STORAGE_DIR, asset.storageKey))
+        .then((st) => st.size, () => null);
+      const fit = instagramLongformFit({ ...asset, bytes, crop916: request.query.crop916 === "1" });
+      const account = asset.client.socialAccounts.find(
+        (a) => a.id === request.query.accountId && a.platform === "instagram",
+      );
+      let limit: { used: number; total: number } | null = null;
+      if (zernio && account?.providerAccountId && account.tokensEncrypted === "provider:zernio") {
+        // Informational: a provider hiccup must not hide the fit check.
+        limit = await zernio.instagramPublishingLimit(account.providerAccountId).catch(() => null);
+      }
+      return { bytes, ...fit, limit };
+    },
+  );
 
   /** Schedule a processed video to one or more connected platforms. */
   app.post<{ Params: { id: string } }>("/media/:id/schedule", async (request, reply) => {
@@ -122,6 +157,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * three platforms and quietly dropping the fourth is the shape of failure
      * this is here to remove, not one to introduce somewhere new.
      */
+    let sourceBytes: number | null = null;
     if (asset.kind === "video" && !asset.sourceDeletedAt) {
       let bytes: number | null = null;
       try {
@@ -135,11 +171,29 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       }
       if (bytes !== null) {
         for (const { platform } of accounts) {
+          // A long-form reel gets an Instagram copy made under the cap instead.
+          if (platform === "instagram" && body.instagram?.longform) continue;
           const tooLarge = uploadSizeError(platform, bytes);
           if (tooLarge) return reply.status(400).send({ error: tooLarge });
         }
       }
+      sourceBytes = bytes;
     }
+
+    /*
+     * Long-form Instagram: up to 15 minutes, any size (a copy is made), and
+     * the same check the screen showed, so its refusal and ours agree.
+     */
+    const igLongform =
+      Boolean(body.instagram?.longform) && accounts.some(({ platform }) => platform === "instagram");
+    const igFit = igLongform
+      ? instagramLongformFit({ ...asset, bytes: sourceBytes, crop916: body.instagram?.crop916 })
+      : null;
+    if (igFit?.blocks.length) {
+      return reply.status(400).send({ error: "does not fit Instagram", detail: igFit.blocks.join(" ") });
+    }
+    // YouTube and Instagram long-form together go out as one provider post.
+    const combined = igLongform && accounts.some(({ platform }) => platform === "youtube");
 
     // Older rows carry {hook, caption} or a `title` that used to mean both
     // the YouTube title and everyone's caption. Fold them onto `name`, which
@@ -265,7 +319,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * story flag, alongside the reel.
      */
     const igAccount = accounts.find((a) => a.platform === "instagram");
-    const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount);
+    const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount) && !igLongform;
 
     /*
      * Only a genuinely absurd video is refused now.
@@ -278,6 +332,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      */
     if (
       igAccount &&
+      !igLongform &&
       asset.durationSec != null &&
       asset.durationSec > INSTAGRAM_FEED_MAX_SECONDS
     ) {
@@ -323,11 +378,12 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             status: "scheduled",
             options:
               platform === "instagram" && igOptions
-                ? { instagram: igOptions }
+                ? { instagram: igOptions, ...(combined ? { combined: true } : {}) }
                 : platform === "youtube"
                   ? {
                       youtubeTitle: ytOptions?.title || youtubeTitleFor(draft),
                       ...(ytOptions ? { youtube: ytOptions } : {}),
+                      ...(combined ? { combined: true } : {}),
                     }
                   : platform === "tiktok" && asset.kind === "carousel"
                     ? {
@@ -379,9 +435,19 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       );
     }
 
+    // Make the Instagram copy now, hours ahead of the slot, not at publish.
+    if (igFit?.needsCopy) {
+      await enqueue(
+        "igcopy",
+        { assetId: asset.id, crop916: body.instagram?.crop916 === true },
+        { key: `igcopy:${asset.id}:${body.instagram?.crop916 ? "crop916" : "fit"}`, retryLimit: 2 },
+      );
+    }
+
     return reply.status(201).send({
       id: post.id,
       scheduledAt,
+      ...(igFit ? { instagram: { needsCopy: igFit.needsCopy, warnings: igFit.warnings } } : {}),
       ...(reminder ? { sopReminder: reminder } : {}),
       targets: post.targets.map((t) => ({
         id: t.id,

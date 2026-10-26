@@ -488,3 +488,81 @@ assert.equal(
 );
 
 console.log("options builder: instagram catalog audio checks passed");
+
+/*
+ * Long-form Instagram reels: no contentType, a picked frame goes as
+ * thumbOffset (it stays right on a 9:16 copy), an uploaded image as
+ * instagramThumbnail, and the reel options still apply past three minutes.
+ */
+{
+  const frame = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.jpg",
+    coverOffsetMs: 4200,
+    instagram: {
+      longform: true,
+      trial: true,
+      collaborators: ["dudthecarguy"],
+      locationId: "105890561436614",
+      userTags: ["@friend", " "],
+      audioName: "Dud Rents original audio",
+      shareToFeed: true,
+      crop916: true,
+    },
+  });
+  assert.deepEqual(frame.platformSpecificData, {
+    thumbOffset: 4200,
+    trialParams: { graduationStrategy: "MANUAL" },
+    collaborators: ["dudthecarguy"],
+    audioName: "Dud Rents original audio",
+    shareToFeed: true,
+    locationId: "105890561436614",
+    userTags: [{ username: "friend" }],
+  });
+
+  // Uploaded image: coverOffsetMs is null, so the image is the cover.
+  const image = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.png",
+    coverOffsetMs: null,
+    instagram: { longform: true },
+  });
+  assert.deepEqual(image.platformSpecificData, { instagramThumbnail: "https://cdn.example/cover.png" });
+
+  // Instagram's own frame beats the shared cover, image or frame.
+  const override = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.png",
+    coverOffsetMs: null,
+    instagram: { longform: true, thumbOffsetMs: 9000 },
+  });
+  assert.deepEqual(override.platformSpecificData, { thumbOffset: 9000 });
+
+  // Short-form keeps sending the frame image, exactly as before.
+  const short = buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    durationSec: 30,
+    coverUrl: "https://cdn.example/cover.jpg",
+    coverOffsetMs: 4200,
+  });
+  assert.deepEqual(short.platformSpecificData, {
+    contentType: "reels",
+    instagramThumbnail: "https://cdn.example/cover.jpg",
+  });
+
+  // YouTube long-form still gets the same cover as its thumbnail.
+  assert.equal(
+    buildPostExtras({ platform: "youtube", format: "long_form", coverUrl: "https://cdn.example/cover.jpg", coverOffsetMs: 4200 })
+      .mediaThumbnail,
+    "https://cdn.example/cover.jpg",
+  );
+}
+
+console.log("options builder: instagram long-form checks passed");

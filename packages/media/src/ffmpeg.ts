@@ -227,3 +227,39 @@ export async function extractThumbnail(
     output,
   ]);
 }
+
+/**
+ * The Instagram copy of a long-form video: H.264/AAC, at most 1080 wide (or
+ * 1080x1920 when cropped to a centre 9:16), at a bitrate that keeps it under
+ * the provider's 300MB. The original is untouched; YouTube gets that.
+ *
+ * Written to a temp name and renamed, so a half-finished encode is never
+ * mistaken for a finished copy.
+ */
+export async function instagramCopy(
+  input: string,
+  output: string,
+  opts: { crop916: boolean; videoKbps: number },
+): Promise<void> {
+  const vf = opts.crop916
+    ? "crop=trunc(ih*9/16/2)*2:ih,scale=1080:1920"
+    : // Fit inside 1920x1920 (Instagram's width cap), never upscale, even sizes.
+      "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
+  // Unique per run: the queued copy and a publish that cannot wait may race.
+  const tmp = `${output}.${process.pid}-${Date.now()}.part.mp4`;
+  await run(ffmpegBin(), [
+    "-y", "-i", input,
+    "-vf", vf,
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-b:v", `${opts.videoKbps}k`,
+    "-maxrate", `${opts.videoKbps}k`,
+    "-bufsize", `${opts.videoKbps * 2}k`,
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-movflags", "+faststart",
+    tmp,
+  ]);
+  await fs.rename(tmp, output);
+}

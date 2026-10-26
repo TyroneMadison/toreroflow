@@ -653,18 +653,33 @@ export class ZernioProvider {
       accountId: string;
       /** Per-platform options, passed through verbatim. */
       platformSpecificData?: Record<string, unknown>;
+      /** This platform's own text, instead of `content`. */
+      customContent?: string;
+      /** This platform's own media, instead of the shared items (an Instagram copy). */
+      customMedia?: Array<{ url: string; type: "image" | "video" }>;
     }>;
     /** TikTok's options live at the top level of the request body. */
     tiktokSettings?: Record<string, unknown>;
     publishNow?: boolean;
     scheduledFor?: string;
     timezone?: string;
-  }): Promise<{ remotePostId: string }> {
+  }): Promise<{
+    remotePostId: string;
+    /**
+     * Per-platform outcome when the provider answered 207: the post exists
+     * but some or all platforms did not publish inline. 207 is a 2xx, so it
+     * arrives here rather than as a throw; confirmPublishing settles each
+     * target from the post's own status either way.
+     */
+    platformResults?: Array<{ platform: string; status: string; error: string | null }>;
+  }> {
     const body: Record<string, unknown> = {
       content: input.content,
       platforms: input.targets.map((t) => ({
         platform: t.platform,
         accountId: t.accountId,
+        ...(t.customContent !== undefined ? { customContent: t.customContent } : {}),
+        ...(t.customMedia ? { customMedia: t.customMedia } : {}),
         ...(t.platformSpecificData ? { platformSpecificData: t.platformSpecificData } : {}),
       })),
     };
@@ -678,7 +693,37 @@ export class ZernioProvider {
     }
     const data = await this.request<Record<string, unknown>>("POST", "/posts", body);
     const post = (data.post ?? data) as { _id?: string; id?: string };
-    return { remotePostId: post._id ?? post.id ?? "unknown" };
+    const results = Array.isArray(data.platformResults)
+      ? (data.platformResults as Array<Record<string, unknown>>).map((r) => ({
+          platform: String(r.platform ?? ""),
+          status: String(r.status ?? "unknown"),
+          error: typeof r.error === "string" ? r.error : null,
+        }))
+      : undefined;
+    return {
+      remotePostId: post._id ?? post.id ?? "unknown",
+      ...(results ? { platformResults: results } : {}),
+    };
+  }
+
+  /**
+   * Instagram's rolling 24 hour publishing allowance for one account.
+   * Compare against quotaTotal, never a hardcoded 100: Meta's docs and the
+   * live API disagree, and the live number is the one that refuses.
+   */
+  async instagramPublishingLimit(
+    accountId: string,
+  ): Promise<{ used: number; total: number; windowSeconds: number }> {
+    const data = await this.request<Record<string, unknown>>(
+      "GET",
+      `/accounts/${encodeURIComponent(accountId)}/instagram/publishing-limit`,
+    );
+    const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+    return {
+      used: n(data.quotaUsage, 0),
+      total: n(data.quotaTotal, 0),
+      windowSeconds: n(data.quotaDurationSeconds, 86400),
+    };
   }
 
   /**

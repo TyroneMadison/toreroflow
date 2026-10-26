@@ -38,6 +38,8 @@ const ALLOW: Rule[] = [
   { method: "GET", path: new RegExp(`^/media/${ID}$`) },
   { method: "PATCH", path: new RegExp(`^/media/${ID}/draft$`) },
   { method: "POST", path: new RegExp(`^/media/${ID}/schedule$`) },
+  // Long-form Instagram pre-check: file size, fit, publishing allowance. Read-only.
+  { method: "GET", path: new RegExp(`^/media/${ID}/instagram-fit$`) },
   // Set the cover: pick a frame or upload an image. The routes keep their own
   // checks (JPEG/PNG only, size cap, asset must be in the token's agency).
   { method: "PATCH", path: new RegExp(`^/media/${ID}/cover$`) },

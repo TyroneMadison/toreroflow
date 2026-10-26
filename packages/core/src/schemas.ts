@@ -60,6 +60,21 @@ export const instagramOptionsSchema = z.object({
   aiLabel: z.boolean().optional(),
   /** Also put this video on the account's story, as a second post. */
   alsoStory: z.boolean().optional(),
+  /*
+   * Long-form: a reel up to 15 minutes from the long-form screen. Allows a
+   * file over the provider's 300MB cap, because the worker makes an
+   * Instagram copy (see igLongform.ts), and sends the cover as a frame
+   * offset when one was picked.
+   */
+  longform: z.boolean().optional(),
+  /** Make the Instagram copy a centre 9:16 crop. Long-form only. */
+  crop916: z.boolean().optional(),
+  /** Instagram's own cover frame, overriding the shared cover. Long-form only. */
+  thumbOffsetMs: z.number().int().min(0).max(15 * 60 * 1000).optional(),
+  /** A Facebook Page id with location data, which is what Instagram's location takes. */
+  locationId: z.string().regex(/^\d{1,30}$/, "location must be a numeric Facebook place id").optional(),
+  /** People tagged in the reel, by username. Reels take usernames only. */
+  userTags: z.array(z.string().max(80)).max(20).optional(),
 });
 
 /** Instagram refuses stories longer than this. */
