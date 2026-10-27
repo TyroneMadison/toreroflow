@@ -121,6 +121,7 @@ model Agency {
   financialMonths FinancialMonth[]
   bankConnections BankConnection[]
   bots            BotIdentity[]
+  settings        AppSetting[]
 }
 
 /**
@@ -294,6 +295,7 @@ model Client {
   brainstormChats BrainstormChat[]
   superGenRuns    SuperGenerateRun[]
   templates       Template[]
+  monthlyReports  MonthlyReportRun[]
 
   @@index([agencyId])
 }
@@ -1463,4 +1465,42 @@ model BotIdentity {
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
   @@unique([agencyId, name])
+}
+
+/// Agency-wide settings for the ideas set, one JSON value per key
+/// (e.g. "report_job", "trello_intake"). Each value is parsed with its
+/// contract schema on read, so a bad row falls back to the default.
+model AppSetting {
+  id        String   @id @default(cuid())
+  agencyId  String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, key])
+}
+
+/// One monthly client report per brand per month: what was built, who it
+/// went to, and whether it was sent. The unique key is what stops a second
+/// run on the 1st (a restart, two servers) from emailing a client twice.
+model MonthlyReportRun {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// "2026-10", the month the report covers.
+  month      String
+  data       Json
+  recipients String[]  @default([])
+  /// "preview" (kill switch off, nothing sent), "sent", "skipped" (no email
+  /// on the profile) or "failed".
+  status     String
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, month])
 }

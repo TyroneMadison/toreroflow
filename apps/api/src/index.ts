@@ -1,9 +1,12 @@
 import { env } from "./env";
 import { buildServer } from "./server";
 import { startOnboardingSweep } from "./onboardingSweep";
+import { startMonthlyReportJob } from "./ideas/monthlyReport";
+import { gmailMailer } from "./mail/mailer";
 
 const app = await buildServer();
 startOnboardingSweep(app.log);
+startMonthlyReportJob(app.log, gmailMailer());
 
 /*
  * What to bind to.

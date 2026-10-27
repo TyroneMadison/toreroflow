@@ -96,6 +96,12 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   /**
+   * Refresh token for the Toreronee@gmail.com account (Gmail API, send scope),
+   * using the Google OAuth client above. Empty means the monthly report job
+   * cannot send and only builds previews.
+   */
+  GMAIL_REFRESH_TOKEN: string;
+  /**
    * The public origin OAuth redirects come back to, e.g.
    * https://api.torerone.com. Must match what is registered in each platform's
    * console character for character.
@@ -163,6 +169,7 @@ export const env: Env = {
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ?? "",
   OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
