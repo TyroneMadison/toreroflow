@@ -49,6 +49,7 @@ export const ENDPOINTS = {
   publicApproval: { method: "GET", path: "/a/:token", response: I.PublicApprovalSchema },
   publicApprovalComment: { method: "POST", path: "/a/:token/comments", request: I.ApprovalCommentCreateSchema, response: I.ApprovalCommentSchema },
   publicApprovalDecision: { method: "POST", path: "/a/:token/decision", request: I.ApprovalDecisionSchema, response: I.PublicApprovalSchema },
+  listFailedPosts: { method: "GET", path: "/failed-posts", response: I.FailedPostListSchema },
   retryFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/retry", response: I.FailedPostRetryResultSchema },
   listAssets: { method: "GET", path: "/assets", response: I.AssetListSchema },
   repurpose: { method: "POST", path: "/repurpose", request: z.object({ sourceVideoId: z.string().min(1) }), response: I.RepurposeJobSchema },

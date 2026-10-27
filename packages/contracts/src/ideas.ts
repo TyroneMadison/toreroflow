@@ -158,6 +158,18 @@ export const FailedPostRetrySchema = z.object({
   reason: z.string(),
   action: z.enum(["retry", "reconnect"]),
 });
+/** GET /failed-posts: the alert banner count and the list behind it. */
+export const FailedPostListSchema = z.object({
+  count: z.number().int().nonnegative(),
+  items: z.array(
+    FailedPostRetrySchema.extend({
+      brandId: id,
+      /** What to do about it, in the operator's words. */
+      advice: z.string(),
+      scheduledAt: iso.nullable(),
+    }),
+  ),
+});
 export const FailedPostRetryResultSchema = z.object({
   /** "already_live" means the post was found live and nothing was re-uploaded. */
   outcome: z.enum(["queued", "already_live", "needs_reconnect"]),
