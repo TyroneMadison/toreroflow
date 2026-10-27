@@ -37,7 +37,7 @@ import { trelloRoutes } from "./routes/trello";
 declare module "@fastify/jwt" {
   interface FastifyJWT {
     /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
-    /** `bot` names a bot token (e.g. "polly"); full-access bots are listed in BOT_FULL_ACCESS. */
+    /** `bot` names a bot token (e.g. "polly"); its BotIdentity (auth/botAccess.ts) decides full access. */
     payload: { sub: string; agencyId: string; role?: "bot"; bot?: string };
     user: { sub: string; agencyId: string; role?: "bot"; bot?: string };
   }

@@ -4,7 +4,6 @@ import { getPrisma } from "@toreroflow/db";
 import { botZernioKey, ZernioError, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
-import { isFullAccessBot } from "../auth/botAccess";
 
 /**
  * The comments inbox: comments on a client's published Instagram and TikTok
@@ -26,8 +25,8 @@ const replySchema = z.object({
 const hideSchema = z.object({ accountId: z.string().min(1), hidden: z.boolean() });
 
 /** Operator, or a bot Tyrone gave full access. */
-export function canModerate(user: { role?: string; bot?: string }): boolean {
-  return user.role !== "bot" || isFullAccessBot(user.bot);
+export function canModerate(request: FastifyRequest): boolean {
+  return request.user.role !== "bot" || Boolean(request.botIdentity?.fullAccess);
 }
 
 export async function commentRoutes(app: FastifyInstance): Promise<void> {
@@ -82,7 +81,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
       const zernio = providerFor(request);
       const client = await clientOf(request.params.id, request.user.agencyId);
       if (!client) return reply.status(404).send({ error: "client not found" });
-      const canWrite = canModerate(request.user);
+      const canWrite = canModerate(request);
       if (!zernio || !client.providerProfileId) {
         return { posts: [], canModerate: canWrite, configured: false };
       }
@@ -125,7 +124,7 @@ export async function commentRoutes(app: FastifyInstance): Promise<void> {
     accountId: string,
     run: (zernio: ZernioProvider) => Promise<unknown>,
   ): Promise<{ status: number; body: unknown }> => {
-    if (!canModerate(request.user)) {
+    if (!canModerate(request)) {
       return {
         status: 403,
         body: { error: "Reply, hide and delete need the operator. This bot can read comments only." },
