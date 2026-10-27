@@ -88,21 +88,41 @@ export const PreflightDesignSchema = z.object({
 export type PreflightDesign = z.infer<typeof PreflightDesignSchema>;
 
 /**
+ * An unsaved draft to preflight inline: the PUT /drafts body (videoId
+ * optional, nothing uploaded yet) plus what the media would bring. cover is
+ * the draft-wide cover, a target's cover override still wins. videoSeconds
+ * counts only for a video (kind absent means video). Never saved.
+ */
+export const PreflightInlineDraftSchema = DraftUpsertSchema.extend({
+  videoId: z.string().min(1).optional(),
+  cover: z.string().min(1).optional(),
+  videoSeconds: z.number().nonnegative().optional(),
+  kind: z.enum(["video", "image", "carousel"]).optional(),
+});
+export type PreflightInlineDraft = z.infer<typeof PreflightInlineDraftSchema>;
+
+/**
+ * Exactly one of draftId (a saved draft) or draft (an unsaved one, inline).
  * design and brandKit are optional (additive): the brand kit rules run only
  * when both are present. brandKit is the BrandKit fields the rules read; the
  * server has no kit store on this branch yet.
  */
-export const PreflightRequestSchema = z.object({
-  draftId: z.string().min(1),
-  design: PreflightDesignSchema.optional(),
-  brandKit: z
-    .object({
-      fonts: z.array(z.object({ family: z.string().min(1) })),
-      colors: z.array(z.string()),
-      logoAssetId: z.string().nullable(),
-    })
-    .optional(),
-});
+export const PreflightRequestSchema = z
+  .object({
+    draftId: z.string().min(1).optional(),
+    draft: PreflightInlineDraftSchema.optional(),
+    design: PreflightDesignSchema.optional(),
+    brandKit: z
+      .object({
+        fonts: z.array(z.object({ family: z.string().min(1) })),
+        colors: z.array(z.string()),
+        logoAssetId: z.string().nullable(),
+      })
+      .optional(),
+  })
+  .refine((b) => (b.draftId === undefined) !== (b.draft === undefined), {
+    message: "send exactly one of draftId or draft",
+  });
 export type PreflightRequest = z.infer<typeof PreflightRequestSchema>;
 export const PreflightResultSchema = z.object({
   blocking: z.array(IssueSchema),

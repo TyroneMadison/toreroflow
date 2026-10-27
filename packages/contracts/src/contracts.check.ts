@@ -13,6 +13,7 @@ import {
   OverrideRequestSchema,
   OverridesSchema,
   POLLY,
+  PreflightRequestSchema,
   PreflightResultSchema,
   QueueItemSchema,
   QueueReorderRequestSchema,
@@ -74,6 +75,15 @@ assert.ok(
     ok: [],
   }),
 );
+// Preflight request: exactly one of draftId or an inline draft (videoId optional).
+const inline = { brandId: "c1", caption: "Hi", postAt: "2026-11-02T23:00:00.000Z", targets: [{ platform: "tiktok", overrides: {} }] };
+assert.ok(PreflightRequestSchema.parse({ draftId: "d1" }));
+assert.ok(PreflightRequestSchema.parse({ draft: { ...inline, cover: "c.jpg", videoSeconds: 30, kind: "video" } }));
+assert.equal(PreflightRequestSchema.safeParse({}).success, false, "neither");
+assert.equal(PreflightRequestSchema.safeParse({ draftId: "d1", draft: inline }).success, false, "both");
+assert.equal(PreflightRequestSchema.safeParse({ draft: { ...inline, brandId: "" } }).success, false);
+assert.equal(PreflightRequestSchema.safeParse({ draft: { ...inline, kind: "gif" } }).success, false);
+assert.equal(PreflightRequestSchema.safeParse({ draft: { ...inline, videoSeconds: -1 } }).success, false);
 assert.equal(OverrideRequestSchema.safeParse({ reason: "  " }).success, false);
 assert.equal(OverrideRequestSchema.safeParse({}).success, false);
 assert.ok(OverrideRequestSchema.parse({ reason: "client approved by phone" }));

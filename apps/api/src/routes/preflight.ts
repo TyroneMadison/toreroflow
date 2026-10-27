@@ -5,6 +5,7 @@ import {
   OverrideRequestSchema,
   OverridesSchema,
   PreflightRequestSchema,
+  resolveTarget,
   WorkflowPlatformSchema,
   type OverrideLog,
 } from "@toreroflow/contracts";
@@ -13,8 +14,9 @@ import { actingUserId } from "../auth/actingUser";
 import { runPreflight, type PreflightTarget } from "../workflow/preflight";
 
 /**
- * W2: POST /preflight checks every target of a draft (a Post and its
- * PostTargets) at once. POST /drafts/:id/override lets the operator or a
+ * W2: POST /preflight checks every target of a draft at once: a saved one
+ * (draftId, a Post and its PostTargets) or an unsaved one sent inline
+ * (draft, never saved, its brand must be in the caller's agency). POST /drafts/:id/override lets the operator or a
  * full-access bot (Polly) post past blocking issues, always with a reason,
  * logged with the actor and time.
  */
@@ -23,9 +25,34 @@ export async function preflightRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("onRequest", requireAuth);
 
   app.post("/preflight", async (request, reply) => {
-    const body = PreflightRequestSchema.parse(request.body);
+    const parsed = PreflightRequestSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? "invalid body" });
+    const body = parsed.data;
+    const kit = body.brandKit ?? null;
+    const design = body.design ?? null;
+    if (body.draft) {
+      const d = body.draft;
+      const brand = await prisma.client.findFirst({
+        where: { id: d.brandId, agencyId: request.user.agencyId },
+        select: { id: true },
+      });
+      if (!brand) return reply.status(404).send({ error: "brand not found" });
+      // Not saved, so its fix routes point at the new-draft screen.
+      const draft = { ...d, id: "new", videoId: d.videoId ?? "" };
+      const targets = d.targets.map((t): PreflightTarget => {
+        const r = resolveTarget(draft, t);
+        return {
+          platform: r.platform,
+          caption: r.caption,
+          title: r.title ?? null,
+          cover: r.cover ?? d.cover ?? null,
+          videoSeconds: d.kind && d.kind !== "video" ? null : (d.videoSeconds ?? null),
+        };
+      });
+      return runPreflight({ draftId: draft.id, targets, kit, design });
+    }
     const post = await prisma.post.findFirst({
-      where: { id: body.draftId, deletedAt: null, client: { agencyId: request.user.agencyId } },
+      where: { id: body.draftId!, deletedAt: null, client: { agencyId: request.user.agencyId } },
       include: { targets: true, mediaAsset: true },
     });
     if (!post) return reply.status(404).send({ error: "draft not found" });
@@ -49,7 +76,7 @@ export async function preflightRoutes(app: FastifyInstance): Promise<void> {
         videoSeconds: asset?.kind === "video" ? asset.durationSec : null,
       });
     }
-    return runPreflight({ draftId: post.id, targets, kit: body.brandKit ?? null, design: body.design ?? null });
+    return runPreflight({ draftId: post.id, targets, kit, design });
   });
 
   app.post<{ Params: { id: string } }>("/drafts/:id/override", async (request, reply) => {
