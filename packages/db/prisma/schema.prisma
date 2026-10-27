@@ -1428,7 +1428,7 @@ model PreflightOverride {
   @@index([postId])
 }
 
-/// Posting template (W5). Bots may read and apply, never write.
+/// Posting template (W5). The operator and Polly (full access) write; other bots read and apply at most, per scope.
 model Template {
   id             String        @id @default(cuid())
   clientId       String

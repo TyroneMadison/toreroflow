@@ -31,6 +31,7 @@ export const ENDPOINTS = {
   updateTemplate: { method: "PUT", path: "/templates/:id", request: W.TemplateUpsertSchema, response: W.TemplateSchema },
   deleteTemplate: { method: "DELETE", path: "/templates/:id", response: Ok },
   applyTemplate: { method: "POST", path: "/templates/:id/apply", request: W.TemplateApplyRequestSchema, response: W.DraftSchema },
+  templateCadence: { method: "GET", path: "/templates/cadence", response: W.CadenceSuggestionsSchema },
 
   // Ideas (feat/toreroflow-ideas-be)
   monthlyReport: { method: "GET", path: "/reports/monthly/:brandId/:month", response: I.MonthlyReportSchema },

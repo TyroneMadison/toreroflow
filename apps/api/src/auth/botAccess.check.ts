@@ -28,6 +28,11 @@ for (const [method, path] of [
   ["GET", "/clients/cms0qdz5t/comments"],
   ["GET", "/clients/cms0qdz5t/comments/p1?accountId=a1"],
   ["GET", "/clients/cms0qdz5t/instagram-limit"],
+  // Templates: the route checks the scope.
+  ["GET", "/templates"],
+  ["GET", "/templates?brandId=c1"],
+  ["GET", "/templates/cadence?brandId=c1"],
+  ["POST", "/templates/tpl1/apply"],
 ] as const) {
   assert.equal(botAllowed(method, path), true, `${method} ${path} is the workflow`);
 }
@@ -64,6 +69,10 @@ for (const [method, path] of [
   ["GET", "/media/cms84z50v/transcript"],
   ["POST", "/media/cms84z50v/cover-image/../../financials"],
   ["DELETE", "/media/cms84z50v/cover"],
+  // Templates: no bot edits them without full access.
+  ["POST", "/templates"],
+  ["PUT", "/templates/tpl1"],
+  ["DELETE", "/templates/tpl1"],
 ] as const) {
   assert.equal(botAllowed(method, path), false, `${method} ${path} must be refused`);
 }

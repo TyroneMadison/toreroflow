@@ -107,6 +107,17 @@ ALLOW.push(
   { method: "GET", path: new RegExp(`^/clients/${ID}/instagram-limit$`) },
 );
 
+/**
+ * Templates (W5): reaching the route is open, the route then checks the
+ * bot's templates:read or templates:apply scope, which no bot has unless its
+ * BotIdentity grants it. Create, edit and delete are not listed: full access only.
+ */
+ALLOW.push(
+  { method: "GET", path: new RegExp(`^/templates$`) },
+  { method: "GET", path: new RegExp(`^/templates/cadence$`) },
+  { method: "POST", path: new RegExp(`^/templates/${ID}/apply$`) },
+);
+
 /** True when a bot-role token may make this request. */
 export function botAllowed(method: string, url: string): boolean {
   const path = url.split("?")[0] ?? url;

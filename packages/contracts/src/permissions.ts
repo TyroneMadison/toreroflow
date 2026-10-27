@@ -5,7 +5,8 @@ export const RoleSchema = z.enum(["owner", "viewer", "bot"]);
 export type Role = z.infer<typeof RoleSchema>;
 
 /**
- * Named bot scopes. Bots never get templates:write (SPLIT-PLAN W5).
+ * Named bot scopes. There is no templates:write scope: editing templates
+ * takes the operator or full access (Polly), see canEditTemplates.
  * Everything else a bot may do stays on the route whitelist in
  * apps/api/src/auth/botAccess.ts.
  */
@@ -36,5 +37,10 @@ export function hasScope(p: Principal, scope: Scope): boolean {
 
 /** Preflight override: the operator or a full-access bot (Polly), always with a logged reason. */
 export function canOverridePreflight(p: Principal): boolean {
+  return p.role === "owner" || (p.role === "bot" && p.bot.fullAccess);
+}
+
+/** Template create, edit, delete: the operator or a full-access bot (Polly). Scoped bots read and apply at most. */
+export function canEditTemplates(p: Principal): boolean {
   return p.role === "owner" || (p.role === "bot" && p.bot.fullAccess);
 }

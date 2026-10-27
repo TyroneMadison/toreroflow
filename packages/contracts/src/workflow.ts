@@ -193,6 +193,25 @@ export const TemplateUpsertSchema = TemplateSchema.omit({ id: true });
 export const TemplateListSchema = z.object({ templates: z.array(TemplateSchema) });
 export const TemplateApplyRequestSchema = z.object({ videoId: z.string().min(1), postAt: z.string().datetime() });
 
+/** GET /templates/cadence?brandId=: suggestions from the brand's posting history (last 8 weeks, ET). */
+export const WeekdaySchema = z.enum(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+export const CadenceSlotSchema = z.object({
+  day: WeekdaySchema,
+  /** "HH:00" in ET. */
+  time: z.string().regex(/^([01]\d|2[0-3]):00$/),
+});
+export const CadenceSuggestionsSchema = z.object({
+  brandId: z.string().min(1),
+  postsPerWeek: z.number().nonnegative(),
+  /** Best slots by average views, best first (up to 3). */
+  bestTimes: z.array(CadenceSlotSchema.extend({ posts: z.number().int(), avgViews: z.number().nullable() })),
+  /** A regular slot (used in at least half the weeks) with no post in a given week. */
+  missedSlots: z.array(CadenceSlotSchema.extend({ weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  /** Suggested Template.cadence text, e.g. "3 per week, Mon Wed Fri". */
+  cadence: z.string(),
+});
+export type CadenceSuggestions = z.infer<typeof CadenceSuggestionsSchema>;
+
 // ---- Platform limits (preflight config) ----
 
 export const PlatformLimitsSchema = z.object({

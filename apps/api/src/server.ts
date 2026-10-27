@@ -35,6 +35,7 @@ import { trelloRoutes } from "./routes/trello";
 import { preflightRoutes } from "./routes/preflight";
 import { queueRoutes } from "./routes/queue";
 import { rollupRoutes } from "./routes/rollup";
+import { templateRoutes } from "./routes/templates";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -180,6 +181,7 @@ export async function buildServer(
   await app.register(preflightRoutes);
   await app.register(queueRoutes);
   await app.register(rollupRoutes);
+  await app.register(templateRoutes);
 
   return app;
 }
