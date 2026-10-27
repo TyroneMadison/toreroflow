@@ -108,6 +108,11 @@ stub("post", {
     where.id === "post1" && where.client.agencyId === "agencyA" ? POST : null,
 });
 stub("user", { findFirst: async () => ({ id: "owner1" }) });
+const clients = [{ id: "c1", agencyId: "agencyA" }, { id: "c2", agencyId: "agencyB" }];
+stub("client", {
+  findFirst: async ({ where }: { where: { id: string; agencyId: string } }) =>
+    clients.find((c) => c.id === where.id && c.agencyId === where.agencyId) ?? null,
+});
 stub("botIdentity", { findUnique: async () => null });
 stub("preflightOverride", {
   create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -146,6 +151,54 @@ assert.deepEqual(res.json().warnings.map((i: { code: string }) => i.code), ["fon
 assert.equal((await post("/preflight", { draftId: "nope" })).statusCode, 404);
 assert.equal((await post("/preflight", { draftId: "post1" }, nova)).statusCode, 403, "other bots keep their scope");
 assert.equal((await post("/preflight", { draftId: "post1" }, polly)).statusCode, 200);
+
+// An unsaved draft, inline: same rules, nothing saved, fix routes point at the new draft.
+const INLINE = {
+  brandId: "c1",
+  caption: `Hello ${tags(31)}`,
+  title: "Draft title",
+  postAt: "2026-11-02T23:00:00.000Z",
+  cover: "draft.jpg",
+  videoSeconds: 20 * 60,
+  targets: [
+    { platform: "instagram", overrides: {} },
+    { platform: "youtube", overrides: { caption: "Desc", title: "YT title" } },
+    { platform: "tiktok", overrides: { caption: "Short" } },
+  ],
+};
+res = await post("/preflight", { draft: INLINE });
+assert.equal(res.statusCode, 200, res.body);
+body = res.json();
+assert.deepEqual(
+  body.blocking.map((i: { platform: string; code: string }) => `${i.platform}:${i.code}`),
+  ["instagram:video_too_long", "instagram:too_many_hashtags"],
+  "the draft cover counts for every target; 20 minutes is over Instagram's 15",
+);
+assert.equal(body.blocking[0].fixRoute, "/create/new#instagram.cutId");
+assert.equal(body.ok.find((i: { code: string }) => i.code === "title_ok").message, "title 8 of 100 characters", "the title override wins");
+res = await post("/preflight", { draft: { ...INLINE, kind: "carousel", cover: undefined, caption: "Hi" } });
+assert.deepEqual(
+  res.json().blocking.map((i: { platform: string; code: string }) => `${i.platform}:${i.code}`),
+  ["instagram:cover_missing", "youtube:cover_missing", "tiktok:cover_missing"],
+  "no cover anywhere; a carousel has no video length",
+);
+res = await post("/preflight", {
+  draft: { ...INLINE, targets: [{ platform: "youtube", overrides: { cover: "yt.jpg" } }] },
+  design: { fonts: ["Papyrus"], colors: [] },
+  brandKit: { fonts: [{ family: "Inter" }], colors: [], logoAssetId: null },
+});
+assert.deepEqual(res.json().warnings.map((i: { code: string }) => i.code), ["font_off_brand"], "design and brandKit still apply");
+
+// Exactly one of draftId or draft.
+assert.equal((await post("/preflight", {})).statusCode, 400, "neither");
+assert.equal((await post("/preflight", { draftId: "post1", draft: INLINE })).statusCode, 400, "both");
+assert.equal((await post("/preflight", { draft: { ...INLINE, targets: [{ platform: "snapchat", overrides: {} }] } })).statusCode, 400);
+// The brand must be in the caller's agency.
+assert.equal((await post("/preflight", { draft: { ...INLINE, brandId: "c2" } })).statusCode, 404, "a brand of another agency");
+assert.equal((await post("/preflight", { draft: { ...INLINE, brandId: "nope" } })).statusCode, 404);
+// Same auth as a saved draft.
+assert.equal((await post("/preflight", { draft: INLINE }, polly)).statusCode, 200);
+assert.equal((await post("/preflight", { draft: INLINE }, nova)).statusCode, 403, "other bots keep their scope");
 
 // Override: a reason is required.
 assert.equal((await post("/drafts/post1/override", {})).statusCode, 400);
