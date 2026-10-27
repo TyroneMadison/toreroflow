@@ -15,10 +15,13 @@ import {
   type WorkflowPlatform,
 } from "@toreroflow/contracts";
 import { api, ApiError, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
-import { navigate, navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
+import { navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
 import {
   blankTemplate,
+  draftProblem,
+  fieldFromHash,
   fieldId,
+  fixHref,
   fixLabel,
   fixTarget,
   fmtMetric,
@@ -30,16 +33,22 @@ import {
   moveId,
   newDraft,
   PLATFORM_LABEL,
+  preflightBody,
+  preflightErrorText,
   preflightSummary,
   principalFrom,
   queueOrder,
   resetField,
   rollupHasData,
+  saveErrorText,
   setOverride,
+  setTargets,
   stashDraft,
   templateToForm,
   toLocalInput,
+  upsertBody,
   WORKFLOW_PLATFORMS,
+  type DraftSession,
   type TemplateForm,
 } from "../lib/workflow";
 import { useAppState } from "../state/AppState";
@@ -98,33 +107,43 @@ export function FanoutScreen() {
   const { selectedClient } = useAppState();
   const { draft: draftId } = useRoute();
   const toast = useToast();
+  const principal = usePrincipal();
   const videos = useReadyVideos(selectedClient?.id);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [session, setSession] = useState<DraftSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const draft = session?.draft ?? null;
+  // Any edit leaves the server's copy behind until the next save.
+  const setDraft = (d: Draft) => {
+    setSession({ draft: d, saved: false });
+    setSaveError(null);
+  };
 
-  // ?draft= names the draft: the one handed over (template, preflight fix
-  // link) when it matches, else the saved one.
+  // ?draft= (or a fix link's /create/<id>) names the draft: the one in hand
+  // when it matches, else the saved one. /create/new is the unsaved one.
   useEffect(() => {
     setError(null);
-    if (!draftId) return setDraft(null);
+    setSaveError(null);
+    if (!draftId) return setSession(null);
     const stashed = loadStashedDraft();
-    if (stashed?.id === draftId) return setDraft(stashed);
+    if (stashed && (draftId === "new" || stashed.draft.id === draftId)) return setSession(stashed);
+    if (draftId === "new") return setError("This unsaved draft is gone. Start it again from a video or a template.");
     api
-      .get<Draft>(`/drafts/${draftId}`)
-      .then(setDraft)
+      .get<Draft>(`/drafts/${encodeURIComponent(draftId)}`)
+      .then((d) => setSession({ draft: d, saved: true }))
       .catch((err) => setError(errText(err, "could not load the draft")));
   }, [draftId]);
 
   // Keep the hand-off current, so a reload or a trip to Preflight keeps edits.
   useEffect(() => {
-    if (draft) stashDraft(draft);
-  }, [draft]);
+    if (session) stashDraft(session);
+  }, [session]);
 
-  // A preflight fix link lands here with #fanout-<platform>-<field>.
+  // A preflight fix link lands here with #<platform>.<field>.
   useEffect(() => {
     if (!draft) return;
-    const id = window.location.hash.slice(1);
+    const id = fieldFromHash(window.location.hash);
     const el = id ? document.getElementById(id) : null;
     if (!el) return;
     el.closest("details")?.setAttribute("open", "");
@@ -132,28 +151,38 @@ export function FanoutScreen() {
     el.focus();
   }, [draft !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const start = (video: MediaAssetInfo) => {
-    const copy = video.draftCopy ?? {};
-    const d = newDraft(crypto.randomUUID(), video.clientId, video.id, copy.description ?? "", tomorrowAt(18), copy.youtubeTitle ?? copy.name);
-    setDraft(d);
-    setQuery({ draft: d.id });
+  const open = (s: DraftSession) => {
+    // Stashed first, so the ?draft= change finds it instead of asking the server.
+    stashDraft(s);
+    setSession(s);
+    if (draftId !== s.draft.id) navigatePath(`/create/fanout?draft=${encodeURIComponent(s.draft.id)}`);
   };
 
+  const start = (video: MediaAssetInfo) => {
+    const copy = video.draftCopy ?? {};
+    open({ draft: newDraft(crypto.randomUUID(), video.clientId, video.id, copy.description ?? "", tomorrowAt(18), copy.youtubeTitle ?? copy.name), saved: false });
+  };
+
+  // Saving only saves: the post stays a draft and nothing is scheduled.
   const save = async () => {
     if (!draft) return;
+    const problem = draftProblem(draft);
+    if (problem) return setSaveError(problem);
     setBusy(true);
+    setSaveError(null);
     try {
-      const { id, ...body } = draft;
-      await api.put(`/drafts/${id}`, body);
-      navigatePath(`/create/preflight?draft=${encodeURIComponent(id)}`);
+      open({ draft: await api.put<Draft>(`/drafts/${encodeURIComponent(draft.id)}`, upsertBody(draft)), saved: true });
+      toast.success("Draft saved");
     } catch (err) {
-      toast.fail("Could not save the draft", err);
+      setSaveError(saveErrorText(err instanceof ApiError ? err.status : null, errText(err, "could not save the draft")));
     } finally {
       setBusy(false);
     }
   };
 
   const video = videos?.find((v) => v.id === draft?.videoId);
+  const missing = draft ? WORKFLOW_PLATFORMS.filter((p) => !draft.targets.some((t) => t.platform === p)) : [];
+  const viewer = principal.role === "viewer";
   const state = error ? "error" : draft ? "ready" : draftId ? "loading" : !selectedClient ? "empty" : videos ? "pick" : "loading";
 
   return (
@@ -184,10 +213,15 @@ export function FanoutScreen() {
               </div>
             </div>
           ))}
-        {state === "ready" && draft && (
+        {state === "ready" && draft && session && (
           <>
             <div className="card glass wf-card wf-draft" data-testid="fanout-draft">
-              <div className="wf-lbl">Draft</div>
+              <div className="wf-lbl">
+                Draft{" "}
+                <span className="wf-from" data-testid="fanout-saved">
+                  {session.saved ? "saved" : "not saved"}
+                </span>
+              </div>
               <div className="wf-draftgrid">
                 <div className="wf-thumb" aria-hidden={!video?.thumbUrl}>
                   {video?.thumbUrl ? <img src={video.thumbUrl} alt="" /> : <span>{video ? videoLabel(video) : draft.videoId}</span>}
@@ -225,9 +259,51 @@ export function FanoutScreen() {
                 <PlatformCard key={t.platform} draft={draft} platform={t.platform} onChange={setDraft} />
               ))}
             </div>
-            <button type="button" className="btn pri wf-btn wf-full" disabled={busy} onClick={() => void save()} data-testid="fanout-schedule">
-              {busy ? "Saving" : `Check and schedule all ${draft.targets.length}`}
-            </button>
+            {missing.length > 0 && (
+              <div className="wf-acts" data-testid="fanout-add">
+                {missing.map((p) => (
+                  <button
+                    type="button"
+                    key={p}
+                    className="btn ghost wf-btn"
+                    onClick={() => setDraft(setTargets(draft, [...draft.targets.map((t) => t.platform), p]))}
+                  >
+                    Add {PLATFORM_LABEL[p]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {saveError && (
+              <div className="lfnote bad wf-banner" role="alert" data-testid="fanout-save-error">
+                {saveError}
+              </div>
+            )}
+            <div className="wf-two">
+              <button
+                type="button"
+                className="btn ghost wf-btn wf-full"
+                disabled={busy || viewer || session.saved}
+                aria-describedby={viewer ? "wf-viewer-hint" : undefined}
+                onClick={() => void save()}
+                data-testid="fanout-save"
+              >
+                {busy ? "Saving" : session.saved ? "Saved" : "Save draft"}
+              </button>
+              <button
+                type="button"
+                className="btn pri wf-btn wf-full"
+                disabled={!draft.targets.length}
+                onClick={() => navigatePath(`/create/preflight?draft=${encodeURIComponent(draft.id)}`)}
+                data-testid="fanout-preflight"
+              >
+                Check all {draft.targets.length}
+              </button>
+            </div>
+            {viewer && (
+              <p id="wf-viewer-hint" className="wf-note">
+                Viewers can check a draft but not save it.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -293,6 +369,14 @@ function PlatformCard({ draft, platform, onChange }: { draft: Draft; platform: W
           <GlassDateTime value={toLocalInput(shown.postAt)} onChange={(v) => edit("postAt", fromLocalInput(v))} />
         </div>
       </details>
+      <button
+        type="button"
+        className="btn ghost wf-btn"
+        onClick={() => onChange(setTargets(draft, draft.targets.map((t) => t.platform).filter((p) => p !== platform)))}
+        data-testid={`fanout-${platform}-remove`}
+      >
+        Remove {PLATFORM_LABEL[platform]}
+      </button>
       {over && (
         <div className="wf-reset">
           <p className="wf-note">
@@ -317,53 +401,71 @@ export function PreflightScreen() {
   const [result, setResult] = useState<PreflightResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState<"schedule" | "override" | null>(null);
-  const draft = useMemo(() => {
-    const d = loadStashedDraft();
-    return d?.id === draftId ? d : null;
+  const [busy, setBusy] = useState(false);
+  const [session, setSession] = useState<DraftSession | null>(null);
+  const saved = session?.saved ?? false;
+  // An unsaved draft goes inline, with what its video brings (length, cover).
+  const videos = useReadyVideos(session && !saved ? session.draft.brandId : null);
+  const media = videos?.find((v) => v.id === session?.draft.videoId) ?? null;
+  const inputsReady = session !== null && (saved || videos !== null);
+
+  // The draft in hand from Fan-out, else the saved one.
+  useEffect(() => {
+    setSession(null);
+    setResult(null);
+    setError(null);
+    if (!draftId) return;
+    const stashed = loadStashedDraft();
+    if (stashed?.draft.id === draftId) return setSession(stashed);
+    api
+      .get<Draft>(`/drafts/${encodeURIComponent(draftId)}`)
+      .then((d) => setSession({ draft: d, saved: true }))
+      .catch((err) => setError(preflightErrorText(err instanceof ApiError ? err.status : null, errText(err, "could not load the draft"), true)));
   }, [draftId]);
 
   const run = useCallback(async () => {
-    if (!draftId) return;
+    if (!session || !inputsReady) return;
     setError(null);
     setResult(null);
     try {
-      setResult(await api.post<PreflightResult>("/preflight", { draftId }));
+      setResult(await api.post<PreflightResult>("/preflight", preflightBody(session, media)));
     } catch (err) {
-      setError(errText(err, "preflight could not run"));
+      setError(preflightErrorText(err instanceof ApiError ? err.status : null, errText(err, "preflight could not run"), session.saved));
     }
-  }, [draftId]);
+  }, [session, inputsReady, media]);
 
   useEffect(() => {
     void run();
   }, [run]);
 
-  const schedule = async (mode: "schedule" | "override") => {
-    if (!draftId) return;
-    setBusy(mode);
+  // Scheduling stays in Upload & Schedule; the draft hands over its video only.
+  const toSchedule = (d: Draft) =>
+    navigatePath(`/create/upload?client=${encodeURIComponent(d.brandId)}&schedule=${encodeURIComponent(d.videoId)}`);
+
+  // An override is logged against a saved draft, so an unsaved one is saved first.
+  const override = async () => {
+    if (!session) return;
+    setBusy(true);
     try {
-      if (mode === "override") await api.post(`/drafts/${draftId}/override`, { reason: reason.trim() });
-      if (draft) {
-        const { id, ...body } = draft;
-        await api.put(`/drafts/${id}`, body);
-      }
-      toast.success(mode === "override" ? "Override logged, scheduled" : "Scheduled");
-      navigate("queue");
+      const d = session.saved ? session.draft : await api.put<Draft>(`/drafts/${encodeURIComponent(session.draft.id)}`, upsertBody(session.draft));
+      stashDraft({ draft: d, saved: true });
+      await api.post(`/drafts/${encodeURIComponent(d.id)}/override`, { reason: reason.trim() });
+      toast.success("Override logged");
+      toSchedule(d);
     } catch (err) {
-      toast.fail(mode === "override" ? "Could not override" : "Could not schedule", err);
-    } finally {
-      setBusy(null);
+      toast.fail("Could not override", err);
+      setBusy(false);
     }
   };
 
   const summary = result && preflightSummary(result);
-  const n = draft?.targets.length ?? 3;
+  const n = session?.draft.targets.length ?? 3;
   const reasonOk = OverrideRequestSchema.safeParse({ reason }).success;
   const canOverride = canOverridePreflight(principal);
   const state = !draftId ? "empty" : error ? "error" : result ? "ready" : "loading";
 
   const row = (issue: Issue, kind: "blocking" | "warning" | "ok", i: number) => {
-    const { platform, field } = fixTarget(issue);
+    const { platform } = fixTarget(issue);
     const mark = kind === "blocking" ? "×" : kind === "warning" ? "!" : "✓";
     return (
       <li className={`wf-chk ${kind}`} key={`${kind}-${i}`} data-testid={`preflight-${kind}`}>
@@ -375,7 +477,7 @@ export function PreflightScreen() {
           <b>{PLATFORM_LABEL[platform]}:</b> {issue.message}
         </span>
         {kind !== "ok" && (
-          <a className="btn ghost wf-btn" {...pathLinkProps(`/create/fanout?draft=${encodeURIComponent(draftId!)}#${fieldId(platform, field)}`)}>
+          <a className="btn ghost wf-btn" {...pathLinkProps(fixHref(issue, draftId!, saved))}>
             {fixLabel(issue)}
           </a>
         )}
@@ -397,8 +499,10 @@ export function PreflightScreen() {
         )}
       </div>
       <div className="stage">
-        {state === "empty" && <Empty screen="preflight" title="No draft to check" hint="Open a draft in Fan-out and press Check and schedule." />}
-        {state === "error" && <ErrorState screen="preflight" message={error} onRetry={() => void run()} />}
+        {state === "empty" && <Empty screen="preflight" title="No draft to check" hint="Open a draft in Fan-out and press Check." />}
+        {state === "error" && (
+          <ErrorState screen="preflight" message={error} onRetry={() => (session ? void run() : navigatePath(`/create/fanout?draft=${encodeURIComponent(draftId!)}`))} />
+        )}
         {state === "loading" && <Loading screen="preflight" label="Running preflight" />}
         {state === "ready" && result && summary && (
           <>
@@ -417,7 +521,7 @@ export function PreflightScreen() {
                   className="card glass wf-card"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (reasonOk) void schedule("override");
+                    if (reasonOk) void override();
                   }}
                 >
                   <div className="wf-lbl">Operator override</div>
@@ -438,8 +542,8 @@ export function PreflightScreen() {
                   <p id="wf-reason-hint" className="wf-note">
                     At least 3 characters. Saved with your name and the time.
                   </p>
-                  <button type="submit" className="btn ghost wf-btn wf-full" disabled={!reasonOk || busy !== null} data-testid="preflight-override">
-                    {busy === "override" ? "Posting" : "Override and post"}
+                  <button type="submit" className="btn ghost wf-btn wf-full" disabled={!reasonOk || busy} data-testid="preflight-override">
+                    {busy ? "Logging" : "Override and schedule"}
                   </button>
                 </form>
               )}
@@ -448,17 +552,17 @@ export function PreflightScreen() {
                 <button
                   type="button"
                   className="btn pri wf-btn wf-full"
-                  disabled={summary.blocked || busy !== null}
+                  disabled={summary.blocked || busy || !session}
                   aria-describedby="wf-clear-hint"
-                  onClick={() => void schedule("schedule")}
+                  onClick={() => session && toSchedule(session.draft)}
                   data-testid="preflight-schedule"
                 >
-                  {busy === "schedule" ? "Scheduling" : `Schedule all ${n}`}
+                  Schedule all {n}
                 </button>
                 <p id="wf-clear-hint" className="wf-note">
                   {summary.blocked
                     ? `Unlocks once every × is fixed.${canOverride ? "" : " Only the operator or Polly can override."}`
-                    : "Nothing is blocking."}
+                    : "Nothing is blocking. Opens the usual schedule flow for this video."}
                 </p>
               </div>
             </div>
@@ -964,7 +1068,7 @@ function UseTemplate({ t, onCancel }: { t: Template; onCancel(): void }) {
     setBusy(true);
     try {
       const draft = await api.post<Draft>(`/templates/${t.id}/apply`, { videoId, postAt: fromLocalInput(when) });
-      stashDraft(draft);
+      stashDraft({ draft, saved: false });
       navigatePath(`/create/fanout?draft=${encodeURIComponent(draft.id)}`);
     } catch (err) {
       toast.fail("Could not apply the template", err);

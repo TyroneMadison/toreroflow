@@ -3,9 +3,17 @@
  * W1 overrides and reset, W2 summary, fix links and who may override, W3
  * moves, W4 formatting and the empty state, W5 template form and prefill.
  */
-import { DraftSchema, resolveTarget, type Draft, type PreflightResult } from "@toreroflow/contracts";
+import { DraftSchema, DraftUpsertSchema, PreflightRequestSchema, resolveTarget, type Draft, type PreflightResult } from "@toreroflow/contracts";
 import {
   blankTemplate,
+  draftProblem,
+  fieldFromHash,
+  fixHref,
+  preflightBody,
+  preflightErrorText,
+  saveErrorText,
+  setTargets,
+  upsertBody,
   fixLabel,
   fixTarget,
   fmtMetric,
@@ -75,6 +83,35 @@ eq(canOverridePreflight(principalFrom("owner", jwt({ role: "bot", bot: "nova" })
 eq(canOverridePreflight(principalFrom("viewer", null)), false, "a viewer may not");
 eq(canEditTemplates(principalFrom("owner", jwt({ role: "bot", bot: "polly" }))), true, "Polly can edit templates");
 
+// ---- W2: exactly one of draftId or draft ----
+const saved = setOverride(base, "tiktok", "cutId", "cut-3min");
+eq(preflightBody({ draft: saved, saved: true }), { draftId: "d1" }, "a saved draft is checked by id");
+const media = { kind: "video" as const, durationSec: 768, coverOffsetMs: 1500, thumbUrl: null };
+const inline = preflightBody({ draft: saved, saved: false }, media);
+eq("draftId" in inline, false, "an unsaved draft never sends draftId");
+eq(PreflightRequestSchema.safeParse(inline).success, true, "the inline body meets the contract");
+eq([inline.draft!.videoSeconds, inline.draft!.kind, inline.draft!.cover], [768, "video", "frame:1500"], "the video's length and cover go along");
+eq(inline.draft!.targets[2]!.overrides, { cutId: "cut-3min" }, "overrides go along whole");
+eq("cover" in preflightBody({ draft: saved, saved: false }, { ...media, coverOffsetMs: null, thumbUrl: "/files/c/v/thumb.jpg" }).draft!, false, "an auto thumbnail is no cover");
+eq(PreflightRequestSchema.safeParse(preflightBody({ draft: { ...base, id: "template-t1-v1" }, saved: false })).success, true, "a template draft goes inline without media too");
+eq(fixHref(blocked.blocking[0]!, "d1", false), "/create/new#instagram.cover", "an unsaved draft's fix link is /create/new");
+eq(fixHref(blocked.blocking[0]!, "d1", true), "/create/d1#instagram.cover", "a saved draft's fix link names it");
+eq([fieldFromHash("#tiktok.cutId"), fieldFromHash("#token=x")], ["fanout-tiktok-cutId", null], "the hash finds the field");
+eq(preflightErrorText(403, "forbidden", true), "This account cannot run preflight.", "403");
+eq(preflightErrorText(404, "brand not found", false), "This draft's brand is not in your agency.", "404 inline");
+eq(preflightErrorText(400, "send exactly one of draftId or draft", false).startsWith("Preflight could not read"), true, "400");
+
+// ---- W1 save: full body, inline errors ----
+eq(upsertBody(saved), { brandId: "caleb", videoId: "v1", caption: "2021 M3 walkaround.", title: "M3 full walkaround", postAt: base.postAt, targets: saved.targets }, "every target and its overrides are sent, never the id");
+eq(DraftUpsertSchema.safeParse(upsertBody(saved)).success, true, "the save body meets the contract");
+eq(draftProblem(setTargets(base, [])), "Add at least one platform before saving.", "empty targets");
+eq(draftProblem({ ...base, targets: [...base.targets, { platform: "youtube", overrides: {} }] }), "YouTube is on the draft twice. Keep one.", "duplicate platform");
+eq(draftProblem(base), null, "a good draft has no problem");
+eq(setTargets(saved, ["tiktok", "youtube"]).targets, [saved.targets[0], saved.targets[2]], "removing a platform keeps the others' overrides, in order");
+eq(saveErrorText(409, "this post is already publishing; change it from the calendar"), "This post is already publishing; change it from the calendar. Saving only changes drafts.", "409");
+eq(saveErrorText(403, "viewers cannot save drafts"), "Viewers can open drafts but not save them.", "403");
+eq(saveErrorText(400, "no tiktok, instagram account for this brand"), "No TikTok, Instagram account for this brand. Remove that platform or connect the account in Settings.", "no account names the platform and says what to do");
+
 // ---- W3 ----
 eq(moveId(["a", "b", "c", "d"], "c", 0), ["c", "a", "b", "d"], "move to the top");
 eq(moveId(["a", "b", "c"], "a", 2), ["b", "c", "a"], "move to the end");
@@ -104,9 +141,10 @@ const applied: Draft = {
 };
 const mem = new Map<string, string>();
 const store = { setItem: (k: string, v: string) => void mem.set(k, v), getItem: (k: string) => mem.get(k) ?? null };
-stashDraft(applied, store);
-eq(loadStashedDraft(store), applied, "every draft field survives the hand-off to the composer");
+stashDraft({ draft: applied, saved: false }, store);
+eq(loadStashedDraft(store), { draft: applied, saved: false }, "every draft field survives the hand-off to the composer");
 eq(loadStashedDraft({ getItem: () => "{not json" }), null, "a broken hand-off is ignored");
+eq(loadStashedDraft({ getItem: () => JSON.stringify(applied) }), null, "an old bare-draft hand-off is ignored");
 const t = { ...blankTemplate("caleb"), name: " Long-form weekly ", hashtags: ["bmw", "carsforsale"], postTimes: ["18:00", "12:00"] };
 const form = templateToForm(t);
 eq([form.hashtags, form.postTimes], ["#bmw #carsforsale", "18:00, 12:00"], "the form shows tags and times");

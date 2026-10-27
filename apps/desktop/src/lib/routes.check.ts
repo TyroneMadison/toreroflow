@@ -60,6 +60,10 @@ eq(parseUrl("/clients/a b/ready").screen, "dashboard", "an unsafe slug is not a 
 eq(parseUrl("/create/upload?schedule=m1&step=details").scheduleId, "m1", "an open schedule flow is in the URL");
 eq(parseUrl("/create/upload?schedule=m1&dest=both").dest, "both", "a long-form destination is in the URL");
 eq(parseUrl("/create/edit?area=ideas").area, "ideas", "Studio's open area is in the URL");
+eq([parseUrl("/create/new").screen, parseUrl("/create/new").draft], ["fanout", "new"], "a fix link for an unsaved draft opens Fan-out");
+eq(parseUrl("/create/d_1").draft, "d_1", "a fix link for a saved draft names it");
+eq(parseUrl("/create/upload").draft, null, "a known create path is not a draft");
+eq(canonicalUrl("/create/new?client=c_1"), "/create/new?client=c_1", "a fix link is not rewritten");
 
 console.log("routes: all checks passed");
 

@@ -2,8 +2,10 @@ import {
   POLLY,
   resetOverride,
   type Draft,
+  type DraftUpsert,
   type Issue,
   type OverrideField,
+  type PreflightRequest,
   type PreflightResult,
   type Principal,
   type QueueItem,
@@ -60,18 +62,65 @@ export function newDraft(id: string, brandId: string, videoId: string, caption: 
   };
 }
 
-/*
- * The draft a template's "Use template" produced, handed to the composer
- * through sessionStorage, so a reload of the composer keeps it.
- */
-const DRAFT_KEY = "toreroflow-fanout-draft";
-export function stashDraft(draft: Draft, store: Pick<Storage, "setItem"> = sessionStorage): void {
-  store.setItem(DRAFT_KEY, JSON.stringify(draft));
+/** Adds a platform back (one target each) or takes one off the draft. */
+export function setTargets(draft: Draft, platforms: WorkflowPlatform[]): Draft {
+  return {
+    ...draft,
+    targets: WORKFLOW_PLATFORMS.filter((p) => platforms.includes(p)).map(
+      (platform) => draft.targets.find((t) => t.platform === platform) ?? { platform, overrides: {} },
+    ),
+  };
 }
-export function loadStashedDraft(store: Pick<Storage, "getItem"> = sessionStorage): Draft | null {
+
+/**
+ * The PUT /drafts/:id body. The server replaces every target's overrides
+ * whole (an omitted key is a reset), so this always sends all of them.
+ */
+export function upsertBody(draft: Draft): DraftUpsert {
+  const { id: _id, ...body } = draft;
+  return { ...body, targets: draft.targets.map((t) => ({ platform: t.platform, overrides: { ...t.overrides } })) };
+}
+
+/** What the server would refuse with a 400, caught before the request. */
+export function draftProblem(draft: Draft): string | null {
+  if (!draft.targets.length) return "Add at least one platform before saving.";
+  const dup = draft.targets.find((t, i) => draft.targets.findIndex((x) => x.platform === t.platform) !== i);
+  return dup ? `${PLATFORM_LABEL[dup.platform]} is on the draft twice. Keep one.` : null;
+}
+
+/** A failed save, said for the composer's inline error. */
+export function saveErrorText(status: number | null, message: string): string {
+  if (status === 403) return "Viewers can open drafts but not save them.";
+  if (status === 409) return `${cap(message)}. Saving only changes drafts.`;
+  if (status === 400 && /^no (.+) account/.test(message)) return `${cap(message)}. Remove that platform or connect the account in Settings.`;
+  return cap(message);
+}
+
+/** Capitalized, with platform ids ("no tiktok account") as their names. */
+const cap = (s: string) => {
+  const t = s.replace(/\b(youtube|instagram|tiktok)\b/g, (p) => PLATFORM_LABEL[p as WorkflowPlatform]);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/*
+ * The draft open in the composer, handed between Fan-out and Preflight
+ * through sessionStorage so a reload keeps it. saved is true only while the
+ * server holds this exact version (loaded with GET or just saved); any edit,
+ * and any draft from a template, is unsaved.
+ */
+export interface DraftSession {
+  draft: Draft;
+  saved: boolean;
+}
+const DRAFT_KEY = "toreroflow-fanout-draft";
+export function stashDraft(session: DraftSession, store: Pick<Storage, "setItem"> = sessionStorage): void {
+  store.setItem(DRAFT_KEY, JSON.stringify(session));
+}
+export function loadStashedDraft(store: Pick<Storage, "getItem"> = sessionStorage): DraftSession | null {
   try {
     const raw = store.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as Draft) : null;
+    const s = raw ? (JSON.parse(raw) as DraftSession) : null;
+    return s?.draft?.id ? { draft: s.draft, saved: s.saved === true } : null;
   } catch {
     return null;
   }
@@ -98,10 +147,56 @@ export function preflightSummary(r: PreflightResult): { blocked: boolean; text: 
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** The field an issue's fixRoute points at ("/create/<draft>#instagram.caption"). */
+/** What preflight needs from the draft's video when it goes inline. */
+export interface PreflightMedia {
+  kind: "video" | "carousel";
+  durationSec: number | null;
+  coverOffsetMs: number | null;
+  thumbUrl: string | null;
+}
+
+/**
+ * The POST /preflight body: exactly one of draftId (the server holds this
+ * version) or draft (template drafts, new ones and unsaved edits, inline).
+ */
+export function preflightBody(session: DraftSession, media?: PreflightMedia | null): PreflightRequest {
+  if (session.saved) return { draftId: session.draft.id };
+  const draft: NonNullable<PreflightRequest["draft"]> = upsertBody(session.draft);
+  if (media) {
+    draft.kind = media.kind;
+    if (media.kind === "video" && media.durationSec != null) draft.videoSeconds = media.durationSec;
+    // ponytail: a picked frame or an uploaded cover file (cover.<ext>) counts as a cover; the
+    // list has no coverKey, add it to MediaAssetInfo if the thumbUrl shape ever changes.
+    const cover = media.coverOffsetMs != null ? `frame:${media.coverOffsetMs}` : media.thumbUrl && /\/cover\.\w+/.test(media.thumbUrl) ? media.thumbUrl : null;
+    if (cover) draft.cover = cover;
+  }
+  return { draft };
+}
+
+/** A preflight that could not run, said for the error state. */
+export function preflightErrorText(status: number | null, message: string, saved: boolean): string {
+  if (status === 403) return "This account cannot run preflight.";
+  if (status === 404) return saved ? "This draft is no longer saved. Open it again in Fan-out." : "This draft's brand is not in your agency.";
+  if (status === 400) return `Preflight could not read the draft: ${message}`;
+  return message;
+}
+
+/** The field an issue's fixRoute points at ("/create/new#instagram.caption"). */
 export function fixTarget(issue: Issue): { platform: WorkflowPlatform; field: string } {
   const field = issue.fixRoute.split("#")[1]?.split(".")[1] ?? "caption";
   return { platform: issue.platform, field };
+}
+
+/** Where a fix link goes: Fan-out at the field, /create/new for an unsaved draft. */
+export function fixHref(issue: Issue, draftId: string, saved: boolean): string {
+  const { platform, field } = fixTarget(issue);
+  return `/create/${saved ? encodeURIComponent(draftId) : "new"}#${platform}.${field}`;
+}
+
+/** The composer field a fix link's hash names ("instagram.caption"), as its DOM id. */
+export function fieldFromHash(hash: string): string | null {
+  const m = /^#?(youtube|instagram|tiktok)\.(\w+)$/.exec(hash);
+  return m ? fieldId(m[1] as WorkflowPlatform, m[2]!) : null;
 }
 
 export function fixLabel(issue: Issue): string {
