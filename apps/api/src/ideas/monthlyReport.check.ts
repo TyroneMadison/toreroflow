@@ -4,10 +4,22 @@
 import assert from "node:assert/strict";
 
 delete process.env.BOT_FULL_ACCESS;
+// Set before env.ts loads so a local .env cannot fill them in.
+process.env.GOOGLE_CLIENT_ID = "cid";
+process.env.GOOGLE_CLIENT_SECRET = "csecret";
+process.env.GMAIL_REFRESH_TOKEN = "";
+const calls: string[] = [];
+let tokenStatus = 200;
+globalThis.fetch = (async (url: string) => {
+  calls.push(String(url));
+  if (String(url) !== "https://oauth2.googleapis.com/token") throw new Error(`unexpected network call ${url}`);
+  return new Response(JSON.stringify({ access_token: "at" }), { status: tokenStatus });
+}) as typeof fetch;
 const { getPrisma } = await import("@toreroflow/db");
 const { DEFAULT_REPORT_JOB_CONFIG } = await import("@toreroflow/contracts");
 const M = await import("./monthlyReport");
-const { rawMessage } = await import("../mail/mailer");
+const { rawMessage, gmailMailer } = await import("../mail/mailer");
+const { env } = await import("../env");
 const { monthlyReportRoutes } = await import("../routes/monthlyReport");
 const { testApp } = await import("./testApp");
 
@@ -160,6 +172,29 @@ res = await app.inject({ method: "GET", url: "/reports/monthly/other/2026-10", h
 assert.equal(res.statusCode, 404);
 res = await app.inject({ method: "GET", url: "/reports/monthly/c1/2026-10", headers: nova });
 assert.equal(res.statusCode, 403);
+
+// Preflight: a clear 503 naming the missing token, then ready, then a rejected token.
+assert.equal(gmailMailer(), null, "no refresh token, no sender");
+res = await app.inject({ method: "GET", url: "/reports/monthly/preflight", headers: operator });
+assert.equal(res.statusCode, 503);
+assert.deepEqual(res.json().missing, ["GMAIL_REFRESH_TOKEN"]);
+assert.equal(res.json().ready, false);
+assert.match(res.json().error, /Toreronee@gmail.com sender is not connected: set GMAIL_REFRESH_TOKEN/);
+res = await app.inject({ method: "GET", url: "/reports/monthly/preflight", headers: nova });
+assert.equal(res.statusCode, 403);
+env.GMAIL_REFRESH_TOKEN = "rt";
+res = await app.inject({ method: "GET", url: "/reports/monthly/preflight", headers: operator });
+assert.equal(res.statusCode, 200, res.body);
+assert.deepEqual([res.json().ready, res.json().verified, res.json().killSwitch], [true, false, true]);
+assert.equal(calls.length, 0, "plain preflight never calls Google");
+res = await app.inject({ method: "GET", url: "/reports/monthly/preflight?verify=true", headers: operator });
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(res.json().verified, true);
+tokenStatus = 400;
+res = await app.inject({ method: "GET", url: "/reports/monthly/preflight?verify=true", headers: operator });
+assert.equal(res.statusCode, 503);
+assert.match(res.json().error, /Google rejected GMAIL_REFRESH_TOKEN \(Gmail token refresh 400\)/);
+assert.deepEqual(calls, ["https://oauth2.googleapis.com/token", "https://oauth2.googleapis.com/token"], "verify only refreshes, never sends");
 
 await app.close();
 console.log("monthlyReport.check: ok");

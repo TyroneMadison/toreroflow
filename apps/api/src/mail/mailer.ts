@@ -33,27 +33,40 @@ export function rawMessage(from: string, m: MailMessage): string {
   return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
 }
 
+/** The env vars the Toreronee@gmail.com sender needs, by name. */
+export const GMAIL_ENV = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"] as const;
+
+/** Which of GMAIL_ENV are unset on this server. Empty means the sender can try. */
+export function gmailMissing(): string[] {
+  return GMAIL_ENV.filter((k) => !env[k]);
+}
+
+/** Trade the refresh token for an access token. Sends nothing. */
+export async function gmailAccessToken(): Promise<string> {
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      refresh_token: env.GMAIL_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    }),
+  });
+  if (!tokenRes.ok) throw new Error(`Gmail token refresh ${tokenRes.status}`);
+  return ((await tokenRes.json()) as { access_token: string }).access_token;
+}
+
 /**
  * Gmail API sender for the Toreronee@gmail.com account. Null when the account
- * is not connected (GMAIL_REFRESH_TOKEN plus the Google OAuth client), so the
- * caller can say so instead of failing halfway through a month of reports.
+ * is not connected (any of GMAIL_ENV unset), so the caller can say so instead
+ * of failing halfway through a month of reports.
  */
 export function gmailMailer(): Mailer | null {
-  if (!env.GMAIL_REFRESH_TOKEN || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return null;
+  if (gmailMissing().length) return null;
   return {
     async send(message) {
-      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: env.GOOGLE_CLIENT_ID,
-          client_secret: env.GOOGLE_CLIENT_SECRET,
-          refresh_token: env.GMAIL_REFRESH_TOKEN,
-          grant_type: "refresh_token",
-        }),
-      });
-      if (!tokenRes.ok) throw new Error(`Gmail token refresh ${tokenRes.status}`);
-      const { access_token } = (await tokenRes.json()) as { access_token: string };
+      const access_token = await gmailAccessToken();
       const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
         headers: { Authorization: `Bearer ${access_token}`, "Content-Type": "application/json" },

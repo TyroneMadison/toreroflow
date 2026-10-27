@@ -2,10 +2,13 @@ import { env } from "./env";
 import { buildServer } from "./server";
 import { startOnboardingSweep } from "./onboardingSweep";
 import { startMonthlyReportJob } from "./ideas/monthlyReport";
-import { gmailMailer } from "./mail/mailer";
+import { gmailMailer, gmailMissing } from "./mail/mailer";
 
 const app = await buildServer();
 startOnboardingSweep(app.log);
+if (gmailMissing().length) {
+  app.log.warn(`[reports] monthly report emails cannot send until ${gmailMissing().join(", ")} are set (docs/monthly-report.md)`);
+}
 startMonthlyReportJob(app.log, gmailMailer());
 
 /*
