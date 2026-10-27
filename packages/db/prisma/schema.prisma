@@ -300,6 +300,7 @@ model Client {
   contentRequests ContentRequest[]
   libraryAssets   LibraryAsset[]
   brandKit        BrandKit?
+  sunraQuotes     SunraQuote[]
 
   @@index([agencyId])
 }
@@ -1564,4 +1565,31 @@ model BrandKit {
   updatedAt   DateTime @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+/// A Sunra carousel price quote, and its generation once approved.
+/// status: quoted, generating, done, failed. Nothing is spent until a person
+/// (or Polly) approves this exact quote before it expires, and a quote is
+/// used at most once.
+model SunraQuote {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// instagram | tiktok
+  platform   String
+  slides     Int
+  prompt     String
+  priceUsd   Float
+  expiresAt  DateTime
+  status     String    @default("quoted")
+  approvedBy String?
+  approvedAt DateTime?
+  /// Storage keys of the generated slides, in order.
+  resultKeys String[]  @default([])
+  error      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
 }

@@ -102,6 +102,8 @@ export const SunraCarouselRequestSchema = z.object({
   brandId: id,
   slides: z.number().int().min(1).max(20),
   prompt: z.string().min(1),
+  /** Instagram takes up to 10 slides; TikTok photo posts up to 20 here. */
+  platform: z.enum(["instagram", "tiktok"]).default("instagram"),
 });
 export const SunraCarouselQuoteSchema = z.object({
   quoteId: id,
@@ -111,6 +113,15 @@ export const SunraCarouselQuoteSchema = z.object({
   expiresAt: iso,
 });
 export type SunraCarouselQuote = z.infer<typeof SunraCarouselQuoteSchema>;
+/** POST /sunra/carousel/:quoteId/generate. approved must be the literal true. */
+export const SunraGenerateRequestSchema = z.object({ approved: z.literal(true) });
+export const SunraGenerateResultSchema = z.object({
+  quoteId: id,
+  status: z.enum(["generating", "done", "failed"]),
+  slideUrls: z.array(z.string()),
+});
+/** Generation as a whole. Off by default: quotes still work, generate answers 403. */
+export const SunraSettingsSchema = z.object({ generationEnabled: z.boolean() });
 
 // ---- Client approval link ----
 
