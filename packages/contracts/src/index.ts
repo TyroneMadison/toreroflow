@@ -52,5 +52,7 @@ export const ENDPOINTS = {
   listFailedPosts: { method: "GET", path: "/failed-posts", response: I.FailedPostListSchema },
   retryFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/retry", response: I.FailedPostRetryResultSchema },
   listAssets: { method: "GET", path: "/assets", response: I.AssetListSchema },
+  uploadAsset: { method: "POST", path: "/assets", response: I.AssetSchema },
+  deleteAsset: { method: "DELETE", path: "/assets/:id", response: Ok },
   repurpose: { method: "POST", path: "/repurpose", request: z.object({ sourceVideoId: z.string().min(1) }), response: I.RepurposeJobSchema },
 } as const satisfies Record<string, Endpoint>;

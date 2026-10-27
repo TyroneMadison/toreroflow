@@ -188,6 +188,15 @@ export const AssetSchema = z.object({
 });
 export type Asset = z.infer<typeof AssetSchema>;
 export const AssetListSchema = z.object({ assets: z.array(AssetSchema) });
+/**
+ * GET /assets filters. brandId set: what that brand can see (its own plus
+ * shared). sharing "shared" or "brand" narrows to one side.
+ */
+export const AssetQuerySchema = z.object({
+  brandId: z.string().min(1).optional(),
+  type: AssetSchema.shape.type.optional(),
+  sharing: z.enum(["shared", "brand", "all"]).default("all"),
+});
 
 // ---- Repurpose (placeholder, built last) ----
 
