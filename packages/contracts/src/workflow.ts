@@ -79,7 +79,31 @@ export const IssueSchema = z.object({
 });
 export type Issue = z.infer<typeof IssueSchema>;
 
-export const PreflightRequestSchema = z.object({ draftId: z.string().min(1) });
+/** What a post's cover and overlays use, for the brand kit checks. */
+export const PreflightDesignSchema = z.object({
+  fonts: z.array(z.string()),
+  colors: z.array(z.string()),
+  logoAssetId: z.string().nullable().optional(),
+});
+export type PreflightDesign = z.infer<typeof PreflightDesignSchema>;
+
+/**
+ * design and brandKit are optional (additive): the brand kit rules run only
+ * when both are present. brandKit is the BrandKit fields the rules read; the
+ * server has no kit store on this branch yet.
+ */
+export const PreflightRequestSchema = z.object({
+  draftId: z.string().min(1),
+  design: PreflightDesignSchema.optional(),
+  brandKit: z
+    .object({
+      fonts: z.array(z.object({ family: z.string().min(1) })),
+      colors: z.array(z.string()),
+      logoAssetId: z.string().nullable(),
+    })
+    .optional(),
+});
+export type PreflightRequest = z.infer<typeof PreflightRequestSchema>;
 export const PreflightResultSchema = z.object({
   blocking: z.array(IssueSchema),
   warnings: z.array(IssueSchema),

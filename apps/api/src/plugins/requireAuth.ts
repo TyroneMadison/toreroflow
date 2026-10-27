@@ -36,8 +36,9 @@ export async function requireAuth(
   }
 }
 
-/** Who is asking, for scope checks. Call after requireAuth. Viewers are not told apart here. */
+/** Who is asking, for scope checks. Call after requireAuth. */
 export function principalOf(request: FastifyRequest): Principal {
-  if (request.user.role !== "bot") return { role: "owner" };
-  return { role: "bot", bot: request.botIdentity! };
+  const role = (request.user as { role?: string }).role;
+  if (role === "bot") return { role: "bot", bot: request.botIdentity! };
+  return role === "viewer" ? { role: "viewer" } : { role: "owner" };
 }
