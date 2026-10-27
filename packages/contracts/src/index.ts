@@ -44,6 +44,7 @@ export const ENDPOINTS = {
   insights: { method: "GET", path: "/insights/:postId", response: I.InsightsResponseSchema },
   getBrandKit: { method: "GET", path: "/brands/:brandId/kit", response: I.BrandKitSchema },
   putBrandKit: { method: "PUT", path: "/brands/:brandId/kit", request: I.BrandKitSchema, response: I.BrandKitSchema },
+  sunraModels: { method: "GET", path: "/carousels/sunra/models", response: I.SunraModelsResponseSchema },
   sunraQuote: { method: "POST", path: "/sunra/carousel/quote", request: I.SunraCarouselRequestSchema, response: I.SunraCarouselQuoteSchema },
   sunraGenerate: { method: "POST", path: "/sunra/carousel/:quoteId/generate", request: I.SunraGenerateRequestSchema, response: I.SunraGenerateResultSchema },
   getSunraSettings: { method: "GET", path: "/sunra/settings", response: I.SunraStatusSchema },

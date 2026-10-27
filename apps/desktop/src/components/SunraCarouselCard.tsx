@@ -13,9 +13,10 @@ import Select from "./Select";
  * OFF) for the agency.
  */
 
+/** Shapes from packages/contracts (SunraCarouselQuoteSchema, SunraImageModelSchema). */
 interface Quote {
   quoteId: string;
-  model: string;
+  modelId: string;
   slides: number;
   creditsPerImage: number;
   credits: number;
@@ -24,14 +25,16 @@ interface Quote {
   aspectRatio: string;
   expiresAt: string;
 }
+interface Model {
+  id: string;
+  label: string;
+  provider: string;
+  creditsPerImage: number;
+}
 
 const PLATFORMS = [
   { value: "instagram", label: "Instagram, 1080x1350 (4:5)" },
   { value: "tiktok", label: "TikTok, 1080x1920 (9:16)" },
-];
-const MODELS = [
-  { value: "nano-banana-2", label: "Nano Banana 2, 7 credits a slide" },
-  { value: "nano-banana-pro", label: "Nano Banana Pro, 14 credits a slide" },
 ];
 
 export default function SunraCarouselCard() {
@@ -40,7 +43,8 @@ export default function SunraCarouselCard() {
   const [status, setStatus] = useState<{ generationEnabled: boolean; connected: boolean } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [platform, setPlatform] = useState("instagram");
-  const [model, setModel] = useState("nano-banana-2");
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelId, setModelId] = useState("nano-banana-2");
   const [slides, setSlides] = useState(5);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,10 +55,14 @@ export default function SunraCarouselCard() {
       .get<{ generationEnabled: boolean; connected: boolean }>("/sunra/settings")
       .then(setStatus)
       .catch(() => setStatus(null));
+    api
+      .get<{ models: Model[] }>("/carousels/sunra/models")
+      .then((r) => setModels(r.models))
+      .catch((err) => toast.fail("Could not load Sunra models", err));
   }, []);
 
   // Any change to the request makes the old price wrong.
-  useEffect(() => setQuote(null), [prompt, platform, model, slides]);
+  useEffect(() => setQuote(null), [prompt, platform, modelId, slides]);
 
   const maxSlides = platform === "instagram" ? 10 : 20;
 
@@ -68,7 +76,7 @@ export default function SunraCarouselCard() {
           brandId: selectedClient.id,
           prompt: prompt.trim(),
           platform,
-          model,
+          modelId,
           slides: Math.min(slides, maxSlides),
         }),
       );
@@ -83,7 +91,10 @@ export default function SunraCarouselCard() {
     if (!quote) return;
     setBusy(true);
     try {
-      const r = await api.post<{ slideUrls: string[] }>(`/sunra/carousel/${quote.quoteId}/generate`, { approved: true });
+      const r = await api.post<{ slideUrls: string[] }>(`/sunra/carousel/${quote.quoteId}/generate`, {
+        approved: true,
+        modelId: quote.modelId,
+      });
       setResult(r.slideUrls);
       setQuote(null);
     } catch (err) {
@@ -145,7 +156,11 @@ export default function SunraCarouselCard() {
         </label>
         <label className="cfield">
           <span className="lab">Model</span>
-          <Select value={model} onChange={setModel} options={MODELS} />
+          <Select
+            value={modelId}
+            onChange={setModelId}
+            options={models.map((m) => ({ value: m.id, label: `${m.label} (${m.provider}), ${m.creditsPerImage} credits a slide` }))}
+          />
         </label>
         <label className="cfield">
           <span className="lab">Slides</span>

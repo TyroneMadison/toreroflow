@@ -1585,7 +1585,7 @@ model SunraQuote {
   platform   String
   slides     Int
   prompt     String
-  /// nano-banana-2 | nano-banana-pro
+  /// Sunra image model id, one of GET /carousels/sunra/models
   model      String    @default("nano-banana-2")
   /// Sunra credits approved for this carousel: slides x credits per image.
   credits    Int

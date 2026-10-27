@@ -134,18 +134,37 @@ export type BrandKit = z.infer<typeof BrandKitSchema>;
 // ---- Sunra carousel: quote first, spend only after approval ----
 
 /**
- * Sunra credits per generated image, as observed on the account. The quote is
- * slides x this; nothing is spent before a human approves that number.
- * ponytail: hard-coded observed prices, update here if Sunra changes them.
+ * Fallback Sunra credits per image, as observed on the account, used only
+ * while no Sunra catalog (list_models / estimate_cost) is wired on the server.
+ * ponytail: hard-coded observed prices, the wired catalog replaces them.
  */
 export const SUNRA_CREDITS_PER_IMAGE = { "nano-banana-2": 7, "nano-banana-pro": 14 } as const;
-export type SunraModel = keyof typeof SUNRA_CREDITS_PER_IMAGE;
 /** Slide size per platform: Instagram portrait 4:5, TikTok photo mode 9:16. */
 export const SUNRA_SLIDE_SIZE = {
   instagram: { width: 1080, height: 1350, aspectRatio: "4:5" },
   tiktok: { width: 1080, height: 1920, aspectRatio: "9:16" },
 } as const;
 
+/** One Sunra image model. Empty lists mean Sunra did not say (not checked). */
+export const SunraImageModelSchema = z.object({
+  id: z.string().min(1),
+  label: z.string(),
+  provider: z.string(),
+  /** Sunra estimate_cost for one image, in credits. */
+  creditsPerImage: z.number().positive(),
+  supportedAspectRatios: z.array(z.string()),
+  supportedSizes: z.array(z.string()),
+  supportedResolutions: z.array(z.string()),
+  maxRefImages: z.number().int().min(0),
+});
+export type SunraImageModel = z.infer<typeof SunraImageModelSchema>;
+/** GET /carousels/sunra/models: every image model Sunra offers, cached. */
+export const SunraModelsResponseSchema = z.object({ models: z.array(SunraImageModelSchema) });
+export type SunraModelsResponse = z.infer<typeof SunraModelsResponseSchema>;
+
+const modelId = z.string().trim().min(1).max(200);
+
+/** POST /sunra/carousel/quote. modelId must be one of GET /carousels/sunra/models. */
 export const SunraCarouselRequestSchema = z.object({
   brandId: id,
   /** Instagram takes up to 10 slides; TikTok photo posts up to 20 here. */
@@ -153,14 +172,15 @@ export const SunraCarouselRequestSchema = z.object({
   /** What the user typed: the whole carousel, every slide is built from it. */
   prompt: z.string().trim().min(1).max(4000),
   platform: z.enum(["instagram", "tiktok"]).default("instagram"),
-  model: z.enum(["nano-banana-2", "nano-banana-pro"]).default("nano-banana-2"),
+  modelId: modelId.default("nano-banana-2"),
 });
+export type SunraCarouselRequest = z.input<typeof SunraCarouselRequestSchema>;
 export const SunraCarouselQuoteSchema = z.object({
   quoteId: id,
-  model: z.enum(["nano-banana-2", "nano-banana-pro"]),
+  modelId: z.string(),
   slides: z.number().int().positive(),
-  creditsPerImage: z.number().int().positive(),
-  /** slides x creditsPerImage: the most this carousel can spend. */
+  creditsPerImage: z.number().positive(),
+  /** slides x creditsPerImage, rounded up: the most this carousel can spend. */
   credits: z.number().int().positive(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -170,13 +190,17 @@ export const SunraCarouselQuoteSchema = z.object({
   expiresAt: iso,
 });
 export type SunraCarouselQuote = z.infer<typeof SunraCarouselQuoteSchema>;
-/** POST /sunra/carousel/:quoteId/generate. approved must be the literal true. */
-export const SunraGenerateRequestSchema = z.object({ approved: z.literal(true) });
+/** POST /sunra/carousel/:quoteId/generate. approved must be the literal true; modelId must match the quote and still be offered. */
+export const SunraGenerateRequestSchema = z.object({ approved: z.literal(true), modelId });
+export type SunraGenerateRequest = z.infer<typeof SunraGenerateRequestSchema>;
 export const SunraGenerateResultSchema = z.object({
   quoteId: id,
+  modelId: z.string(),
   status: z.enum(["generating", "done", "failed"]),
   slideUrls: z.array(z.string()),
+  error: z.string().optional(),
 });
+export type SunraGenerateResult = z.infer<typeof SunraGenerateResultSchema>;
 /** Generation as a whole. Off by default: quotes still work, generate answers 403. */
 export const SunraSettingsSchema = z.object({ generationEnabled: z.boolean() });
 /** GET /sunra/settings: the switch, plus whether this server has a Sunra generator wired. */
