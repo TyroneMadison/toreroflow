@@ -27,6 +27,8 @@ const comments: Record<string, any>[] = [];
 const prisma = getPrisma();
 const mock = (name: string, value: object) => Object.defineProperty(prisma, name, { value });
 const assetOf = (l: Record<string, any>) => assets.find((a) => a.id === l.mediaAssetId)!;
+const { mockRateLimits } = await import("./testApp");
+const buckets = await mockRateLimits();
 mock("mediaAsset", {
   findFirst: async ({ where }: { where: { id: string; kind: string; client: { agencyId: string } } }) =>
     assets.find((a) => a.id === where.id && a.kind === where.kind && a.agencyId === where.client.agencyId) ?? null,
@@ -151,6 +153,7 @@ assert.equal(res.statusCode, 410, "a revoked link cannot approve");
 for (let i = 0; i < 60; i++) await visit("x.y", "7.7.7.7");
 res = await visit(link.token, "7.7.7.7");
 assert.equal(res.statusCode, 429);
+assert.equal([...buckets].find(([k]) => k.startsWith("approval|7.7.7.7|"))?.[1].count, 61, "counted in the database table");
 
 await ops.app.close();
 await pub.app.close();

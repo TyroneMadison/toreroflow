@@ -9,7 +9,7 @@ import {
 import { env } from "../env";
 import { fileLink } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
-import { rateLimiter } from "../ideas/rateLimit";
+import { clientIp, rateLimiter } from "../ideas/rateLimit";
 
 /**
  * Client approval links: one per video version, signed, expiring, revocable.
@@ -84,11 +84,11 @@ export async function approvalLinkRoutes(app: FastifyInstance): Promise<void> {
 /** The client's side: no login, 60 requests a minute per IP. */
 export async function publicApprovalRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const allow = rateLimiter(60_000, 60);
+  const allow = rateLimiter("approval", 60_000, 60);
 
   /** The link a token names, or the reply that was already sent. */
   async function open(token: string, ip: string, reply: FastifyReply) {
-    if (!allow(ip)) return void reply.status(429).send({ error: "too many requests, slow down" });
+    if (!(await allow(ip)).allowed) return void reply.status(429).send({ error: "too many requests, slow down" });
     const dot = token.lastIndexOf(".");
     const id = dot > 0 ? token.slice(0, dot) : "";
     const link = id
@@ -125,12 +125,12 @@ export async function publicApprovalRoutes(app: FastifyInstance): Promise<void> 
   }
 
   app.get<{ Params: { token: string } }>("/a/:token", async (request, reply) => {
-    const link = await open(request.params.token, request.ip, reply);
+    const link = await open(request.params.token, clientIp(request), reply);
     return link ? page(link.id) : reply;
   });
 
   app.post<{ Params: { token: string } }>("/a/:token/comments", async (request, reply) => {
-    const link = await open(request.params.token, request.ip, reply);
+    const link = await open(request.params.token, clientIp(request), reply);
     if (!link) return reply;
     const body = ApprovalCommentCreateSchema.parse(request.body);
     const durationMs = link.mediaAsset.durationSec != null ? Math.ceil(link.mediaAsset.durationSec * 1000) : null;
@@ -143,7 +143,7 @@ export async function publicApprovalRoutes(app: FastifyInstance): Promise<void> 
 
   /** Approve or Request changes. The latest answer stands until the link expires. */
   app.post<{ Params: { token: string } }>("/a/:token/decision", async (request, reply) => {
-    const link = await open(request.params.token, request.ip, reply);
+    const link = await open(request.params.token, clientIp(request), reply);
     if (!link) return reply;
     const { decision } = ApprovalDecisionSchema.parse(request.body);
     await prisma.approvalLink.update({ where: { id: link.id }, data: { status: decision, decidedAt: new Date() } });

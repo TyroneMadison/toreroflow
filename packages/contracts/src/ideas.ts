@@ -57,9 +57,44 @@ export const ContentRequestSchema = z.object({
   brandId: id,
   what: z.string().trim().min(1).max(2000),
   dueDate: z.string().date().optional(),
-  footageUrl: z.string().url().optional(),
-  notes: z.string().max(4000).optional(),
+  /** http(s) only: the link lands on a Trello card an editor will click. */
+  footageUrl: z
+    .string()
+    .trim()
+    .max(2000)
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), "footage link must start with http:// or https://")
+    .optional(),
+  notes: z.string().trim().max(4000).optional(),
 });
+/**
+ * POST /r/:token, the public form. The brand comes from the signed link, so
+ * it is not in the body. Unknown fields are refused. `website` is the
+ * honeypot; turnstileToken is required only when the server has Turnstile on.
+ */
+export const ContentRequestFormSchema = ContentRequestSchema.omit({ brandId: true })
+  .extend({
+    website: z.string().max(500).optional(),
+    turnstileToken: z.string().max(4096).optional(),
+  })
+  .strict();
+/** GET /r/:token: what the form needs to render. */
+export const RequestFormInfoSchema = z.object({
+  brandName: z.string(),
+  turnstileSiteKey: z.string().nullable(),
+  maxFileBytes: z.number().int().positive(),
+  fileTypes: z.array(z.string()),
+});
+/** A brand's request form link, operator side. */
+export const RequestFormLinkSchema = z.object({
+  id,
+  brandId: id,
+  token: z.string().min(16),
+  url: z.string(),
+  revokedAt: iso.nullable(),
+  createdAt: iso,
+});
+export const RequestFormLinkCreateSchema = z.object({ brandId: id });
 
 // ---- Merged insights ----
 

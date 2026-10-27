@@ -298,6 +298,7 @@ model Client {
   templates       Template[]
   monthlyReports  MonthlyReportRun[]
   contentRequests ContentRequest[]
+  requestFormLinks RequestFormLink[]
   libraryAssets   LibraryAsset[]
   brandKit        BrandKit?
   sunraQuotes     SunraQuote[]
@@ -1522,6 +1523,10 @@ model ContentRequest {
   dueDate      String?
   footageUrl   String?
   notes        String?
+  /// The form link it came in through. Null for requests from before links.
+  linkId       String?
+  /// Optional reference file, type checked by its bytes (png, jpg, webp, pdf).
+  attachmentKey String?
   status       String    @default("pending")
   trelloCardId String?
   trelloUrl    String?
@@ -1651,4 +1656,49 @@ model RepurposeJob {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId, createdAt])
+}
+
+/// A brand's public request form link. The token is "<id>.<HMAC of the id>"
+/// (JWT_SECRET), never stored. Rotating revokes this row and makes a new one;
+/// a revoked link answers 410 for good.
+model RequestFormLink {
+  id          String    @id @default(cuid())
+  clientId    String
+  createdById String
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// Fixed-window hit counters for the public routes, shared by every API
+/// process. key is "<scope>|<subject>|<window start ms>"; rows past
+/// expiresAt are swept now and then.
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// Who did what to a request form: submissions, rejections, rate limits,
+/// captcha failures, and link create, rotate, revoke. Kept after a brand is
+/// deleted, so no relation.
+model RequestFormAudit {
+  id        String   @id @default(cuid())
+  clientId  String?
+  linkId    String?
+  /// submitted | rejected | rate_limited | captcha_failed | bad_token | link_created | link_rotated | link_revoked
+  action    String
+  /// operator user id, "bot:<name>", or "public"
+  actor     String
+  ip        String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([createdAt])
 }

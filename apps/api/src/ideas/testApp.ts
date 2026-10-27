@@ -35,3 +35,24 @@ export async function testApp(routes: FastifyPluginAsync) {
     otherAgency: as({ sub: "u9", agencyId: "B" }),
   };
 }
+
+/** An in-memory RateLimitBucket table on the shared Prisma client, for the public routes. */
+export async function mockRateLimits(): Promise<Map<string, { count: number; expiresAt: Date }>> {
+  const { getPrisma } = await import("@toreroflow/db");
+  const buckets = new Map<string, { count: number; expiresAt: Date }>();
+  Object.defineProperty(getPrisma(), "rateLimitBucket", {
+    value: {
+      upsert: async ({ where, create }: { where: { key: string }; create: { expiresAt: Date } }) => {
+        const b = buckets.get(where.key) ?? { count: 0, expiresAt: create.expiresAt };
+        b.count++;
+        buckets.set(where.key, b);
+        return { count: b.count };
+      },
+      deleteMany: async ({ where }: { where: { expiresAt: { lt: Date } } }) => {
+        for (const [k, b] of buckets) if (b.expiresAt < where.expiresAt.lt) buckets.delete(k);
+        return { count: 0 };
+      },
+    },
+  });
+  return buckets;
+}

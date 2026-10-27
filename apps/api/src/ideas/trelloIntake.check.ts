@@ -9,8 +9,8 @@ process.env.TRELLO_TOKEN = "t";
 delete process.env.BOT_FULL_ACCESS;
 const { getPrisma } = await import("@toreroflow/db");
 const { DEFAULT_TRELLO_INTAKE, cardText } = await import("./trelloIntake");
-const { contentRequestRoutes, publicContentRequestRoutes } = await import("../routes/contentRequests");
-const { testApp } = await import("./testApp");
+const { contentRequestRoutes, publicContentRequestRoutes, requestFormToken } = await import("../routes/contentRequests");
+const { testApp, mockRateLimits } = await import("./testApp");
 
 const BOARD = "b".repeat(24);
 const LIST = "1".repeat(24);
@@ -58,6 +58,11 @@ mock("client", {
   findFirst: async ({ where }: { where: { id: string } }) => clients.find((c) => c.id === where.id) ?? null,
   findMany: async ({ where }: { where: { agencyId: string } }) => clients.filter((c) => c.agencyId === where.agencyId),
 });
+await mockRateLimits();
+// One live form link per brand; the request form is only reachable through one.
+const links = clients.map((c) => ({ id: `link-${c.id}`, clientId: c.id, revokedAt: null, client: { name: c.name, deletedAt: null } }));
+mock("requestFormLink", { findUnique: async ({ where }: { where: { id: string } }) => links.find((l) => l.id === where.id) ?? null });
+mock("requestFormAudit", { create: async () => ({}) });
 const withClient = (r: Record<string, unknown>) => ({ ...r, client: clients.find((c) => c.id === r.clientId)! });
 mock("contentRequest", {
   create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -83,7 +88,9 @@ assert.deepEqual(cardText({ what: "Walkaround of the M3\nwith sound", dueDate: "
 
 const pub = await testApp(publicContentRequestRoutes);
 const ops = await testApp(contentRequestRoutes);
-const submit = (payload: object) => pub.app.inject({ method: "POST", url: "/requests", payload, remoteAddress: "9.9.9.9" });
+const post = ({ brandId, ...payload }: { brandId: string } & Record<string, unknown>, remoteAddress = "9.9.9.9") =>
+  pub.app.inject({ method: "POST", url: `/r/${requestFormToken(`link-${brandId}`)}`, payload, remoteAddress });
+const submit = (payload: { brandId: string } & Record<string, unknown>) => post(payload);
 
 // A request: board and list found by name (case and spacing ignored), ids kept,
 // card made on "To edit" with the red label (Caleb's default color).
@@ -140,11 +147,11 @@ assert.deepEqual(res.json().requests.map((r: { status: string }) => r.status), [
 
 // Validation, unknown brand, honeypot, rate limit.
 const count = requests.length;
-res = await pub.app.inject({ method: "POST", url: "/requests", payload: { brandId: "caleb", what: "  " }, remoteAddress: "1.1.1.1" });
+res = await post({ brandId: "caleb", what: "  " }, "1.1.1.1");
 assert.equal(res.statusCode, 400);
-res = await pub.app.inject({ method: "POST", url: "/requests", payload: { brandId: "nobody", what: "x" }, remoteAddress: "1.1.1.1" });
+res = await post({ brandId: "nobody", what: "x" }, "1.1.1.1");
 assert.equal(res.statusCode, 404);
-res = await pub.app.inject({ method: "POST", url: "/requests", payload: { brandId: "caleb", what: "buy pills", website: "spam.biz" }, remoteAddress: "2.2.2.2" });
+res = await post({ brandId: "caleb", what: "buy pills", website: "spam.biz" }, "2.2.2.2");
 assert.equal(res.statusCode, 201);
 assert.equal(requests.length, count, "honeypot submissions are dropped");
 assert.equal((await submit({ brandId: "caleb", what: "fifth" })).statusCode, 201);

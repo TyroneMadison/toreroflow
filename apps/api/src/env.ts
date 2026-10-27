@@ -148,6 +148,13 @@ export interface Env {
    * In production this is required, checked above.
    */
   ALLOWED_ORIGINS: string[];
+  /**
+   * Cloudflare Turnstile for the public request form. Both empty (the
+   * default) means the captcha is off; with the secret set, every submission
+   * must carry a token Cloudflare accepts. The site key is handed to the form.
+   */
+  TURNSTILE_SECRET_KEY: string;
+  TURNSTILE_SITE_KEY: string;
   /** True when this process is answering to the internet. */
   IS_PRODUCTION: boolean;
   /** The commit this server is running, for the deploy card. Empty off a server. */
@@ -181,6 +188,8 @@ export const env: Env = {
     .split(",")
     .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean),
+  TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY ?? "",
+  TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   IS_PRODUCTION: isProduction,
   GIT_COMMIT: process.env.GIT_COMMIT ?? "",
 };
