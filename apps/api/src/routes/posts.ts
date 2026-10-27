@@ -500,7 +500,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const to = request.query.to ? new Date(request.query.to) : undefined;
       const targets = await prisma.postTarget.findMany({
         where: {
-          post: { clientId: client.id, deletedAt: null },
+          // Saved drafts (S5) are not on the calendar until scheduled.
+          post: { clientId: client.id, deletedAt: null, status: { not: "draft" } },
           ...(from || to
             ? { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
             : {}),

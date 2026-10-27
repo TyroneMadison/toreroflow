@@ -30,6 +30,8 @@ export async function queueRoutes(app: FastifyInstance, opts: QueueRoutesOptions
     prisma.post.findMany({
       where: {
         deletedAt: null,
+        // A saved draft (S5) is not waiting to upload.
+        status: { not: "draft" },
         client: { agencyId },
         targets: { some: { status: { in: [...WAITING] } } },
       },

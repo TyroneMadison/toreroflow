@@ -422,6 +422,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
         posts: {
           none: {
             deletedAt: null,
+            // A saved draft (S5) does not take the video off the ready list.
+            status: { not: "draft" },
             targets: {
               some: { status: { in: ["scheduled", "publishing", "posted"] } },
             },
