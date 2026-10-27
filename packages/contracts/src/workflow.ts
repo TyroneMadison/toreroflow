@@ -152,6 +152,8 @@ export const QueueReorderRequestSchema = z.object({
     .refine((ids) => new Set(ids).size === ids.length, "ids must be unique"),
 });
 export const QueueResponseSchema = z.object({ items: z.array(QueueItemSchema) });
+/** PATCH /queue/:id/priority: the operator (or Polly) marks a video Client rush, or back to normal. */
+export const QueuePriorityRequestSchema = z.object({ priority: QueuePrioritySchema });
 
 // ---- W4 rollup ----
 

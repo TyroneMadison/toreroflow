@@ -24,6 +24,7 @@ export const ENDPOINTS = {
   overrideDraft: { method: "POST", path: "/drafts/:id/override", request: W.OverrideRequestSchema, response: W.OverrideLogSchema },
   getQueue: { method: "GET", path: "/queue", response: W.QueueResponseSchema },
   reorderQueue: { method: "PATCH", path: "/queue/reorder", request: W.QueueReorderRequestSchema, response: W.QueueResponseSchema },
+  setQueuePriority: { method: "PATCH", path: "/queue/:id/priority", request: W.QueuePriorityRequestSchema, response: W.QueueResponseSchema },
   rollup: { method: "GET", path: "/rollup/:videoId", response: W.RollupSchema },
   listTemplates: { method: "GET", path: "/templates", response: W.TemplateListSchema },
   createTemplate: { method: "POST", path: "/templates", request: W.TemplateUpsertSchema, response: W.TemplateSchema },
