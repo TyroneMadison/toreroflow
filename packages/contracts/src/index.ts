@@ -36,7 +36,7 @@ export const ENDPOINTS = {
   getReportJobConfig: { method: "GET", path: "/reports/job-config", response: I.ReportJobConfigSchema },
   putReportJobConfig: { method: "PUT", path: "/reports/job-config", request: I.ReportJobConfigSchema, response: I.ReportJobConfigSchema },
   contentRequest: { method: "POST", path: "/requests", request: I.ContentRequestSchema, response: Ok },
-  insights: { method: "GET", path: "/insights/:postId", response: z.object({ insights: z.array(I.MergedInsightSchema) }) },
+  insights: { method: "GET", path: "/insights/:postId", response: I.InsightsResponseSchema },
   getBrandKit: { method: "GET", path: "/brands/:brandId/kit", response: I.BrandKitSchema },
   putBrandKit: { method: "PUT", path: "/brands/:brandId/kit", request: I.BrandKitSchema, response: I.BrandKitSchema },
   sunraQuote: { method: "POST", path: "/sunra/carousel/quote", request: I.SunraCarouselRequestSchema, response: I.SunraCarouselQuoteSchema },

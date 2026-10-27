@@ -71,8 +71,18 @@ export const MergedInsightSchema = z.object({
   value: z.number(),
   sources: z.array(InsightSourceSchema).min(1),
   chosenSource: InsightSourceSchema,
+  /** Which platform the number is for, or "total" for the sum across them. */
+  platform: z.string().optional(),
+  /** YYYY-MM-DD the chosen number was measured on. */
+  day: z.string().optional(),
 }).refine((m) => m.sources.includes(m.chosenSource), "chosenSource must be one of sources");
 export type MergedInsight = z.infer<typeof MergedInsightSchema>;
+/** A source that could not answer, and why (e.g. Zernio without the Analytics add-on). */
+export const InsightUnavailableSchema = z.object({ source: InsightSourceSchema, reason: z.string() });
+export const InsightsResponseSchema = z.object({
+  insights: z.array(MergedInsightSchema),
+  unavailable: z.array(InsightUnavailableSchema).default([]),
+});
 
 // ---- Brand kit ----
 
