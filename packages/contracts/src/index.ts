@@ -55,4 +55,6 @@ export const ENDPOINTS = {
   uploadAsset: { method: "POST", path: "/assets", response: I.AssetSchema },
   deleteAsset: { method: "DELETE", path: "/assets/:id", response: Ok },
   repurpose: { method: "POST", path: "/repurpose", request: z.object({ sourceVideoId: z.string().min(1) }), response: I.RepurposeJobSchema },
+  getRepurpose: { method: "GET", path: "/repurpose/:id", response: I.RepurposeJobSchema },
+  retryRepurpose: { method: "POST", path: "/repurpose/:id/retry", response: I.RepurposeJobSchema },
 } as const satisfies Record<string, Endpoint>;

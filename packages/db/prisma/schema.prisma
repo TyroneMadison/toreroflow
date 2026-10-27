@@ -301,6 +301,7 @@ model Client {
   libraryAssets   LibraryAsset[]
   brandKit        BrandKit?
   sunraQuotes     SunraQuote[]
+  repurposeJobs   RepurposeJob[]
 
   @@index([agencyId])
 }
@@ -1627,4 +1628,24 @@ model ApprovalComment {
   link ApprovalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
 
   @@index([linkId, createdAt])
+}
+
+/// Repurpose job (Create > Studio > Edit): one long video in, a step by step
+/// pipeline out. A stub for now: the steps are tracked and resumable, nothing
+/// runs them yet and no outside provider is called.
+/// step: transcribe, find_moments, cut, captions, thumbnails, review, done.
+/// state: queued, running, failed, done.
+model RepurposeJob {
+  id            String   @id @default(cuid())
+  clientId      String
+  sourceVideoId String
+  step          String   @default("transcribe")
+  state         String   @default("queued")
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
 }
