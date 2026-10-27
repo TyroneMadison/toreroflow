@@ -122,6 +122,7 @@ model Agency {
   bankConnections BankConnection[]
   bots            BotIdentity[]
   settings        AppSetting[]
+  libraryAssets   LibraryAsset[]
 }
 
 /**
@@ -297,6 +298,8 @@ model Client {
   templates       Template[]
   monthlyReports  MonthlyReportRun[]
   contentRequests ContentRequest[]
+  libraryAssets   LibraryAsset[]
+  brandKit        BrandKit?
 
   @@index([agencyId])
 }
@@ -1526,4 +1529,39 @@ model ContentRequest {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId, createdAt])
+}
+
+/// A file in the asset library (logos, videos, templates, audio, images).
+/// clientId null means shared across every brand; set means only that brand
+/// sees it. A brand kit logo is one of these, type "logo".
+model LibraryAsset {
+  id         String   @id @default(cuid())
+  agencyId   String
+  clientId   String?
+  /// logo | video | template | audio | image
+  type       String
+  name       String
+  storageKey String
+  mimeType   String?
+  sizeBytes  Int?
+  createdAt  DateTime @default(now())
+
+  agency Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, clientId, type])
+}
+
+/// Per-brand kit: Google Fonts families, colors, logo, caption voice notes.
+model BrandKit {
+  clientId    String   @id
+  /// [{ family: "Inter", weights: [400, 700] }]
+  fonts       Json     @default("[]")
+  /// "#RRGGBB"
+  colors      String[] @default([])
+  logoAssetId String?
+  voiceNotes  String   @default("")
+  updatedAt   DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
