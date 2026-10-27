@@ -15,6 +15,7 @@ import FinancialsScreen from "./screens/FinancialsScreen";
 import CarouselsScreen from "./screens/CarouselsScreen";
 import CommentsScreen from "./screens/CommentsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
+import { FanoutScreen, PreflightScreen, QueueScreen, RollupScreen, TemplatesScreen } from "./screens/WorkflowScreens";
 import SettingsScreen from "./screens/SettingsScreen";
 import ReadyQueueScreen from "./screens/ReadyQueueScreen";
 import ScheduleScreen from "./screens/ScheduleScreen";
@@ -234,6 +235,11 @@ function Shell() {
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />
           )}
+          {activeScreen === "fanout" && <FanoutScreen key={`fanout-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "preflight" && <PreflightScreen key="preflight" />}
+          {activeScreen === "queue" && <QueueScreen key="queue" />}
+          {activeScreen === "rollup" && <RollupScreen key={`rollup-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "templates" && <TemplatesScreen key="templates" />}
           {activeScreen === "ready" && <ReadyQueueScreen key="ready" />}
           {activeScreen === "schedule" && <ScheduleScreen key="schedule" />}
           {activeScreen === "settings" && (

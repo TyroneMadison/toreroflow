@@ -32,6 +32,11 @@ export const PATHS: Record<ScreenId, string> = {
   workflows: "/create/workflows",
   ready: "/create/ready",
   schedule: "/create/schedule",
+  fanout: "/create/fanout",
+  preflight: "/create/preflight",
+  queue: "/create/queue",
+  rollup: "/rollup",
+  templates: "/templates",
   analytics: "/analytics",
   reports: "/reports",
   comments: "/comments",
@@ -72,6 +77,10 @@ export interface Route {
   dest: string | null;
   /** Studio's open area (?area=ideas), so the phone tab bar can open Ideas. */
   area: string | null;
+  /** The workflow draft open in Fan-out and Preflight (?draft=). */
+  draft: string | null;
+  /** The source video a Rollup shows (?video=). */
+  video: string | null;
 }
 
 const SEG = "([A-Za-z0-9_-]+)";
@@ -118,6 +127,8 @@ export function parseUrl(url: string): Route {
     scheduleId: u.searchParams.get("schedule") || null,
     dest: u.searchParams.get("dest") || null,
     area: u.searchParams.get("area") || null,
+    draft: u.searchParams.get("draft") || null,
+    video: u.searchParams.get("video") || null,
   };
 }
 
@@ -215,6 +226,8 @@ export function setQuery(patch: {
   schedule?: string | null;
   area?: string | null;
   dest?: string | null;
+  draft?: string | null;
+  video?: string | null;
 }): void {
   const u = new URL(readUrl(), BASE);
   for (const [k, v] of Object.entries(patch)) {
