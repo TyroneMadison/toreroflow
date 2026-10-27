@@ -5,27 +5,19 @@ import { ContentRequestSchema, TrelloIntakeConfigSchema } from "@toreroflow/cont
 import { requireAuth } from "../plugins/requireAuth";
 import { pushRequestToTrello, readIntakeConfig, TRELLO_INTAKE_SETTING } from "../ideas/trelloIntake";
 import { writeSetting } from "../ideas/settings";
-
-const WINDOW_MS = 10 * 60 * 1000;
-const PER_WINDOW = 5;
+import { rateLimiter } from "../ideas/rateLimit";
 
 /**
  * The public request form: no login. Spam protection is a honeypot field
  * ("website", hidden in the form, bots fill it) plus 5 requests per IP per
  * 10 minutes. The request is stored first, so a Trello outage loses nothing.
- *
- * ponytail: the rate limit lives in memory, per process; move it to the
- * database if the API ever runs on more than one server.
  */
 export async function publicContentRequestRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const hits = new Map<string, number[]>();
+  const allow = rateLimiter(10 * 60 * 1000, 5);
 
   app.post("/requests", async (request, reply) => {
-    const now = Date.now();
-    const recent = (hits.get(request.ip) ?? []).filter((t) => now - t < WINDOW_MS);
-    if (recent.length >= PER_WINDOW) return reply.status(429).send({ error: "too many requests, try again in a few minutes" });
-    hits.set(request.ip, [...recent, now]);
+    if (!allow(request.ip)) return reply.status(429).send({ error: "too many requests, try again in a few minutes" });
 
     const raw = (request.body ?? {}) as Record<string, unknown>;
     // A filled honeypot gets the same answer as a real request and is dropped.

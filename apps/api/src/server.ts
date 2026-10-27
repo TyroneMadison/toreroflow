@@ -37,6 +37,7 @@ import { contentRequestRoutes, publicContentRequestRoutes } from "./routes/conte
 import { insightsRoutes } from "./routes/insights";
 import { brandKitRoutes } from "./routes/brandKit";
 import { sunraRoutes } from "./routes/sunra";
+import { approvalLinkRoutes, publicApprovalRoutes } from "./routes/approvals";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -185,6 +186,8 @@ export async function buildServer(
   await app.register(insightsRoutes);
   await app.register(brandKitRoutes);
   await app.register(sunraRoutes);
+  await app.register(approvalLinkRoutes);
+  await app.register(publicApprovalRoutes);
 
   return app;
 }

@@ -455,6 +455,7 @@ model MediaAsset {
   posts      Post[]
   revisionOf MediaAsset?  @relation("AssetRevisions", fields: [revisionOfId], references: [id])
   revisions  MediaAsset[] @relation("AssetRevisions")
+  approvalLinks ApprovalLink[]
 
   @@index([clientId, status])
 }
@@ -1592,4 +1593,38 @@ model SunraQuote {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId, createdAt])
+}
+
+/// A client approval link for one video version (a MediaAsset). The token is
+/// never stored: it is the id plus an HMAC over the id and expiry, so a
+/// leaked database row cannot be turned into a working link. Revoke sets
+/// revokedAt. status: pending, approved, changes_requested.
+model ApprovalLink {
+  id           String    @id @default(cuid())
+  mediaAssetId String
+  createdById  String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  status       String    @default("pending")
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  mediaAsset MediaAsset        @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  comments   ApprovalComment[]
+
+  @@index([mediaAssetId])
+}
+
+/// A client comment on a version through an approval link, pinned to a
+/// moment in the video when atMs is set.
+model ApprovalComment {
+  id        String   @id @default(cuid())
+  linkId    String
+  atMs      Int?
+  body      String
+  createdAt DateTime @default(now())
+
+  link ApprovalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, createdAt])
 }

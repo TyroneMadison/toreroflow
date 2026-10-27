@@ -134,6 +134,20 @@ export const ApprovalLinkSchema = z.object({
   status: z.enum(["pending", "approved", "changes_requested"]),
 });
 export const ApprovalLinkCreateSchema = z.object({ versionId: id, expiresInHours: z.number().int().min(1).max(24 * 30) });
+export const ApprovalLinkListSchema = z.object({ links: z.array(ApprovalLinkSchema) });
+/** Public page /a/:token: a comment, pinned to a moment when atMs is set. */
+export const ApprovalCommentCreateSchema = z.object({
+  atMs: z.number().int().nonnegative().optional(),
+  body: z.string().trim().min(1).max(2000),
+});
+export const ApprovalCommentSchema = z.object({ id, atMs: z.number().int().nullable(), body: z.string(), createdAt: iso });
+export const ApprovalDecisionSchema = z.object({ decision: z.enum(["approved", "changes_requested"]) });
+export const PublicApprovalSchema = z.object({
+  status: ApprovalLinkSchema.shape.status,
+  expiresAt: iso,
+  video: z.object({ name: z.string(), url: z.string(), durationSec: z.number().nullable() }),
+  comments: z.array(ApprovalCommentSchema),
+});
 
 // ---- Failed post retry (always manual) ----
 
