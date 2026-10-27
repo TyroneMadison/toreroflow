@@ -1580,7 +1580,10 @@ model SunraQuote {
   platform   String
   slides     Int
   prompt     String
-  priceUsd   Float
+  /// nano-banana-2 | nano-banana-pro
+  model      String    @default("nano-banana-2")
+  /// Sunra credits approved for this carousel: slides x credits per image.
+  credits    Int
   expiresAt  DateTime
   status     String    @default("quoted")
   approvedBy String?

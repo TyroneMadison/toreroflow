@@ -5,6 +5,7 @@ import { useToast } from "../components/Toasts";
 import { useAppState } from "../state/AppState";
 import { Empty, ErrorState, Loading } from "../components/states";
 import CarouselPostCard from "../components/CarouselPostCard";
+import SunraCarouselCard from "../components/SunraCarouselCard";
 
 /**
  * Carousels, and the knowledge they are written from.
@@ -312,6 +313,8 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
             )}
           </div>
         </div>
+
+        <SunraCarouselCard />
 
         <CarouselPostCard />
 

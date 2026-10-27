@@ -102,12 +102,6 @@ export interface Env {
    */
   GMAIL_REFRESH_TOKEN: string;
   /**
-   * What one Sunra carousel image costs, in US dollars, for the price check
-   * shown before anything is generated. Empty means quotes answer 503: a
-   * made-up price is worse than none.
-   */
-  SUNRA_PRICE_PER_IMAGE_USD: number | null;
-  /**
    * The public origin OAuth redirects come back to, e.g.
    * https://api.torerone.com. Must match what is registered in each platform's
    * console character for character.
@@ -176,7 +170,6 @@ export const env: Env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
   GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ?? "",
-  SUNRA_PRICE_PER_IMAGE_USD: Number.isFinite(Number.parseFloat(process.env.SUNRA_PRICE_PER_IMAGE_USD ?? "")) ? Number.parseFloat(process.env.SUNRA_PRICE_PER_IMAGE_USD!) : null,
   OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",

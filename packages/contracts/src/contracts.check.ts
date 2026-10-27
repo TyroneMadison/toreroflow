@@ -117,7 +117,7 @@ assert.equal(
   false,
 );
 assert.equal(
-  SunraCarouselQuoteSchema.safeParse({ quoteId: "q", priceUsd: 1, requiresApproval: false, expiresAt: at }).success,
+  SunraCarouselQuoteSchema.safeParse({ quoteId: "q", model: "nano-banana-2", slides: 1, creditsPerImage: 7, credits: 7, width: 1080, height: 1350, aspectRatio: "4:5", requiresApproval: false, expiresAt: at }).success,
   false,
   "a quote never skips approval",
 );

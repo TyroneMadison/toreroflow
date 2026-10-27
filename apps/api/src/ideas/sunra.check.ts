@@ -1,4 +1,4 @@
-// Sunra carousels: the quote spends nothing, generation is OFF by default,
+// Sunra carousels: the quote is in credits and spends nothing, generation is OFF by default,
 // needs approved: true on an unexpired quote, and a quote pays at most once.
 // The generator is a fake and fetch throws, so no Sunra call can happen.
 import assert from "node:assert/strict";
@@ -8,7 +8,6 @@ import path from "node:path";
 
 const storage = mkdtempSync(path.join(os.tmpdir(), "sunra-"));
 process.env.STORAGE_DIR = storage;
-process.env.SUNRA_PRICE_PER_IMAGE_USD = "0.045";
 delete process.env.BOT_FULL_ACCESS;
 globalThis.fetch = (async () => {
   throw new Error("no network in this check");
@@ -48,9 +47,11 @@ mock("sunraQuote", {
 });
 
 let generated = 0;
-const fakeGenerator = async ({ slides }: { slides: number }) => {
+const jobs: Record<string, unknown>[] = [];
+const fakeGenerator = async (job: { slides: number }) => {
   generated++;
-  return Array.from({ length: slides }, (_, i) => Buffer.from(`slide ${i + 1}`));
+  jobs.push(job);
+  return Array.from({ length: job.slides }, (_, i) => Buffer.from(`slide ${i + 1}`));
 };
 
 const { app, operator, polly, nova, otherAgency } = await testApp(sunraRoutes);
@@ -58,11 +59,15 @@ const quote = (headers: Record<string, string>, payload: object) => app.inject({
 const generate = (headers: Record<string, string>, id: string, payload: object = { approved: true }) =>
   app.inject({ method: "POST", url: `/sunra/carousel/${id}/generate`, headers, payload });
 
-// Price check: stored, priced per image, always needs approval, spends nothing.
+// Price check: stored, priced in credits per image, always needs approval, spends nothing.
 let res = await quote(polly, { brandId: "caleb", slides: 6, prompt: "Fall lineup, 6 cars" });
 assert.equal(res.statusCode, 200, res.body);
 const q1 = SunraCarouselQuoteSchema.parse(res.json());
-assert.equal(q1.priceUsd, 0.27);
+assert.deepEqual(
+  [q1.model, q1.creditsPerImage, q1.credits, q1.width, q1.height, q1.aspectRatio],
+  ["nano-banana-2", 7, 42, 1080, 1350, "4:5"],
+  "nano-banana-2 at 7 credits an image, Instagram portrait",
+);
 assert.equal(q1.requiresApproval, true);
 assert.ok(Math.abs(Date.parse(q1.expiresAt) - Date.now() - QUOTE_TTL_MS) < 5000);
 assert.equal(quotes[0]!.platform, "instagram", "Instagram unless asked");
@@ -70,8 +75,16 @@ assert.equal(generated, 0);
 
 res = await quote(operator, { brandId: "caleb", slides: 11, prompt: "x" });
 assert.equal(res.statusCode, 400, "Instagram takes 10 slides at most");
-res = await quote(operator, { brandId: "caleb", slides: 12, prompt: "x", platform: "tiktok" });
+res = await quote(operator, { brandId: "caleb", slides: 12, prompt: "x", platform: "tiktok", model: "nano-banana-pro" });
 assert.equal(res.statusCode, 200, "TikTok takes more");
+assert.deepEqual([res.json().credits, res.json().width, res.json().height, res.json().aspectRatio], [168, 1080, 1920, "9:16"], "pro at 14 an image, TikTok 9:16");
+res = await quote(operator, { brandId: "caleb", prompt: "five by default" });
+assert.equal(res.json().slides, 5);
+assert.equal(res.json().credits, 35);
+res = await quote(operator, { brandId: "caleb", slides: 2, prompt: "x", model: "gpt-image" });
+assert.equal(res.statusCode, 400, "only the priced models");
+res = await quote(operator, { brandId: "caleb", slides: 2, prompt: "   " });
+assert.equal(res.statusCode, 400, "something to build");
 res = await quote(operator, { brandId: "caleb", slides: 21, prompt: "x", platform: "tiktok" });
 assert.equal(res.statusCode, 400);
 res = await quote(otherAgency, { brandId: "caleb", slides: 2, prompt: "x" });
@@ -82,7 +95,7 @@ assert.equal(res.statusCode, 403, "other bots cannot ask Sunra for anything");
 // Generation is OFF by default, even with approval and a generator.
 setSunraGenerator(fakeGenerator);
 res = await app.inject({ method: "GET", url: "/sunra/settings", headers: operator });
-assert.deepEqual(res.json(), { generationEnabled: false });
+assert.deepEqual(res.json(), { generationEnabled: false, connected: true });
 res = await generate(operator, q1.quoteId);
 assert.equal(res.statusCode, 403);
 assert.equal(generated, 0);
@@ -101,6 +114,8 @@ assert.equal(generated, 0);
 
 // Not connected: 503, and the quote is still usable afterwards.
 setSunraGenerator(null);
+res = await app.inject({ method: "GET", url: "/sunra/settings", headers: operator });
+assert.equal(res.json().connected, false);
 res = await generate(operator, q1.quoteId);
 assert.equal(res.statusCode, 503);
 assert.equal(quotes[0]!.status, "quoted");
@@ -114,6 +129,15 @@ assert.equal(res.json().slideUrls.length, 6);
 assert.equal(readFileSync(path.join(storage, `caleb/sunra/${q1.quoteId}/slide-6.png`), "utf8"), "slide 6");
 assert.equal(quotes[0]!.approvedBy, "bot:polly");
 assert.equal(generated, 1);
+assert.deepEqual(jobs[0], {
+  prompt: "Fall lineup, 6 cars",
+  slides: 6,
+  platform: "instagram",
+  model: "nano-banana-2",
+  width: 1080,
+  height: 1350,
+  aspectRatio: "4:5",
+});
 
 // The same quote never pays twice.
 res = await generate(operator, q1.quoteId);
@@ -139,6 +163,14 @@ res = await generate(operator, q3);
 assert.equal(res.statusCode, 502);
 assert.equal(quotes.find((q) => q.id === q3)!.status, "failed");
 assert.equal(quotes.find((q) => q.id === q3)!.error, "sunra 500");
+
+// Fewer slides than paid for is a failure, not a short carousel.
+res = await quote(operator, { brandId: "caleb", slides: 3, prompt: "w" });
+const q4 = res.json().quoteId as string;
+setSunraGenerator(async () => [Buffer.from("only one")]);
+res = await generate(operator, q4);
+assert.equal(res.statusCode, 502);
+assert.equal(res.json().error, "Sunra returned 1 of 3 slides");
 
 await app.close();
 rmSync(storage, { recursive: true, force: true });

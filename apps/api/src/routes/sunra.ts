@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getPrisma } from "@toreroflow/db";
 import {
+  SUNRA_CREDITS_PER_IMAGE,
+  SUNRA_SLIDE_SIZE,
   SunraCarouselRequestSchema,
   SunraGenerateRequestSchema,
   SunraSettingsSchema,
@@ -14,23 +16,37 @@ import { requireAuth } from "../plugins/requireAuth";
 import { readSetting, writeSetting } from "../ideas/settings";
 
 /**
- * Sunra carousels for Instagram and TikTok: price check first, spend second.
+ * Sunra carousels for Instagram and TikTok (Create > Carousels): the user
+ * types what they want, gets a price in Sunra credits (slides x credits per
+ * image for the chosen model), approves it, and every slide is built at the
+ * platform's size: Instagram 1080x1350 (4:5), TikTok 1080x1920 (9:16).
  *
  * Generating costs money, so it takes three things at once: the agency's
  * generation switch ON (default OFF), a quote for this exact request that has
  * not expired, and `approved: true` sent for that quote. A quote is used at
  * most once, claimed atomically so a double tap cannot pay twice.
  *
- * There is no Sunra client in this codebase yet, so the generator is unset
- * and generate answers 503 even when approved. setSunraGenerator wires one in
- * (the checks use a fake; nothing here calls Sunra).
+ * There is no Sunra HTTP client in this codebase yet, so the generator is
+ * unset and generate answers 503 even when approved (GET /sunra/settings says
+ * connected: false). setSunraGenerator wires one in; the checks use a fake and
+ * nothing here calls Sunra.
  */
 
 export const SUNRA_SETTING = "sunra";
 export const QUOTE_TTL_MS = 15 * 60 * 1000;
 export const IG_MAX_SLIDES = 10;
 
-export type SunraGenerator = (input: { prompt: string; slides: number; platform: string }) => Promise<Buffer[]>;
+export interface SunraJob {
+  prompt: string;
+  slides: number;
+  platform: "instagram" | "tiktok";
+  model: keyof typeof SUNRA_CREDITS_PER_IMAGE;
+  width: number;
+  height: number;
+  aspectRatio: string;
+}
+/** Builds every slide of one carousel, in order, one image per slide. */
+export type SunraGenerator = (job: SunraJob) => Promise<Buffer[]>;
 let generator: SunraGenerator | null = null;
 export function setSunraGenerator(g: SunraGenerator | null): void {
   generator = g;
@@ -43,7 +59,10 @@ export async function sunraRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   app.addHook("onRequest", requireAuth);
 
-  app.get("/sunra/settings", async (request) => readSunraSettings(request.user.agencyId));
+  app.get("/sunra/settings", async (request) => ({
+    ...(await readSunraSettings(request.user.agencyId)),
+    connected: generator !== null,
+  }));
   app.put("/sunra/settings", async (request) => {
     const settings = SunraSettingsSchema.parse(request.body);
     await writeSetting(request.user.agencyId, SUNRA_SETTING, settings);
@@ -56,9 +75,6 @@ export async function sunraRoutes(app: FastifyInstance): Promise<void> {
     if (body.platform === "instagram" && body.slides > IG_MAX_SLIDES) {
       return reply.status(400).send({ error: `Instagram carousels take at most ${IG_MAX_SLIDES} slides` });
     }
-    if (env.SUNRA_PRICE_PER_IMAGE_USD == null) {
-      return reply.status(503).send({ error: "set SUNRA_PRICE_PER_IMAGE_USD on the API server to price Sunra carousels" });
-    }
     const brand = await prisma.client.findFirst({
       where: { id: body.brandId, agencyId: request.user.agencyId, deletedAt: null },
       select: { id: true },
@@ -70,13 +86,18 @@ export async function sunraRoutes(app: FastifyInstance): Promise<void> {
         platform: body.platform,
         slides: body.slides,
         prompt: body.prompt,
-        priceUsd: Math.round(body.slides * env.SUNRA_PRICE_PER_IMAGE_USD * 100) / 100,
+        model: body.model,
+        credits: body.slides * SUNRA_CREDITS_PER_IMAGE[body.model],
         expiresAt: new Date(Date.now() + QUOTE_TTL_MS),
       },
     });
     const out: SunraCarouselQuote = {
       quoteId: quote.id,
-      priceUsd: quote.priceUsd,
+      model: body.model,
+      slides: quote.slides,
+      creditsPerImage: SUNRA_CREDITS_PER_IMAGE[body.model],
+      credits: quote.credits,
+      ...SUNRA_SLIDE_SIZE[body.platform],
       requiresApproval: true,
       expiresAt: quote.expiresAt.toISOString(),
     };
@@ -104,7 +125,10 @@ export async function sunraRoutes(app: FastifyInstance): Promise<void> {
     if (claimed.count !== 1) return reply.status(409).send({ error: "this quote was already used" });
 
     try {
-      const images = await generator({ prompt: quote.prompt, slides: quote.slides, platform: quote.platform });
+      const platform = quote.platform as SunraJob["platform"];
+      const model = quote.model as SunraJob["model"];
+      const images = await generator({ prompt: quote.prompt, slides: quote.slides, platform, model, ...SUNRA_SLIDE_SIZE[platform] });
+      if (images.length !== quote.slides) throw new Error(`Sunra returned ${images.length} of ${quote.slides} slides`);
       const keys: string[] = [];
       for (const [i, img] of images.entries()) {
         const key = `${quote.clientId}/sunra/${quote.id}/slide-${i + 1}.png`;

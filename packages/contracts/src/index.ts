@@ -41,7 +41,7 @@ export const ENDPOINTS = {
   putBrandKit: { method: "PUT", path: "/brands/:brandId/kit", request: I.BrandKitSchema, response: I.BrandKitSchema },
   sunraQuote: { method: "POST", path: "/sunra/carousel/quote", request: I.SunraCarouselRequestSchema, response: I.SunraCarouselQuoteSchema },
   sunraGenerate: { method: "POST", path: "/sunra/carousel/:quoteId/generate", request: I.SunraGenerateRequestSchema, response: I.SunraGenerateResultSchema },
-  getSunraSettings: { method: "GET", path: "/sunra/settings", response: I.SunraSettingsSchema },
+  getSunraSettings: { method: "GET", path: "/sunra/settings", response: I.SunraStatusSchema },
   putSunraSettings: { method: "PUT", path: "/sunra/settings", request: I.SunraSettingsSchema, response: I.SunraSettingsSchema },
   createApprovalLink: { method: "POST", path: "/approval-links", request: I.ApprovalLinkCreateSchema, response: I.ApprovalLinkSchema },
   revokeApprovalLink: { method: "DELETE", path: "/approval-links/:id", response: Ok },
