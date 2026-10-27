@@ -296,6 +296,7 @@ model Client {
   superGenRuns    SuperGenerateRun[]
   templates       Template[]
   monthlyReports  MonthlyReportRun[]
+  contentRequests ContentRequest[]
 
   @@index([agencyId])
 }
@@ -1503,4 +1504,26 @@ model MonthlyReportRun {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, month])
+}
+
+/// A client content request from the public form, and the Trello card it
+/// became on the editor pipeline's "To edit" list. status: "pending" until
+/// Trello answers, then "created" or "failed" (the operator can retry).
+model ContentRequest {
+  id           String    @id @default(cuid())
+  clientId     String
+  what         String
+  dueDate      String?
+  footageUrl   String?
+  notes        String?
+  status       String    @default("pending")
+  trelloCardId String?
+  trelloUrl    String?
+  error        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
 }
