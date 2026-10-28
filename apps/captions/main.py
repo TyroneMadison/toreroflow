@@ -1,8 +1,13 @@
 """Toreroflow captions microservice: local transcription via faster-whisper.
 
 Run: .venv\\Scripts\\python.exe -m uvicorn main:app --port 4710
-The model (base, int8, CPU) downloads on first use and is cached by HF.
+The model downloads on first use and is cached by HF. WHISPER_MODEL picks it
+(default "small", the master prompt's accuracy floor for word-level cuts;
+"base" is still available), WHISPER_DEVICE / WHISPER_COMPUTE pick where it
+runs (default cpu / int8).
 """
+
+import os
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -16,12 +21,39 @@ def get_model():
     if _model is None:
         from faster_whisper import WhisperModel
 
-        _model = WhisperModel("base", device="cpu", compute_type="int8")
+        _model = WhisperModel(
+            os.environ.get("WHISPER_MODEL", "small"),
+            device=os.environ.get("WHISPER_DEVICE", "cpu"),
+            compute_type=os.environ.get("WHISPER_COMPUTE", "int8"),
+        )
     return _model
 
 
 class TranscribeRequest(BaseModel):
     path: str
+    # ISO code ("en", "es"); None lets whisper detect it.
+    language: str | None = None
+    # Optional window, in seconds. The worker windows long sources itself so
+    # one request never outlives its timeout; times come back absolute.
+    start: float | None = None
+    dur: float | None = None
+
+
+def _window_audio(path: str, start: float, dur: float):
+    """Decode just [start, start+dur) to 16 kHz mono float32 via ffmpeg."""
+    import subprocess
+
+    import numpy as np
+
+    raw = subprocess.run(
+        [
+            "ffmpeg", "-nostdin", "-v", "error",
+            "-ss", str(start), "-t", str(dur), "-i", path,
+            "-ac", "1", "-ar", "16000", "-f", "f32le", "-",
+        ],
+        check=True, capture_output=True,
+    ).stdout
+    return np.frombuffer(raw, dtype=np.float32)
 
 
 @app.get("/health")
@@ -82,17 +114,26 @@ def separate(req: SeparateRequest) -> dict:
 
 @app.post("/transcribe")
 def transcribe(req: TranscribeRequest) -> dict:
+    offset = 0.0
     try:
+        audio = req.path
+        if req.start is not None and req.dur is not None:
+            offset = max(0.0, req.start)
+            audio = _window_audio(req.path, offset, req.dur)
         segments, info = get_model().transcribe(
-            req.path, vad_filter=True, word_timestamps=True
+            audio, vad_filter=True, word_timestamps=True, language=req.language
         )
         out = [
             {
-                "start": round(s.start, 3),
-                "end": round(s.end, 3),
+                "start": round(s.start + offset, 3),
+                "end": round(s.end + offset, 3),
                 "text": s.text.strip(),
                 "words": [
-                    {"start": round(w.start, 3), "end": round(w.end, 3), "word": w.word.strip()}
+                    {
+                        "start": round(w.start + offset, 3),
+                        "end": round(w.end + offset, 3),
+                        "word": w.word.strip(),
+                    }
                     for w in (s.words or [])
                 ],
             }

@@ -5,7 +5,9 @@
  *
  * Renders from ORIGINAL sources. Per EDL segment: trim + setpts, per-clip fx
  * (eq color merged with universal color, colortemperature warmth, rotate,
- * audio volume), fit + pad to the output size, zoom items, then concat.
+ * audio volume), fit + pad to the output size (or, when the clip was zoomed
+ * or moved, the preview's cover + scale + translate via fxFrame), zoom items,
+ * then concat.
  * Overlays (broll, graphics) ride on top with enable windows, audio items
  * are delayed and amixed, captions arrive as one ASS file via the subtitles
  * filter last.
@@ -29,6 +31,11 @@ export interface RenderAssetInfo {
   durationSec: number;
   width: number;
   height: number;
+  /**
+   * Probed by the worker. Undefined means "assume yes", which is what every
+   * plan built before this field existed did, so old callers render the same.
+   */
+  hasAudio?: boolean;
 }
 
 export interface RenderOutput {
@@ -105,6 +112,27 @@ function zoompanFor(zooms: SegZoom[], segLen: number, fps: number, w: number, h:
     }
   }
   return `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=${fps}`;
+}
+
+/**
+ * The preview's per-clip framing (CSS object-fit cover, then scale(zoom),
+ * then translate(x%, y%) of the stage) as filters, so export equals preview.
+ * Cover-scale to the zoomed size, pad by one frame on every side when the
+ * picture can expose an edge (zoom under 1 or any move), then crop the output
+ * window shifted opposite the move. Offsets clamp to one frame, which is
+ * already fully off screen.
+ */
+export function fxFrame(zoom: number, xPct: number, yPct: number, W: number, H: number): string[] {
+  const z = Math.max(0.1, zoom);
+  const dx = Math.max(-W, Math.min(W, (xPct / 100) * W));
+  const dy = Math.max(-H, Math.min(H, (yPct / 100) * H));
+  const sw = Math.max(2, Math.round((W * z) / 2) * 2);
+  const sh = Math.max(2, Math.round((H * z) / 2) * 2);
+  const out = [`scale=w=${sw}:h=${sh}:force_original_aspect_ratio=increase:force_divisible_by=2`];
+  if (z < 1 || dx !== 0 || dy !== 0) out.push(`pad=w=iw+${2 * W}:h=ih+${2 * H}:x=${W}:y=${H}`);
+  out.push(`crop=${W}:${H}:x='(iw-${W})/2${dx > 0 ? "-" : "+"}${n(Math.abs(dx))}':y='(ih-${H})/2${dy > 0 ? "-" : "+"}${n(Math.abs(dy))}'`);
+  out.push("setsar=1");
+  return out;
 }
 
 export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
@@ -192,13 +220,19 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     // Warmth: neutral 6500K, +-100 sweeps 4500K (warm) to 8500K (cool).
     if (w) v.push(`colortemperature=temperature=${Math.round(6500 - w * 20)}`);
     if (fx?.rotate) v.push(`rotate=${n(fx.rotate)}*PI/180`);
-    v.push(fit);
+    const fxMoved = !!fx && ((fx.zoom ?? 1) !== 1 || (fx.x ?? 0) !== 0 || (fx.y ?? 0) !== 0);
+    if (fxMoved) v.push(...fxFrame(fx.zoom ?? 1, fx.x ?? 0, fx.y ?? 0, W, H));
+    else v.push(fit);
     const zooms = zoomsBySeg.get(i);
     if (zooms?.length) v.push(`fps=${F}`, zoompanFor(zooms, seg.srcOut - seg.srcIn, F, W, H));
     fc.push(`[${idx}:v]${v.join(",")}[v${i}]`);
 
-    // ponytail: main clips are assumed to carry an audio stream; a silent
-    // source would need an anullsrc fallback per segment if that ever ships.
+    // A main clip with no audio stream gets generated silence for exactly its
+    // segment, so concat still has an audio pad to pair and the render lives.
+    if (byId.get(seg.assetId)?.hasAudio === false) {
+      fc.push(`anullsrc=r=48000:cl=stereo,atrim=duration=${n(seg.srcOut - seg.srcIn)}[a${i}]`);
+      return;
+    }
     const a: string[] = [
       `atrim=start=${n(seg.srcIn)}:end=${n(seg.srcOut)}`,
       "asetpts=PTS-STARTPTS",
@@ -277,27 +311,39 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
   // Audio items: trimmed, volume, shifted with adelay, mixed over the clip
   // audio without renormalizing. srcIn is where the item starts in its SOURCE
   // file: detached clip audio carries it so the sound lines up with footage
-  // that does not begin at the top of the take. ponytail: broll audio is still
-  // not mixed in; the plan does not know whether a broll file has an audio
-  // stream, and a missing [idx:a] pad kills the whole filtergraph, so wiring
-  // it needs hasAudio probed into RenderAssetInfo first.
+  // that does not begin at the top of the take. B-roll sound joins the same
+  // mix, but only when the worker probed an audio stream on that file
+  // (hasAudio true): a missing [idx:a] pad kills the whole filtergraph.
+  const mixLabels: string[] = [];
+  doc.audio.forEach((item, k) => {
+    const idx = inputIdx(item.assetId);
+    const from = item.srcIn ?? 0;
+    const chain: string[] = [
+      `atrim=start=${n(from)}:end=${n(from + item.dur)}`,
+      "asetpts=PTS-STARTPTS",
+    ];
+    if (item.volume !== 100) chain.push(`volume=${n(item.volume / 100)}`);
+    chain.push(`adelay=${Math.max(0, Math.round(item.at * 1000))}:all=1`);
+    fc.push(`[${idx}:a]${chain.join(",")}[au${k}]`);
+    mixLabels.push(`[au${k}]`);
+  });
+  doc.broll.forEach((item, k) => {
+    if (item.volume <= 0 || byId.get(item.assetId)?.hasAudio !== true) return;
+    const idx = inputIdx(item.assetId);
+    const chain: string[] = [`atrim=start=0:end=${n(item.dur)}`, "asetpts=PTS-STARTPTS"];
+    if (item.volume !== 100) chain.push(`volume=${n(item.volume / 100)}`);
+    if (item.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${n(item.fadeIn)}`);
+    if (item.fadeOut > 0) {
+      chain.push(`afade=t=out:st=${n(Math.max(0, item.dur - item.fadeOut))}:d=${n(item.fadeOut)}`);
+    }
+    chain.push(`adelay=${Math.max(0, Math.round(item.at * 1000))}:all=1`);
+    fc.push(`[${idx}:a]${chain.join(",")}[ab${k}]`);
+    mixLabels.push(`[ab${k}]`);
+  });
   let acur = "acat";
-  if (doc.audio.length > 0) {
-    doc.audio.forEach((item, k) => {
-      const idx = inputIdx(item.assetId);
-      const from = item.srcIn ?? 0;
-      const chain: string[] = [
-        `atrim=start=${n(from)}:end=${n(from + item.dur)}`,
-        "asetpts=PTS-STARTPTS",
-      ];
-      if (item.volume !== 100) chain.push(`volume=${n(item.volume / 100)}`);
-      chain.push(`adelay=${Math.max(0, Math.round(item.at * 1000))}:all=1`);
-      fc.push(`[${idx}:a]${chain.join(",")}[au${k}]`);
-    });
+  if (mixLabels.length > 0) {
     fc.push(
-      "[acat]" +
-        doc.audio.map((_, k) => `[au${k}]`).join("") +
-        `amix=inputs=${doc.audio.length + 1}:duration=first:normalize=0[aout]`,
+      "[acat]" + mixLabels.join("") + `amix=inputs=${mixLabels.length + 1}:duration=first:normalize=0[aout]`,
     );
     acur = "aout";
   }

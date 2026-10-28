@@ -160,3 +160,36 @@ eq(offAss.includes("Style: C"), false, "no caption style when disabled");
 eq(offAss.includes("Dialogue:"), false, "no caption events when disabled");
 
 console.log("captionsToAss.check: all assertions passed");
+
+// Word-timed karaoke: real word starts set each \k, so the highlight lands
+// on the word as it is spoken instead of an even split.
+{
+  const timed = assFromDoc({
+    chunks: [
+      {
+        start: 10,
+        end: 12,
+        text: "one two three",
+        times: [
+          { start: 10, end: 10.2 },
+          { start: 10.25, end: 11.5 },
+          { start: 11.6, end: 12 },
+        ],
+      },
+    ],
+    texts: [],
+    captions: { ...emptyDoc([]).captions, style: { ...emptyDoc([]).captions.style, accentColor: "#FF0000", animation: "karaoke" } },
+  });
+  const line = timed.split("\n").find((l) => l.startsWith("Dialogue"))!;
+  eq(line.includes("{\\k25}ONE") || line.includes("{\\k25}one"), true, "first word holds until the second is spoken (25 cs)");
+  eq(/\{\\k135\}two/i.test(line), true, "second word 135 cs, matching its real start gap");
+  eq(/\{\\k40\}three/i.test(line), true, "last word runs to chunk end, sum stays 200");
+  // Word count mismatch (override) falls back to the even split.
+  const fallback = assFromDoc({
+    chunks: [{ start: 0, end: 1, text: "a b", times: [{ start: 0, end: 1 }] }],
+    texts: [],
+    captions: { ...emptyDoc([]).captions, style: { ...emptyDoc([]).captions.style, accentColor: "#FF0000", animation: "karaoke" } },
+  });
+  eq(/\{\\k50\}a \{\\k50\}b/i.test(fallback), true, "mismatched times fall back to an even split");
+}
+console.log("captionsToAss.check: word-timed karaoke passed");

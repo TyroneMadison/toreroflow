@@ -26,3 +26,18 @@ be regenerated if the embedded copies ever need replacing:
 ```bash
 node -e "const fs=require('fs');const b=n=>fs.readFileSync('assets/fonts/'+n).toString('base64');console.log(b('anton-latin.woff2').length)"
 ```
+
+## Caption rendering (libass)
+
+libass cannot read woff2, so the Studio Edit renderer's `fontsdir` needs TTFs.
+These are the same families, full character set, from `github.com/google/fonts`
+(OFL 1.1, same licence as above):
+
+| File | Family |
+|---|---|
+| `Anton-Regular.ttf` | Anton |
+| `Montserrat-Regular.ttf`, `-Bold`, `-ExtraBold`, `-Black` | Montserrat, static instances of the variable font (fontTools `instancer`, wght 400/700/800/900) |
+
+Static instances rather than the variable file because libass picks weights
+by named face, and a variable TTF only exposes its default instance. Liberation
+Sans/Serif come from the OS (`fonts-liberation` in the Docker image).

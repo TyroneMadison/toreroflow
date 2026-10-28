@@ -41,15 +41,37 @@ const patchSchema = z.object({
  * URLs the webview can actually load. Keys never leave the server.
  */
 function assetView<
-  T extends { storageKey: string; proxyKey: string | null; stripKey: string | null },
+  T extends {
+    storageKey: string;
+    proxyKey: string | null;
+    stripKey: string | null;
+    wordsKey?: string | null;
+    peaksKey?: string | null;
+  },
 >(a: T) {
-  const { storageKey, proxyKey, stripKey, ...rest } = a;
+  const { storageKey, proxyKey, stripKey, wordsKey: _w, peaksKey, ...rest } = a;
   return {
     ...rest,
     sourceUrl: storageKey !== "pending" ? fileLinkVersioned(storageKey, null) : null,
     proxyUrl: proxyKey ? fileLinkVersioned(proxyKey, null) : null,
     stripUrl: stripKey ? fileLinkVersioned(stripKey, null) : null,
+    peaksUrl: peaksKey ? fileLinkVersioned(peaksKey, null) : null,
   };
+}
+
+/**
+ * Words for an asset whether they sit in the row or, for sources over 15
+ * minutes, in the storage file the worker wrote. The desktop keeps reading
+ * asset.words either way; only Postgres stops carrying the megabytes.
+ */
+async function loadWords<T extends { words: unknown; wordsKey?: string | null }>(a: T): Promise<T> {
+  if (!a.wordsKey) return a;
+  try {
+    const words = JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, a.wordsKey), "utf8"));
+    return { ...a, words };
+  } catch {
+    return { ...a, words: [] };
+  }
 }
 
 const ASSET_KINDS = ["clip", "audio", "graphic"] as const;
@@ -162,6 +184,74 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /* ---- caption templates: a client's saved caption styles ---- */
+
+  // The style's shape is the desktop's CaptionStyle contract; the server
+  // only insists on an object of bounded size, as it does for the doc.
+  const templateSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    style: z.record(z.unknown()).refine((v) => JSON.stringify(v).length <= 8000, "style is too large"),
+  });
+
+  app.get<{ Params: { clientId: string } }>(
+    "/clients/:clientId/caption-templates",
+    async (request, reply) => {
+      const client = await ownedClient(request.params.clientId, request.user.agencyId);
+      if (!client) return reply.status(404).send({ error: "brand not found" });
+      return prisma.captionTemplate.findMany({
+        where: { clientId: client.id },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      });
+    },
+  );
+
+  app.post<{ Params: { clientId: string } }>(
+    "/clients/:clientId/caption-templates",
+    async (request, reply) => {
+      const client = await ownedClient(request.params.clientId, request.user.agencyId);
+      if (!client) return reply.status(404).send({ error: "brand not found" });
+      const parsed = templateSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "invalid template", detail: parsed.error.issues[0]?.message });
+      }
+      const row = await prisma.captionTemplate.create({
+        data: {
+          clientId: client.id,
+          name: parsed.data.name,
+          style: parsed.data.style as Prisma.InputJsonValue,
+        },
+      });
+      return reply.status(201).send(row);
+    },
+  );
+
+  app.patch<{ Params: { id: string } }>("/caption-templates/:id", async (request, reply) => {
+    const parsed = templateSchema.partial().safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "invalid template", detail: parsed.error.issues[0]?.message });
+    }
+    const found = await prisma.captionTemplate.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!found) return reply.status(404).send({ error: "template not found" });
+    return prisma.captionTemplate.update({
+      where: { id: found.id },
+      data: {
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.style !== undefined ? { style: parsed.data.style as Prisma.InputJsonValue } : {}),
+      },
+    });
+  });
+
+  app.delete<{ Params: { id: string } }>("/caption-templates/:id", async (request, reply) => {
+    const { count } = await prisma.captionTemplate.deleteMany({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!count) return reply.status(404).send({ error: "template not found" });
+    return reply.status(204).send();
+  });
+
   app.get<{ Params: { id: string } }>("/edit-projects/:id", async (request, reply) => {
     const project = await prisma.editProject.findFirst({
       where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
@@ -174,7 +264,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       renderedUrl: project.renderedKey
         ? fileLinkVersioned(project.renderedKey, project.updatedAt.getTime())
         : null,
-      assets: project.assets.map(assetView),
+      assets: (await Promise.all(project.assets.map(loadWords))).map(assetView),
     };
   });
 
@@ -235,6 +325,10 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
           width: a.width,
           height: a.height,
           words: a.words === null ? Prisma.DbNull : (a.words as Prisma.InputJsonValue),
+          wordsKey: a.wordsKey,
+          language: a.language,
+          peaksKey: a.peaksKey,
+          error: a.error,
           status: a.status,
         })),
       });
@@ -477,7 +571,8 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     const lines: string[] = [];
     const spans: { assetId: string; start: number; end: number }[] = [];
     for (const { assetId } of doc.clips) {
-      const asset = clips.find((a) => a.id === assetId);
+      const found = clips.find((a) => a.id === assetId);
+      const asset = found ? await loadWords(found) : undefined;
       const raw = Array.isArray(asset?.words)
         ? (asset.words as { start: number; end: number; word: string }[])
         : [];

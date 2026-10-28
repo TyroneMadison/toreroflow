@@ -1,9 +1,10 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import {
+  annotateWords,
   assFromDoc,
   BITRATE_PRESETS,
-  chunksFor,
+  chunksWithTimes,
   editedWords,
   edlFromDoc,
   outputWords,
@@ -18,11 +19,27 @@ import {
   isBrowserReady,
   probe,
   renderEdit,
+  waveformPeaks,
 } from "@toreroflow/media";
 import { env } from "./env";
-import { transcribe } from "./transcribe";
+import { transcribeStrict } from "./transcribe";
 
 const prisma = getPrisma();
+
+/** Past this, words live in storage/<clientId>/edit/<projectId>/<assetId>-words.json. */
+const WORDS_FILE_THRESHOLD_SEC = 15 * 60;
+
+/** An asset's words from whichever place holds them. */
+export async function assetWords(a: { words: unknown; wordsKey: string | null }): Promise<Word[]> {
+  if (a.wordsKey) {
+    try {
+      return JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, a.wordsKey), "utf8")) as Word[];
+    } catch {
+      return [];
+    }
+  }
+  return (a.words as Word[] | null) ?? [];
+}
 
 /**
  * Make one editor source usable: clips get something the preview can play, a
@@ -90,28 +107,50 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
         asset.storageKey
       : `${dir}/${asset.id}-proxy.mp4`;
 
-    const [, , transcript] = await Promise.all([
+    const peaksKey = `${dir}/${asset.id}-peaks.json`;
+    const [, , transcript, peaks] = await Promise.all([
       proxyKey === asset.storageKey
         ? Promise.resolve()
         : conformProxy(sourcePath, path.join(env.STORAGE_DIR, proxyKey)),
       filmstrip(sourcePath, path.join(env.STORAGE_DIR, stripKey)),
       // Word Editor and auto-cut both work on the flat word list; segment
-      // boundaries carry nothing the editor needs.
-      transcribe(sourcePath),
+      // boundaries carry nothing the editor needs. A failed transcription no
+      // longer fails silently: the clip stays usable (proxy, filmstrip) and
+      // the reason lands in EditAsset.error for the editor to show.
+      transcribeStrict(sourcePath, { durationSec: meta.durationSec }).then(
+        (t) => ({ ok: true as const, t }),
+        (e: Error) => ({ ok: false as const, reason: e.message }),
+      ),
+      // Waveform lane; a decode hiccup costs the lane, never the clip.
+      waveformPeaks(sourcePath).catch(() => null),
     ]);
-    const words = (transcript?.segments ?? []).flatMap((s) => s.words ?? []);
+    const words: Word[] = transcript.ok
+      ? annotateWords(transcript.t.segments.flatMap((s) => s.words ?? []))
+      : [];
+    if (peaks) await fs.writeFile(path.join(env.STORAGE_DIR, peaksKey), JSON.stringify(peaks));
+
+    // Long sources keep their words in a file: an hour is megabytes of JSON
+    // that every project load would otherwise drag out of Postgres.
+    const longSource = (meta.durationSec ?? 0) > WORDS_FILE_THRESHOLD_SEC;
+    const wordsKey = longSource ? `${dir}/${asset.id}-words.json` : null;
+    if (wordsKey) await fs.writeFile(path.join(env.STORAGE_DIR, wordsKey), JSON.stringify(words));
 
     await prisma.editAsset.update({
       where: { id: asset.id },
       data: {
         proxyKey,
         stripKey,
-        words: words as unknown as Prisma.InputJsonValue,
+        words: wordsKey ? Prisma.DbNull : (words as unknown as Prisma.InputJsonValue),
+        wordsKey,
+        language: transcript.ok ? (transcript.t.language ?? null) : null,
+        peaksKey: peaks ? peaksKey : null,
+        error: transcript.ok ? null : transcript.reason.slice(0, 500),
         status: "ready",
       },
     });
     console.log(
-      `[worker] edit asset ${asset.id} ready (${asset.project.clientId}, ${words.length} words)`,
+      `[worker] edit asset ${asset.id} ready (${asset.project.clientId}, ${words.length} words` +
+        (transcript.ok ? ")" : `, transcription failed: ${transcript.reason})`),
     );
   } catch (error) {
     console.error(`[worker] edit asset ${editAssetId} failed:`, error);
@@ -237,11 +276,12 @@ export async function renderProject(editProjectId: string): Promise<void> {
     // chunk index, so the indices here must be the raw chunk order.
     const wordsByAsset: Record<string, Word[]> = {};
     for (const a of clips) {
-      const words = (a.words as unknown as Word[] | null) ?? [];
+      const words = await assetWords(a);
       wordsByAsset[a.id] = editedWords(words, doc.wordEdits[a.id] ?? {});
     }
     const outWords = outputWords(edl, wordsByAsset);
-    const chunks = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    // Same chunks as chunksFor, plus each word's time for karaoke \k.
+    const chunks = chunksWithTimes(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
 
     // The output name: render-<n> past every render file already in the
     // project dir, so a re-render never overwrites what the operator may
@@ -284,19 +324,31 @@ export async function renderProject(editProjectId: string): Promise<void> {
     const videoBitrateK =
       fps === 60 && typeof doc.export.bitrate !== "number" ? Math.round(baseK * 1.5) : baseK;
 
+    // Audio streams are probed here, not stored: a silent main clip needs
+    // generated silence and b-roll sound only mixes in when it exists, and
+    // a probe costs milliseconds against a render that takes minutes.
+    const live = project.assets.filter((a) => a.storageKey !== "pending");
+    const hasAudio = new Map<string, boolean>();
+    await Promise.all(
+      live
+        .filter((a) => a.kind === "clip")
+        .map(async (a) => {
+          const m = await probe(path.join(env.STORAGE_DIR, a.storageKey)).catch(() => null);
+          if (m) hasAudio.set(a.id, m.audioCodec !== "");
+        }),
+    );
     const plan = buildRenderPlan({
       doc,
       edl,
-      assets: project.assets
-        .filter((a) => a.storageKey !== "pending")
-        .map((a) => ({
-          id: a.id,
-          kind: a.kind,
-          path: path.join(env.STORAGE_DIR, a.storageKey),
-          durationSec: a.durationSec ?? 0,
-          width: a.width ?? 0,
-          height: a.height ?? 0,
-        })),
+      assets: live.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        path: path.join(env.STORAGE_DIR, a.storageKey),
+        durationSec: a.durationSec ?? 0,
+        width: a.width ?? 0,
+        height: a.height ?? 0,
+        hasAudio: hasAudio.get(a.id),
+      })),
       assPath,
       // Resolved the way the insights template is: relative to the repo root,
       // which the Dockerfile also registers with fontconfig.

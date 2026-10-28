@@ -1,4 +1,5 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { api } from "../../lib/api";
 import {
   CAPTION_TEMPLATES,
   DEFAULT_CAPTION_STYLE,
@@ -121,31 +122,59 @@ export default function CaptionStep() {
       captions: { ...d.captions, style: { ...d.captions.style, ...p } },
     }));
 
-  /* ---- custom templates, saved per client in localStorage ---- */
+  /* ---- custom templates, saved per client on the server ---- */
 
-  const storeKey = `tf-caption-customs-${project.clientId}`;
-  const [customs, setCustoms] = useState<CustomTemplate[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(storeKey) ?? "[]") as CustomTemplate[];
-    } catch {
-      return [];
-    }
-  });
-  const saveCustoms = (list: CustomTemplate[]) => {
-    setCustoms(list);
-    try {
-      localStorage.setItem(storeKey, JSON.stringify(list));
-    } catch {
-      /* storage full or blocked; the doc itself is unaffected */
-    }
-  };
-  const addCustom = () => {
-    const n = customs.reduce((m, c) => Math.max(m, Number(c.id.replace("custom-", "")) || 0), 0) + 1;
+  // These used to live in localStorage, so they existed on one machine only.
+  // The first load per client uploads whatever that browser still holds, once
+  // (a flag key guards it; the old list stays put as a fallback copy).
+  const legacyKey = `tf-caption-customs-${project.clientId}`;
+  const [customs, setCustoms] = useState<CustomTemplate[]>([]);
+  useEffect(() => {
+    let alive = true;
+    type Row = { id: string; name: string; style: CaptionStyle };
+    const toCustom = (r: Row): CustomTemplate => ({ id: r.id, label: r.name, style: r.style });
+    (async () => {
+      const base = `/clients/${project.clientId}/caption-templates`;
+      try {
+        if (!localStorage.getItem(`${legacyKey}-uploaded`)) {
+          let legacy: CustomTemplate[] = [];
+          try {
+            legacy = JSON.parse(localStorage.getItem(legacyKey) ?? "[]") as CustomTemplate[];
+          } catch {
+            legacy = [];
+          }
+          for (const c of legacy) await api.post(base, { name: c.label, style: c.style });
+          localStorage.setItem(`${legacyKey}-uploaded`, "1");
+        }
+      } catch {
+        /* offline or storage blocked: try again next load */
+      }
+      try {
+        const rows = await api.get<Row[]>(base);
+        if (alive) setCustoms(rows.map(toCustom));
+      } catch {
+        /* the built-in templates still work without the list */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [project.clientId, legacyKey]);
+  const addCustom = async () => {
+    const n = customs.length + 1;
     const style = JSON.parse(JSON.stringify(s)) as CaptionStyle;
     // A custom carries an explicit animation: applying it later cannot fall
     // back to a template lookup, because customs are not in CAPTION_TEMPLATES.
     style.animation ??= captionKaraoke(doc.captions) ? "karaoke" : "none";
-    saveCustoms([...customs, { id: `custom-${n}`, label: `Custom ${n}`, style }]);
+    const row = await api.post<{ id: string; name: string; style: CaptionStyle }>(
+      `/clients/${project.clientId}/caption-templates`,
+      { name: `Custom ${n}`, style },
+    );
+    setCustoms((list) => [...list, { id: row.id, label: row.name, style: row.style }]);
+  };
+  const removeCustom = async (id: string) => {
+    setCustoms((list) => list.filter((x) => x.id !== id));
+    await api.del(`/caption-templates/${id}`).catch(() => undefined);
   };
   const applyCustom = (c: CustomTemplate) =>
     update((d) => ({
@@ -225,7 +254,7 @@ export default function CaptionStep() {
                 title="Delete this template"
                 onClick={(e) => {
                   e.stopPropagation();
-                  saveCustoms(customs.filter((x) => x.id !== c.id));
+                  void removeCustom(c.id);
                 }}
               >
                 x
@@ -233,7 +262,7 @@ export default function CaptionStep() {
             </button>
           ))}
         </div>
-        <button className="btn ghost cst-savetpl" onClick={addCustom}>
+        <button className="btn ghost cst-savetpl" onClick={() => void addCustom().catch(() => undefined)}>
           + Save current settings as a template
         </button>
       </Section>
@@ -431,6 +460,13 @@ export default function CaptionStep() {
             No transcript words yet. Captions appear once your clips finish processing.
           </div>
         )}
+        {assets
+          .filter((a) => a.kind === "clip" && a.error)
+          .map((a) => (
+            <div key={a.id} className="sub" style={{ marginTop: 6 }}>
+              {a.originalName}: {a.error}
+            </div>
+          ))}
         <div className="cst-breaks">
           {chunks.map((c, i) => {
             const br = doc.captions.breaks.find((b) => b.chunkIndex === i);

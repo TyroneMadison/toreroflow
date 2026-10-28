@@ -46,3 +46,4 @@ export * from "./shootPlan";
 export * from "./hookLibrary";
 export * from "./igLongform";
 export * from "./postLimits";
+export * from "./words";
