@@ -18,6 +18,11 @@ export type ScreenId =
   | "workflows"
   | "ready"
   | "schedule"
+  | "fanout"
+  | "preflight"
+  | "queue"
+  | "rollup"
+  | "templates"
   | "settings";
 
 export type SectionId = "overview" | "create" | "measure" | "settings";
@@ -48,6 +53,7 @@ export const SECTIONS: SectionDef[] = [
       { id: "dashboard", label: "Dashboard", slug: "dashboard" },
       { id: "financials", label: "Financials", slug: "financials" },
       { id: "overview", label: "Account Overview", slug: "account-overview" },
+      { id: "templates", label: "Templates", slug: "templates" },
     ],
   },
   {
@@ -56,6 +62,9 @@ export const SECTIONS: SectionDef[] = [
     icon: "#i-upload",
     pages: [
       { id: "upload", label: "Upload & Schedule", slug: "upload" },
+      { id: "fanout", label: "Fan-out", slug: "fanout" },
+      { id: "preflight", label: "Preflight", slug: "preflight", hidden: true },
+      { id: "queue", label: "Upload queue", slug: "queue" },
       { id: "ready", label: "Ready queue", slug: "ready" },
       { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
       { id: "edit", label: "Studio", slug: "edit" },
@@ -71,6 +80,7 @@ export const SECTIONS: SectionDef[] = [
     pages: [
       { id: "analytics", label: "Analytics", slug: "analytics" },
       { id: "reports", label: "Reports", slug: "reports" },
+      { id: "rollup", label: "Rollup", slug: "rollup" },
       { id: "comments", label: "Comments", slug: "comments" },
     ],
   },

@@ -32,6 +32,11 @@ export const PATHS: Record<ScreenId, string> = {
   workflows: "/create/workflows",
   ready: "/create/ready",
   schedule: "/create/schedule",
+  fanout: "/create/fanout",
+  preflight: "/create/preflight",
+  queue: "/create/queue",
+  rollup: "/rollup",
+  templates: "/templates",
   analytics: "/analytics",
   reports: "/reports",
   comments: "/comments",
@@ -72,11 +77,17 @@ export interface Route {
   dest: string | null;
   /** Studio's open area (?area=ideas), so the phone tab bar can open Ideas. */
   area: string | null;
+  /** The workflow draft open in Fan-out and Preflight (?draft=). */
+  draft: string | null;
+  /** The source video a Rollup shows (?video=). */
+  video: string | null;
 }
 
 const SEG = "([A-Za-z0-9_-]+)";
 const CLIENT_READY = new RegExp(`^/clients/${SEG}/ready$`);
 const CLIENT_SCHEDULE = new RegExp(`^/clients/${SEG}/schedule/${SEG}$`);
+/** A preflight fix link: /create/<draft id>, or /create/new for an unsaved draft. */
+const CREATE_DRAFT = new RegExp(`^/create/${SEG}$`);
 
 const BASE = "http://x";
 
@@ -88,6 +99,7 @@ export function parseUrl(url: string): Route {
   let section: SettingsSection | null = null;
   let slug: string | null = null;
   let cardId: string | null = null;
+  let draft: string | null = null;
   const ready = CLIENT_READY.exec(path);
   const sched = CLIENT_SCHEDULE.exec(path);
   if (ready) {
@@ -104,7 +116,10 @@ export function parseUrl(url: string): Route {
     screen = "settings";
     section = SETTINGS_SECTIONS.find((s) => `/settings/${s.id}` === path)?.id ?? null;
   } else {
-    screen = (Object.keys(PATHS) as ScreenId[]).find((s) => PATHS[s] === path) ?? "dashboard";
+    const known = (Object.keys(PATHS) as ScreenId[]).find((s) => PATHS[s] === path);
+    const fix = known ? null : CREATE_DRAFT.exec(path);
+    screen = known ?? (fix ? "fanout" : "dashboard");
+    if (fix) draft = fix[1]!;
   }
   const r = u.searchParams.get("range");
   return {
@@ -118,6 +133,8 @@ export function parseUrl(url: string): Route {
     scheduleId: u.searchParams.get("schedule") || null,
     dest: u.searchParams.get("dest") || null,
     area: u.searchParams.get("area") || null,
+    draft: draft ?? (u.searchParams.get("draft") || null),
+    video: u.searchParams.get("video") || null,
   };
 }
 
@@ -134,6 +151,8 @@ export function pathFor(screen: ScreenId, section?: SettingsSection | null): str
 /** The canonical form of a URL: its route's own path, query untouched. */
 export function canonicalUrl(url: string): string {
   const r = parseUrl(url);
+  const own = new URL(url, BASE).pathname;
+  if (r.screen === "fanout" && CREATE_DRAFT.test(own) && own !== PATHS.fanout) return own + new URL(url, BASE).search;
   const path =
     r.slug && (r.screen === "ready" || r.screen === "schedule")
       ? clientPath(r.slug, r.cardId)
@@ -215,6 +234,8 @@ export function setQuery(patch: {
   schedule?: string | null;
   area?: string | null;
   dest?: string | null;
+  draft?: string | null;
+  video?: string | null;
 }): void {
   const u = new URL(readUrl(), BASE);
   for (const [k, v] of Object.entries(patch)) {

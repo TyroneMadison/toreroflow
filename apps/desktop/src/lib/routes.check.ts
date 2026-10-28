@@ -14,7 +14,7 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 // Every screen has a unique path that parses back to it.
 const screens = SECTIONS.flatMap((s) => s.pages.map((p) => p.id));
-eq(new Set(screens.map((s) => PATHS[s])).size, 14, "fourteen screens, fourteen paths");
+eq(new Set(screens.map((s) => PATHS[s])).size, 19, "nineteen screens, nineteen paths");
 for (const s of screens) eq(parseUrl(pathFor(s)).screen, s, `${PATHS[s]} round-trips to ${s}`);
 for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));
@@ -60,6 +60,10 @@ eq(parseUrl("/clients/a b/ready").screen, "dashboard", "an unsafe slug is not a 
 eq(parseUrl("/create/upload?schedule=m1&step=details").scheduleId, "m1", "an open schedule flow is in the URL");
 eq(parseUrl("/create/upload?schedule=m1&dest=both").dest, "both", "a long-form destination is in the URL");
 eq(parseUrl("/create/edit?area=ideas").area, "ideas", "Studio's open area is in the URL");
+eq([parseUrl("/create/new").screen, parseUrl("/create/new").draft], ["fanout", "new"], "a fix link for an unsaved draft opens Fan-out");
+eq(parseUrl("/create/d_1").draft, "d_1", "a fix link for a saved draft names it");
+eq(parseUrl("/create/upload").draft, null, "a known create path is not a draft");
+eq(canonicalUrl("/create/new?client=c_1"), "/create/new?client=c_1", "a fix link is not rewritten");
 
 console.log("routes: all checks passed");
 
