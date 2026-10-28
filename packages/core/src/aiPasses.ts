@@ -699,3 +699,21 @@ export function reanchorDoc(
   const broll = doc.broll.map(move);
   return changed ? { ...doc, zooms, broll } : doc;
 }
+
+/** Chunks with their words' keyword levels and emojis, packed the same way. */
+export function attachMarks<C extends { text: string }>(
+  chunks: C[],
+  marks: { level: 0 | 1 | 2; emoji?: string }[],
+  perChunk: number,
+): (C & { marks?: (0 | 1 | 2)[]; emojis?: string[] })[] {
+  if (!marks.some((m) => m.level > 0 || m.emoji)) return chunks;
+  return chunks.map((c, k) => {
+    const slice = marks.slice(k * perChunk, (k + 1) * perChunk);
+    const emojis = slice.map((m) => m.emoji).filter((e): e is string => !!e);
+    return {
+      ...c,
+      marks: slice.map((m) => m.level),
+      ...(emojis.length ? { emojis } : {}),
+    };
+  });
+}

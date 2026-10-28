@@ -55,6 +55,10 @@ export interface CaptionChunk {
    * break override rewrote the text).
    */
   times?: { start: number; end: number }[];
+  /** Phase 5: per-word keyword level (0 none, 1 accent, 2 strong), chunk order. */
+  marks?: (0 | 1 | 2)[];
+  /** Phase 5: emojis anchored on this chunk's words, shown after the text. */
+  emojis?: string[];
 }
 
 /**

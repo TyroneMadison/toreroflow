@@ -156,6 +156,41 @@ function karaokeText(
     .join("\\N");
 }
 
+/** Level 2 keyword color; kept here so core has no cycle with aiPasses. */
+const STRONG = "#FFD84D";
+
+/**
+ * Plain caption text with keyword colors: level 1 in the accent, level 2 in
+ * a fixed strong yellow, each reset to the base color after the word.
+ * Marks only apply while they still line up with the words.
+ */
+function markedText(text: string, marks: (0 | 1 | 2)[] | undefined, base: string, accent: string): string {
+  const lines = text.split("\n");
+  const count = lines.reduce((s, l) => s + l.split(" ").filter(Boolean).length, 0);
+  if (!marks || marks.length !== count || !marks.some((m) => m > 0)) return escapeText(text);
+  let n = 0;
+  return lines
+    .map((l) =>
+      l
+        .split(" ")
+        .filter(Boolean)
+        .map((w) => {
+          const m = marks[n++];
+          if (!m) return braces(w);
+          const c = m === 2 ? STRONG : accent;
+          return `{\\c${hexToAss(c)}}${braces(w)}{\\c${hexToAss(base)}}`;
+        })
+        .join(" "),
+    )
+    .join("\\N");
+}
+
+/** Emoji tail in the bundled monochrome emoji font. */
+function emojiTail(emojis: string[] | undefined, font: string): string {
+  if (!emojis || emojis.length === 0) return "";
+  return ` {\\fnNoto Emoji}${emojis.join(" ")}{\\fn${firstFamily(font)}}`;
+}
+
 const POP_IN = "\\t(0,140,\\fscx108\\fscy108)\\t(140,240,\\fscx100\\fscy100)";
 
 /**
@@ -280,9 +315,14 @@ export function assFromDoc(input: {
         });
         return;
       }
-      const body = karaoke
-        ? karaokeText(text, chunk.end - chunk.start, chunk.times, chunk.start)
-        : escapeText(text);
+      // Keyword colors only without karaoke: karaoke already owns the color
+      // channel. A break override drops marks since its words changed.
+      const marks = overrides.has(i) ? undefined : chunk.marks;
+      const body =
+        (karaoke
+          ? karaokeText(text, chunk.end - chunk.start, chunk.times, chunk.start)
+          : markedText(text, marks, cap.style.color, cap.style.accentColor)) +
+        emojiTail(chunk.emojis, cap.style.font);
       events.push(dialogue(0, chunk.start, chunk.end, "C", posTag + body));
     });
   }

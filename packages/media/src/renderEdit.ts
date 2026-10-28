@@ -88,7 +88,13 @@ interface SegZoom {
   t0: number;
   kind: "pushin" | "punchin" | "quickzoom";
   size: "s" | "m" | "l";
+  /** Phase 5: explicit scale curve, seconds from t0; wins over kind. */
+  curve?: { t: number; scale: number }[];
+  anchor?: "face" | "center";
 }
+
+/** Where a face sits in a talking-head frame, as a fraction of height. */
+export const FACE_Y = 0.38;
 
 /**
  * One zoompan for every zoom on a segment. Later items win, so each wraps
@@ -103,6 +109,19 @@ function zoompanFor(zooms: SegZoom[], segLen: number, fps: number, w: number, h:
   for (const item of zooms) {
     const S = ZOOM[item.kind].scale[item.size];
     const t0 = item.t0;
+    const c = item.curve;
+    if (c && c.length > 1) {
+      // Piecewise linear through the points, 1 outside the curve.
+      let inner = n(c[c.length - 1].scale);
+      for (let k = c.length - 1; k >= 1; k--) {
+        const a = c[k - 1];
+        const b = c[k];
+        const span = Math.max(0.001, b.t - a.t);
+        inner = `if(lt(${T},${n(t0 + b.t)}),${n(a.scale)}+${n(b.scale - a.scale)}*(${T}-${n(t0 + a.t)})/${n(span)},${inner})`;
+      }
+      z = `if(between(${T},${n(t0 + c[0].t)},${n(t0 + c[c.length - 1].t)}),${inner},${z})`;
+      continue;
+    }
     if (item.kind === "pushin") {
       // Linear ramp 1 -> S from t0 to the segment end.
       const dur = Math.max(0.001, segLen - t0);
@@ -121,7 +140,12 @@ function zoompanFor(zooms: SegZoom[], segLen: number, fps: number, w: number, h:
         `${n(S)}-${n(S - 1)}*(${T}-${n(tHold)})/${n(q.outSec)})),${z})`;
     }
   }
-  return `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${w}x${h}:fps=${fps}`;
+  // Face anchor: zoom toward the upper-middle where a reframed face sits.
+  // ponytail: a fixed point, not the face track; reframed layouts already
+  // keep the face there. Upgrade path: per-frame centers from faces.json.
+  const fy = zooms.some((zz) => zz.anchor === "face") ? FACE_Y : 0.5;
+  const yExpr = fy === 0.5 ? "ih/2-(ih/zoom/2)" : `ih*${fy}-(ih/zoom*${fy})`;
+  return `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='${yExpr}':d=1:s=${w}x${h}:fps=${fps}`;
 }
 
 /**
@@ -292,7 +316,13 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     }
     if (i < 0) continue;
     const list = zoomsBySeg.get(i) ?? [];
-    list.push({ t0: Math.max(0, z.at - segStart[i]), kind: z.kind, size: z.size });
+    list.push({
+      t0: Math.max(0, z.at - segStart[i]),
+      kind: z.kind,
+      size: z.size,
+      ...(z.curve ? { curve: z.curve } : {}),
+      ...(z.anchor ? { anchor: z.anchor } : {}),
+    });
     zoomsBySeg.set(i, list);
   }
 
