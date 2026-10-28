@@ -136,6 +136,9 @@ def transcribe(req: TranscribeRequest) -> dict:
             # one hallucinated loop ("you know what") swallow the first ten
             # minutes; 0-600 s alone transcribed fine. Off keeps windows honest.
             condition_on_previous_text=False,
+            # Language from four 30 s probes, not one: the same talk came back
+            # "ur", "nl", "zh" off its opening alone and lost most English words.
+            language_detection_segments=4,
         )
         out = [
             {
