@@ -287,6 +287,7 @@ model Client {
   researchRuns     ResearchRun[]
   knowledgeNotes   KnowledgeNote[]
   carouselDrafts   CarouselDraft[]
+  clipJobs         ClipJob[]
   editProjects     EditProject[]
   captionTemplates CaptionTemplate[]
   videoAnalyses    VideoAnalysis[]
@@ -1170,7 +1171,8 @@ model EditAsset {
   status       String   @default("uploaded")
   createdAt    DateTime @default(now())
 
-  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clipJobs ClipJob[]
 
   @@index([projectId])
 }
@@ -1727,4 +1729,69 @@ model RequestFormAudit {
 
   @@index([clientId, createdAt])
   @@index([createdAt])
+}
+
+/// One long source being cut into scored short clips (Studio > Clips). The
+/// source is an EditAsset in a holder EditProject (status "clipsource"), so
+/// transcription, words files and reframe reuse the editor's pipeline.
+model ClipJob {
+  id            String   @id @default(cuid())
+  clientId      String
+  sourceAssetId String
+  /// queued | transcribing | analyzing | curating | scoring | ready | failed
+  status        String   @default("queued")
+  /// Human line for the progress screen, e.g. "judge batch 3/7".
+  stage         String?
+  pct           Int      @default(0)
+  error         String?
+  /// { length, genre, prompt, keywords[], aspect, range:[s,e], language, provider, log[] }
+  options       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  source     EditAsset       @relation(fields: [sourceAssetId], references: [id], onDelete: Cascade)
+  candidates ClipCandidate[]
+
+  @@index([clientId])
+}
+
+/// One scored clip of a ClipJob: source ranges in play order plus scores.
+model ClipCandidate {
+  id            String   @id @default(cuid())
+  jobId         String
+  rank          Int      @default(0)
+  /// [[start, end], ...] seconds in the source, in play order.
+  ranges        Json
+  duration      Float
+  /// The length bucket it was curated for, e.g. "15-60".
+  lengthTarget  String
+  title         String
+  why           String?
+  description   String?
+  hashtags      String[] @default([])
+  /// The clip's words in play order, for transcript search.
+  text          String?
+  hook          Int      @default(0)
+  flow          Int      @default(0)
+  value         Int      @default(0)
+  trend         Int      @default(0)
+  relevance     Int?
+  sponsorship   Int?
+  raw           Int      @default(0)
+  /// Shown 0-99 score (rank curve within the job).
+  score         Int      @default(0)
+  /// { hook, flow, value, trend, relevance? } judge comments.
+  comments      Json?
+  /// up | down
+  feedback      String?
+  /// "curate" | "refine": refine rows survive a curate rerun.
+  origin        String   @default("curate")
+  /// The EditProject "Open in editor" made, reused on a second open.
+  editProjectId String?
+  createdAt     DateTime @default(now())
+
+  job ClipJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
 }

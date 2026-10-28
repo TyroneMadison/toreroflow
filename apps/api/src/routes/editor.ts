@@ -147,7 +147,8 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       const client = await ownedClient(request.params.clientId, request.user.agencyId);
       if (!client) return reply.status(404).send({ error: "brand not found" });
       const projects = await prisma.editProject.findMany({
-        where: { clientId: client.id },
+        // Clip-job holders (Studio > Clips sources) are not projects anyone edits.
+        where: { clientId: client.id, status: { not: "clipsource" } },
         orderBy: { updatedAt: "desc" },
         take: 50,
         include: { assets: { select: { kind: true, durationSec: true } } },
@@ -775,8 +776,14 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     // Individual files, not the project directory: sibling assets live there.
     // A Save Copy sharing this key loses the file too; acceptable until the
     // render-milestone sweep owns reference counting.
+    // ponytail: clip candidates opened in the editor share the clip job's
+    // source files, so a key another asset still points at stays on disk.
     for (const key of [asset.storageKey, asset.proxyKey, asset.stripKey]) {
       if (key && key !== "pending") {
+        const shared = await prisma.editAsset.count({
+          where: { OR: [{ storageKey: key }, { proxyKey: key }, { stripKey: key }] },
+        });
+        if (shared) continue;
         await fs.rm(path.join(env.STORAGE_DIR, key), { force: true });
       }
     }

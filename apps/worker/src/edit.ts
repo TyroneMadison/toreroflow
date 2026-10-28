@@ -114,6 +114,19 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
       : `${dir}/${asset.id}-proxy.mp4`;
 
     const peaksKey = `${dir}/${asset.id}-peaks.json`;
+    // A language set up front (a clip job's option) skips whisper's guess.
+    const runTranscribe = () =>
+      transcribeStrict(sourcePath, { durationSec: meta.durationSec, language: asset.language }).then(
+        (t) => ({ ok: true as const, t }),
+        (e: Error) => ({ ok: false as const, reason: e.message }),
+      );
+    // ponytail: long sources transcribe alone first. On the e2e box a 20 min
+    // talk transcribed beside the proxy and filmstrip encodes came back with
+    // its first minutes missing and the language guessed wrong (ko, zh, nl);
+    // the same audio alone came back whole, every time. Root cause not found
+    // in whisper; this keeps the CPU to it. Short clips keep the parallel win.
+    const serial = (meta.durationSec ?? 0) > 300;
+    const early = serial ? await runTranscribe() : null;
     const [, , transcript, peaks] = await Promise.all([
       proxyKey === asset.storageKey
         ? Promise.resolve()
@@ -123,10 +136,7 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
       // boundaries carry nothing the editor needs. A failed transcription no
       // longer fails silently: the clip stays usable (proxy, filmstrip) and
       // the reason lands in EditAsset.error for the editor to show.
-      transcribeStrict(sourcePath, { durationSec: meta.durationSec }).then(
-        (t) => ({ ok: true as const, t }),
-        (e: Error) => ({ ok: false as const, reason: e.message }),
-      ),
+      early ? Promise.resolve(early) : runTranscribe(),
       // Waveform lane; a decode hiccup costs the lane, never the clip.
       waveformPeaks(sourcePath).catch(() => null),
     ]);

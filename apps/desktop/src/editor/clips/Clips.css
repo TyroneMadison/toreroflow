@@ -1,0 +1,42 @@
+/* Studio > Clips (mock-ups 02-08). Tokens come from styles.css. */
+.clipshome { display: grid; gap: 16px; }
+.clipdrop { border: 1.5px dashed var(--line, #333); border-radius: 14px; padding: 28px; text-align: center; cursor: pointer; }
+.clipdrop.over, .clipdrop.has { border-color: var(--accent, #ff7a6b); }
+.clipdrop .t { font-weight: 600; }
+.clipopts { display: grid; gap: 10px; }
+.clipopts .row, .clipopts label { display: flex; gap: 10px; align-items: center; }
+.clipopts label input, .clipopts label select { flex: 1; }
+.clipjob { display: grid; gap: 14px; }
+.cj-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.cj-head h3 { margin: 0; }
+.cj-search { min-width: 220px; }
+.cj-filters { display: flex; gap: 6px; }
+.chip { border: 1px solid var(--line, #333); border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+.chip.on { border-color: var(--accent, #ff7a6b); color: var(--accent, #ff7a6b); }
+.cj-progress .bar { height: 6px; border-radius: 3px; background: var(--line, #222); overflow: hidden; }
+.cj-progress .bar i { display: block; height: 100%; width: 100%; background: var(--accent, #ff7a6b); transform-origin: left; transition: transform 0.4s; }
+.cj-log { font-size: 12px; opacity: 0.8; max-height: 240px; overflow: auto; }
+.cj-log time { opacity: 0.6; margin-right: 6px; }
+.cj-body { display: grid; grid-template-columns: 1fr auto; gap: 14px; }
+.cj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; align-content: start; }
+.cj-card { display: flex; gap: 10px; border: 1px solid var(--line, #333); border-radius: 14px; padding: 10px; cursor: pointer; }
+.cj-card.sel, .cj-card.open { border-color: var(--accent, #ff7a6b); }
+.cj-card .thumb { width: 72px; aspect-ratio: 9 / 16; border-radius: 8px; overflow: hidden; background: #111; flex: none; }
+.cj-card .thumb video { width: 100%; height: 100%; object-fit: cover; }
+.cj-card .meta { flex: 1; display: grid; gap: 6px; min-width: 0; }
+.cj-card .top { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.7; }
+.cj-card .t { font-weight: 600; font-size: 13px; }
+.cj-card .scores { display: flex; gap: 8px; align-items: center; }
+.cj-card .scores .sd { transform: scale(0.7); transform-origin: left center; }
+.cj-card .subs { flex: 1; display: grid; gap: 2px; font-size: 11px; }
+.cj-card .sub-row { display: grid; grid-template-columns: 40px 1fr 14px; gap: 6px; align-items: center; }
+.cj-card .sub-row i { height: 4px; border-radius: 2px; background: var(--accent, #ff7a6b); }
+.cj-card .acts { display: flex; gap: 4px; }
+.cj-detail { width: 340px; display: grid; gap: 10px; align-content: start; border-left: 1px solid var(--line, #333); padding-left: 14px; }
+.cj-detail video { width: 100%; border-radius: 10px; }
+.cj-detail .nudges, .cj-detail .refine { display: flex; flex-wrap: wrap; gap: 6px; }
+.cj-detail .comments dt { font-weight: 600; text-transform: capitalize; }
+.cj-detail .comments dd { margin: 0 0 6px; font-size: 12px; opacity: 0.8; }
+.cj-detail .transcript { font-size: 12px; opacity: 0.75; max-height: 160px; overflow: auto; }
+.cj-batch { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--accent, #ff7a6b); border-radius: 14px; padding: 10px 14px; background: var(--bg, #0b0b0b); }
+.cj-reasons { display: flex; flex-wrap: wrap; gap: 8px; }

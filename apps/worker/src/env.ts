@@ -15,6 +15,12 @@ export const env = {
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   COPY_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
+  /**
+   * Who curates and judges Studio clips: auto | anthropic | heuristic.
+   * auto = Anthropic when ANTHROPIC_API_KEY is set, else the free local
+   * heuristic. See clips/provider.ts for why Sunra is not an option.
+   */
+  CLIPS_AI: process.env.CLIPS_AI ?? "auto",
   /** Where the insights PDF template lives, alongside the report template. */
   REPO_ROOT: repoRoot,
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),

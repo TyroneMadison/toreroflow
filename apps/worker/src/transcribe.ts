@@ -1,3 +1,5 @@
+import http from "node:http";
+import https from "node:https";
 import { WINDOW_THRESHOLD_SEC, transcribeWindows } from "@toreroflow/core";
 import type { TranscriptSegment } from "@toreroflow/media";
 import { env } from "./env";
@@ -13,26 +15,48 @@ export interface Transcript {
   language?: string;
 }
 
-async function post(body: Record<string, unknown>): Promise<Transcript> {
-  let res: Response;
-  try {
-    res = await fetch(`${env.CAPTIONS_URL}/transcribe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+// ponytail: node:http, not fetch. Global fetch (undici) drops any request
+// whose first byte takes over 300 s, and a 20 min source on a busy box (proxy
+// and filmstrip encodes running beside whisper) took longer than that, so the
+// clip job failed with "fetch failed". Here only TIMEOUT_MS applies.
+function post(body: Record<string, unknown>): Promise<Transcript> {
+  const url = new URL(`${env.CAPTIONS_URL}/transcribe`);
+  const payload = JSON.stringify(body);
+  const lib = url.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = lib.request(
+      url,
+      { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("error", (e) => reject(new Error(`the transcription service did not answer (${e.message})`)));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
+            return reject(new Error(`transcription failed: ${status} ${text.slice(0, 300)}`));
+          }
+          try {
+            resolve(JSON.parse(text) as Transcript);
+          } catch {
+            reject(new Error("transcription failed: the service sent something that is not JSON"));
+          }
+        });
+      },
+    );
+    req.setTimeout(TIMEOUT_MS, () => {
+      req.destroy(new Error(`transcription timed out after ${Math.round(TIMEOUT_MS / 60000)} min`));
     });
-  } catch (err) {
-    const name = (err as Error).name;
-    if (name === "TimeoutError" || name === "AbortError") {
-      throw new Error(`transcription timed out after ${Math.round(TIMEOUT_MS / 60000)} min`);
-    }
-    throw new Error(`the transcription service did not answer (${(err as Error).message})`);
-  }
-  if (!res.ok) {
-    throw new Error(`transcription failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
-  }
-  return (await res.json()) as Transcript;
+    req.on("error", (e) => {
+      reject(
+        e.message.startsWith("transcription timed out")
+          ? e
+          : new Error(`the transcription service did not answer (${e.message})`),
+      );
+    });
+    req.end(payload);
+  });
 }
 
 /**

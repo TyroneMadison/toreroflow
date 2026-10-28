@@ -29,6 +29,7 @@ def get_model():
             os.environ.get("WHISPER_MODEL", "small"),
             device=os.environ.get("WHISPER_DEVICE", "cpu"),
             compute_type=os.environ.get("WHISPER_COMPUTE", "int8"),
+            cpu_threads=int(os.environ.get("WHISPER_THREADS", "0")),
         )
     return _model
 
@@ -43,8 +44,8 @@ class TranscribeRequest(BaseModel):
     dur: float | None = None
 
 
-def _window_audio(path: str, start: float, dur: float):
-    """Decode just [start, start+dur) to 16 kHz mono float32 via ffmpeg."""
+def _window_audio(path: str, start: float, dur: float | None):
+    """Decode [start, start+dur) (or the whole file) to 16 kHz mono float32 via ffmpeg."""
     import subprocess
 
     import numpy as np
@@ -52,7 +53,7 @@ def _window_audio(path: str, start: float, dur: float):
     raw = subprocess.run(
         [
             "ffmpeg", "-nostdin", "-v", "error",
-            "-ss", str(start), "-t", str(dur), "-i", path,
+            "-ss", str(start), *(["-t", str(dur)] if dur is not None else []), "-i", path,
             "-ac", "1", "-ar", "16000", "-f", "f32le", "-",
         ],
         check=True, capture_output=True,
@@ -120,12 +121,25 @@ def separate(req: SeparateRequest) -> dict:
 def transcribe(req: TranscribeRequest) -> dict:
     offset = 0.0
     try:
-        audio = req.path
+        # ponytail: whole files go through ffmpeg too. PyAV's decode of a
+        # 20 min VP9/Opus webm handed whisper only the last ten minutes (the
+        # first 600 s came back empty, language guessed "ur"); the ffmpeg
+        # window path transcribed the same audio fine. Under the 20 min
+        # window threshold the float32 buffer stays under ~80 MB.
         if req.start is not None and req.dur is not None:
             offset = max(0.0, req.start)
             audio = _window_audio(req.path, offset, req.dur)
+        else:
+            audio = _window_audio(req.path, 0.0, None)
         segments, info = get_model().transcribe(
-            audio, vad_filter=True, word_timestamps=True, language=req.language
+            audio, vad_filter=True, word_timestamps=True, language=req.language,
+            # ponytail: on a 20 min talk, conditioning on the previous text let
+            # one hallucinated loop ("you know what") swallow the first ten
+            # minutes; 0-600 s alone transcribed fine. Off keeps windows honest.
+            condition_on_previous_text=False,
+            # Language from four 30 s probes, not one: the same talk came back
+            # "ur", "nl", "zh" off its opening alone and lost most English words.
+            language_detection_segments=4,
         )
         out = [
             {
