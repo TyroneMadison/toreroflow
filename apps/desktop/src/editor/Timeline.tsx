@@ -19,6 +19,10 @@ import {
   outputDuration,
   splitAt,
   toOutputTime,
+  appendClip,
+  layoutAt,
+  layoutBoundaries,
+  outputSize,
 } from "@toreroflow/core";
 import { fileUrl } from "../lib/api";
 import { useEditor, type EditAssetInfo, type Selection } from "./StudioEditor";
@@ -188,6 +192,7 @@ export default function Timeline() {
 
   const blocks = useMemo(() => {
     const out: Array<{
+      clipId: string;
       assetId: string;
       start: number;
       vis: number;
@@ -196,10 +201,10 @@ export default function Timeline() {
     }> = [];
     let i = 0;
     let acc = 0;
-    for (const { assetId } of doc.clips) {
+    for (const { id: clipId, assetId } of doc.clips) {
       const segs: typeof edl = [];
       let vis = 0;
-      while (i < edl.length && edl[i].assetId === assetId) {
+      while (i < edl.length && (edl[i].clipId ?? edl[i].assetId) === clipId) {
         segs.push(edl[i]);
         vis += edl[i].srcOut - edl[i].srcIn;
         i++;
@@ -219,11 +224,33 @@ export default function Timeline() {
         .map((s) => toOutputTime(edl, assetId, s))
         .filter((t): t is number => t !== null)
         .map((t) => t - acc);
-      out.push({ assetId, start: acc, vis, seams, splits });
+      out.push({ clipId, assetId, start: acc, vis, seams, splits });
       acc += vis;
     }
     return out;
   }, [doc.clips, doc.splits, edl, durations]);
+
+  /* ---- layout lane: what each stretch of output renders as ---- */
+
+  const layoutChips = useMemo(() => {
+    const out: Array<{ at: number; dur: number; label: string; manual: boolean }> = [];
+    const { width: OW, height: OH } = outputSize(doc.output.aspect, 1080);
+    let acc = 0;
+    for (const seg of edl) {
+      const a = byId[seg.assetId];
+      const cuts = [seg.srcIn, ...layoutBoundaries(doc, seg.assetId, seg.srcIn, seg.srcOut), seg.srcOut];
+      for (let k = 0; k < cuts.length - 1; k++) {
+        const r = layoutAt(doc, seg.clipId ?? seg.assetId, seg.assetId, cuts[k], a?.width ?? 0, a?.height ?? 0, OW, OH);
+        const label = r.kind === "legacy" ? "Letterbox" : r.kind === "fit" ? `Fit · ${r.fitBg}` : r.kind[0].toUpperCase() + r.kind.slice(1);
+        const dur = cuts[k + 1] - cuts[k];
+        const last = out[out.length - 1];
+        if (last && last.label === label && last.manual === r.manual && Math.abs(last.at + last.dur - acc) < 1e-6) last.dur += dur;
+        else out.push({ at: acc, dur, label, manual: r.manual });
+        acc += dur;
+      }
+    }
+    return out;
+  }, [doc, edl, byId]);
 
   /* ---- seek and scrub ---- */
 
@@ -583,11 +610,7 @@ export default function Timeline() {
   const moveToMain = (id: string) => {
     const item = doc.broll.find((b) => b.id === id);
     if (!item) return;
-    update((d) => ({
-      ...d,
-      broll: d.broll.filter((b) => b.id !== id),
-      clips: [...d.clips, { assetId: item.assetId }],
-    }));
+    update((d) => appendClip({ ...d, broll: d.broll.filter((b) => b.id !== id) }, item.assetId));
     setSelection({ kind: "clip", assetId: item.assetId });
   };
 
@@ -774,6 +797,23 @@ export default function Timeline() {
               ))}
             </div>
 
+            <div className="tl-lane tl-lane-layout" style={{ height: 26 }}>
+              <span className="tl-lanelab">
+                <i style={{ background: "#FF6F61" }} />Layout
+              </span>
+              {layoutChips.map((c, i) => (
+                <div
+                  key={i}
+                  className={`tl-chip tl-chip-layout${c.manual ? " manual" : ""}`}
+                  style={{ left: X(c.at), width: Math.max(12, c.dur * pps), top: 3 }}
+                  title={c.manual ? `${c.label} (manual override)` : c.label}
+                  onClick={() => seek(c.at)}
+                >
+                  {c.label}
+                </div>
+              ))}
+            </div>
+
             <div className="tl-lane tl-lane-clips">
               {total <= 0 && (
                 <div className="tl-hint">Add clips in step 1 to build the timeline</div>
@@ -785,7 +825,7 @@ export default function Timeline() {
                 const width = Math.max(24, b.vis * pps + Math.max(0, trimming));
                 return (
                   <div
-                    key={b.assetId}
+                    key={b.clipId}
                     className={`tl-clip${selectedClipId === b.assetId ? " on" : ""}`}
                     style={{ left: X(b.start), width }}
                     onPointerDown={(e) => {

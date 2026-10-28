@@ -9,11 +9,18 @@ function eq(actual: unknown, expected: unknown, message: string) {
 }
 
 function deepEq(actual: unknown, expected: unknown, message: string) {
-  const a = JSON.stringify(actual);
-  const b = JSON.stringify(expected);
+  // clipId is the v2 addition; reframe.check pins it, these pin v1 spans.
+  const drop = (k: string, v: unknown) => (k === "clipId" ? undefined : v);
+  const a = JSON.stringify(actual, drop);
+  const b = JSON.stringify(expected, drop);
   if (a !== b) {
     throw new Error(`${message}\n  expected: ${b}\n  actual:   ${a}`);
   }
+}
+
+/** v1 segment shape: clip ids are checked in reframe.check, these pin the spans. */
+function bare<T extends { clipId?: string }>(segs: T[]): Omit<T, "clipId">[] {
+  return segs.map(({ clipId: _c, ...rest }) => rest);
 }
 
 /** Round to 3dp so segment boundaries compare exactly. */
@@ -44,18 +51,16 @@ eq(r3(outputDuration(edl)), 11.5, "output duration sums segment lengths");
 // Slivers under 0.05s are dropped, exactly 0.05s survives.
 let sliver = emptyDoc(["c"]);
 sliver = addCut(sliver, "c", { start: 0.04, end: 10 });
-deepEq(edlFromDoc(sliver, { c: 10 }), [], "a 0.04s leading sliver is dropped");
+deepEq(bare(edlFromDoc(sliver, { c: 10 })), [], "a 0.04s leading sliver is dropped");
 let edge = emptyDoc(["c"]);
 edge = addCut(edge, "c", { start: 0.05, end: 10 });
-deepEq(
-  edlFromDoc(edge, { c: 10 }),
+deepEq(bare(edlFromDoc(edge, { c: 10 })),
   [{ assetId: "c", srcIn: 0, srcOut: 0.05 }],
   "an exactly 0.05s segment is kept",
 );
 
 // Clips with no known duration are skipped.
-deepEq(
-  edlFromDoc(emptyDoc(["a", "x"]), { a: 2 }),
+deepEq(bare(edlFromDoc(emptyDoc(["a", "x"]), { a: 2 })),
   [{ assetId: "a", srcIn: 0, srcOut: 2 }],
   "unknown duration skips the clip",
 );

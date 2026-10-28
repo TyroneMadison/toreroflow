@@ -9,6 +9,9 @@ import {
   edlFromDoc,
   outputWords,
   type EditDoc,
+  type EditDocV1,
+  migrateDoc,
+  outputSize,
   type Word,
 } from "@toreroflow/core";
 import { getPrisma, Prisma } from "@toreroflow/db";
@@ -253,11 +256,13 @@ export async function renderProject(editProjectId: string): Promise<void> {
   };
 
   try {
-    const doc = project.doc as unknown as EditDoc | null;
-    if (!doc || doc.v !== 1) {
+    const raw = project.doc as unknown as EditDoc | EditDocV1 | null;
+    if (!raw || (raw.v !== 1 && raw.v !== 2)) {
       await fail("this project has no edit document yet");
       return;
     }
+    // Old v1 docs render through the same migration the editor loads with.
+    const doc = migrateDoc(raw);
 
     const clips = project.assets.filter((a) => a.kind === "clip");
     const durations: Record<string, number> = {};
@@ -315,8 +320,8 @@ export async function renderProject(editProjectId: string): Promise<void> {
     }
 
     const { resolution, fps } = doc.export;
-    // 9:16 vertical: the resolution number is the width.
-    const height = Math.round((resolution * 16) / 9);
+    // The resolution number is the short edge; 9:16 at 1080 is 1080x1920 as before.
+    const { width, height } = outputSize(doc.output.aspect, resolution);
     const preset = BITRATE_PRESETS[resolution];
     const baseK = typeof doc.export.bitrate === "number" ? doc.export.bitrate : preset[doc.export.bitrate];
     // 60fps carries twice the frames; presets scale up, a custom number is
@@ -353,7 +358,7 @@ export async function renderProject(editProjectId: string): Promise<void> {
       // Resolved the way the insights template is: relative to the repo root,
       // which the Dockerfile also registers with fontconfig.
       fontsDir: path.join(env.REPO_ROOT, "assets", "fonts"),
-      out: { path: outPath, width: resolution, height, fps, format: ext, videoBitrateK },
+      out: { path: outPath, width, height, fps, format: ext, videoBitrateK },
     });
 
     // Whole percents only, written when the number actually moves; the last

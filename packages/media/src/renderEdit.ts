@@ -22,7 +22,17 @@
  */
 
 import { spawn } from "node:child_process";
-import { ZOOM, outputDuration, type EditDoc, type EdlSegment } from "@toreroflow/core";
+import {
+  ZOOM,
+  applyClipFx,
+  cropPx,
+  layoutAt,
+  layoutBoundaries,
+  outputDuration,
+  panelsFor,
+  type EditDoc,
+  type EdlSegment,
+} from "@toreroflow/core";
 
 export interface RenderAssetInfo {
   id: string;
@@ -135,8 +145,78 @@ export function fxFrame(zoom: number, xPct: number, yPct: number, W: number, H: 
   return out;
 }
 
+/** Splits EDL segments at layout boundaries (shots, manual overrides). */
+export function splitAtLayouts(doc: EditDoc, edl: EdlSegment[]): EdlSegment[] {
+  const hasAny = Object.keys(doc.shots ?? {}).length > 0 || Object.keys(doc.shotAdjust ?? {}).length > 0;
+  if (!hasAny) return edl;
+  const outList: EdlSegment[] = [];
+  for (const seg of edl) {
+    let a = seg.srcIn;
+    for (const t of layoutBoundaries(doc, seg.assetId, seg.srcIn, seg.srcOut)) {
+      outList.push({ ...seg, srcIn: a, srcOut: t });
+      a = t;
+    }
+    outList.push({ ...seg, srcIn: a, srcOut: seg.srcOut });
+  }
+  // ponytail: a zoom binds to the piece it starts in, so a push-in that
+  // crosses a layout change ramps over that piece only. Fine for now.
+  return outList;
+}
+
+/**
+ * Filter statements for one segment under a layout. head is "[idx:v]trim,...";
+ * the result ends in [label]. fill crops one rect; split/screenshare crop two
+ * rects and vstack them; fit lays the whole frame over a blurred cover, black
+ * or a color.
+ */
+export function layoutFilters(
+  lay: ReturnType<typeof layoutAt>,
+  fx: EditDoc["clipFx"][string] | undefined,
+  head: string,
+  label: string,
+  tail: string[],
+  sw: number,
+  sh: number,
+  W: number,
+  H: number,
+): string[] {
+  const srcA = sw / sh;
+  const end = tail.length ? `,${tail.join(",")}` : "";
+  if (lay.kind === "fit") {
+    const fg = `scale=${W}:${H}:force_original_aspect_ratio=decrease`;
+    if (lay.fitBg === "blur") {
+      return [
+        `${head},split=2[${label}f][${label}b]`,
+        `[${label}b]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=20:2[${label}bg]`,
+        `[${label}f]${fg}[${label}fg]`,
+        `[${label}bg][${label}fg]overlay=(W-w)/2:(H-h)/2,setsar=1${end}[${label}]`,
+      ];
+    }
+    const color = lay.fitBg === "color" && lay.bgColor ? `0x${lay.bgColor.replace(/^#/, "")}` : "black";
+    return [`${head},${fg},pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${color},setsar=1${end}[${label}]`];
+  }
+  const panels = panelsFor(lay.kind as Exclude<typeof lay.kind, "legacy">, W, H);
+  const crop = (k: number) => {
+    const p = panels[k];
+    const r = k === 0 ? applyClipFx(lay.crops[k], fx, p.w / p.h, srcA) : lay.crops[k];
+    const c = cropPx(r, sw, sh);
+    return `crop=${c.w}:${c.h}:${c.x}:${c.y},scale=${p.w}:${p.h},setsar=1`;
+  };
+  if (panels.length === 1) return [`${head},${crop(0)}${end}[${label}]`];
+  return [
+    `${head},split=2[${label}p0][${label}p1]`,
+    `[${label}p0]${crop(0)}[${label}q0]`,
+    `[${label}p1]${crop(1)}[${label}q1]`,
+    `[${label}q0][${label}q1]vstack=inputs=2${end}[${label}]`,
+  ];
+}
+
 export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
-  const { doc, edl, assets, assPath, fontsDir, out } = input;
+  const { doc, assets, assPath, fontsDir, out } = input;
+  // Split segments where a shot or manual layout override changes, so each
+  // piece renders with one layout. With no shots or overrides this is the
+  // input EDL untouched, which keeps the v1 golden plan byte-identical.
+  const edl = splitAtLayouts(doc, input.edl);
   if (edl.length === 0) throw new Error("cannot render an empty edit");
 
   const byId = new Map(assets.map((a) => [a.id, a]));
@@ -202,7 +282,7 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
 
   edl.forEach((seg, i) => {
     const idx = inputIdx(seg.assetId);
-    const fx = doc.clipFx[seg.assetId];
+    const fx = doc.clipFx[seg.clipId ?? seg.assetId];
     const b = doc.color.b + (fx?.color?.b ?? 0);
     const c = doc.color.c + (fx?.color?.c ?? 0);
     const s = doc.color.s + (fx?.color?.s ?? 0);
@@ -220,12 +300,21 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     // Warmth: neutral 6500K, +-100 sweeps 4500K (warm) to 8500K (cool).
     if (w) v.push(`colortemperature=temperature=${Math.round(6500 - w * 20)}`);
     if (fx?.rotate) v.push(`rotate=${n(fx.rotate)}*PI/180`);
-    const fxMoved = !!fx && ((fx.zoom ?? 1) !== 1 || (fx.x ?? 0) !== 0 || (fx.y ?? 0) !== 0);
-    if (fxMoved) v.push(...fxFrame(fx.zoom ?? 1, fx.x ?? 0, fx.y ?? 0, W, H));
-    else v.push(fit);
+    const src = byId.get(seg.assetId);
+    const lay = layoutAt(doc, seg.clipId, seg.assetId, seg.srcIn, src?.width ?? W, src?.height ?? H, W, H);
     const zooms = zoomsBySeg.get(i);
-    if (zooms?.length) v.push(`fps=${F}`, zoompanFor(zooms, seg.srcOut - seg.srcIn, F, W, H));
-    fc.push(`[${idx}:v]${v.join(",")}[v${i}]`);
+    const zoomTail = zooms?.length ? [`fps=${F}`, zoompanFor(zooms, seg.srcOut - seg.srcIn, F, W, H)] : [];
+    if (lay.kind === "legacy") {
+      const fxMoved = !!fx && ((fx.zoom ?? 1) !== 1 || (fx.x ?? 0) !== 0 || (fx.y ?? 0) !== 0);
+      if (fxMoved) v.push(...fxFrame(fx.zoom ?? 1, fx.x ?? 0, fx.y ?? 0, W, H));
+      else v.push(fit);
+      v.push(...zoomTail);
+      fc.push(`[${idx}:v]${v.join(",")}[v${i}]`);
+    } else {
+      const sw = src?.width || W;
+      const sh = src?.height || H;
+      fc.push(...layoutFilters(lay, fx, `[${idx}:v]${v.join(",")}`, `v${i}`, zoomTail, sw, sh, W, H));
+    }
 
     // A main clip with no audio stream gets generated silence for exactly its
     // segment, so concat still has an audio pad to pair and the render lives.
