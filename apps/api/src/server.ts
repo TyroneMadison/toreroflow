@@ -13,6 +13,7 @@ import { clientRoutes } from "./routes/clients";
 import { agencyRoutes } from "./routes/agency";
 import { carouselRoutes } from "./routes/carousels";
 import { editorRoutes } from "./routes/editor";
+import { editorAiRoutes } from "./routes/editorAi";
 import { clipRoutes } from "./routes/clips";
 import { analysisRoutes } from "./routes/analysis";
 import { ideasRoutes } from "./routes/ideas";
@@ -173,6 +174,7 @@ export async function buildServer(
   await app.register(bankRoutes);
   await app.register(carouselRoutes);
   await app.register(editorRoutes);
+  await app.register(editorAiRoutes);
   await app.register(clipRoutes);
   await app.register(analysisRoutes);
   await app.register(ideasRoutes);
