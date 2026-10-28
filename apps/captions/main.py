@@ -131,7 +131,11 @@ def transcribe(req: TranscribeRequest) -> dict:
         else:
             audio = _window_audio(req.path, 0.0, None)
         segments, info = get_model().transcribe(
-            audio, vad_filter=True, word_timestamps=True, language=req.language
+            audio, vad_filter=True, word_timestamps=True, language=req.language,
+            # ponytail: on a 20 min talk, conditioning on the previous text let
+            # one hallucinated loop ("you know what") swallow the first ten
+            # minutes; 0-600 s alone transcribed fine. Off keeps windows honest.
+            condition_on_previous_text=False,
         )
         out = [
             {
