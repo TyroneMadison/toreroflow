@@ -9,7 +9,7 @@ import {
   carouselVerdict,
   checkCaption,
   decodeEscapes,
-  INSTAGRAM_FEED_MAX_SECONDS,
+  instagramVideoError,
   INSTAGRAM_STORY_MAX_SECONDS,
   instagramLongformFit,
   schedulePostSchema,
@@ -174,7 +174,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         for (const { platform } of accounts) {
           // A long-form reel gets an Instagram copy made under the cap instead.
           if (platform === "instagram" && body.instagram?.longform) continue;
-          const tooLarge = uploadSizeError(platform, bytes);
+          const tooLarge =
+            platform === "instagram" ? instagramVideoError(null, bytes) : uploadSizeError(platform, bytes);
           if (tooLarge) return reply.status(400).send({ error: tooLarge });
         }
       }
@@ -323,24 +324,14 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount) && !igLongform;
 
     /*
-     * Only a genuinely absurd video is refused now.
-     *
-     * Over 90 seconds it stops being a reel and goes as a feed post, which
-     * Instagram takes up to an hour of; buildPostExtras makes that call from
-     * the duration. The reel limit is a placement limit, not a publishing one,
-     * and treating it as the latter is what left a client's video unposted for
-     * three days.
+     * Instagram takes a single video as a reel and nothing else, up to 15
+     * minutes. There is no feed-video road for anything longer (the provider
+     * makes every single video a reel), so a longer one is refused here, in
+     * words, rather than failing at publish hours later.
      */
-    if (
-      igAccount &&
-      !igLongform &&
-      asset.durationSec != null &&
-      asset.durationSec > INSTAGRAM_FEED_MAX_SECONDS
-    ) {
-      return reply.status(400).send({
-        error: "too long for Instagram",
-        detail: `Instagram stops at ${Math.round(INSTAGRAM_FEED_MAX_SECONDS / 60)} minutes and this video is ${Math.round(asset.durationSec / 60)}. Trim it, or untick Instagram.`,
-      });
+    const igTooLong = igAccount && !igLongform && asset.kind === "video" ? instagramVideoError(asset.durationSec) : null;
+    if (igTooLong) {
+      return reply.status(400).send({ error: "too long for Instagram", detail: igTooLong });
     }
 
     if (wantsStory && asset.durationSec != null && asset.durationSec > INSTAGRAM_STORY_MAX_SECONDS) {

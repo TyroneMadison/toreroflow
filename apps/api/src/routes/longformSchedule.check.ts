@@ -93,7 +93,21 @@ const schedule = (body: object) =>
 // Short-form Instagram still refuses the oversize file, exactly as before.
 res = await schedule({ platforms: ["instagram"], accountIds: ["ig1"], scheduledAt: later });
 assert.equal(res.statusCode, 400);
-assert.match(res.json().error, /300MB/);
+assert.match(res.json().error, /^Instagram videos can be up to 15 minutes and 300 MB\. This one is 400 MB/);
+
+// Short-form Instagram past 15 minutes: refused, since a single video is
+// always a reel and there is no feed-video road. A small file, so only the
+// duration can be the reason.
+const source = path.join(storage, "client1/asset1/source.mp4");
+await fs.truncate(source, 1024 * 1024);
+ASSET.durationSec = 16 * 60;
+res = await schedule({ platforms: ["instagram"], accountIds: ["ig1"], scheduledAt: later });
+assert.equal(res.statusCode, 400);
+assert.equal(res.json().error, "too long for Instagram");
+assert.match(res.json().detail, /^Instagram videos can be up to 15 minutes and 300 MB\. This one is 16:00/);
+assert.equal(created, null);
+await fs.truncate(source, 400 * 1024 * 1024);
+ASSET.durationSec = 842;
 
 // Over 15 minutes: refused for long-form Instagram, with the reason.
 ASSET.durationSec = 16 * 60;

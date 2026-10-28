@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { PLATFORM_MAX_UPLOAD_BYTES, schedulePostSchema, uploadSizeError } from "./schemas";
+import {
+  INSTAGRAM_VIDEO_MAX_SECONDS,
+  PLATFORM_MAX_UPLOAD_BYTES,
+  instagramVideoError,
+  schedulePostSchema,
+  uploadSizeError,
+} from "./schemas";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/core test`.
@@ -95,6 +101,28 @@ assert.throws(
    */
   assert.equal(uploadSizeError("tiktok", 900 * MB), null, "an unknown limit refuses nothing");
   assert.equal(uploadSizeError("youtube", 900 * MB), null, "an unknown limit refuses nothing");
+}
+
+/*
+ * Instagram's one limit for a single video, which is always a reel: 15
+ * minutes and 300MB. There is no longer feed-video road to fall back on.
+ */
+{
+  const MB = 1024 * 1024;
+  assert.equal(INSTAGRAM_VIDEO_MAX_SECONDS, 900, "15 minutes, not the old hour");
+  assert.equal(instagramVideoError(900, 300 * MB), null, "exactly both limits publishes");
+  assert.equal(instagramVideoError(null, null), null, "an unmeasured video is not refused on a guess");
+  assert.equal(instagramVideoError(240), null, "four minutes is a reel, not refused");
+
+  const long = instagramVideoError(900.4);
+  assert.ok(long, "past 15 minutes is refused");
+  assert.match(long!, /^Instagram videos can be up to 15 minutes and 300 MB\./, "the plain sentence leads");
+  assert.match(long!, /15:01/, "rounded up, so the length shown is over the limit");
+  assert.match(instagramVideoError(3600)!, /60:00/, "the hour the old limit allowed is refused");
+
+  const big = instagramVideoError(60, 506 * MB);
+  assert.match(big!, /^Instagram videos can be up to 15 minutes and 300 MB\./);
+  assert.match(big!, /506 MB/, "the message names the measured size");
 }
 
 console.log("schedule schema: all checks passed");

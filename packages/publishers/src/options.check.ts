@@ -288,7 +288,7 @@ console.log("options builder: all checks passed");
   assert.deepEqual(vid.tiktokSettings, { video_cover_image_url: "https://x/cover.jpg" });
 }
 
-/* ---- reel or feed post, decided by length ---- */
+/* ---- always a reel; length decides only the declaration ---- */
 
 /*
  * The 106 second video that could not be published for three days. Declaring
@@ -337,7 +337,24 @@ const at = (d: number) =>
   buildPostExtras({ platform: "instagram", format: "short_form", coverUrl: null, durationSec: d })
     .platformSpecificData?.contentType;
 assert.equal(at(180), "reels", "three minutes is still tried as a reel");
-assert.equal(at(180.5), undefined, "past three minutes the Reels tab is not on offer at all");
+assert.equal(at(180.5), undefined, "past three minutes the reel goes undeclared, as long-form does");
+
+/*
+ * A long reel, not a feed video. The provider makes every single video a
+ * reel (there is no feed-video road), so a 10 minute video keeps the reel
+ * options: trials and catalog audio ride it like any reel.
+ */
+const igTenMin = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 600,
+  instagram: { trial: true, audioId: "abc" },
+});
+assert.deepEqual(igTenMin.platformSpecificData, {
+  trialParams: { graduationStrategy: "MANUAL" },
+  audioConfiguration: { audioId: "abc" },
+});
 
 // No duration at all behaves as it always did, so nothing already scheduled
 // changes shape when this ships.
@@ -437,8 +454,8 @@ assert.deepEqual(
   "volumes clamp to 0-100",
 );
 
-// Too long to be a reel: the feed post carries no audio.
-assert.equal(
+// A long video is still a reel, so it keeps its track.
+assert.deepEqual(
   buildPostExtras({
     platform: "instagram",
     format: "short_form",
@@ -446,8 +463,8 @@ assert.equal(
     durationSec: 400,
     instagram: { audioId: "abc" },
   }).platformSpecificData?.audioConfiguration,
-  undefined,
-  "a feed post refuses catalog audio",
+  { audioId: "abc" },
+  "a long reel keeps catalog audio",
 );
 
 // The same, via the fallback flag rather than the duration.

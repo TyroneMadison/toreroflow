@@ -105,8 +105,8 @@ export interface TargetOptionsInput {
   /** The caption, needed only for TikTok photo posts (see below). */
   caption?: string | null;
   /**
-   * Video length in seconds, which decides whether Instagram gets a reel or a
-   * feed post. Null or absent is treated as a reel, matching every video the
+   * Video length in seconds, which decides whether an Instagram reel declares
+   * contentType "reels". Null or absent declares it, matching every video the
    * app sent before this existed.
    */
   durationSec?: number | null;
@@ -150,9 +150,8 @@ function clampVolume(v: number): number {
 /**
  * Maps a target's chosen options onto Zernio's exact request fields.
  *
- * An Instagram video is declared a reel only when it is short enough to be
- * one; longer videos go as feed posts, which is the difference between
- * publishing and failing. YouTube Shorts never
+ * An Instagram video is always a reel; only short ones declare it (see
+ * below). YouTube Shorts never
  * get a thumbnail because YouTube's API refuses them; long-form does. TikTok
  * covers ride the provider's top-level settings object, which is safe here
  * because the worker publishes exactly one target per request.
@@ -195,50 +194,43 @@ export function buildPostExtras(input: TargetOptionsInput): BuiltPostExtras {
     }
 
     /*
-     * A reel, unless the video is too long to be one.
+     * Always a reel. The provider publishes a single video as a reel and
+     * never as a feed video, up to 15 minutes and 300MB; the schedule route
+     * refuses anything past that, so there is no longer-video branch here.
      *
-     * Declaring contentType "reels" is what pins Instagram to its 90 second
-     * limit. Omitting it sends the video as a feed post, which Instagram takes
-     * up to an hour of. This is the whole reason a 106 second video could not
-     * be published for three days: the app called everything a reel, so the
-     * reel limit read as Instagram's limit.
+     * What changes with length is only the declaration. contentType "reels"
+     * pinned a 106 second video at the old 90 second reel limit, so past
+     * INSTAGRAM_REEL_MAX_SECONDS the video goes with no contentType, the way
+     * the long-form screen's reels always have, and the provider makes it a
+     * reel by default. Trials and audio stay on offer: it is a reel all the
+     * same.
      *
-     * Under the limit the reel is still the right call, and deliberately so:
-     * only 5 to 90 seconds at 9:16 is eligible for the Reels tab, which is
-     * where the reach is. Longer videos trade that placement for existing at
-     * all.
-     */
-    /*
-     * The long-form screen's reels (up to 15 minutes) declare no contentType
-     * either: the provider makes a reel of a video by default, and "reels"
-     * is the declaration that held a 106 second video at the old limit. They
-     * are reels all the same, so trials and audio stay on offer.
+     * instagramFeedPost is the worker's one retry after a reel was refused.
+     * It also sends no contentType, and keeps dropping trials and audio so
+     * the retry cannot fail again on an option rather than on the video.
      */
     const ig = input.instagram;
     const lf = ig?.longform === true;
-    const longForm =
-      input.instagramFeedPost === true ||
-      (!lf && input.durationSec != null && input.durationSec > INSTAGRAM_REEL_MAX_SECONDS);
-    const psd: Record<string, unknown> = longForm || lf ? {} : { contentType: "reels" };
+    const retry = input.instagramFeedPost === true;
+    const declareReel =
+      !retry && !lf && (input.durationSec == null || input.durationSec <= INSTAGRAM_REEL_MAX_SECONDS);
+    const psd: Record<string, unknown> = declareReel ? { contentType: "reels" } : {};
     // Long-form: a frame goes as an offset into the video Instagram actually
     // gets (it may be a 9:16 crop), an uploaded image as the image.
     const frameMs = lf ? (ig?.thumbOffsetMs ?? input.coverOffsetMs ?? null) : null;
     if (frameMs != null) psd.thumbOffset = frameMs;
     else if (input.coverUrl) psd.instagramThumbnail = input.coverUrl;
     if (ig) {
-      // Trials are a Reels feature. Sending them on a feed post is asking the
-      // provider to reject the whole thing over an option nobody can use here.
-      if (ig.trial && !longForm) {
+      // Not on the retry: it must not fail again over an option.
+      if (ig.trial && !retry) {
         psd.trialParams = { graduationStrategy: ig.graduationStrategy ?? "MANUAL" };
       }
       /*
-       * Catalog audio, on reels only, for the same reason as trials above and
-       * with a sharper edge: Instagram refuses it on a feed post at creation,
-       * so a reel that falls back after being refused would fail its second
-       * attempt too, on a different error, and the fallback would look broken
-       * rather than the audio.
+       * Catalog audio, likewise not on the retry: a reel refused once and
+       * retried with the same audio could fail on the audio instead, and the
+       * retry would look broken rather than the track.
        */
-      if (ig.audioId && !longForm) {
+      if (ig.audioId && !retry) {
         psd.audioConfiguration = {
           audioId: ig.audioId,
           ...(ig.audioVolume !== undefined ? { audioVolume: clampVolume(ig.audioVolume) } : {}),

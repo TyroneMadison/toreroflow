@@ -112,13 +112,15 @@ export const INSTAGRAM_REEL_MAX_SECONDS = 180;
 export const INSTAGRAM_REEL_ATTEMPT_CEILING = 180;
 
 /**
- * The longest video Instagram will take at all, as a feed post.
+ * The longest video Instagram will take through the provider: 15 minutes.
  *
- * Sixty minutes per the provider's own limits, which is far past anything this
- * agency posts; it exists so a genuinely absurd file is refused with a sentence
- * rather than dying inside the provider.
+ * There is no longer-video road. Zernio publishes a single video as a reel,
+ * always ("A single video never publishes as a feed video: it becomes a
+ * Reel", docs.zernio.com/platforms/instagram/posts), and caps reels at 15
+ * minutes and 300MB. This used to be an hour on the belief that a long video
+ * went out as a feed post; it never did.
  */
-export const INSTAGRAM_FEED_MAX_SECONDS = 60 * 60;
+export const INSTAGRAM_VIDEO_MAX_SECONDS = 15 * 60;
 
 /**
  * The largest file the publishing provider will take, per platform.
@@ -150,6 +152,29 @@ export const PLATFORM_MAX_UPLOAD_BYTES: Partial<Record<Platform, number>> = {
  * The message names the measured size and the limit, because "too large" alone
  * does not tell an operator whether to trim two seconds or re-export.
  */
+/** What an operator reads when a video breaks either Instagram limit. */
+export const INSTAGRAM_VIDEO_LIMIT_MESSAGE = "Instagram videos can be up to 15 minutes and 300 MB.";
+
+/**
+ * Why this video cannot go to Instagram, or null if it can.
+ *
+ * One sentence for both limits, then the measurement that broke it, so the
+ * schedule screen and the API refuse in the same words. Unknown values pass:
+ * an unmeasured video is not refused on a guess.
+ */
+export function instagramVideoError(durationSec: number | null | undefined, bytes?: number | null): string | null {
+  const max = PLATFORM_MAX_UPLOAD_BYTES.instagram!;
+  if (durationSec != null && durationSec > INSTAGRAM_VIDEO_MAX_SECONDS) {
+    // Rounded up, so 900.4 seconds reads 15:01 rather than a limit it broke.
+    const t = Math.ceil(durationSec);
+    return `${INSTAGRAM_VIDEO_LIMIT_MESSAGE} This one is ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}. Trim it, or untick Instagram.`;
+  }
+  if (bytes != null && bytes > max) {
+    return `${INSTAGRAM_VIDEO_LIMIT_MESSAGE} This one is ${Math.round(bytes / (1024 * 1024))} MB. Re-export it at a lower bitrate, or untick Instagram.`;
+  }
+  return null;
+}
+
 export function uploadSizeError(platform: Platform, bytes: number): string | null {
   const max = PLATFORM_MAX_UPLOAD_BYTES[platform];
   if (max === undefined || bytes <= max) return null;

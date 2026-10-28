@@ -15,7 +15,7 @@ import {
 } from "../lib/api";
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
-import { INSTAGRAM_REEL_MAX_SECONDS, captionFor, composeCaption, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
+import { captionFor, composeCaption, instagramVideoError, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
 import { YT_CATEGORIES } from "../lib/youtube";
 import {
   AudioNameField,
@@ -145,15 +145,12 @@ export default function ScheduleModal({
   const tkSelected = platforms.includes("tiktok");
   const [tk, setTk] = useState<TikTokChoice>(TIKTOK_DEFAULTS);
   /*
-   * Catalog audio is a Reels feature and nothing else. A video too long to be
-   * a reel goes as a feed post, which Instagram refuses audio on at creation,
-   * so the picker is hidden rather than offering a choice that fails at
-   * publish. Same rule and same threshold as buildPostExtras, which is what
-   * actually decides. A null duration is treated as a reel, matching it.
+   * Instagram takes a single video as a reel, up to 15 minutes and 300MB, and
+   * has no feed-video road for anything longer. A video past that is blocked
+   * here in the same words the API refuses with. Size is not known to this
+   * screen; the API checks it and its message lands in the error line.
    */
-  const igReel =
-    igSelected &&
-    (asset.durationSec == null || asset.durationSec <= INSTAGRAM_REEL_MAX_SECONDS);
+  const igVideoProblem = igSelected ? instagramVideoError(asset.durationSec) : null;
   /** The catalog is per account; the first Instagram target owns the lookup. */
   const igAccountId =
     connected.find((a) => a.platform === "instagram" && accountIds.includes(a.id))?.id ?? null;
@@ -242,9 +239,7 @@ export default function ScheduleModal({
     if (igLocation.trim()) body.locationId = igLocation.trim();
     if (collaborators.length) body.collaborators = collaborators;
     if (igAudioName.trim()) body.audioName = igAudioName.trim();
-    // The picker is hidden off a reel, but a track chosen before the duration
-    // ruled one out would still be in state, so the gate is repeated here.
-    if (igTrack && igReel) {
+    if (igTrack) {
       body.audioId = igTrack.audioId;
       if (igAudioVolume !== 100) body.audioVolume = igAudioVolume;
       if (igVideoVolume !== 100) body.videoVolume = igVideoVolume;
@@ -290,6 +285,7 @@ export default function ScheduleModal({
   // Over a caption limit, or a location that is not a place id: nothing posts.
   const problems = [
     ...captionProblems(platforms, postedWords, isCarousel),
+    ...(igVideoProblem ? [igVideoProblem] : []),
     ...((igSelected || igPhoto) && igLocation.trim() && !/^\d+$/.test(igLocation.trim())
       ? ["Location must be the number of a Facebook place page."]
       : []),
@@ -528,6 +524,11 @@ export default function ScheduleModal({
             <label className="flabel" style={{ marginTop: 18 }}>
               Instagram options
             </label>
+            {igVideoProblem && (
+              <div className="autherr" role="alert" data-testid="ig-video-limit">
+                {igVideoProblem}
+              </div>
+            )}
             <HandleChips
               id="sched-ig-collabs"
               label="Collaborators"
@@ -573,13 +574,10 @@ export default function ScheduleModal({
             <label className="flabel" style={{ marginTop: 12 }}>
               Catalog audio
               <span className="hint">
-                {igReel
-                  ? "a licensed track from Instagram's catalog, laid over the reel"
-                  : "unavailable: this video is too long to be a reel, and Instagram refuses catalog audio on feed posts"}
+                a licensed track from Instagram's catalog, laid over the reel
               </span>
             </label>
-            {igReel &&
-              (igTrack ? (
+            {(igTrack ? (
                 <>
                   <div className="igrow">
                     <span
