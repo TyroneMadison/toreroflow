@@ -123,7 +123,9 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
       // boundaries carry nothing the editor needs. A failed transcription no
       // longer fails silently: the clip stays usable (proxy, filmstrip) and
       // the reason lands in EditAsset.error for the editor to show.
-      transcribeStrict(sourcePath, { durationSec: meta.durationSec }).then(
+      // A language set up front (a clip job's option) skips whisper's guess,
+      // which can land on the wrong language off a quiet intro.
+      transcribeStrict(sourcePath, { durationSec: meta.durationSec, language: asset.language }).then(
         (t) => ({ ok: true as const, t }),
         (e: Error) => ({ ok: false as const, reason: e.message }),
       ),

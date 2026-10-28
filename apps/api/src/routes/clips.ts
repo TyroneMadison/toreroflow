@@ -143,7 +143,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     const name = file.filename ?? "upload.mp4";
     const project = await holder(client.id, name);
     const asset = await prisma.editAsset.create({
-      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded" },
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: parsed.data.language ?? null },
     });
     const ext = path.extname(name) || ".mp4";
     const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${ext}`;
@@ -186,7 +186,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     if (!ma) return reply.status(404).send(bad("That upload is not in this brand.", "upload not found"));
     const project = await holder(client.id, ma.originalName);
     const asset = await prisma.editAsset.create({
-      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: ma.originalName, status: "uploaded" },
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: ma.originalName, status: "uploaded", language: opts.language ?? null },
     });
     const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${path.extname(ma.originalName) || ".mp4"}`;
     await fs.mkdir(path.join(env.STORAGE_DIR, client.id, "edit", project.id), { recursive: true });
