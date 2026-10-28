@@ -1,6 +1,9 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 faster-whisper>=1.0
+# ponytail: faster-whisper 1.2 calls av.open(metadata_errors=...), which PyAV 16+
+# dropped (500 on every /transcribe). Pinned below 16 until faster-whisper catches up.
+av>=11,<16
 # Voice isolation. Pulls torch, which is most of the install; CPU-only is fine.
 demucs>=4.0
 # Face boxes for auto reframe (YuNet via cv2.FaceDetectorYN). Headless: no GUI libs.

@@ -38,6 +38,7 @@ export const QUEUE_NAMES = [
   "analyze",
   "knowledge",
   "supergen",
+  "clips",
   "ideagifs",
   "igcopy",
 ] as const;

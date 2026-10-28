@@ -22,6 +22,7 @@ import {
 import { conformSlide, extractThumbnail, instagramCopy, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
 import { isolateVoice, processEditAsset, reframeAsset, renderProject } from "./edit";
+import { runClipStage, type ClipQueueData } from "./clips/pipeline";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
@@ -1129,6 +1130,12 @@ void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: s
   },
 );
 
+// Studio clips: analyze, curate, score, refine, rescore. One at a time, for
+// the same reason as edit: whisper and ffmpeg share the machine.
+void work<ClipQueueData>("clips", { concurrency: 1 }, async (data) => {
+  await runClipStage(data);
+});
+
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);
 });
@@ -1232,5 +1239,5 @@ beat();
 setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge, supergen (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge, supergen, clips (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

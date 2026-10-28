@@ -26,6 +26,8 @@ export * from "./editDoc";
 export * from "./autoCut";
 export * from "./edl";
 export * from "./reframe";
+export * from "./clipScore";
+export * from "./clipCurate";
 export * from "./captionChunks";
 export * from "./captionsToAss";
 export * from "./analysis";

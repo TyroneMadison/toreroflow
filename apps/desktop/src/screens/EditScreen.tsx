@@ -7,12 +7,15 @@ import StudioEditor from "../editor/StudioEditor";
 import AnalyzeHome from "../editor/analyze/AnalyzeHome";
 import AnalysisDetail from "../editor/analyze/AnalysisDetail";
 import IdeasHome from "../editor/ideas/IdeasHome";
+import ClipsHome from "../editor/clips/ClipsHome";
+import ClipJobView from "../editor/clips/ClipJobView";
 import { Empty } from "../components/states";
 
-type EditArea = "studio" | "analyze" | "ideas";
+type EditArea = "studio" | "clips" | "analyze" | "ideas";
 
 const AREAS: { id: EditArea; label: string }[] = [
   { id: "studio", label: "Edit" },
+  { id: "clips", label: "Clips" },
   { id: "analyze", label: "Analyze" },
   { id: "ideas", label: "Ideas" },
 ];
@@ -31,6 +34,8 @@ export default function EditScreen() {
   // The analysis being read. Same rule: brand-keyed, so it never survives a
   // brand switch.
   const [openAnalysisId, setOpenAnalysisId] = useState<string | null>(null);
+  // The clip job being read. Brand-keyed like the two above.
+  const [openClipJobId, setOpenClipJobId] = useState<string | null>(null);
 
   if (!selectedClient) {
     return (
@@ -79,6 +84,19 @@ export default function EditScreen() {
             />
           ) : (
             <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+          )
+        ) : area === "clips" ? (
+          openClipJobId ? (
+            <ClipJobView
+              jobId={openClipJobId}
+              onBack={() => setOpenClipJobId(null)}
+              onOpenProject={(id) => {
+                setOpenProjectId(id);
+                setArea("studio");
+              }}
+            />
+          ) : (
+            <ClipsHome clientId={selectedClient.id} onOpen={setOpenClipJobId} />
           )
         ) : area === "analyze" ? (
           openAnalysisId ? (
