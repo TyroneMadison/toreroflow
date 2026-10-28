@@ -210,3 +210,15 @@ console.log("captionsToAss.check: word-timed karaoke passed");
   if (plain.includes("\\c&H")) throw new Error("no marks, no color tags");
 }
 console.log("captionsToAss phase 5 checks passed");
+
+// A box's color has to be in OutlineColour: libass paints BorderStyle 3 boxes there.
+{
+  const boxed: TextItem = {
+    ...textItem,
+    style: { ...textItem.style, background: { on: true, shape: "rounded", opacity: 100, size: 50, color: "#FFFFFF" } },
+  };
+  const ass = assFromDoc({ chunks: [], texts: [boxed], captions: doc.captions });
+  const st = ass.split("\n").find((l) => l.startsWith("Style:") && l.includes(",3,"));
+  if (!st || st.split(",")[5] !== hexToAss("#FFFFFF")) throw new Error("box color in OutlineColour: " + st);
+  console.log("captionsToAss box color check passed");
+}

@@ -84,7 +84,11 @@ function styleLine(name: string, s: TextStyle, secondary: string): string {
     String(s.size),
     hexToAss(s.color),
     secondary,
-    hexToAss(s.outline.on ? s.outline.color : "#000000"),
+    // libass paints a BorderStyle 3 box in OutlineColour (BackColour is
+    // only its shadow), so a box's color has to ride here too.
+    bg.on
+      ? hexToAss(bg.color, alphaByte(bg.opacity))
+      : hexToAss(s.outline.on ? s.outline.color : "#000000"),
     bg.on
       ? hexToAss(bg.color, alphaByte(bg.opacity))
       : s.shadow.on
