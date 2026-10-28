@@ -324,7 +324,7 @@ export interface HookSuggestion {
 export function suggestHooks(refs: WordRef[], max = 3): HookSuggestion[] {
   if (refs.length === 0) return [];
   const total = refs[refs.length - 1].outEnd || 1;
-  const scored: { score: number; text: string; from: WordAnchor }[] = [];
+  const scored: { score: number; text: string; from: WordAnchor; to: number }[] = [];
   for (const s of sentences(refs)) {
     const ws = s.refs.filter((r) => !FILLER_SINGLE.includes(bareWord(r.word)));
     if (ws.length < 3) continue;
@@ -340,19 +340,26 @@ export function suggestHooks(refs: WordRef[], max = 3): HookSuggestion[] {
         const content = words.filter((w) => !STOP.has(w)).length / len;
         const early = 1 - Math.min(1, win[0].outStart / total);
         const sizeFit = len >= 4 && len <= 6 ? 0.5 : 0;
-        const score = power * 2 + content * 2 + early * 1.5 + sizeFit;
+        // A headline is a phrase: no comma inside, and it should close a clause.
+        if (win.slice(0, -1).some((r) => /[,;:]$/.test(r.word))) continue;
+        const closes = /[.,!?;:]$/.test(win[win.length - 1].word) || a + len === ws.length ? 1 : 0;
+        const score = power * 2 + content * 2 + early * 1.5 + sizeFit + closes;
         scored.push({
           score,
           text: titleCase(win.map((r) => r.word.replace(/[^\p{L}\p{N}'$%]/gu, "")).join(" ")),
           from: { assetId: win[0].assetId, i: win[0].i },
+          to: win[win.length - 1].i,
         });
       }
     }
   }
   scored.sort((x, y) => y.score - x.score);
   const out: HookSuggestion[] = [];
+  const used: { assetId: string; i0: number; i1: number }[] = [];
   for (const c of scored) {
-    if (out.some((o) => o.text === c.text || o.from.i === c.from.i)) continue;
+    // Alternatives come from different stretches, not shifted windows.
+    if (used.some((u) => u.assetId === c.from.assetId && c.from.i <= u.i1 && c.to >= u.i0)) continue;
+    used.push({ assetId: c.from.assetId, i0: c.from.i, i1: c.to });
     out.push({ text: c.text, from: c.from });
     if (out.length >= max) break;
   }
