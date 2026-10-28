@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   DEFAULT_LAYOUT,
+  applyAutoShots,
   clearShotAdjust,
   edlFromDoc,
   layoutAt,
@@ -12,8 +13,10 @@ import {
   type ClipLayout,
   type LayoutKind,
   type Rect,
+  type Shot,
 } from "@toreroflow/core";
-import { fileUrl } from "../../lib/api";
+import { api, fileUrl } from "../../lib/api";
+import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
 import { Chip } from "./index";
 
@@ -39,10 +42,60 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).p
  * The Layout tab of the clip panel (mock-up 11): layout tiles, the fit
  * background, a source view with the crop boxes (orange, drag to override),
  * and this asset's shot list with manual overrides. Auto reframe fills
- * doc.shots in Phase 3; until then the list shows overrides only.
+ * doc.shots: the worker writes a result file, this panel polls it and
+ * applies the shots as one undoable edit.
  */
 export default function LayoutPanel({ assetId }: { assetId: string }) {
-  const { doc, update, assets, outputTime, seek } = useEditor();
+  const { doc, update, assets, outputTime, seek, project } = useEditor();
+  const toast = useToast();
+  const [reframing, setReframing] = useState(false);
+  // Refs so a re-render (playback ticks) does not restart the poll timer.
+  const live = useRef({ update, toast });
+  live.current = { update, toast };
+  useEffect(() => {
+    if (!reframing) return;
+    let alive = true;
+    const started = Date.now();
+    const tick = async () => {
+      try {
+        const r = await api.get<{ status: string; shots?: Shot[]; facesKey?: string; error?: string }>(
+          `/edit-projects/${project.id}/reframe?assetId=${encodeURIComponent(assetId)}`,
+        );
+        if (!alive) return;
+        if (r.status === "ready" && r.shots) {
+          const shots = r.shots;
+          live.current.update((d) => applyAutoShots(d, assetId, shots, r.facesKey));
+          live.current.toast.success(`Auto reframe: ${shots.length} shot${shots.length === 1 ? "" : "s"}`);
+          setReframing(false);
+          return;
+        }
+        if (r.status === "failed" || Date.now() - started > 15 * 60_000) {
+          live.current.toast.fail("Auto reframe failed", new Error(r.error ?? "timed out"));
+          setReframing(false);
+          return;
+        }
+      } catch (err) {
+        if (!alive) return;
+        live.current.toast.fail("Auto reframe failed", err);
+        setReframing(false);
+        return;
+      }
+      timer = setTimeout(() => void tick(), 3000);
+    };
+    let timer = setTimeout(() => void tick(), 3000);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [reframing, assetId, project.id]);
+  const startReframe = async () => {
+    try {
+      await api.post(`/edit-projects/${project.id}/reframe`, { assetId });
+      setReframing(true);
+    } catch (err) {
+      toast.fail("Could not start auto reframe", err);
+    }
+  };
   const asset = assets.find((a) => a.id === assetId);
   const durations = useMemo(() => {
     const d: Record<string, number> = {};
@@ -156,8 +209,13 @@ export default function LayoutPanel({ assetId }: { assetId: string }) {
               Source {sw && sh ? `${sw}x${sh}` : ""} · {LABEL[lay.kind]}
               {lay.manual ? " · manual" : ""}
             </b>
-            <button className="pnl-chip" disabled title="Auto reframe arrives with face tracking (Phase 3)">
-              + Auto reframe
+            <button
+              className="pnl-chip"
+              disabled={reframing || asset?.status !== "ready"}
+              title="Find faces and scene cuts, then pick a layout per shot"
+              onClick={() => void startReframe()}
+            >
+              {reframing ? "Reframing…" : "+ Auto reframe"}
             </button>
           </div>
           <div className="lay-frame" ref={boxRef} style={{ aspectRatio: String(srcAspect) }}>

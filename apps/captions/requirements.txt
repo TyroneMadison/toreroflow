@@ -3,3 +3,5 @@ uvicorn[standard]>=0.30
 faster-whisper>=1.0
 # Voice isolation. Pulls torch, which is most of the install; CPU-only is fine.
 demucs>=4.0
+# Face boxes for auto reframe (YuNet via cv2.FaceDetectorYN). Headless: no GUI libs.
+opencv-python-headless>=4.8

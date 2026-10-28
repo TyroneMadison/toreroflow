@@ -18,6 +18,7 @@ import {
   locate,
   outputDuration,
   splitAt,
+  splitClip,
   toOutputTime,
   appendClip,
   layoutAt,
@@ -233,7 +234,7 @@ export default function Timeline() {
   /* ---- layout lane: what each stretch of output renders as ---- */
 
   const layoutChips = useMemo(() => {
-    const out: Array<{ at: number; dur: number; label: string; manual: boolean }> = [];
+    const out: Array<{ at: number; dur: number; label: string; manual: boolean; keys: number[] }> = [];
     const { width: OW, height: OH } = outputSize(doc.output.aspect, 1080);
     let acc = 0;
     for (const seg of edl) {
@@ -243,9 +244,13 @@ export default function Timeline() {
         const r = layoutAt(doc, seg.clipId ?? seg.assetId, seg.assetId, cuts[k], a?.width ?? 0, a?.height ?? 0, OW, OH);
         const label = r.kind === "legacy" ? "Letterbox" : r.kind === "fit" ? `Fit · ${r.fitBg}` : r.kind[0].toUpperCase() + r.kind.slice(1);
         const dur = cuts[k + 1] - cuts[k];
+        // Tracking keys inside this piece, as offsets from the chip start.
+        const keys = (r.keys ?? []).filter((kk) => kk.t >= cuts[k] && kk.t < cuts[k + 1]).map((kk) => acc + kk.t - cuts[k]);
         const last = out[out.length - 1];
-        if (last && last.label === label && last.manual === r.manual && Math.abs(last.at + last.dur - acc) < 1e-6) last.dur += dur;
-        else out.push({ at: acc, dur, label, manual: r.manual });
+        if (last && last.label === label && last.manual === r.manual && Math.abs(last.at + last.dur - acc) < 1e-6) {
+          last.dur += dur;
+          last.keys.push(...keys);
+        } else out.push({ at: acc, dur, label, manual: r.manual, keys });
         acc += dur;
       }
     }
@@ -810,6 +815,9 @@ export default function Timeline() {
                   onClick={() => seek(c.at)}
                 >
                   {c.label}
+                  {c.keys.map((t, j) => (
+                    <i key={j} className="tl-key" style={{ left: (t - c.at) * pps }} title="Tracking key" />
+                  ))}
                 </div>
               ))}
             </div>
@@ -843,8 +851,10 @@ export default function Timeline() {
                       const r = e.currentTarget.getBoundingClientRect();
                       let remain = Math.max(0.05, (e.clientX - r.left) / pps);
                       let src: number | null = null;
+                      // Only this block's segments: with the same asset placed
+                      // twice, the other placement is not under the cursor.
                       for (const seg of edl) {
-                        if (seg.assetId !== b.assetId) continue;
+                        if ((seg.clipId ?? seg.assetId) !== b.clipId) continue;
                         const len = seg.srcOut - seg.srcIn;
                         if (remain <= len) {
                           src = seg.srcIn + remain;
@@ -852,7 +862,15 @@ export default function Timeline() {
                         }
                         remain -= len;
                       }
-                      if (src !== null) update((d) => splitAt(d, b.assetId, src));
+                      // Shift+blade cuts the block into two segments that can be
+                      // reordered and laid out on their own; a plain blade keeps
+                      // the v1 split marker.
+                      if (src !== null) {
+                        const at = src;
+                        update((d) =>
+                          e.shiftKey ? splitClip(d, b.clipId, at, durations[b.assetId]) : splitAt(d, b.assetId, at),
+                        );
+                      }
                       setTool("select");
                     }}
                   >

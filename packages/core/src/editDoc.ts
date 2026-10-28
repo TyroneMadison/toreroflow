@@ -624,6 +624,19 @@ export function setShotAdjust(doc: EditDoc, assetId: string, adj: ShotAdjust): E
   return { ...doc, shotAdjust: { ...doc.shotAdjust, [assetId]: list } };
 }
 
+/**
+ * Applies an auto reframe result: replaces the asset's auto shots and
+ * records its face file. Manual overrides stay on top, and a clip whose
+ * layout the user pinned (not "auto") keeps it.
+ */
+export function applyAutoShots(doc: EditDoc, assetId: string, shots: Shot[], facesKey?: string): EditDoc {
+  return {
+    ...doc,
+    shots: { ...doc.shots, [assetId]: shots },
+    faces: facesKey ? { ...(doc.faces ?? {}), [assetId]: facesKey } : doc.faces,
+  };
+}
+
 /** Drops every manual override overlapping the span. */
 export function clearShotAdjust(doc: EditDoc, assetId: string, start: number, end: number): EditDoc {
   const cur = doc.shotAdjust[assetId] ?? [];

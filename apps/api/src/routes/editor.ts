@@ -441,6 +441,53 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /**
+   * Auto reframe (Phase 3). Queued on the edit queue; the worker writes
+   * <assetId>-reframe.json next to the source, which GET reads back. Faces
+   * run locally in the captions service (YuNet), so this costs no AI spend.
+   */
+  app.post<{ Params: { id: string }; Body: { assetId?: string } }>(
+    "/edit-projects/:id/reframe",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      const asset = await prisma.editAsset.findFirst({
+        where: { id: request.body?.assetId ?? "", projectId: project.id, kind: "clip", status: "ready" },
+      });
+      if (!asset) {
+        return reply.status(404).send({ error: "no such clip", detail: "Auto reframe runs on a ready clip in this project." });
+      }
+      if ((asset.durationSec ?? 0) > 1800) {
+        return reply.status(400).send({
+          error: "too long to reframe",
+          detail: "Auto reframe handles clips up to 30 minutes. Trim the source first.",
+        });
+      }
+      const statusPath = path.join(env.STORAGE_DIR, path.posix.dirname(asset.storageKey), `${asset.id}-reframe.json`);
+      await fs.writeFile(statusPath, JSON.stringify({ status: "queued", at: new Date().toISOString() }));
+      await enqueue("edit", { editAssetId: asset.id, job: "reframe" });
+      return reply.status(202).send({ ok: true });
+    },
+  );
+
+  app.get<{ Params: { id: string }; Querystring: { assetId?: string } }>(
+    "/edit-projects/:id/reframe",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      const asset = await prisma.editAsset.findFirst({
+        where: { id: request.query.assetId ?? "", projectId: project.id, kind: "clip" },
+      });
+      if (!asset) return reply.status(404).send({ error: "no such clip", detail: "That clip is not in this project." });
+      const statusPath = path.join(env.STORAGE_DIR, path.posix.dirname(asset.storageKey), `${asset.id}-reframe.json`);
+      try {
+        return JSON.parse(await fs.readFile(statusPath, "utf8"));
+      } catch {
+        return { status: "none" };
+      }
+    },
+  );
+
+  /**
    * The finished render becomes a normal MediaAsset, so Upload and Schedule,
    * quota counts and retention sweeps all see it as any other upload.
    */
