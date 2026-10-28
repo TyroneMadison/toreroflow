@@ -121,6 +121,8 @@ model Agency {
   financialMonths FinancialMonth[]
   bankConnections BankConnection[]
   bots            BotIdentity[]
+  settings        AppSetting[]
+  libraryAssets   LibraryAsset[]
 }
 
 /**
@@ -294,6 +296,13 @@ model Client {
   brainstormChats BrainstormChat[]
   superGenRuns    SuperGenerateRun[]
   templates       Template[]
+  monthlyReports  MonthlyReportRun[]
+  contentRequests ContentRequest[]
+  requestFormLinks RequestFormLink[]
+  libraryAssets   LibraryAsset[]
+  brandKit        BrandKit?
+  sunraQuotes     SunraQuote[]
+  repurposeJobs   RepurposeJob[]
 
   @@index([agencyId])
 }
@@ -448,6 +457,7 @@ model MediaAsset {
   posts      Post[]
   revisionOf MediaAsset?  @relation("AssetRevisions", fields: [revisionOfId], references: [id])
   revisions  MediaAsset[] @relation("AssetRevisions")
+  approvalLinks ApprovalLink[]
 
   @@index([clientId, status])
 }
@@ -1463,4 +1473,232 @@ model BotIdentity {
   agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
 
   @@unique([agencyId, name])
+}
+
+/// Agency-wide settings for the ideas set, one JSON value per key
+/// (e.g. "report_job", "trello_intake"). Each value is parsed with its
+/// contract schema on read, so a bad row falls back to the default.
+model AppSetting {
+  id        String   @id @default(cuid())
+  agencyId  String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, key])
+}
+
+/// One monthly client report per brand per month: what was built, who it
+/// went to, and whether it was sent. The unique key is what stops a second
+/// run on the 1st (a restart, two servers) from emailing a client twice.
+model MonthlyReportRun {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// "2026-10", the month the report covers.
+  month      String
+  data       Json
+  recipients String[]  @default([])
+  /// "preview" (kill switch off, nothing sent), "sent", "skipped" (no email
+  /// on the profile) or "failed".
+  status     String
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, month])
+}
+
+/// A client content request from the public form, and the Trello card it
+/// became on the editor pipeline's "To edit" list. status: "pending" until
+/// Trello answers, then "created" or "failed" (the operator can retry).
+model ContentRequest {
+  id           String    @id @default(cuid())
+  clientId     String
+  what         String
+  dueDate      String?
+  footageUrl   String?
+  notes        String?
+  /// The form link it came in through. Null for requests from before links.
+  linkId       String?
+  /// Optional reference file, type checked by its bytes (png, jpg, webp, pdf).
+  attachmentKey String?
+  status       String    @default("pending")
+  trelloCardId String?
+  trelloUrl    String?
+  error        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A file in the asset library (logos, videos, templates, audio, images).
+/// clientId null means shared across every brand; set means only that brand
+/// sees it. A brand kit logo is one of these, type "logo".
+model LibraryAsset {
+  id         String   @id @default(cuid())
+  agencyId   String
+  clientId   String?
+  /// logo | video | template | audio | image
+  type       String
+  name       String
+  storageKey String
+  mimeType   String?
+  sizeBytes  Int?
+  createdAt  DateTime @default(now())
+
+  agency Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, clientId, type])
+}
+
+/// Per-brand kit: Google Fonts families, colors, logo, caption voice notes.
+model BrandKit {
+  clientId    String   @id
+  /// [{ family: "Inter", weights: [400, 700] }]
+  fonts       Json     @default("[]")
+  /// "#RRGGBB"
+  colors      String[] @default([])
+  logoAssetId String?
+  voiceNotes  String   @default("")
+  updatedAt   DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+/// A Sunra carousel price quote, and its generation once approved.
+/// status: quoted, generating, done, failed. Nothing is spent until a person
+/// (or Polly) approves this exact quote before it expires, and a quote is
+/// used at most once.
+model SunraQuote {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// instagram | tiktok
+  platform   String
+  slides     Int
+  prompt     String
+  /// Sunra image model id, one of GET /carousels/sunra/models
+  model      String    @default("nano-banana-2")
+  /// Sunra credits approved for this carousel: slides x credits per image.
+  credits    Int
+  expiresAt  DateTime
+  status     String    @default("quoted")
+  approvedBy String?
+  approvedAt DateTime?
+  /// Storage keys of the generated slides, in order.
+  resultKeys String[]  @default([])
+  error      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A client approval link for one video version (a MediaAsset). The token is
+/// never stored: it is the id plus an HMAC over the id and expiry, so a
+/// leaked database row cannot be turned into a working link. Revoke sets
+/// revokedAt. status: pending, approved, changes_requested.
+model ApprovalLink {
+  id           String    @id @default(cuid())
+  mediaAssetId String
+  createdById  String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  status       String    @default("pending")
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  mediaAsset MediaAsset        @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  comments   ApprovalComment[]
+
+  @@index([mediaAssetId])
+}
+
+/// A client comment on a version through an approval link, pinned to a
+/// moment in the video when atMs is set.
+model ApprovalComment {
+  id        String   @id @default(cuid())
+  linkId    String
+  atMs      Int?
+  body      String
+  createdAt DateTime @default(now())
+
+  link ApprovalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, createdAt])
+}
+
+/// Repurpose job (Create > Studio > Edit): one long video in, a step by step
+/// pipeline out. A stub for now: the steps are tracked and resumable, nothing
+/// runs them yet and no outside provider is called.
+/// step: transcribe, find_moments, cut, captions, thumbnails, review, done.
+/// state: queued, running, failed, done.
+model RepurposeJob {
+  id            String   @id @default(cuid())
+  clientId      String
+  sourceVideoId String
+  step          String   @default("transcribe")
+  state         String   @default("queued")
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A brand's public request form link. The token is "<id>.<HMAC of the id>"
+/// (JWT_SECRET), never stored. Rotating revokes this row and makes a new one;
+/// a revoked link answers 410 for good.
+model RequestFormLink {
+  id          String    @id @default(cuid())
+  clientId    String
+  createdById String
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// Fixed-window hit counters for the public routes, shared by every API
+/// process. key is "<scope>|<subject>|<window start ms>"; rows past
+/// expiresAt are swept now and then.
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// Who did what to a request form: submissions, rejections, rate limits,
+/// captcha failures, and link create, rotate, revoke. Kept after a brand is
+/// deleted, so no relation.
+model RequestFormAudit {
+  id        String   @id @default(cuid())
+  clientId  String?
+  linkId    String?
+  /// submitted | rejected | rate_limited | captcha_failed | bad_token | link_created | link_rotated | link_revoked
+  action    String
+  /// operator user id, "bot:<name>", or "public"
+  actor     String
+  ip        String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([createdAt])
 }

@@ -37,6 +37,16 @@ import { queueRoutes } from "./routes/queue";
 import { rollupRoutes } from "./routes/rollup";
 import { templateRoutes } from "./routes/templates";
 import { draftRoutes } from "./routes/drafts";
+import { monthlyReportRoutes } from "./routes/monthlyReport";
+import { contentRequestRoutes, publicContentRequestRoutes } from "./routes/contentRequests";
+import { insightsRoutes } from "./routes/insights";
+import { brandKitRoutes } from "./routes/brandKit";
+import { setSunraCatalog, setSunraGenerator, sunraRoutes } from "./routes/sunra";
+import { sunraClient } from "./ideas/sunraClient";
+import { approvalLinkRoutes, publicApprovalRoutes } from "./routes/approvals";
+import { failedPostRoutes } from "./routes/failedPosts";
+import { assetRoutes } from "./routes/assets";
+import { repurposeRoutes } from "./routes/repurpose";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -184,6 +194,22 @@ export async function buildServer(
   await app.register(rollupRoutes);
   await app.register(templateRoutes);
   await app.register(draftRoutes);
+  await app.register(monthlyReportRoutes);
+  await app.register(publicContentRequestRoutes);
+  await app.register(contentRequestRoutes);
+  await app.register(insightsRoutes);
+  await app.register(brandKitRoutes);
+  if (env.SUNRA_API_KEY) {
+    const sunra = sunraClient({ apiKey: env.SUNRA_API_KEY, base: env.SUNRA_API_BASE });
+    setSunraCatalog(sunra.catalog);
+    setSunraGenerator(sunra.generator);
+  }
+  await app.register(sunraRoutes);
+  await app.register(approvalLinkRoutes);
+  await app.register(publicApprovalRoutes);
+  await app.register(failedPostRoutes);
+  await app.register(assetRoutes);
+  await app.register(repurposeRoutes);
 
   return app;
 }

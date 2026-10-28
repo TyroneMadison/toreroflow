@@ -96,6 +96,12 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   /**
+   * Refresh token for the Toreronee@gmail.com account (Gmail API, send scope),
+   * using the Google OAuth client above. Empty means the monthly report job
+   * cannot send and only builds previews.
+   */
+  GMAIL_REFRESH_TOKEN: string;
+  /**
    * The public origin OAuth redirects come back to, e.g.
    * https://api.torerone.com. Must match what is registered in each platform's
    * console character for character.
@@ -142,10 +148,21 @@ export interface Env {
    * In production this is required, checked above.
    */
   ALLOWED_ORIGINS: string[];
+  /**
+   * Cloudflare Turnstile for the public request form. Both empty (the
+   * default) means the captcha is off; with the secret set, every submission
+   * must carry a token Cloudflare accepts. The site key is handed to the form.
+   */
+  TURNSTILE_SECRET_KEY: string;
+  TURNSTILE_SITE_KEY: string;
   /** True when this process is answering to the internet. */
   IS_PRODUCTION: boolean;
   /** The commit this server is running, for the deploy card. Empty off a server. */
   GIT_COMMIT: string;
+  /** Sunra multimodal API key. Empty keeps the observed model list and generate answers 503. */
+  SUNRA_API_KEY: string;
+  /** Empty means https://api.sunra.ai. */
+  SUNRA_API_BASE: string;
 }
 
 export const env: Env = {
@@ -163,6 +180,7 @@ export const env: Env = {
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ?? "",
   OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
@@ -174,6 +192,10 @@ export const env: Env = {
     .split(",")
     .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean),
+  TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY ?? "",
+  TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   IS_PRODUCTION: isProduction,
   GIT_COMMIT: process.env.GIT_COMMIT ?? "",
+  SUNRA_API_KEY: process.env.SUNRA_API_KEY ?? "",
+  SUNRA_API_BASE: process.env.SUNRA_API_BASE ?? "",
 };

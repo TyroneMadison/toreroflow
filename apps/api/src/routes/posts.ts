@@ -24,6 +24,7 @@ import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { actingUserId } from "../auth/actingUser";
 import { sopReminder } from "../posts/sopReminder";
+import { requeueFailedTarget } from "../posts/requeue";
 
 /**
  * The name an operator typed for a video, or "" when they have not.
@@ -988,41 +989,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "the inbox route is TikTok only" });
       }
 
-      // A dismissed failure that is retried and fails again is news again,
-      // so the dismissal does not survive the retry.
-      const { queueDismissedAt: _dismissed, ...options } =
-        (target.options as Record<string, unknown> | null) ?? {};
-      const nextOptions = draft
-        ? {
-            ...options,
-            tiktok: { ...((options.tiktok as Record<string, unknown>) ?? {}), draft: true },
-          }
-        : options;
-
-      const when = new Date();
-      await prisma.postTarget.update({
-        where: { id: target.id },
-        data: {
-          status: "scheduled",
-          // Cleared so a second failure shows its own reason rather than the
-          // last one, which is what makes "it failed the same way" readable.
-          error: null,
-          scheduledAt: when,
-          options: nextOptions as never,
-        },
-      });
-
-      /*
-       * The post itself was marked failed when its last target gave up. Lift
-       * that only while something is in flight again; the remaining targets
-       * keep their own statuses and the next failure re-marks it.
-       */
-      await prisma.post.update({
-        where: { id: target.post.id },
-        data: { status: "scheduled" },
-      });
-
-      await reschedule("publish", { targetId: target.id }, target.id, when);
+      const when = await requeueFailedTarget({ id: target.id, postId: target.post.id, options: target.options }, draft);
       return { id: target.id, scheduledAt: when.toISOString(), tiktokDraft: draft };
     },
   );

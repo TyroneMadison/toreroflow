@@ -18,13 +18,13 @@ const UPLOADED_LIST = "approved by client/ uploaded";
 export const TRELLO_MAX_BYTES = 250 * 1024 * 1024;
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
-const NOT_CONFIGURED =
+export const NOT_CONFIGURED =
   "Trello is not connected. Set TRELLO_KEY and TRELLO_TOKEN on the API server (and TRELLO_BOARD_ID, or keep the board named Torone Editor Pipeline).";
 
 interface TrelloLabel { id: string; name: string; color: string | null }
 interface TrelloCard { id: string; name: string; shortUrl: string; idList: string; labels: TrelloLabel[]; cover?: { color: string | null } | null; dateLastActivity: string }
 
-async function trello<T>(path: string, method: "GET" | "PUT" | "POST" = "GET", params: Record<string, string> = {}): Promise<T> {
+export async function trello<T>(path: string, method: "GET" | "PUT" | "POST" = "GET", params: Record<string, string> = {}): Promise<T> {
   const u = new URL(`https://api.trello.com/1${path}`);
   u.searchParams.set("key", env.TRELLO_KEY);
   u.searchParams.set("token", env.TRELLO_TOKEN);

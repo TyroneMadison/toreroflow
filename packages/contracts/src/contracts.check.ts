@@ -22,6 +22,9 @@ import {
   resolveTarget,
   RollupSchema,
   SunraCarouselQuoteSchema,
+  SunraCarouselRequestSchema,
+  SunraGenerateRequestSchema,
+  SunraModelsResponseSchema,
   TemplateSchema,
   TrelloIntakeConfigSchema,
   type Draft,
@@ -127,9 +130,17 @@ assert.equal(
   false,
 );
 assert.equal(
-  SunraCarouselQuoteSchema.safeParse({ quoteId: "q", priceUsd: 1, requiresApproval: false, expiresAt: at }).success,
+  SunraCarouselQuoteSchema.safeParse({ quoteId: "q", modelId: "nano-banana-2", slides: 1, creditsPerImage: 7, credits: 7, width: 1080, height: 1350, aspectRatio: "4:5", requiresApproval: false, expiresAt: at }).success,
   false,
   "a quote never skips approval",
+);
+assert.equal(SunraGenerateRequestSchema.safeParse({ approved: true }).success, false, "generate names the model it pays for");
+assert.ok(SunraGenerateRequestSchema.parse({ approved: true, modelId: "gpt-image-1" }));
+assert.equal(SunraCarouselRequestSchema.parse({ brandId: "b", prompt: "x" }).modelId, "nano-banana-2");
+assert.equal(
+  SunraModelsResponseSchema.safeParse({ models: [{ id: "m", label: "M", provider: "p", creditsPerImage: 0, supportedAspectRatios: [], supportedSizes: [], supportedResolutions: [], maxRefImages: 0 }] }).success,
+  false,
+  "a model always has a price",
 );
 assert.equal(
   ApprovalLinkSchema.safeParse({ id: "a", versionId: "v", token: "short", expiresAt: at, revokedAt: null, status: "pending" }).success,
