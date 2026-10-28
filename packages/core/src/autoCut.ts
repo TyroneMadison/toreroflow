@@ -9,6 +9,12 @@ export interface Word {
   start: number;
   end: number;
   word: string;
+  /**
+   * Set at transcription time on new assets. Older word lists carry no flag,
+   * and every reader treats a missing kind as a plain spoken word.
+   */
+  kind?: "word" | "silence" | "filler";
+  speaker?: number;
 }
 
 export const FILLER_WORDS: string[] = ["um", "uh", "er", "uhm", "erm"];

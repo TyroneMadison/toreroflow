@@ -48,6 +48,12 @@ export interface EditAssetInfo {
   sourceUrl: string | null;
   proxyUrl: string | null;
   stripUrl: string | null;
+  /** Waveform peaks JSON (number[], 50/s, 0..100), when the worker made one. */
+  peaksUrl?: string | null;
+  /** Spoken language whisper used or detected. */
+  language?: string | null;
+  /** Why a ready clip has no words, e.g. the transcription timed out. */
+  error?: string | null;
 }
 
 export interface EditProjectInfo {

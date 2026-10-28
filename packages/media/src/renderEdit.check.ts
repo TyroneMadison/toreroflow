@@ -144,3 +144,49 @@ assert.throws(
 );
 
 console.log("renderEdit.check: all assertions passed");
+
+// Golden: v1 docs that use none of the new features render byte-identical
+// to the pre-revamp renderer.
+{
+  const { readFileSync } = await import("node:fs");
+  const { goldenCases } = await import("./renderEdit.golden");
+  const golden = JSON.parse(readFileSync(new URL("./__golden__/renderEdit.v1.json", import.meta.url), "utf8"));
+  for (const c of goldenCases()) {
+    assert.deepEqual(buildRenderPlan(c.input as never).args, golden[c.name], `golden ${c.name} unchanged`);
+  }
+}
+
+// Clip zoom/move from the inspector: cover, scale, pad, shifted crop.
+{
+  const { DEFAULT_CLIP_FX } = await import("@toreroflow/core");
+  const moved: EditDoc = { ...doc, clipFx: { a: { ...DEFAULT_CLIP_FX, zoom: 1.5, x: 10, y: -5 } } };
+  const j = buildRenderPlan({ doc: moved, edl: edlFromDoc(moved, { a: 10 }), assets, assPath: null, out }).args.join(" ");
+  assert.ok(j.includes("scale=w=1620:h=2880:force_original_aspect_ratio=increase"), "scaled by zoom");
+  assert.ok(j.includes("pad=w=iw+2160:h=ih+3840:x=1080:y=1920"), "pad so a move can expose an edge");
+  assert.ok(j.includes("crop=1080:1920:x='(iw-1080)/2-108':y='(ih-1920)/2+96'"), "crop shifted opposite the move");
+  const zoomOnly: EditDoc = { ...doc, clipFx: { a: { ...DEFAULT_CLIP_FX, zoom: 2 } } };
+  const z = buildRenderPlan({ doc: zoomOnly, edl: edlFromDoc(zoomOnly, { a: 10 }), assets, assPath: null, out }).args.join(" ");
+  assert.ok(!z.includes("pad=w=iw+"), "pure zoom-in needs no pad");
+}
+
+// Silent main clip: generated silence per segment instead of a missing [0:a].
+{
+  const silent = buildRenderPlan({ doc, edl, assets: [{ ...assets[0], hasAudio: false }], assPath: null, out }).args.join(" ");
+  assert.ok(silent.includes("anullsrc=r=48000:cl=stereo,atrim=duration=2[a0]"), "silence for segment 0");
+  assert.ok(!silent.includes("[0:a]"), "never references the absent audio stream");
+}
+
+// B-roll with sound joins the mix only when probed to have audio.
+{
+  const br: EditDoc = {
+    ...doc,
+    broll: [{ id: "x", assetId: "r", at: 1, dur: 2, x: 0, y: 0, scale: 0.5, shape: "full", volume: 50, fadeIn: 0.5, fadeOut: 0 }],
+  };
+  const base = [...assets, { id: "r", kind: "broll", path: "/r.mp4", durationSec: 4, width: 1920, height: 1080 }];
+  const noProbe = buildRenderPlan({ doc: br, edl, assets: base, assPath: null, out }).args.join(" ");
+  assert.ok(!noProbe.includes("[ab0]"), "unprobed b-roll stays muted");
+  const withA = buildRenderPlan({ doc: br, edl, assets: base.map((a) => (a.id === "r" ? { ...a, hasAudio: true } : a)), assPath: null, out }).args.join(" ");
+  assert.ok(withA.includes("volume=0.5,afade=t=in:st=0:d=0.5,adelay=1000:all=1[ab0]"), "b-roll audio chain");
+  assert.ok(withA.includes("amix=inputs=2:duration=first:normalize=0"), "mixed over clip audio");
+}
+console.log("renderEdit.check: revamp assertions passed");

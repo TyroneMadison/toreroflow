@@ -48,6 +48,13 @@ export interface CaptionChunk {
   start: number;
   end: number;
   text: string;
+  /**
+   * Each word's own start/end, in chunk order. Only chunksWithTimes sets it;
+   * the ASS writer uses it for word-timed karaoke and falls back to an even
+   * split when it is missing or the word count no longer matches (a manual
+   * break override rewrote the text).
+   */
+  times?: { start: number; end: number }[];
 }
 
 /**
@@ -80,4 +87,17 @@ export function chunksFor(
     });
   }
   return out;
+}
+
+/** chunksFor plus per-word times, for the render path. */
+export function chunksWithTimes(
+  words: Word[],
+  wordsPerLine: 1 | 2 | 3 | 4 | 5,
+  lines: 1 | 2,
+): CaptionChunk[] {
+  const perChunk = wordsPerLine * lines;
+  return chunksFor(words, wordsPerLine, lines).map((c, k) => ({
+    ...c,
+    times: words.slice(k * perChunk, (k + 1) * perChunk).map((w) => ({ start: w.start, end: w.end })),
+  }));
 }

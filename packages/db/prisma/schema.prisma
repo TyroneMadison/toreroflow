@@ -182,127 +182,128 @@ model User {
 }
 
 model Client {
-  id                   String         @id @default(cuid())
-  agencyId             String
-  name                 String
-  avatarSeed           String?
-  plan                 String?
+  id                    String         @id @default(cuid())
+  agencyId              String
+  name                  String
+  avatarSeed            String?
+  plan                  String?
   /// Publishing provider workspace id (Zernio profile _id) backing this client.
-  providerProfileId    String?
+  providerProfileId     String?
   /// Short-form videos owed this pay period; null means not tracked.
-  quotaShort           Int?
+  quotaShort            Int?
   /// Long-form videos owed this pay period; null means not tracked.
-  quotaLong            Int?
+  quotaLong             Int?
   /// Carousels owed this pay period; null means not tracked. A carousel is
   /// counted by kind rather than by duration, since it has none.
-  quotaCarousel        Int?
+  quotaCarousel         Int?
   /// Start of the current pay period. Uploads after this count toward quota.
-  quotaResetAt         DateTime?
+  quotaResetAt          DateTime?
   /// Manual corrections applied on top of the counted uploads, per format.
-  adjustShort          Int            @default(0)
-  adjustLong           Int            @default(0)
-  adjustCarousel       Int            @default(0)
+  adjustShort           Int            @default(0)
+  adjustLong            Int            @default(0)
+  adjustCarousel        Int            @default(0)
   /// Who to actually contact at this client, kept here rather than in a head.
   /// Separate from `name`, which is the brand: the brand is "CACV Motors" and
   /// the person answering the phone is someone else.
-  contactName          String?
-  contactEmail         String?
-  contactPhone         String?
+  contactName           String?
+  contactEmail          String?
+  contactPhone          String?
   /// Permanent path of this client's shareable web report, e.g.
   /// "northstar-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.
-  reportSlug           String?        @unique
+  reportSlug            String?        @unique
   /// Absolute URL of the last published report page; null until first publish.
-  reportUrl            String?
+  reportUrl             String?
   /// When that page was last pushed. Also the flag month-end republishing
   /// reads: a client that has never been published is never published for them.
-  reportPublishedAt    DateTime?
+  reportPublishedAt     DateTime?
   /// Reporting month the published page currently leads with ("2026-06").
-  reportPublishedMonth String?
+  reportPublishedMonth  String?
   /// Identifies this brand in their own welcome link, so a reply that comes
   /// back through a form on the website can be matched to them. Minted once
   /// and kept, because the link may already be in a client's phone.
-  onboardingToken      String?        @unique
+  onboardingToken       String?        @unique
   /// When their welcome reply was applied. Null means it has not arrived.
-  onboardedAt          DateTime?
+  onboardedAt           DateTime?
   /// Ids of welcome replies already applied to this client, so the same one is
   /// never applied twice. Without this every check would re-apply every reply,
   /// and since an answer wins, a detail corrected by hand would be silently
   /// reverted to what the client typed weeks earlier.
-  welcomeRepliesApplied String[]      @default([])
+  welcomeRepliesApplied String[]       @default([])
   /// Handles the client gave for themselves, keyed by platform. Not connected
   /// accounts: a typed handle cannot post anything, and a connected account
   /// only ever comes back from the provider. This is what they say their
   /// accounts are, which is how a platform nobody had yet becomes known.
-  handles              Json?
+  handles               Json?
   /// Current retainer. A default for seeding a month, not a historical record:
   /// history lives in RevenueEntry, so raising this leaves past months alone.
-  monthlyPriceCents    Int?
+  monthlyPriceCents     Int?
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
-  billingMode          String         @default("calendar")
+  billingMode           String         @default("calendar")
   /// The brand's niche profile for the Ideas area: who they are, who they
   /// serve, what they sound like. One editable blob rather than columns,
   /// because the useful facts about a niche do not fit a schema.
-  nicheProfile         Json?
+  nicheProfile          Json?
   /// URL-safe handle for deep links such as /clients/caleb/ready. Null falls
   /// back to the slugified name, so existing clients need no backfill.
-  slug                 String?
+  slug                  String?
   /// The client's posting SOP, written by a human. Null means none added yet;
   /// the app shows an empty state and never fills one in.
-  sop                  String?
-  sopUpdatedAt         DateTime?
+  sop                   String?
+  sopUpdatedAt          DateTime?
   /// Trello label colors (e.g. "red", "black_dark") that route a card on the
   /// editor pipeline board to this client. Empty means the built-in defaults.
-  trelloLabels         String[]       @default([])
+  trelloLabels          String[]       @default([])
   /// Text added directly under every caption for this client, on every
   /// platform. Line breaks are kept exactly. Null means none.
-  captionBlock         String?
+  captionBlock          String?
   /// Whether the caption block is added by default. A post can still skip it.
-  captionBlockOn       Boolean        @default(true)
+  captionBlockOn        Boolean        @default(true)
   /// Keyword lines: [{ keywords: string[], line: string }]. The first entry
   /// whose keyword appears in the title, card or caption adds its line.
-  captionKeywords      Json           @default("[]")
+  captionKeywords       Json           @default("[]")
   /// Up to 15 creator channel links the Ideas area studies (Super generate
   /// and Brainstorm). Order is the order typed.
-  ideaCreators         String[]       @default([])
+  ideaCreators          String[]       @default([])
   /// Most a single Super generate run may spend on the model, in US cents.
-  superGenCapCents     Int            @default(200)
-  revenueEntries       RevenueEntry[]
-  invoices             Invoice[]
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  deletedAt            DateTime?
+  superGenCapCents      Int            @default(200)
+  revenueEntries        RevenueEntry[]
+  invoices              Invoice[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
 
-  agency         Agency          @relation(fields: [agencyId], references: [id])
-  socialAccounts SocialAccount[]
-  mediaAssets    MediaAsset[]
-  posts          Post[]
-  scheduleSlots  ScheduleSlot[]
-  workflows      Workflow[]
-  reports        ClientReport[]
-  alerts         SystemAlert[]
-  insight        ClientInsight?
-  inspirations   InspirationAccount[]
-  researchRuns   ResearchRun[]
-  knowledgeNotes KnowledgeNote[]
-  carouselDrafts CarouselDraft[]
-  editProjects    EditProject[]
-  videoAnalyses   VideoAnalysis[]
-  contentIdeas    ContentIdea[]
-  hooks           Hook[]
-  hookSeen        HookSeenVideo[]
-  knowledgeFiles  KnowledgeFile[]
-  brainstormChats BrainstormChat[]
-  superGenRuns    SuperGenerateRun[]
-  templates       Template[]
-  monthlyReports  MonthlyReportRun[]
-  contentRequests ContentRequest[]
+  agency           Agency               @relation(fields: [agencyId], references: [id])
+  socialAccounts   SocialAccount[]
+  mediaAssets      MediaAsset[]
+  posts            Post[]
+  scheduleSlots    ScheduleSlot[]
+  workflows        Workflow[]
+  reports          ClientReport[]
+  alerts           SystemAlert[]
+  insight          ClientInsight?
+  inspirations     InspirationAccount[]
+  researchRuns     ResearchRun[]
+  knowledgeNotes   KnowledgeNote[]
+  carouselDrafts   CarouselDraft[]
+  editProjects     EditProject[]
+  captionTemplates CaptionTemplate[]
+  videoAnalyses    VideoAnalysis[]
+  contentIdeas     ContentIdea[]
+  hooks            Hook[]
+  hookSeen         HookSeenVideo[]
+  knowledgeFiles   KnowledgeFile[]
+  brainstormChats  BrainstormChat[]
+  superGenRuns     SuperGenerateRun[]
+  templates        Template[]
+  monthlyReports   MonthlyReportRun[]
+  contentRequests  ContentRequest[]
   requestFormLinks RequestFormLink[]
-  libraryAssets   LibraryAsset[]
-  brandKit        BrandKit?
-  sunraQuotes     SunraQuote[]
-  repurposeJobs   RepurposeJob[]
+  libraryAssets    LibraryAsset[]
+  brandKit         BrandKit?
+  sunraQuotes      SunraQuote[]
+  repurposeJobs    RepurposeJob[]
 
   @@index([agencyId])
 }
@@ -348,10 +349,10 @@ model SocialAccount {
   updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
 
-  client          Client           @relation(fields: [clientId], references: [id])
-  postTargets     PostTarget[]
-  metricSnapshots MetricSnapshot[]
-  externalVideos  ExternalVideo[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  postTargets        PostTarget[]
+  metricSnapshots    MetricSnapshot[]
+  externalVideos     ExternalVideo[]
   platformConnection PlatformConnection?
 
   @@index([clientId, platform])
@@ -400,37 +401,37 @@ model PlatformConnection {
 }
 
 model MediaAsset {
-  id           String           @id @default(cuid())
-  clientId     String
+  id              String           @id @default(cuid())
+  clientId        String
   /// video | carousel. A carousel is several images posted as one Instagram
   /// post; it rides this table so it reaches the calendar, the queue and the
   /// scheduler without any of them learning a second kind of thing.
-  kind         String           @default("video")
+  kind            String           @default("video")
   /// Ordered storage keys of a carousel's images. Null for a video. The order
   /// is the order Instagram shows them in, and the first one decides the
   /// aspect ratio of the whole post.
-  slideKeys    Json?
-  storageKey   String
-  originalName String
-  durationSec  Float?
-  width        Int?
-  height       Int?
-  status       MediaAssetStatus @default(uploaded)
+  slideKeys       Json?
+  storageKey      String
+  originalName    String
+  durationSec     Float?
+  width           Int?
+  height          Int?
+  status          MediaAssetStatus @default(uploaded)
   /// Timestamped transcript from the captions service: [{ start, end, text }]
-  transcript   Json?
+  transcript      Json?
   /// AI-drafted post copy: { title, description, hashtags[] } (operator-editable)
-  draftCopy    Json?
+  draftCopy       Json?
   /// Short-form or long-form, for quota purposes. Filled from duration
   /// during processing when still unset; the operator can override it.
-  format       VideoFormat?
+  format          VideoFormat?
   /// A re-edit of an earlier upload: excluded from the client's video quota.
-  isRevision   Boolean          @default(false)
+  isRevision      Boolean          @default(false)
   /// The upload this one revises, when known.
-  revisionOfId String?
+  revisionOfId    String?
   /// Millisecond offset of the operator-chosen cover frame, when frame-picked.
-  coverOffsetMs Int?
+  coverOffsetMs   Int?
   /// Storage key of the chosen cover image (frame-extracted or uploaded).
-  coverKey      String?
+  coverKey        String?
   /// When the original video file was removed after the post went live.
   ///
   /// The row, the thumbnail and the cover all stay: only the source goes, and
@@ -448,15 +449,15 @@ model MediaAsset {
   /// video, and the video is already gone, so nothing anywhere can rebuild it.
   /// Set so the app hands the webview nothing instead of a link to a file that
   /// is no longer there.
-  thumbDeletedAt DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  thumbDeletedAt  DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  client     Client       @relation(fields: [clientId], references: [id])
-  renders    Render[]
-  posts      Post[]
-  revisionOf MediaAsset?  @relation("AssetRevisions", fields: [revisionOfId], references: [id])
-  revisions  MediaAsset[] @relation("AssetRevisions")
+  client        Client         @relation(fields: [clientId], references: [id])
+  renders       Render[]
+  posts         Post[]
+  revisionOf    MediaAsset?    @relation("AssetRevisions", fields: [revisionOfId], references: [id])
+  revisions     MediaAsset[]   @relation("AssetRevisions")
   approvalLinks ApprovalLink[]
 
   @@index([clientId, status])
@@ -479,27 +480,27 @@ model Render {
 }
 
 model Post {
-  id           String     @id @default(cuid())
-  clientId     String
-  mediaAssetId String?
-  createdById  String
-  status       PostStatus @default(draft)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
+  id            String        @id @default(cuid())
+  clientId      String
+  mediaAssetId  String?
+  createdById   String
+  status        PostStatus    @default(draft)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
   /// The saved idea this post was made from, when it was made from one.
   /// Lets the hook library read the idea's own hook for a post that performed.
-  ideaId       String?
+  ideaId        String?
   /// Upload queue (W3): rush uploads before normal; position orders within.
   /// Upload order only, the scheduled times never change.
   queuePriority QueuePriority @default(normal)
   queuePosition Int?
 
-  client     Client       @relation(fields: [clientId], references: [id])
-  mediaAsset MediaAsset?  @relation(fields: [mediaAssetId], references: [id])
-  createdBy  User         @relation(fields: [createdById], references: [id])
-  idea       ContentIdea? @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-  targets    PostTarget[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  mediaAsset         MediaAsset?         @relation(fields: [mediaAssetId], references: [id])
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  idea               ContentIdea?        @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  targets            PostTarget[]
   preflightOverrides PreflightOverride[]
 
   @@index([clientId, status])
@@ -604,34 +605,34 @@ model ClientReport {
  * truth. View counts here are authoritative and refreshed on each sync.
  */
 model ExternalVideo {
-  id              String   @id @default(cuid())
-  socialAccountId String
-  platform        Platform
+  id               String    @id @default(cuid())
+  socialAccountId  String
+  platform         Platform
   /// The platform's own video id (e.g. a YouTube videoId).
-  platformVideoId String
+  platformVideoId  String
   /// What the provider says the post is: video | image | carousel. Decides
   /// whether a post counts in the carousel section rather than the video
   /// boards. Named ExternalVideo for historical reasons; it holds every kind
   /// of post now.
-  mediaType       String   @default("video")
-  title           String
-  thumbnailUrl    String?
-  url             String?
-  publishedAt     DateTime
-  views           Int      @default(0)
-  likes           Int      @default(0)
-  comments        Int      @default(0)
-  shares          Int      @default(0)
+  mediaType        String    @default("video")
+  title            String
+  thumbnailUrl     String?
+  url              String?
+  publishedAt      DateTime
+  views            Int       @default(0)
+  likes            Int       @default(0)
+  comments         Int       @default(0)
+  shares           Int       @default(0)
   /// Instagram and TikTok only. Every other platform reports 0 because it has
   /// no such button, which is why the screen shows saves per platform rather
   /// than as one total.
-  saves           Int      @default(0)
-  reach           Int      @default(0)
+  saves            Int       @default(0)
+  reach            Int       @default(0)
   /// Followers gained from this video. The provider carries the field but has
   /// only ever sent 0, on every post of every platform, so nothing displays it
   /// until a non-zero value turns up. Stored from now so the history exists
   /// the day it starts working.
-  follows         Int      @default(0)
+  follows          Int       @default(0)
   /// Distinct from views and reach. Facebook only in practice: Meta deprecated
   /// it for Instagram media created after 2 July 2024 and the value now
   /// mirrors views there. Nullable because most rows will never have one.
@@ -672,17 +673,17 @@ model ExternalVideo {
   /// Written by applyPlatformMetrics from the fields it actually set, so a
   /// metric the platform did not return for a given video does not claim to be
   /// measured for it.
-  directMetrics    String[] @default([])
+  directMetrics    String[]  @default([])
   /// When the provider last refreshed these numbers, so a report can say how
   /// fresh it is.
   metricsUpdatedAt DateTime?
   /// Which source produced this row: zernio or youtube today. Phases 2 and 3
   /// add instagram, tiktok and facebook without another migration.
-  source           String   @default("zernio")
-  durationSec     Float?
-  fetchedAt       DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source           String    @default("zernio")
+  durationSec      Float?
+  fetchedAt        DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   socialAccount SocialAccount         @relation(fields: [socialAccountId], references: [id])
   metrics       ExternalVideoMetric[]
@@ -696,25 +697,25 @@ model ExternalVideo {
 /// purpose: it is the rolling history future views-over-time charts and
 /// the site view counter draw from, accumulating from ship day.
 model ExternalVideoMetric {
-  id              String   @id @default(cuid())
-  externalVideoId String
+  id               String    @id @default(cuid())
+  externalVideoId  String
   /// UTC calendar date of the capture; one row per video per day.
-  capturedOn      DateTime @db.Date
-  views           Int      @default(0)
-  likes           Int      @default(0)
-  comments        Int      @default(0)
-  shares          Int      @default(0)
-  saves           Int      @default(0)
-  reach           Int      @default(0)
-  follows         Int      @default(0)
+  capturedOn       DateTime  @db.Date
+  views            Int       @default(0)
+  likes            Int       @default(0)
+  comments         Int       @default(0)
+  shares           Int       @default(0)
+  saves            Int       @default(0)
+  reach            Int       @default(0)
+  follows          Int       @default(0)
   impressions      Int?
   clicks           Int?
   avgWatchSec      Float?
   totalWatchSec    Float?
   engagementRate   Float?
   metricsUpdatedAt DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   externalVideo ExternalVideo @relation(fields: [externalVideoId], references: [id], onDelete: Cascade)
 
@@ -770,30 +771,30 @@ model Job {
 
 /// What one client owes for one month.
 model RevenueEntry {
-  id          String    @id @default(cuid())
-  agencyId    String
+  id              String    @id @default(cuid())
+  agencyId        String
   /// Null for money that is not a client's bill: a paycheck transfer, a
   /// refund, any other source. Those rows carry `label` instead, are never
   /// seeded or reconciled, and count into every total the same way.
-  clientId    String?
+  clientId        String?
   /// What a client-less row is: "Paycheck transfer", "Equipment refund".
-  label       String?
+  label           String?
   /// "2026-06"
-  month       String
-  amountCents Int
+  month           String
+  amountCents     Int
   /// Set means paid. The only stored state: pending and due are derived, since
   /// a stored "not due" goes stale the moment a video is delivered.
-  receivedAt  DateTime?
+  receivedAt      DateTime?
   /// Set once the operator types an amount over the top for this month. Until
   /// then the row tracks the client's standing price, so correcting the price
   /// in Settings fixes the open month instead of leaving a stale copy behind.
-  priceOverridden Boolean @default(false)
-  note        String?
-  color       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  priceOverridden Boolean   @default(false)
+  note            String?
+  color           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  agency Agency @relation(fields: [agencyId], references: [id])
+  agency Agency  @relation(fields: [agencyId], references: [id])
   client Client? @relation(fields: [clientId], references: [id])
 
   @@unique([clientId, month])
@@ -1028,32 +1029,32 @@ model BankConnection {
 
 /// One account inside a linked bank.
 model BankAccount {
-  id              String  @id @default(cuid())
-  connectionId    String
+  id                String   @id @default(cuid())
+  connectionId      String
   /// The provider's id for this account. Unique WITHIN a connection only: the
   /// SimpleFIN spec says an account id "uniquely identifies the account within
   /// the Connection", and the bridge's own demo feed returns ids as generic as
   /// "Demo Checking". Global uniqueness would let one bank's account claim
   /// another's row.
   providerAccountId String
-  name            String
-  officialName    String?
+  name              String
+  officialName      String?
   /// Last four digits, for telling two accounts apart on screen.
-  mask            String?
+  mask              String?
   /// Integer cents, like every other figure in this app. Null when the
   /// provider has no figure, which is not the same as zero.
-  currentCents    Int?
-  availableCents  Int?
-  currency        String  @default("USD")
+  currentCents      Int?
+  availableCents    Int?
+  currency          String   @default("USD")
   /// Whether this account counts towards money in and money out.
   ///
   /// Starts true: the provider reports no account type, so there is nothing to
   /// decide from, and a default that is visibly too generous beats one that
   /// silently drops the account the business actually runs on. The operator
   /// unticks the rest.
-  includeInCashFlow Boolean @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  includeInCashFlow Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   connection   BankConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   transactions BankTransaction[]
@@ -1064,8 +1065,8 @@ model BankAccount {
 
 /// One transaction on a linked account.
 model BankTransaction {
-  id                 String  @id @default(cuid())
-  accountId          String
+  id                    String   @id @default(cuid())
+  accountId             String
   /// The provider's id for this transaction. Unique WITHIN an account only.
   /// The SimpleFIN spec is explicit: "An organization may reuse transaction ids
   /// for different accounts, but may never reuse a transaction id within an
@@ -1078,18 +1079,18 @@ model BankTransaction {
   /// the classic off-by-one where a transaction slides into the previous month
   /// depending on the reader's timezone, and month totals are the whole point
   /// of this feature. ISO strings also sort and range-query correctly.
-  date               String
-  name               String
-  merchantName       String?
+  date                  String
+  name                  String
+  merchantName          String?
   /// Integer cents in OUR convention: positive means money arrived.
   ///
   /// Converted in exactly one place, packages/core/src/banking.ts, so a future
   /// provider that signs the other way round is one line rather than a hunt.
-  amountCents        Int
+  amountCents           Int
   /// Pending rows can change amount or vanish, so totals exclude them.
-  pending            Boolean @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  pending               Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -1117,11 +1118,11 @@ model KnowledgeNote {
 /// One Studio project: its sources, its edit document, and where the render
 /// landed. Past renders never mutate; Save Copy forks the row.
 model EditProject {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   clientId    String
-  name        String  @default("Untitled project")
+  name        String   @default("Untitled project")
   /// draft | rendering | rendered | failed
-  status      String  @default("draft")
+  status      String   @default("draft")
   /// The whole edit document as one versioned JSON blob (v:1), autosaved.
   doc         Json?
   /// Storage key of the finished render.
@@ -1141,7 +1142,7 @@ model EditProject {
 /// A source file owned by one project: not a MediaAsset, so the publish
 /// pipeline's quota counts and retention sweeps never see it.
 model EditAsset {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   projectId    String
   /// clip | audio | graphic
   kind         String
@@ -1154,8 +1155,17 @@ model EditAsset {
   durationSec  Float?
   width        Int?
   height       Int?
-  /// Word-level transcript for clips: [{ start, end, word }]
+  /// Word-level transcript for clips: [{ start, end, word, kind? }]
   words        Json?
+  /// Sources over 15 min keep their words in a storage file instead of the
+  /// row (an hour of words is megabytes of JSON on every asset read).
+  wordsKey     String?
+  /// Spoken language whisper used or detected (ISO code).
+  language     String?
+  /// Waveform peaks file (JSON number[], 50 per second, 0..100).
+  peaksKey     String?
+  /// Why words are missing on a ready asset, e.g. a transcription timeout.
+  error        String?
   /// uploaded | processing | ready | failed
   status       String   @default("uploaded")
   createdAt    DateTime @default(now())
@@ -1163,6 +1173,22 @@ model EditAsset {
   project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+}
+
+/// A caption style a client saved in the Studio editor, shared by everyone
+/// on that client. Replaces the per-browser localStorage list.
+model CaptionTemplate {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  /// CaptionStyle JSON, validated by the API before it lands here.
+  style     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }
 
 /// One run of the AI content analyzer over one video. This is AI analysis of
@@ -1205,40 +1231,40 @@ enum FunnelStage {
 }
 
 model ContentIdea {
-  id         String   @id @default(cuid())
-  clientId   String
-  niche      String   @default("")
-  formatName String?
-  text       String
-  hook       String?
+  id            String       @id @default(cuid())
+  clientId      String
+  niche         String       @default("")
+  formatName    String?
+  text          String
+  hook          String?
   /// Generated script or storyboard, once the operator asks for one.
-  script     Json?
+  script        Json?
   /// The short spoken script that came with a generated idea (Super generate).
-  scriptText String?
+  scriptText    String?
   /// Handle of the creator the idea was drawn from, e.g. "@carguy".
-  creator    String?
+  creator       String?
   /// Ticked off as done on the Saved ideas card.
-  completed  Boolean  @default(false)
+  completed     Boolean      @default(false)
   /// Shot list: [{ title, framing, angle, move, pose, time, sign }].
-  shots      Json?
+  shots         Json?
   /// Funnel stage the generator assigned: top | middle | bottom (null for older ideas).
-  funnelStage FunnelStage?
+  funnelStage   FunnelStage?
   /// One sentence on the psychology or trend behind a generated idea.
-  whyItWorks String?
+  whyItWorks    String?
   /// easy | medium | hard to film, from the rubric plus the core sanity check.
-  difficulty String?
+  difficulty    String?
   /// What the shoot needs: [{ type: prop | location | people, label }], max 4.
-  needs      Json?
+  needs         Json?
   /// The saved idea this one was remixed from (the original is never changed).
   remixedFromId String?
   /// Drawn GIFs: [{ kind: hook | shot, key, caption }] (bytes in IdeaGif).
-  gifs       Json?
+  gifs          Json?
   /// idea | scripting | ready | posted | analyzed
-  status     String   @default("idea")
+  status        String       @default("idea")
   /// brainstorm | analysis | overview | custom
-  source     String   @default("custom")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  source        String       @default("custom")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
   posts  Post[]
@@ -1316,14 +1342,14 @@ model WorkerHeartbeat {
 
 /// One brainstorm thread, kept so closing the window does not lose it.
 model BrainstormChat {
-  id       String @id @default(cuid())
-  clientId String
+  id        String   @id @default(cuid())
+  clientId  String
   /// The first thing the operator asked, trimmed. What the list shows.
-  title    String
+  title     String
   /// The whole thread as [{ role, content }]. One blob rather than a row per
   /// message: it is only ever read and written whole, the same way
   /// EditProject.doc is, and a thread is small.
-  messages Json
+  messages  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1517,22 +1543,22 @@ model MonthlyReportRun {
 /// became on the editor pipeline's "To edit" list. status: "pending" until
 /// Trello answers, then "created" or "failed" (the operator can retry).
 model ContentRequest {
-  id           String    @id @default(cuid())
-  clientId     String
-  what         String
-  dueDate      String?
-  footageUrl   String?
-  notes        String?
+  id            String   @id @default(cuid())
+  clientId      String
+  what          String
+  dueDate       String?
+  footageUrl    String?
+  notes         String?
   /// The form link it came in through. Null for requests from before links.
-  linkId       String?
+  linkId        String?
   /// Optional reference file, type checked by its bytes (png, jpg, webp, pdf).
   attachmentKey String?
-  status       String    @default("pending")
-  trelloCardId String?
-  trelloUrl    String?
-  error        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  status        String   @default("pending")
+  trelloCardId  String?
+  trelloUrl     String?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 

@@ -115,27 +115,42 @@ function dialogue(layer: number, start: number, end: number, style: string, text
   return `Dialogue: ${layer},${assTime(start)},${assTime(end)},${style},,0,0,0,,${text}`;
 }
 
-/** {\kNN} per word. The centisecond values always sum to the duration. */
-function karaokeText(text: string, durSec: number): string {
+/**
+ * {\kNN} per word. The centisecond values always sum to the duration. With
+ * real word times, each word's highlight starts when that word is spoken:
+ * boundaries come from word starts relative to the chunk start, rounded once,
+ * so rounding never accumulates drift. Without times (or when an override
+ * changed the word count) the duration splits evenly, as before.
+ */
+function karaokeText(
+  text: string,
+  durSec: number,
+  times?: { start: number; end: number }[],
+  chunkStart = 0,
+): string {
   const lines = text.split("\n");
   const words = lines.flatMap((l) => l.split(" ").filter(Boolean));
   if (words.length === 0) return "";
   const total = Math.max(1, Math.round(durSec * 100));
-  const base = Math.floor(total / words.length);
-  let used = 0;
+  let ks: number[];
+  if (times && times.length === words.length) {
+    const bounds = times.map((t, i) =>
+      i === 0 ? 0 : Math.min(total, Math.max(0, Math.round((t.start - chunkStart) * 100))),
+    );
+    bounds.push(total);
+    for (let i = 1; i < bounds.length; i++) bounds[i] = Math.max(bounds[i], bounds[i - 1]);
+    ks = words.map((_, i) => bounds[i + 1] - bounds[i]);
+  } else {
+    const base = Math.floor(total / words.length);
+    ks = words.map((_, i) => (i === words.length - 1 ? total - base * (words.length - 1) : base));
+  }
   let n = 0;
-  const nextK = () => {
-    n += 1;
-    const k = n === words.length ? total - used : base;
-    used += k;
-    return k;
-  };
   return lines
     .map((l) =>
       l
         .split(" ")
         .filter(Boolean)
-        .map((w) => `{\\k${nextK()}}${braces(w)}`)
+        .map((w) => `{\\k${ks[n++]}}${braces(w)}`)
         .join(" "),
     )
     .join("\\N");
@@ -265,7 +280,9 @@ export function assFromDoc(input: {
         });
         return;
       }
-      const body = karaoke ? karaokeText(text, chunk.end - chunk.start) : escapeText(text);
+      const body = karaoke
+        ? karaokeText(text, chunk.end - chunk.start, chunk.times, chunk.start)
+        : escapeText(text);
       events.push(dialogue(0, chunk.start, chunk.end, "C", posTag + body));
     });
   }
