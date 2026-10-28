@@ -751,6 +751,16 @@ export default function Timeline() {
                   <span className="tl-edge r" />
                 </div>
               ))}
+              {doc.hook && (
+                // The hook headline: fixed at 0, edited from the AI edit tab.
+                <div
+                  className="tl-chip tl-chip-text tl-chip-hook"
+                  title="Hook headline (AI edit tab)"
+                  style={{ left: X(0), width: doc.hook.dur * pps, top: 0, opacity: 0.85 }}
+                >
+                  Hook: {doc.hook.text.split(/\s+/).slice(0, 3).join(" ")}
+                </div>
+              )}
             </div>
 
             <div

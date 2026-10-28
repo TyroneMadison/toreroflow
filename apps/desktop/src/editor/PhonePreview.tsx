@@ -22,6 +22,11 @@ import {
   setShotAdjust,
   outputDuration,
   outputWords,
+  outputWordRefs,
+  wordMarks,
+  textsWithHook,
+  curveScale,
+  HIGHLIGHT_STRONG,
   type ColorAdjust,
   type TextStyle,
   type Word,
@@ -338,6 +343,12 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     return m;
   }, [assets, doc.wordEdits]);
   const outWords = useMemo(() => outputWords(edl, wordsByAsset), [edl, wordsByAsset]);
+  // Phase 5 keyword levels and emojis, parallel to outWords (same filter).
+  const outMarks = useMemo(
+    () => wordMarks(outputWordRefs(edl, wordsByAsset), doc),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [edl, wordsByAsset, doc.captions.highlight],
+  );
   const chunks = useMemo(() => {
     if (!doc.captions.enabled) return [];
     const list = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
@@ -367,15 +378,40 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     captionKaraoke(doc.captions) &&
     !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex);
   const perChunk = doc.captions.style.wordsPerLine * doc.captions.style.lines;
+  const chunkMarks =
+    caption && !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex)
+      ? outMarks.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk)
+      : [];
+  const marked = !karaoke && chunkMarks.some((m) => m.level > 0);
   const captionWords =
-    caption && karaoke ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk) : null;
+    caption && (karaoke || marked)
+      ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk)
+      : null;
+  const captionEmojis = chunkMarks.map((m) => m.emoji).filter(Boolean).join(" ");
+  // Same colors as the export: karaoke owns color when on, else keyword levels.
+  const wordColor = (w: { start: number; end: number }, i: number): string | undefined => {
+    if (karaoke) return w.start <= clampT && clampT < w.end ? doc.captions.style.accentColor : undefined;
+    const lvl = chunkMarks[i]?.level ?? 0;
+    return lvl === 2 ? HIGHLIGHT_STRONG : lvl === 1 ? doc.captions.style.accentColor : undefined;
+  };
 
-  const visibleTexts = doc.texts.filter((t) => clampT >= t.at && clampT < t.at + t.dur);
+  // The hook headline rides the text-overlay path, as in the export.
+  const visibleTexts = textsWithHook(doc).filter((t) => clampT >= t.at && clampT < t.at + t.dur);
 
   /** Scale from active zoom items at this output time; the last one wins. */
+  let zoomFace = false;
   const zoomAt = (t: number): number => {
     let scale = 1;
     for (const z of doc.zooms) {
+      if (z.curve && z.curve.length > 1) {
+        // Phase 5 curve zooms: the render's piecewise curve, from z.at.
+        const c = curveScale(z.curve, t - z.at);
+        if (c !== 1) {
+          scale = c;
+          zoomFace = z.anchor === "face";
+        }
+        continue;
+      }
       let i = -1;
       for (let k = edl.length - 1; k >= 0; k--) {
         if (z.at >= (segStarts[k] ?? 0)) {
@@ -412,6 +448,8 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
       (fx?.zoom ?? 1) * zoomAt(clampT)
     })`,
     filter: colorFilter(doc.color, fx?.color),
+    // Face-anchored zooms grow toward where a reframed face sits (render FACE_Y).
+    ...(zoomFace ? { transformOrigin: "50% 38%" } : {}),
   };
 
   /* ---- layouts: fill / fit / split / screenshare ---- */
@@ -624,17 +662,14 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
                   ? captionWords.map((w, i) => (
                       <span
                         key={i}
-                        style={
-                          w.start <= clampT && clampT < w.end
-                            ? { color: doc.captions.style.accentColor }
-                            : undefined
-                        }
+                        style={wordColor(w, i) ? { color: wordColor(w, i) } : undefined}
                       >
                         {(i === 0 ? "" : i % doc.captions.style.wordsPerLine === 0 ? "\n" : " ") +
                           w.word}
                       </span>
                     ))
                   : caption.text}
+                {captionEmojis && <span className="pv-emoji"> {captionEmojis}</span>}
               </div>
             )}
           </div>
