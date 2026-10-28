@@ -141,6 +141,7 @@ A **pnpm monorepo**:
 | `apps/desktop` | Tauri 2 + React 18 app. The same frontend is also built and served as the **web app at app.torerone.com**. |
 | `apps/captions` | Captions service. |
 | `packages/core` | Shared logic and zod schemas (e.g. `captionBlock.ts`). |
+| `packages/contracts` | `@toreroflow/contracts`, the `shared/contracts` of the workflow and ideas plans: API types and zod schemas the frontend imports. |
 | `packages/db` | Prisma schema and migrations (PostgreSQL). |
 | `packages/media`, `packages/publishers` | Media handling and platform publishers. |
 | `infra/` | Dockerfiles, docker compose, Caddyfile, deploy scripts. |

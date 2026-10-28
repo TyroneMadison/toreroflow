@@ -74,6 +74,16 @@ enum JobStatus {
   failed
 }
 
+enum QueuePriority {
+  rush
+  normal
+}
+
+enum TemplateScope {
+  client
+  brand
+}
+
 model Agency {
   id               String   @id @default(cuid())
   name             String
@@ -110,6 +120,7 @@ model Agency {
   invoices        Invoice[]
   financialMonths FinancialMonth[]
   bankConnections BankConnection[]
+  bots            BotIdentity[]
 }
 
 /**
@@ -282,6 +293,7 @@ model Client {
   knowledgeFiles  KnowledgeFile[]
   brainstormChats BrainstormChat[]
   superGenRuns    SuperGenerateRun[]
+  templates       Template[]
 
   @@index([agencyId])
 }
@@ -468,12 +480,17 @@ model Post {
   /// The saved idea this post was made from, when it was made from one.
   /// Lets the hook library read the idea's own hook for a post that performed.
   ideaId       String?
+  /// Upload queue (W3): rush uploads before normal; position orders within.
+  /// Upload order only, the scheduled times never change.
+  queuePriority QueuePriority @default(normal)
+  queuePosition Int?
 
   client     Client       @relation(fields: [clientId], references: [id])
   mediaAsset MediaAsset?  @relation(fields: [mediaAssetId], references: [id])
   createdBy  User         @relation(fields: [createdById], references: [id])
   idea       ContentIdea? @relation(fields: [ideaId], references: [id], onDelete: SetNull)
   targets    PostTarget[]
+  preflightOverrides PreflightOverride[]
 
   @@index([clientId, status])
   @@index([ideaId])
@@ -488,6 +505,10 @@ model PostTarget {
   hashtags        String[]         @default([])
   /// Per-platform publish options: { instagram: {...} } or { youtubeTitle }.
   options         Json?
+  /// Fan-out (W1): fields this target overrides from the draft
+  /// ({ caption, title, cover, cutId, postAt }). Present key = overridden;
+  /// reset deletes the key.
+  overrides       Json             @default("{}")
   scheduledAt     DateTime?
   status          PostTargetStatus @default(scheduled)
   remotePostId    String?
@@ -1390,4 +1411,56 @@ model IdeaFeedback {
 
   @@unique([clientId, runId, textKey])
   @@index([clientId, createdAt])
+}
+
+/// Preflight override (W2): who posted past a blocking issue, why, and when.
+/// actorKind is "operator" or "bot"; actorId is the user id or the bot name.
+model PreflightOverride {
+  id        String   @id @default(cuid())
+  postId    String
+  reason    String
+  actorKind String
+  actorId   String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+/// Posting template (W5). The operator and Polly (full access) write; other bots read and apply at most, per scope.
+model Template {
+  id             String        @id @default(cuid())
+  clientId       String
+  scope          TemplateScope @default(brand)
+  name           String
+  platforms      Platform[]    @default([])
+  captionPattern String        @default("")
+  hashtags       String[]      @default([])
+  coverStyle     String        @default("")
+  /// "HH:mm" in ET.
+  postTimes      String[]      @default([])
+  cadence        String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// A named bot token identity. fullAccess grants the operator's access
+/// (read, write, edit, publish); off by default, every other bot keeps the
+/// route whitelist. No row: Polly defaults to full access (botAccess.ts).
+model BotIdentity {
+  id         String   @id @default(cuid())
+  agencyId   String
+  name       String
+  fullAccess Boolean  @default(false)
+  scopes     String[] @default([])
+  createdAt  DateTime @default(now())
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, name])
 }

@@ -101,6 +101,8 @@ export interface EnqueueOptions {
    * hammering it than to backing off.
    */
   retryBackoff?: boolean;
+  /** Higher runs first among due jobs. See uploadPriority. */
+  priority?: number;
 }
 
 /**
@@ -137,6 +139,7 @@ export async function enqueue(
     ...(options.retryLimit !== undefined ? { retryLimit: options.retryLimit } : {}),
     ...(options.retryDelaySeconds !== undefined ? { retryDelay: options.retryDelaySeconds } : {}),
     ...(options.retryBackoff !== undefined ? { retryBackoff: options.retryBackoff } : {}),
+    ...(options.priority !== undefined ? { priority: options.priority } : {}),
   });
 }
 
@@ -176,9 +179,35 @@ export async function reschedule(
   data: object,
   key: string,
   startAfter: number | Date,
+  priority?: number,
 ): Promise<void> {
   const b = await getBoss();
-  await b.upsert(queue, data, { singletonKey: key, startAfter });
+  await b.upsert(queue, data, { singletonKey: key, startAfter, ...(priority !== undefined ? { priority } : {}) });
+}
+
+/**
+ * Upload order (W3) as a pg-boss priority: higher is fetched first among jobs
+ * that are due. Rush beats every normal job, and within a tier a lower queue
+ * position goes first. A normal job with no position is 0, pg-boss's default,
+ * so jobs queued before W3 keep their order. Only the order among due jobs
+ * changes; startAfter (the scheduled time) is never touched.
+ */
+const POSITION_CAP = 999_999;
+export function uploadPriority(priority: "rush" | "normal", position: number | null | undefined): number {
+  const p = Math.min(position ?? POSITION_CAP, POSITION_CAP);
+  if (priority === "rush") return 2_000_000 - p;
+  return position == null ? 0 : 1_000_000 - p;
+}
+
+/**
+ * Change a queued job's priority and nothing else: no data, no startAfter,
+ * so its scheduled time stays exactly as it was. A job that is not queued
+ * (already running or done) is left alone.
+ */
+export async function setPriority(queue: QueueName, key: string, priority: number): Promise<void> {
+  const b = await getBoss();
+  // undefined, not null: null would clear the job's payload.
+  await b.update(queue, undefined, { singletonKey: key, priority });
 }
 
 /**

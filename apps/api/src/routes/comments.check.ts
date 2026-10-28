@@ -8,13 +8,11 @@ import assert from "node:assert/strict";
 process.env.PUBLISH_PROVIDER = "zernio";
 process.env.PUBLISH_PROVIDER_API_KEY = "sk_agency";
 process.env.ZERNIO_API_KEY_POLLY = "sk_polly";
-delete process.env.BOT_FULL_ACCESS;
 
 const { default: Fastify } = await import("fastify");
 const { default: jwt } = await import("@fastify/jwt");
 const { getPrisma } = await import("@toreroflow/db");
 const { commentRoutes } = await import("./comments");
-const { isFullAccessBot } = await import("../auth/botAccess");
 
 const CLIENT = {
   id: "client1",
@@ -147,14 +145,6 @@ assert.equal(calls.at(-1)!.auth, "Bearer sk_agency");
 res = await app.inject({ method: "GET", url: "/clients/client1/instagram-limit", headers: as(bot) });
 assert.equal(res.statusCode, 200, res.body);
 assert.equal(calls.at(-1)!.url, "https://zernio.com/api/v1/accounts/z-ig/instagram/publishing-limit");
-
-// Full access is per bot and can be switched off.
-assert.equal(isFullAccessBot("polly"), true);
-assert.equal(isFullAccessBot("Polly"), true);
-assert.equal(isFullAccessBot("nova"), false);
-assert.equal(isFullAccessBot(undefined), false);
-assert.equal(isFullAccessBot("polly", { BOT_FULL_ACCESS: "" }), false);
-assert.equal(isFullAccessBot("nova", { BOT_FULL_ACCESS: "polly,nova" }), true);
 
 await app.close();
 console.log("comments.check: all checks passed");

@@ -13,7 +13,6 @@ const storage = await fs.mkdtemp(path.join(os.tmpdir(), "composer-"));
 process.env.STORAGE_DIR = storage;
 process.env.PUBLISH_PROVIDER = "zernio";
 process.env.PUBLISH_PROVIDER_API_KEY = "test-key";
-delete process.env.BOT_FULL_ACCESS;
 globalThis.fetch = (async () => new Response("{}", { status: 200 })) as typeof fetch;
 
 const { default: Fastify } = await import("fastify");

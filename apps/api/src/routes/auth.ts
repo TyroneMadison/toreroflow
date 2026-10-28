@@ -47,7 +47,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const sub = await actingUserId(request);
       if (!sub) return reply.status(401).send({ error: "unknown user" });
       // An optional name ("polly") identifies the bot: its own Zernio key and,
-      // when listed in BOT_FULL_ACCESS, the operator's full access.
+      // when its BotIdentity has fullAccess, the operator's full access.
       const rawName = (request.body as { name?: unknown } | undefined)?.name;
       const name = typeof rawName === "string" ? rawName.trim().toLowerCase() : "";
       if (name && !/^[a-z0-9_-]{1,40}$/.test(name)) {

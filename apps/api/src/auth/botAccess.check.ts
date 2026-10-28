@@ -3,7 +3,8 @@
 // everything the workflow needs passes, and the dangerous neighbors of each
 // allowed route are named and refused.
 import assert from "node:assert/strict";
-import { botAllowed } from "./botAccess";
+import { getPrisma } from "@toreroflow/db";
+import { botAllowed, defaultBotIdentity, resolveBotIdentity } from "./botAccess";
 
 // The whole upload -> draft -> schedule workflow passes.
 for (const [method, path] of [
@@ -27,6 +28,11 @@ for (const [method, path] of [
   ["GET", "/clients/cms0qdz5t/comments"],
   ["GET", "/clients/cms0qdz5t/comments/p1?accountId=a1"],
   ["GET", "/clients/cms0qdz5t/instagram-limit"],
+  // Templates: the route checks the scope.
+  ["GET", "/templates"],
+  ["GET", "/templates?brandId=c1"],
+  ["GET", "/templates/cadence?brandId=c1"],
+  ["POST", "/templates/tpl1/apply"],
 ] as const) {
   assert.equal(botAllowed(method, path), true, `${method} ${path} is the workflow`);
 }
@@ -63,6 +69,10 @@ for (const [method, path] of [
   ["GET", "/media/cms84z50v/transcript"],
   ["POST", "/media/cms84z50v/cover-image/../../financials"],
   ["DELETE", "/media/cms84z50v/cover"],
+  // Templates: no bot edits them without full access.
+  ["POST", "/templates"],
+  ["PUT", "/templates/tpl1"],
+  ["DELETE", "/templates/tpl1"],
 ] as const) {
   assert.equal(botAllowed(method, path), false, `${method} ${path} must be refused`);
 }
@@ -75,5 +85,61 @@ assert.equal(botAllowed("DELETE", "/clients/c1/comments/p1/c1"), false, "delete 
 assert.equal(botAllowed("POST", "/clients/c1/comments/p1/c1/hide"), false, "hide needs the operator");
 assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/sop"), false, "editing an SOP stays human");
 assert.equal(botAllowed("PUT", "/clients/cms0qdz5t/trello-labels"), false, "label routing stays human");
+
+// Full access comes from the BotIdentity flag. With no row, Polly defaults to
+// the contracts POLLY (full access) and every other bot to none.
+assert.equal(defaultBotIdentity("polly").fullAccess, true);
+assert.equal(defaultBotIdentity("Polly").fullAccess, true);
+assert.equal(defaultBotIdentity("nova").fullAccess, false);
+assert.deepEqual(defaultBotIdentity("nova").scopes, []);
+assert.equal(defaultBotIdentity(undefined).fullAccess, false);
+
+const rows: Record<string, { fullAccess: boolean; scopes: string[] }> = {
+  "agencyA/nova": { fullAccess: false, scopes: ["templates:read", "bogus"] },
+  "agencyB/polly": { fullAccess: false, scopes: [] },
+};
+let dbDown = false;
+Object.defineProperty(getPrisma(), "botIdentity", {
+  value: {
+    findUnique: async ({ where }: { where: { agencyId_name: { agencyId: string; name: string } } }) => {
+      if (dbDown) throw new Error("relation BotIdentity does not exist");
+      const k = where.agencyId_name;
+      return rows[`${k.agencyId}/${k.name}`] ?? null;
+    },
+  },
+});
+// No row: defaults.
+assert.equal((await resolveBotIdentity("agencyA", "polly")).fullAccess, true);
+assert.equal((await resolveBotIdentity("agencyA", "deploy")).fullAccess, false);
+// A row decides, and unknown scopes are dropped.
+assert.deepEqual(await resolveBotIdentity("agencyA", "Nova"), { name: "nova", fullAccess: false, scopes: ["templates:read"] });
+assert.equal((await resolveBotIdentity("agencyB", "polly")).fullAccess, false, "the flag can switch Polly off");
+// Table missing (migration not deployed): defaults, never a 500.
+dbDown = true;
+assert.equal((await resolveBotIdentity("agencyA", "polly")).fullAccess, true);
+assert.equal((await resolveBotIdentity("agencyA", "nova")).fullAccess, false);
+dbDown = false;
+
+// Through the real hook: Polly reaches an operator-only route, other bots
+// keep the whitelist exactly.
+const { default: Fastify } = await import("fastify");
+const { default: jwt } = await import("@fastify/jwt");
+const { requireAuth } = await import("../plugins/requireAuth");
+const app = Fastify();
+await app.register(jwt, { secret: "bot-access-check" });
+app.addHook("onRequest", requireAuth);
+app.get("/financials/summary", async () => ({ ok: true }));
+app.get("/clients", async () => ({ ok: true }));
+const call = (url: string, bot?: string) =>
+  app.inject({
+    method: "GET",
+    url,
+    headers: { authorization: `Bearer ${app.jwt.sign({ sub: "s", agencyId: "agencyA", role: "bot", ...(bot ? { bot } : {}) })}` },
+  });
+assert.equal((await call("/financials/summary", "polly")).statusCode, 200, "Polly has full access");
+assert.equal((await call("/financials/summary", "nova")).statusCode, 403, "nova keeps the whitelist");
+assert.equal((await call("/financials/summary")).statusCode, 403, "an unnamed bot keeps the whitelist");
+assert.equal((await call("/clients", "nova")).statusCode, 200, "nova still reads the whitelist");
+await app.close();
 
 console.log("botAccess.check: all checks passed");

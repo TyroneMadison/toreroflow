@@ -14,6 +14,7 @@ import {
   Prisma,
   persistProviderPosts,
   reschedule,
+  uploadPriority,
   scheduleCron,
   upsertExternalVideo,
   work,
@@ -1062,10 +1063,12 @@ void (async () => {
   try {
     const coming = await prisma.postTarget.findMany({
       where: { status: "scheduled", scheduledAt: { gt: new Date() } },
-      select: { id: true, scheduledAt: true },
+      select: { id: true, scheduledAt: true, post: { select: { queuePriority: true, queuePosition: true } } },
     });
     for (const target of coming) {
-      await reschedule("publish", { targetId: target.id }, target.id, target.scheduledAt!);
+      // Same time, and the post's upload order (W3) so a re-created job keeps its rush.
+      const priority = uploadPriority(target.post.queuePriority, target.post.queuePosition);
+      await reschedule("publish", { targetId: target.id }, target.id, target.scheduledAt!, priority);
     }
     if (coming.length) console.log(`[worker] re-queued ${coming.length} scheduled posts`);
   } catch (err) {

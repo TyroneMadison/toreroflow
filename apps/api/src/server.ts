@@ -32,12 +32,17 @@ import { financialsRoutes } from "./routes/financials";
 import { deployRoutes } from "./routes/deploy";
 import { oauthRoutes } from "./routes/oauth";
 import { trelloRoutes } from "./routes/trello";
+import { preflightRoutes } from "./routes/preflight";
+import { queueRoutes } from "./routes/queue";
+import { rollupRoutes } from "./routes/rollup";
+import { templateRoutes } from "./routes/templates";
+import { draftRoutes } from "./routes/drafts";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
   interface FastifyJWT {
     /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
-    /** `bot` names a bot token (e.g. "polly"); full-access bots are listed in BOT_FULL_ACCESS. */
+    /** `bot` names a bot token (e.g. "polly"); its BotIdentity (auth/botAccess.ts) decides full access. */
     payload: { sub: string; agencyId: string; role?: "bot"; bot?: string };
     user: { sub: string; agencyId: string; role?: "bot"; bot?: string };
   }
@@ -174,6 +179,11 @@ export async function buildServer(
   await app.register(financialsRoutes);
   await app.register(deployRoutes);
   await app.register(oauthRoutes);
+  await app.register(preflightRoutes);
+  await app.register(queueRoutes);
+  await app.register(rollupRoutes);
+  await app.register(templateRoutes);
+  await app.register(draftRoutes);
 
   return app;
 }

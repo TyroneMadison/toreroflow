@@ -13,6 +13,9 @@
  * route is closed to bots until someone decides otherwise here.
  */
 
+import { getPrisma } from "@toreroflow/db";
+import { POLLY, ScopeSchema, type BotIdentity } from "@toreroflow/contracts";
+
 interface Rule {
   method: string;
   /** Regex over the path (no query string). Anchored on both ends. */
@@ -59,26 +62,38 @@ const ALLOW: Rule[] = [
 ];
 
 /**
- * Bots named here get the operator's full access: read, write, edit, publish,
- * comments included. Per bot, never "every bot": Tyrone opened the whole app
- * to Polly (Oct 26, 2026) and to nobody else, so a token minted without her
- * name, or for any other bot, stays on the whitelist below. BOT_FULL_ACCESS
- * overrides the list (comma separated; empty turns it off).
+ * A bot's identity: its BotIdentity row when the agency has one, else the
+ * default. Polly's default is the contracts POLLY (fullAccess: read, write,
+ * edit, publish, comments included; Tyrone opened the whole app to her on
+ * Oct 26, 2026). Every other bot defaults to fullAccess false and no scopes,
+ * so it stays on the whitelist below exactly as before. A missing table
+ * (migration not deployed yet) or a database error falls back to the default.
  */
-export function fullAccessBots(envs: Record<string, string | undefined> = process.env): Set<string> {
-  return new Set(
-    (envs.BOT_FULL_ACCESS ?? "polly")
-      .split(",")
-      .map((b) => b.trim().toLowerCase())
-      .filter(Boolean),
-  );
+export function defaultBotIdentity(name: string | null | undefined): BotIdentity {
+  const n = (name ?? "").trim().toLowerCase();
+  return n === POLLY.name ? POLLY : { name: n, fullAccess: false, scopes: [] };
 }
 
-export function isFullAccessBot(
-  bot: string | null | undefined,
-  envs: Record<string, string | undefined> = process.env,
-): boolean {
-  return Boolean(bot) && fullAccessBots(envs).has(bot!.toLowerCase());
+export async function resolveBotIdentity(
+  agencyId: string,
+  name: string | null | undefined,
+): Promise<BotIdentity> {
+  const fallback = defaultBotIdentity(name);
+  if (!fallback.name) return fallback;
+  try {
+    const row = await getPrisma().botIdentity.findUnique({
+      where: { agencyId_name: { agencyId, name: fallback.name } },
+      select: { fullAccess: true, scopes: true },
+    });
+    if (!row) return fallback;
+    const scopes = row.scopes.flatMap((s) => {
+      const parsed = ScopeSchema.safeParse(s);
+      return parsed.success ? [parsed.data] : [];
+    });
+    return { name: fallback.name, fullAccess: row.fullAccess, scopes };
+  } catch {
+    return fallback;
+  }
 }
 
 /**
@@ -90,6 +105,17 @@ ALLOW.push(
   { method: "GET", path: new RegExp(`^/clients/${ID}/comments$`) },
   { method: "GET", path: new RegExp(`^/clients/${ID}/comments/${ID}$`) },
   { method: "GET", path: new RegExp(`^/clients/${ID}/instagram-limit$`) },
+);
+
+/**
+ * Templates (W5): reaching the route is open, the route then checks the
+ * bot's templates:read or templates:apply scope, which no bot has unless its
+ * BotIdentity grants it. Create, edit and delete are not listed: full access only.
+ */
+ALLOW.push(
+  { method: "GET", path: new RegExp(`^/templates$`) },
+  { method: "GET", path: new RegExp(`^/templates/cadence$`) },
+  { method: "POST", path: new RegExp(`^/templates/${ID}/apply$`) },
 );
 
 /** True when a bot-role token may make this request. */
