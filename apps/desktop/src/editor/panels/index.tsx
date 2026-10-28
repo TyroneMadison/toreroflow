@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useKit } from "../brandKit";
 import { useEditor } from "../StudioEditor";
 import UniversalPanel from "./UniversalPanel";
 import ClipPanel from "./ClipPanel";
@@ -226,6 +227,8 @@ export function ColorField({
   onCommit: (hex: string) => void;
 }) {
   const [c, setC] = useState(() => ({ ...hexToHsl(value), hex: value.toUpperCase() }));
+  // The brand kit's colors come first, so the brand is one tap away everywhere.
+  const brand = (useKit()?.colors ?? []).map((x) => x.toUpperCase());
   useEffect(() => {
     setC((cur) => (cur.hex === value.toUpperCase() ? cur : { ...hexToHsl(value), hex: value.toUpperCase() }));
   }, [value]);
@@ -245,12 +248,13 @@ export function ColorField({
   return (
     <>
       <div className="pnl-swatches">
-        {SWATCHES.map((sw) => (
+        {[...new Set([...brand, ...SWATCHES])].map((sw) => (
           <button
             key={sw}
             className={`pnl-swatch${c.hex === sw ? " on" : ""}`}
             style={{ background: sw }}
-            title={sw}
+            title={brand.includes(sw) ? `${sw}, brand kit` : sw}
+            aria-label={brand.includes(sw) ? `${sw}, brand kit` : sw}
             onClick={() => onCommit(sw)}
           />
         ))}

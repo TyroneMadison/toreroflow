@@ -25,6 +25,7 @@ import AutoCutStep from "./steps/AutoCutStep";
 import EditStep from "./steps/EditStep";
 import CaptionStep from "./steps/CaptionStep";
 import ExportStep from "./steps/ExportStep";
+import { BrandKitProvider, useBrandKit } from "./brandKit";
 import "./StudioEditor.css";
 
 /* ---- API shapes ---- */
@@ -180,6 +181,7 @@ function LoadedEditor({
 }) {
   const [project, setProject] = useState(initial);
   const [assets, setAssets] = useState(initial.assets);
+  const kit = useBrandKit(initial.clientId);
   const { doc, update, undo, redo, canUndo, canRedo, saveState } = useEditDoc(
     initial.id,
     initial.doc ??
@@ -505,6 +507,7 @@ function LoadedEditor({
 
   return (
     <EditorContext.Provider value={ctx}>
+      <BrandKitProvider value={kit}>
       <div className="stu">
         <div className="stu-top">
           <button className="iconbtn" title="Back to projects" onClick={onClose}>
@@ -594,6 +597,7 @@ function LoadedEditor({
           onClose={() => setShowKeys(false)}
         />
       )}
+      </BrandKitProvider>
     </EditorContext.Provider>
   );
 }

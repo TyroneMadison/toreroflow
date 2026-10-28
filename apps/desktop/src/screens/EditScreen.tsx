@@ -8,13 +8,16 @@ import AnalyzeHome from "../editor/analyze/AnalyzeHome";
 import AnalysisDetail from "../editor/analyze/AnalysisDetail";
 import IdeasHome from "../editor/ideas/IdeasHome";
 import { Empty } from "../components/states";
+import { AssetsArea, BrandKitArea, RepurposeCard } from "./StudioIdeas";
 
-type EditArea = "studio" | "analyze" | "ideas";
+type EditArea = "studio" | "analyze" | "ideas" | "kit" | "assets";
 
 const AREAS: { id: EditArea; label: string }[] = [
   { id: "studio", label: "Edit" },
   { id: "analyze", label: "Analyze" },
   { id: "ideas", label: "Ideas" },
+  { id: "kit", label: "Brand kit" },
+  { id: "assets", label: "Assets" },
 ];
 
 export default function EditScreen() {
@@ -78,8 +81,15 @@ export default function EditScreen() {
               onClose={() => setOpenProjectId(null)}
             />
           ) : (
-            <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+            <>
+              <RepurposeCard brandId={selectedClient.id} />
+              <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+            </>
           )
+        ) : area === "kit" ? (
+          <BrandKitArea brandId={selectedClient.id} brandName={selectedClient.name} />
+        ) : area === "assets" ? (
+          <AssetsArea />
         ) : area === "analyze" ? (
           openAnalysisId ? (
             <AnalysisDetail

@@ -26,10 +26,11 @@ eq(automationAttributes(false), {}, "off sets neither");
 
 // Every screen sits in exactly one section, with a unique slug.
 const pages = SECTIONS.flatMap((s) => s.pages);
-eq(new Set(pages.map((p) => p.id)).size, 14, "all fourteen screens are mapped once");
+eq(new Set(pages.map((p) => p.id)).size, 19, "all nineteen screens are mapped once");
 eq(new Set(pages.map((p) => p.slug)).size, pages.length, "slugs are unique");
 eq(sectionOf("calendar").id, "create", "calendar lives under Create");
 eq(pageOf("overview").slug, "account-overview", "Account Overview does not collide with the section");
 eq(sectionOf("comments").id, "measure", "the comments inbox lives under Measure");
+eq([sectionOf("approvals").id, sectionOf("requests").id, sectionOf("failed").id, sectionOf("insights").id, sectionOf("monthly").id], ["create", "create", "overview", "measure", "measure"], "the ideas pages sit in their sections");
 
 console.log("automation: all checks passed");

@@ -14,6 +14,8 @@ import {
   type Word,
 } from "@toreroflow/core";
 import { useEditor } from "../StudioEditor";
+import { useKit } from "../brandKit";
+import { brandCaptionPatch } from "../../lib/ideas";
 import { Chip, ColorField, HexField, SliderRow } from "../panels";
 import { ALIGN_PATHS } from "../panels/TextPanel";
 import "./CaptionStep.css";
@@ -112,6 +114,7 @@ function fmt(t: number): string {
 /** Step 3: Caption Style. Templates, animation, the style grid, chunk breaks. */
 export default function CaptionStep() {
   const { project, doc, update, assets } = useEditor();
+  const kit = useKit();
   const [open, setOpen] = useState<string | null>("templates");
   const s = doc.captions.style;
 
@@ -189,6 +192,9 @@ export default function CaptionStep() {
     }));
 
   const fontKnown = FONTS.includes(s.font);
+  const brandFonts = new Set(kit?.fonts.map((f) => f.family) ?? []);
+  const kitPatch = kit ? brandCaptionPatch(kit, FONTS) : {};
+  const kitApplied = Object.entries(kitPatch).every(([k, v]) => (s as unknown as Record<string, unknown>)[k] === v);
 
   return (
     <div className="cst">
@@ -255,6 +261,21 @@ export default function CaptionStep() {
       </Section>
 
       <Section id="style" title="Caption style" open={open} onToggle={setOpen}>
+        {kit && Object.keys(kitPatch).length > 0 && (
+          <div className="cst-kit">
+            <button type="button" className="btn ghost" disabled={kitApplied} onClick={() => patchStyle(kitPatch)}>
+              {kitApplied ? "Brand kit applied" : "Apply brand kit"}
+            </button>
+            <span className="sub">
+              {[kitPatch.font && `font ${kitPatch.font}`, kitPatch.accentColor && `highlight ${kitPatch.accentColor}`].filter(Boolean).join(", ")}
+            </span>
+          </div>
+        )}
+        {kit && kit.fonts.some((f) => !FONTS.includes(f.family)) && (
+          <div className="sub cst-kitnote">
+            {kit.fonts.filter((f) => !FONTS.includes(f.family)).map((f) => f.family).join(", ")} is not in the export yet, so captions keep a built-in font.
+          </div>
+        )}
         <div className="pnl-grid12">
           <div className="glass-sm pnl-card">
             <b>Font</b>
@@ -268,7 +289,7 @@ export default function CaptionStep() {
                 {!fontKnown && <option value={s.font}>{s.font}</option>}
                 {FONTS.map((f) => (
                   <option key={f} value={f}>
-                    {f}
+                    {brandFonts.has(f) ? `${f} (brand kit)` : f}
                   </option>
                 ))}
               </select>

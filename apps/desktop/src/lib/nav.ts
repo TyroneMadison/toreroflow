@@ -18,6 +18,11 @@ export type ScreenId =
   | "workflows"
   | "ready"
   | "schedule"
+  | "approvals"
+  | "requests"
+  | "failed"
+  | "insights"
+  | "monthly"
   | "settings";
 
 export type SectionId = "overview" | "create" | "measure" | "settings";
@@ -48,6 +53,7 @@ export const SECTIONS: SectionDef[] = [
       { id: "dashboard", label: "Dashboard", slug: "dashboard" },
       { id: "financials", label: "Financials", slug: "financials" },
       { id: "overview", label: "Account Overview", slug: "account-overview" },
+      { id: "failed", label: "Failed posts", slug: "failed-posts" },
     ],
   },
   {
@@ -57,11 +63,13 @@ export const SECTIONS: SectionDef[] = [
     pages: [
       { id: "upload", label: "Upload & Schedule", slug: "upload" },
       { id: "ready", label: "Ready queue", slug: "ready" },
+      { id: "approvals", label: "Approvals", slug: "approvals" },
       { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
       { id: "edit", label: "Studio", slug: "edit" },
       { id: "calendar", label: "Calendar", slug: "calendar" },
       { id: "carousels", label: "Carousels", slug: "carousels" },
       { id: "workflows", label: "Workflows", slug: "workflows" },
+      { id: "requests", label: "Requests", slug: "requests" },
     ],
   },
   {
@@ -71,6 +79,8 @@ export const SECTIONS: SectionDef[] = [
     pages: [
       { id: "analytics", label: "Analytics", slug: "analytics" },
       { id: "reports", label: "Reports", slug: "reports" },
+      { id: "monthly", label: "Monthly report", slug: "monthly-report" },
+      { id: "insights", label: "Insights", slug: "insights" },
       { id: "comments", label: "Comments", slug: "comments" },
     ],
   },
