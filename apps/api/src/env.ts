@@ -159,6 +159,10 @@ export interface Env {
   IS_PRODUCTION: boolean;
   /** The commit this server is running, for the deploy card. Empty off a server. */
   GIT_COMMIT: string;
+  /** Sunra multimodal API key. Empty keeps the observed model list and generate answers 503. */
+  SUNRA_API_KEY: string;
+  /** Empty means https://api.sunra.ai. */
+  SUNRA_API_BASE: string;
 }
 
 export const env: Env = {
@@ -192,4 +196,6 @@ export const env: Env = {
   TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   IS_PRODUCTION: isProduction,
   GIT_COMMIT: process.env.GIT_COMMIT ?? "",
+  SUNRA_API_KEY: process.env.SUNRA_API_KEY ?? "",
+  SUNRA_API_BASE: process.env.SUNRA_API_BASE ?? "",
 };

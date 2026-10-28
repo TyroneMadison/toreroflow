@@ -30,15 +30,15 @@ import { readSetting, writeSetting } from "../ideas/settings";
  * not expired, and `approved: true` sent for that quote. A quote is used at
  * most once, claimed atomically so a double tap cannot pay twice.
  *
- * There is no Sunra HTTP client in this codebase yet, so the generator is
- * unset and generate answers 503 even when approved (GET /sunra/settings says
- * connected: false). setSunraGenerator wires one in; the checks use a fake and
- * nothing here calls Sunra.
+ * With SUNRA_API_KEY set, server.ts wires the REST client in
+ * ideas/sunraClient.ts through setSunraCatalog and setSunraGenerator. Unset,
+ * the generator stays null and generate answers 503 even when approved
+ * (GET /sunra/settings says connected: false).
  *
- * Models come from GET /carousels/sunra/models: Sunra's list_models (image
- * models only) priced with estimate_cost, cached for MODELS_TTL_MS.
- * setSunraCatalog wires those two calls in; until then the list is the two
- * observed nano-banana prices. Quote and generate only take a modelId on it.
+ * Models come from GET /carousels/sunra/models: the catalog's listModels
+ * (image models only) priced with estimateCost, cached for MODELS_TTL_MS.
+ * Without a catalog the list is the two observed nano-banana prices. Quote
+ * and generate only take a modelId on it.
  */
 
 export const SUNRA_SETTING = "sunra";
