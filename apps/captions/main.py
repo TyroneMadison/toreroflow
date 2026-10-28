@@ -29,6 +29,7 @@ def get_model():
             os.environ.get("WHISPER_MODEL", "small"),
             device=os.environ.get("WHISPER_DEVICE", "cpu"),
             compute_type=os.environ.get("WHISPER_COMPUTE", "int8"),
+            cpu_threads=int(os.environ.get("WHISPER_THREADS", "0")),
         )
     return _model
 
