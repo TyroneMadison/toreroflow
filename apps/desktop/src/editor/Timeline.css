@@ -80,3 +80,5 @@
 .tl-transport{display:flex;align-items:center;gap:10px;align-self:center;padding:8px 14px;border-radius:18px;background:rgba(0,0,0,.55);border:1px solid var(--brd-soft);box-shadow:var(--lg-rim)}
 .tl-play{background:var(--grad);border:none}
 .tl-play svg{stroke:#000}
+.tl-chip-layout{border-left:3px solid #FF6F61;font-size:10.5px;cursor:pointer}
+.tl-chip-layout.manual{border-left-color:#FFC857}

@@ -21,3 +21,4 @@
 
 .stu-body{display:flex;gap:18px;align-items:flex-start;min-width:0}
 .stu-stepbody{flex:1;min-width:0}
+.stu-aspect{font-variant-numeric:tabular-nums;cursor:pointer}

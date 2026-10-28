@@ -1,5 +1,5 @@
 /**
- * EditDoc v1, the Studio edit document. Pure data + immutable operations,
+ * EditDoc v2, the Studio edit document (v1 docs load through migrateDoc). Pure data + immutable operations,
  * dependency-free and side-effect-free, compiled for node and browser both.
  *
  * cuts are SOURCE-time ranges per asset. Overlays (texts, broll, graphics,
@@ -9,6 +9,74 @@
 
 export interface EditAssetRef {
   assetId: string;
+}
+
+/**
+ * One main-track segment. Several may come from one asset, in any order, so a
+ * hook line from minute 9 can open the clip. srcOut past the asset's length is
+ * clamped to it, which is how a migrated v1 clip ("the whole file") is stored.
+ */
+export interface EditClip {
+  id: string;
+  assetId: string;
+  srcIn: number;
+  srcOut: number;
+}
+
+/** "Until the end of the source"; edlFromDoc clamps it to the real duration. */
+export const SRC_END = 1e9;
+
+export type Aspect = "9:16" | "1:1" | "4:5" | "16:9";
+export const ASPECTS: Aspect[] = ["9:16", "1:1", "4:5", "16:9"];
+
+export type LayoutKind = "fill" | "fit" | "split" | "screenshare";
+
+export interface ClipLayout {
+  kind: "auto" | LayoutKind;
+  fitBg: "blur" | "black" | "color";
+  bgColor?: string;
+}
+
+/**
+ * A crop window on the SOURCE frame. x/y are the window center as offsets
+ * from the frame center, w/h its size, all as fractions of the source width
+ * and height (the center-relative convention TextStyle.x/y uses).
+ */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ReframeKey {
+  t: number;
+  x: number;
+  y: number;
+  zoom: number;
+  ease: "hold" | "linear";
+}
+
+export interface Shot {
+  start: number;
+  end: number;
+  layout: LayoutKind;
+  crops: Rect[];
+  auto: true;
+  keys?: ReframeKey[];
+}
+
+export interface ShotAdjust {
+  start: number;
+  end: number;
+  layout?: LayoutKind;
+  crops?: Rect[];
+}
+
+export interface HookItem {
+  text: string;
+  dur: number;
+  style: TextStyle;
 }
 
 export interface CutRange {
@@ -143,6 +211,9 @@ export interface ZoomItem {
   at: number;
   kind: "pushin" | "punchin" | "quickzoom";
   size: "s" | "m" | "l";
+  /** v2: explicit scale curve (sec from item start); presets expand to one. */
+  curve?: { t: number; scale: number }[];
+  anchor?: "face" | "center";
 }
 
 export interface ColorAdjust {
@@ -181,15 +252,23 @@ export interface CaptionBreak {
   text: string;
 }
 
+export interface CaptionHighlight {
+  /** Per asset, word index to level (1 accent, 2 strong). */
+  keywords: Record<string, Record<number, 1 | 2>>;
+  emojis: Record<string, Record<number, string>>;
+}
+
 export interface CaptionSettings {
   enabled: boolean;
   template: string;
   style: CaptionStyle;
   breaks: CaptionBreak[];
+  highlight?: CaptionHighlight;
 }
 
 export interface ExportSettings {
   name: string;
+  /** The SHORT edge of the output; the aspect gives the long one. */
   resolution: 720 | 1080 | 1440;
   fps: 30 | 60;
   format: "mp4" | "mov";
@@ -206,9 +285,25 @@ export const BITRATE_PRESETS: Record<
   1440: { lower: 16000, recommended: 24000, higher: 34000 },
 };
 
-export interface EditDoc {
+/** The stored v1 shape, only ever read by migrateDoc. */
+export type EditDocV1 = Omit<EditDoc, "v" | "clips" | "output" | "layout" | "shots" | "shotAdjust"> & {
   v: 1;
   clips: EditAssetRef[];
+};
+
+export interface EditDoc {
+  v: 2;
+  clips: EditClip[];
+  output: { aspect: Aspect };
+  /** Keyed by clip id. Missing or "auto" keeps the v1 framing. */
+  layout: Record<string, ClipLayout>;
+  /** Auto shots per asset, source time (written by auto reframe, Phase 3). */
+  shots: Record<string, Shot[]>;
+  /** Manual overrides per asset, source time; they win inside their span. */
+  shotAdjust: Record<string, ShotAdjust[]>;
+  /** Storage key of each asset's face-track JSON. */
+  faces?: Record<string, string>;
+  hook?: HookItem;
   cuts: Record<string, CutRange[]>;
   splits: Record<string, number[]>;
   wordEdits: Record<string, Record<number, string>>;
@@ -443,10 +538,149 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** A clip id unused in the doc: the asset id first (what v1 docs key by), then asset~2, asset~3... */
+export function newClipId(doc: Pick<EditDoc, "clips">, assetId: string): string {
+  const taken = new Set(doc.clips.map((c) => c.id));
+  if (!taken.has(assetId)) return assetId;
+  let k = 2;
+  while (taken.has(`${assetId}~${k}`)) k++;
+  return `${assetId}~${k}`;
+}
+
+/** Appends a whole-file segment of an asset to the main track. */
+export function appendClip(doc: EditDoc, assetId: string, srcIn = 0, srcOut = SRC_END): EditDoc {
+  return { ...doc, clips: [...doc.clips, { id: newClipId(doc, assetId), assetId, srcIn, srcOut }] };
+}
+
+/**
+ * Splits one main-track segment in two at a source time. Both halves keep
+ * the layout entry. Times outside the segment return the doc unchanged.
+ */
+export function splitClip(doc: EditDoc, clipId: string, srcTime: number, duration?: number): EditDoc {
+  const i = doc.clips.findIndex((c) => c.id === clipId);
+  if (i < 0) return doc;
+  const c = doc.clips[i];
+  const end = duration === undefined ? c.srcOut : Math.min(c.srcOut, duration);
+  if (!(srcTime > c.srcIn + 0.05 && srcTime < end - 0.05)) return doc;
+  const id = newClipId(doc, c.assetId);
+  const clips = [...doc.clips];
+  clips.splice(i, 1, { ...c, srcOut: srcTime }, { id, assetId: c.assetId, srcIn: srcTime, srcOut: c.srcOut });
+  const layout = doc.layout[clipId] ? { ...doc.layout, [id]: { ...doc.layout[clipId] } } : doc.layout;
+  return { ...doc, clips, layout };
+}
+
+/** Moves a segment to a new index; same reference when nothing moves. */
+export function moveClip(doc: EditDoc, clipId: string, toIndex: number): EditDoc {
+  const from = doc.clips.findIndex((c) => c.id === clipId);
+  const to = Math.max(0, Math.min(doc.clips.length - 1, toIndex));
+  if (from < 0 || from === to) return doc;
+  const clips = [...doc.clips];
+  const [c] = clips.splice(from, 1);
+  clips.splice(to, 0, c);
+  return { ...doc, clips };
+}
+
+/** Removes one segment (not the asset's other segments) and its layout. */
+export function removeClip(doc: EditDoc, clipId: string): EditDoc {
+  if (!doc.clips.some((c) => c.id === clipId)) return doc;
+  const layout = { ...doc.layout };
+  delete layout[clipId];
+  return { ...doc, clips: doc.clips.filter((c) => c.id !== clipId), layout };
+}
+
+export const DEFAULT_LAYOUT: ClipLayout = { kind: "auto", fitBg: "blur" };
+
+/** Sets part of one clip's layout; same reference when nothing changes. */
+export function setClipLayout(doc: EditDoc, clipId: string, patch: Partial<ClipLayout>): EditDoc {
+  const cur = doc.layout[clipId] ?? DEFAULT_LAYOUT;
+  const next = { ...cur, ...patch };
+  if (JSON.stringify(next) === JSON.stringify(cur) && doc.layout[clipId]) return doc;
+  return { ...doc, layout: { ...doc.layout, [clipId]: next } };
+}
+
+export function setAspect(doc: EditDoc, aspect: Aspect): EditDoc {
+  if (doc.output.aspect === aspect) return doc;
+  return { ...doc, output: { aspect } };
+}
+
+/**
+ * Writes a manual shot override for [start, end) on an asset. Existing
+ * overrides overlapping the span are trimmed around it so manual entries
+ * never overlap; the list stays sorted by start.
+ */
+export function setShotAdjust(doc: EditDoc, assetId: string, adj: ShotAdjust): EditDoc {
+  if (!(adj.end > adj.start)) return doc;
+  const list: ShotAdjust[] = [];
+  for (const a of doc.shotAdjust[assetId] ?? []) {
+    if (a.end <= adj.start || a.start >= adj.end) {
+      list.push(a);
+      continue;
+    }
+    if (a.start < adj.start) list.push({ ...a, end: adj.start });
+    if (a.end > adj.end) list.push({ ...a, start: adj.end });
+  }
+  list.push(clone(adj));
+  list.sort((a, b) => a.start - b.start);
+  return { ...doc, shotAdjust: { ...doc.shotAdjust, [assetId]: list } };
+}
+
+/** Drops every manual override overlapping the span. */
+export function clearShotAdjust(doc: EditDoc, assetId: string, start: number, end: number): EditDoc {
+  const cur = doc.shotAdjust[assetId] ?? [];
+  const list = cur.filter((a) => a.end <= start || a.start >= end);
+  if (list.length === cur.length) return doc;
+  const shotAdjust = { ...doc.shotAdjust };
+  if (list.length) shotAdjust[assetId] = list;
+  else delete shotAdjust[assetId];
+  return { ...doc, shotAdjust };
+}
+
+/**
+ * Any stored doc (v1 or v2) to v2. Pure, idempotent, and a v2 input comes
+ * back as the same reference so loading never pushes an undo step.
+ * v1 clips become whole-file segments whose id is the asset id, so clipFx
+ * and every other assetId-keyed map keep working, and old projects frame
+ * and render exactly as before (layout "auto" = the v1 letterbox).
+ */
+export function migrateDoc(raw: EditDoc | EditDocV1 | null | undefined): EditDoc {
+  if (!raw) return emptyDoc([]);
+  if (raw.v === 2) return raw;
+  const { clips, ...rest } = raw as EditDocV1;
+  const seen = new Set<string>();
+  const out: EditClip[] = [];
+  for (const c of clips ?? []) {
+    // v1 had no segments, so a repeated asset id was a duplicate entry.
+    const id = seen.has(c.assetId) ? newClipId({ clips: out }, c.assetId) : c.assetId;
+    seen.add(id);
+    out.push({ id, assetId: c.assetId, srcIn: 0, srcOut: SRC_END });
+  }
+  return {
+    ...rest,
+    v: 2,
+    clips: out,
+    output: { aspect: "9:16" },
+    layout: {},
+    shots: {},
+    shotAdjust: {},
+  };
+}
+
+/** Output pixel size for an aspect and a short edge, both dimensions even. */
+export function outputSize(aspect: Aspect, shortEdge: number): { width: number; height: number } {
+  const [aw, ah] = aspect.split(":").map(Number);
+  const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
+  if (aw <= ah) return { width: even(shortEdge), height: even((shortEdge * ah) / aw) };
+  return { width: even((shortEdge * aw) / ah), height: even(shortEdge) };
+}
+
 export function emptyDoc(clipAssetIds: string[]): EditDoc {
   return {
-    v: 1,
-    clips: clipAssetIds.map((assetId) => ({ assetId })),
+    v: 2,
+    clips: clipAssetIds.map((assetId) => ({ id: assetId, assetId, srcIn: 0, srcOut: SRC_END })),
+    output: { aspect: "9:16" },
+    layout: {},
+    shots: {},
+    shotAdjust: {},
     cuts: {},
     splits: {},
     wordEdits: {},

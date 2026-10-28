@@ -4,7 +4,7 @@
  * __golden__/renderEdit.v1.json; new render features must only add filters
  * when a doc uses them, so these plans stay byte-identical.
  */
-import { DEFAULT_CLIP_FX, addCut, edlFromDoc, emptyDoc, type EditDoc } from "@toreroflow/core";
+import { DEFAULT_CLIP_FX, addCut, edlFromDoc, emptyDoc, migrateDoc, type EditDoc, type EditDocV1 } from "@toreroflow/core";
 
 export function goldenCases(): { name: string; input: unknown }[] {
   const out = { path: "/out/r.mp4", width: 1080, height: 1920, fps: 30, format: "mp4" as const, videoBitrateK: 8000 };
@@ -14,7 +14,25 @@ export function goldenCases(): { name: string; input: unknown }[] {
     { id: "r", kind: "broll", path: "/s/r.mp4", durationSec: 4, width: 1920, height: 1080 },
     { id: "m", kind: "audio", path: "/s/m.mp3", durationSec: 30, width: 0, height: 0 },
   ];
-  let d: EditDoc = emptyDoc(["a", "b"]);
+  // A literal v1 doc (the shape saved before EditDoc v2), loaded the way the
+  // worker loads it: through migrateDoc.
+  const base = emptyDoc([]);
+  const v1 = {
+    v: 1,
+    clips: [{ assetId: "a" }, { assetId: "b" }],
+    cuts: {},
+    splits: {},
+    wordEdits: {},
+    broll: [],
+    graphics: [],
+    zooms: [],
+    sfx: [],
+    audio: [],
+    clipFx: {},
+    color: base.color,
+    captions: base.captions,
+  } as unknown as EditDocV1;
+  let d: EditDoc = migrateDoc(v1);
   d = addCut(d, "a", { start: 2, end: 3 });
   const plain = { doc: d, edl: edlFromDoc(d, { a: 10, b: 6 }), assets, assPath: null, out };
   const rich: EditDoc = {

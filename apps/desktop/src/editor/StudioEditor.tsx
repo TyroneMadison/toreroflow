@@ -13,6 +13,9 @@ import {
   emptyDoc,
   locate,
   splitAt,
+  ASPECTS,
+  setAspect,
+  type Aspect,
   type AudioItem,
   type EditDoc,
 } from "@toreroflow/core";
@@ -568,6 +571,18 @@ function LoadedEditor({
             <span className={`mini stu-savestate${saveState === "saved" ? " ok" : ""}`}>
               {saveState === "saving" ? "Saving..." : "Saved"}
             </span>
+            <select
+              className="btn ghost stu-aspect"
+              title="Output aspect; layouts reframe to it"
+              value={doc.output.aspect}
+              onChange={(e) => update((d) => setAspect(d, e.target.value as Aspect))}
+            >
+              {ASPECTS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
             <button
               className="btn ghost"
               title="Keyboard shortcuts, and where to change them"

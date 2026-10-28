@@ -10,7 +10,9 @@ import {
   outputDuration,
   sentencesFromWords,
   toOutputTime,
+  migrateDoc,
   type EditDoc,
+  type EditDocV1,
 } from "@toreroflow/core";
 import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
@@ -543,7 +545,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       include: { assets: true },
     });
     if (!project) return reply.status(404).send({ error: "project not found" });
-    const doc = project.doc as unknown as EditDoc | null;
+    const doc = project.doc ? migrateDoc(project.doc as unknown as EditDoc | EditDocV1) : null;
     if (!doc) {
       return reply.status(400).send({
         error: "nothing to shorten",
@@ -570,7 +572,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     // edits are applied by index so the model reads what the captions say.
     const lines: string[] = [];
     const spans: { assetId: string; start: number; end: number }[] = [];
-    for (const { assetId } of doc.clips) {
+    for (const assetId of [...new Set(doc.clips.map((c) => c.assetId))]) {
       const found = clips.find((a) => a.id === assetId);
       const asset = found ? await loadWords(found) : undefined;
       const raw = Array.isArray(asset?.words)
