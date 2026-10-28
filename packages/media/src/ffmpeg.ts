@@ -263,3 +263,36 @@ export async function instagramCopy(
   ]);
   await fs.rename(tmp, output);
 }
+
+/** pts_time values from ffmpeg showinfo lines, rounded to ms, ascending. */
+export function parseSceneCuts(stderr: string, minGap = 0.5): number[] {
+  const out: number[] = [];
+  for (const m of stderr.matchAll(/showinfo[^\n]*\bpts_time:\s*([0-9.]+)/g)) {
+    const t = Math.round(Number(m[1]) * 1000) / 1000;
+    // A flash or a fast pan scores as several cuts in a row; keep the first.
+    if (Number.isFinite(t) && t > 0 && (out.length === 0 || t - out[out.length - 1] >= minGap)) out.push(t);
+  }
+  return out;
+}
+
+/**
+ * Camera-cut times in seconds via ffmpeg's scene score, the shot boundaries
+ * auto reframe works between. Decoded small: the score barely changes with
+ * size and a 4K hour is otherwise minutes of decode.
+ */
+export function sceneCuts(input: string, threshold = 0.3): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      ffmpegBin(),
+      ["-nostdin", "-hide_banner", "-i", input, "-an", "-vf", `scale=320:-2,select='gt(scene,${threshold})',showinfo`, "-f", "null", "-"],
+      { windowsHide: true },
+    );
+    let err = "";
+    child.stderr.on("data", (d: Buffer) => (err += d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(parseSceneCuts(err));
+      else reject(new Error(`ffmpeg scene detection exited ${code}: ${err.slice(-800)}`));
+    });
+  });
+}

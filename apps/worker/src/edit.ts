@@ -2,6 +2,8 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import {
   annotateWords,
+  autoReframe,
+  type FaceTrack,
   assFromDoc,
   BITRATE_PRESETS,
   chunksWithTimes,
@@ -22,6 +24,7 @@ import {
   isBrowserReady,
   probe,
   renderEdit,
+  sceneCuts,
   waveformPeaks,
 } from "@toreroflow/media";
 import { env } from "./env";
@@ -387,5 +390,61 @@ export async function renderProject(editProjectId: string): Promise<void> {
     );
   } catch (error) {
     await fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Where the API and desktop read an auto reframe's progress and result. */
+export function reframeStatusPath(storageKey: string, assetId: string): string {
+  return path.join(env.STORAGE_DIR, path.posix.dirname(storageKey), `${assetId}-reframe.json`);
+}
+
+/**
+ * Auto reframe: scene cuts (ffmpeg) + face samples (captions /faces, local
+ * YuNet, no paid API) -> autoReframe -> shots in a status file.
+ *
+ * ponytail: the result goes to a file the desktop polls and applies as an
+ * undoable doc edit, rather than into EditProject.doc. The desktop autosaves
+ * the whole doc, so a worker write there would be silently overwritten by
+ * the next keystroke. Same file shape as a failure, so one reader handles both.
+ */
+export async function reframeAsset(editAssetId: string): Promise<void> {
+  const asset = await prisma.editAsset.findUnique({
+    where: { id: editAssetId },
+    include: { project: true },
+  });
+  if (!asset || asset.kind !== "clip") return;
+  const statusPath = reframeStatusPath(asset.storageKey, asset.id);
+  const write = (body: object) =>
+    fs.writeFile(statusPath, JSON.stringify({ ...body, at: new Date().toISOString() }));
+
+  try {
+    await write({ status: "running" });
+    const source = path.join(env.STORAGE_DIR, asset.storageKey);
+    const facesKey = `${path.posix.dirname(asset.storageKey)}/${asset.id}-faces.json`;
+    const [cuts, res] = await Promise.all([
+      sceneCuts(source),
+      fetch(`${env.CAPTIONS_URL}/faces`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: source, out: path.join(env.STORAGE_DIR, facesKey) }),
+        signal: AbortSignal.timeout(290_000),
+      }),
+    ]);
+    if (!res.ok) {
+      throw new Error(`captions /faces: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    }
+    const track = JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, facesKey), "utf8")) as FaceTrack;
+    const raw = asset.project.doc as unknown as EditDoc | EditDocV1 | null;
+    // No doc yet means nothing picked an aspect: 9:16 is the editor default.
+    const aspect = raw && (raw.v === 1 || raw.v === 2) ? migrateDoc(raw).output.aspect : "9:16";
+    const { width, height } = outputSize(aspect, 1080);
+    const duration = asset.durationSec ?? (await probe(source)).durationSec;
+    const shots = autoReframe(track, cuts, duration, { W: width, H: height });
+    await write({ status: "ready", shots, facesKey, aspect });
+    console.log(`[worker] reframed ${asset.id}: ${shots.length} shots, ${cuts.length} cuts`);
+  } catch (error) {
+    console.error(`[worker] reframe failed for ${editAssetId}:`, error);
+    await write({ status: "failed", error: error instanceof Error ? error.message : String(error) }).catch(() => {});
+    throw error;
   }
 }

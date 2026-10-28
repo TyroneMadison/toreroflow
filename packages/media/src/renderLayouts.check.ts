@@ -70,6 +70,26 @@ const adj = render("adjust", setShotAdjust(base, "a", { start: 1, end: 2, layout
 ok((adj.fc.match(/concat=n=2/) ?? []).length === 1, "override at 1s splits the clip into two pieces");
 ok(adj.fc.includes("pad=360:640"), "first piece keeps the v1 letterbox");
 
+// Auto shots: a tracked fill pans by expression, a static one is a plain crop.
+const tracked: EditDoc = {
+  ...base,
+  shots: {
+    a: [
+      {
+        start: 0, end: 2, layout: "fill", auto: true, crops: [{ x: -0.2, y: 0, w: 1, h: 1 }],
+        keys: [
+          { t: 0, x: -0.2, y: 0, zoom: 1, ease: "linear" },
+          { t: 2, x: 0.2, y: 0, zoom: 1, ease: "linear" },
+        ],
+      },
+    ],
+  },
+};
+const track = render("tracked", tracked);
+ok(/crop=202:360:x='if\(lt\(\(t\+0\),0\),91,if\(lt\(\(t\+0\),2\),91\+\(256\)/.test(track.fc), `tracked fill pans from the first key to the last: ${track.fc}`);
+const still = render("autoStill", { ...base, shots: { a: [{ start: 0, end: 2, layout: "fill", auto: true, crops: [{ x: 0.2, y: 0, w: 1, h: 1 }] }] } });
+ok(/crop=202:360:347:0,/.test(still.fc), "static auto shot crops at its rect");
+
 // Other aspects render at their own size.
 render("square", setClipLayout(setAspect(base, "1:1"), "a", { kind: "fill", fitBg: "blur" }));
 render("wide", setAspect(base, "16:9"));

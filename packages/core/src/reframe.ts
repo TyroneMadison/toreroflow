@@ -1,8 +1,9 @@
 /**
  * Layout + crop math shared by the preview and the renderer, so what the
  * operator frames in the phone preview is exactly what ffmpeg crops.
- * Pure and dependency-free. Phase 3 adds the auto reframe engine here; this
- * file already resolves its output (doc.shots) alongside manual overrides.
+ * Pure and dependency-free. autoReframe (bottom of the file) turns a face
+ * track + scene cuts into doc.shots; layoutAt resolves those alongside
+ * manual overrides.
  *
  * Rect convention (see editDoc.ts): x/y are the crop center as an offset from
  * the source frame center, w/h the crop size, all fractions of the source
@@ -18,6 +19,8 @@ import {
   type EditDoc,
   type LayoutKind,
   type Rect,
+  type ReframeKey,
+  type Shot,
 } from "./editDoc";
 
 /** Screenshare gives the screen this share of the output height, the face the rest. */
@@ -107,6 +110,12 @@ export interface ResolvedLayout {
   end: number;
   /** True when a manual override decided it. */
   manual: boolean;
+  /**
+   * Tracking keys of a moving-speaker fill shot, fitted like crops. crops[0]
+   * is already the keyed rect at the asked time; the renderer turns these
+   * into a crop x/y expression.
+   */
+  keys?: ReframeKey[];
 }
 
 /**
@@ -163,6 +172,19 @@ export function layoutAt(
         ? shot.crops
         : defaultCrops(kind, W, H, srcA);
   const crops = kind === "fit" ? [] : panels.map((p, i) => fitRect(raw[i], p.w / p.h, srcA));
+  // Keys only drive an auto fill shot nobody has dragged: a manual crop is a
+  // deliberate static frame, and split/screenshare stay static by design.
+  const useKeys = kind === "fill" && !adj?.crops?.length && shot?.layout === "fill" && !!shot.keys?.length;
+  if (useKeys && shot?.keys) {
+    const pA = panels[0].w / panels[0].h;
+    const keys = shot.keys.map((k) => {
+      const r = fitRect({ ...crops[0], x: k.x, y: k.y }, pA, srcA);
+      return { ...k, x: r.x, y: r.y };
+    });
+    const at = keyAt(keys, srcT);
+    crops[0] = fitRect({ ...crops[0], x: at.x, y: at.y }, pA, srcA);
+    return { kind, crops, fitBg: cl.fitBg, bgColor: cl.bgColor, start, end, manual: false, keys };
+  }
   return { kind, crops, fitBg: cl.fitBg, bgColor: cl.bgColor, start, end, manual: !!adj };
 }
 
@@ -219,4 +241,297 @@ export function layoutBoundaries(
     }
   }
   return [...set].sort((x, y) => x - y);
+}
+
+/** The keyed crop center at source time t: held before the first key and after the last. */
+export function keyAt(keys: ReframeKey[], t: number): { x: number; y: number } {
+  if (keys.length === 0) return { x: 0, y: 0 };
+  if (t <= keys[0].t) return { x: keys[0].x, y: keys[0].y };
+  for (let i = 1; i < keys.length; i++) {
+    const b = keys[i];
+    if (t < b.t) {
+      const a = keys[i - 1];
+      if (a.ease === "hold" || b.t <= a.t) return { x: a.x, y: a.y };
+      const f = (t - a.t) / (b.t - a.t);
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    }
+  }
+  const z = keys[keys.length - 1];
+  return { x: z.x, y: z.y };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Auto reframe engine                                                       */
+/* ------------------------------------------------------------------------ */
+
+/** One detected face: top-left box as frame fractions, as /faces writes it. */
+export interface FaceBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  score: number;
+  /** Mouth motion since the previous sample (0..1). */
+  mouth: number;
+}
+
+/** The captions service /faces output. */
+export interface FaceTrack {
+  fps: number;
+  w: number;
+  h: number;
+  frames: { t: number; faces: FaceBox[] }[];
+}
+
+/** Tuning, all in frame fractions or seconds; the spec's numbers are the defaults. */
+export const REFRAME = {
+  /** A face this far (center) from its last sighting is someone else. */
+  linkDist: 0.08,
+  /** A track missing this long ends. */
+  linkGap: 1,
+  /** A track must be in this share of a shot's samples to count there. */
+  presence: 0.3,
+  /** Center std below this across the whole source is "holds still". */
+  fakeStill: 0.006,
+  /** Mouth p90 below this is "never moves its mouth" (YuNet patch delta). */
+  fakeMouth: 0.0015,
+  /** A face is active when its mouth variance is at least this share of the shot's top talker. */
+  activeShare: 0.35,
+  /** Moving speaker: center travel beyond this share of the frame width. */
+  moveSpan: 0.15,
+  deadZone: 0.04,
+  maxSpeed: 0.25,
+  ema: 0.15,
+  /** Face center sits this far from the top of a split crop (headroom). */
+  headroom: 0.4,
+};
+
+interface Track {
+  id: number;
+  t: number[];
+  cx: number[];
+  cy: number[];
+  w: number[];
+  h: number[];
+  score: number[];
+  mouth: number[];
+  fake: boolean;
+}
+
+/** Greedy nearest-center linking, sample to sample. */
+function linkTracks(track: FaceTrack): Track[] {
+  const all: Track[] = [];
+  let open: Track[] = [];
+  for (const fr of track.frames) {
+    open = open.filter((tr) => fr.t - tr.t[tr.t.length - 1] <= REFRAME.linkGap);
+    const taken = new Set<Track>();
+    const faces = [...fr.faces].sort((a, b) => b.score - a.score);
+    for (const f of faces) {
+      const cx = f.x + f.w / 2;
+      const cy = f.y + f.h / 2;
+      let best: Track | undefined;
+      let bd = Infinity;
+      for (const tr of open) {
+        if (taken.has(tr)) continue;
+        const k = tr.t.length - 1;
+        const d = Math.hypot(tr.cx[k] - cx, tr.cy[k] - cy);
+        if (d < bd && d <= Math.max(REFRAME.linkDist, tr.w[k] * 0.6)) {
+          bd = d;
+          best = tr;
+        }
+      }
+      if (!best) {
+        best = { id: all.length, t: [], cx: [], cy: [], w: [], h: [], score: [], mouth: [], fake: false };
+        all.push(best);
+        open.push(best);
+      }
+      taken.add(best);
+      best.t.push(fr.t);
+      best.cx.push(cx);
+      best.cy.push(cy);
+      best.w.push(f.w);
+      best.h.push(f.h);
+      best.score.push(f.score);
+      best.mouth.push(f.mouth);
+    }
+  }
+  return all;
+}
+
+const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
+const std = (a: number[]) => {
+  const m = mean(a);
+  return Math.sqrt(mean(a.map((v) => (v - m) ** 2)));
+};
+const p90 = (a: number[]) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.min(s.length - 1, Math.floor(s.length * 0.9))];
+};
+
+/**
+ * isFake: a face that never moves its mouth and holds still across the whole
+ * source (posters, photos, a face on a screen). Judged per linked track over
+ * every sample it appears in, not per shot, so a listener who talks later in
+ * the source is real.
+ */
+function markFakes(tracks: Track[]): void {
+  for (const tr of tracks) {
+    const still = std(tr.cx) < REFRAME.fakeStill && std(tr.cy) < REFRAME.fakeStill;
+    tr.fake = tr.t.length >= 3 && still && p90(tr.mouth) < REFRAME.fakeMouth;
+  }
+}
+
+interface ShotFace {
+  tr: Track;
+  idx: number[];
+  faceness: number;
+  motion: number;
+  activeness: number;
+  cx: number;
+  cy: number;
+  h: number;
+}
+
+/** Real faces present in [a, b), with faceness, activeness (z-scored motion) and mean center. */
+function facesIn(tracks: Track[], a: number, b: number, samples: number): ShotFace[] {
+  const out: ShotFace[] = [];
+  for (const tr of tracks) {
+    if (tr.fake) continue;
+    const idx: number[] = [];
+    tr.t.forEach((t, i) => {
+      if (t >= a && t < b) idx.push(i);
+    });
+    if (idx.length < Math.max(1, samples * REFRAME.presence)) continue;
+    const m = idx.map((i) => tr.mouth[i]);
+    out.push({
+      tr,
+      idx,
+      faceness: mean(idx.map((i) => tr.score[i])),
+      // Variance of mouth motion plus its level: a talker's patch both
+      // churns and swings, a listener's sits near the codec noise floor.
+      motion: std(m) + mean(m),
+      activeness: 0,
+      cx: mean(idx.map((i) => tr.cx[i])),
+      cy: mean(idx.map((i) => tr.cy[i])),
+      h: mean(idx.map((i) => tr.h[i])),
+    });
+  }
+  const mu = mean(out.map((f) => f.motion));
+  const sd = std(out.map((f) => f.motion)) || 1;
+  for (const f of out) f.activeness = out.length > 1 ? (f.motion - mu) / sd : 1;
+  return out.sort((x, y) => y.motion - x.motion);
+}
+
+/**
+ * Smooth tracking keys for a moving speaker: EMA (alpha) on the raw center,
+ * a dead zone so small sways never move the camera, and a pan speed cap.
+ * Keys are rect-center offsets (x - 0.5), thinned to real changes.
+ */
+export function trackingKeys(ts: number[], xs: number[], y: number): ReframeKey[] {
+  if (!ts.length) return [];
+  let ema = xs[0];
+  let cam = xs[0];
+  const keys: ReframeKey[] = [{ t: ts[0], x: cam - 0.5, y, zoom: 1, ease: "linear" }];
+  for (let i = 1; i < ts.length; i++) {
+    const dt = Math.max(1e-3, ts[i] - ts[i - 1]);
+    ema += REFRAME.ema * (xs[i] - ema);
+    const off = ema - cam;
+    if (Math.abs(off) > REFRAME.deadZone) {
+      // Move toward the target until it sits on the edge of the dead zone.
+      const want = off - Math.sign(off) * REFRAME.deadZone;
+      const step = Math.max(-REFRAME.maxSpeed * dt, Math.min(REFRAME.maxSpeed * dt, want));
+      cam += step;
+    }
+    const last = keys[keys.length - 1];
+    if (Math.abs(cam - 0.5 - last.x) >= 0.004) {
+      keys.push({ t: ts[i], x: cam - 0.5, y, zoom: 1, ease: "linear" });
+    }
+  }
+  const lastT = ts[ts.length - 1];
+  if (keys[keys.length - 1].t < lastT) keys.push({ t: lastT, x: cam - 0.5, y, zoom: 1, ease: "linear" });
+  return keys.map((k) => ({ ...k, t: Math.round(k.t * 1000) / 1000, x: Math.round(k.x * 1e4) / 1e4 }));
+}
+
+export interface ReframeOptions {
+  /** Output panel size, for crop widths. */
+  W: number;
+  H: number;
+}
+
+/**
+ * Face track + scene cuts + output size -> one Shot per camera shot.
+ * Static crop per shot (an edit, not a robot camera); keys only when the
+ * active face travels more than moveSpan of the frame inside one shot.
+ */
+export function autoReframe(track: FaceTrack, cuts: number[], duration: number, opts: ReframeOptions): Shot[] {
+  const { W, H } = opts;
+  const srcA = track.w > 0 && track.h > 0 ? track.w / track.h : 16 / 9;
+  const tracks = linkTracks(track);
+  markFakes(tracks);
+  const bounds = [0, ...cuts.filter((c) => c > 0.05 && c < duration - 0.05).sort((a, b) => a - b), duration];
+  const step = 1 / (track.fps || 5);
+  const shots: Shot[] = [];
+  const fillA = W / H;
+  const fillW = fitRect({ x: 0, y: 0, w: 1, h: 1 }, fillA, srcA).w;
+  for (let k = 0; k + 1 < bounds.length; k++) {
+    const a = bounds[k];
+    const b = bounds[k + 1];
+    if (b - a < 0.04) continue;
+    const samples = Math.max(1, Math.round((b - a) / step));
+    const faces = facesIn(tracks, a, b, samples);
+    const r3 = (v: number) => Math.round(v * 1e4) / 1e4;
+    const base = { start: r3(a), end: r3(b), auto: true as const };
+    if (!faces.length) {
+      shots.push({ ...base, layout: "fit", crops: [] });
+      continue;
+    }
+    const top = faces[0];
+    const actives = faces.filter((f) => f.motion >= top.motion * REFRAME.activeShare && f.motion > 0);
+    const two = actives.length >= 2 ? [actives[0], actives[1]].sort((x, y) => x.cx - y.cx) : null;
+    if (two && Math.abs(two[1].cx - two[0].cx) > fillW) {
+      // Wide two-shot, both talking: two face-centered crops stacked.
+      const panels = panelsFor("split", W, H);
+      const crops = two.map((f, i) => {
+        const pA = panels[i].w / panels[i].h;
+        const h = Math.min(1, f.h * 3.2);
+        // Face center sits `headroom` from the crop's top edge.
+        return fitRect({ x: f.cx - 0.5, y: f.cy - 0.5 + (0.5 - REFRAME.headroom) * h, w: h, h }, pA, srcA);
+      });
+      shots.push({ ...base, layout: "split", crops });
+      continue;
+    }
+    // ponytail: no screen/text detector, so screenshare = one small face in
+    // a corner of a wide frame (the usual webcam-over-slides shot). A real
+    // text-region detector would replace this guess.
+    const corner = faces.length === 1 && top.h < 0.14 && (Math.abs(top.cx - 0.5) > 0.3 || Math.abs(top.cy - 0.5) > 0.3);
+    if (corner) {
+      const panels = panelsFor("screenshare", W, H);
+      const screen = fitRect({ x: 0, y: 0, w: 1, h: 1 }, panels[0].w / panels[0].h, srcA);
+      const fh = Math.min(1, top.h * 3);
+      const face = fitRect({ x: top.cx - 0.5, y: top.cy - 0.5, w: fh, h: fh }, panels[1].w / panels[1].h, srcA);
+      shots.push({ ...base, layout: "screenshare", crops: [screen, face] });
+      continue;
+    }
+    const xs = top.idx.map((i) => top.tr.cx[i]);
+    const crop = fitRect({ x: top.cx - 0.5, y: 0, w: 1, h: 1 }, fillA, srcA);
+    if (Math.max(...xs) - Math.min(...xs) > REFRAME.moveSpan) {
+      const ts = top.idx.map((i) => top.tr.t[i]);
+      const keys = trackingKeys(ts, xs, 0).map((key) => {
+        const r = fitRect({ ...crop, x: key.x }, fillA, srcA);
+        return { ...key, x: r3(r.x) };
+      });
+      shots.push({ ...base, layout: "fill", crops: [{ ...crop, x: keys[0].x }], keys });
+      continue;
+    }
+    shots.push({ ...base, layout: "fill", crops: [crop] });
+  }
+  return shots;
+}
+
+/** Whole-source facts the Layout panel shows next to the shots. */
+export function faceStats(track: FaceTrack): { faces: number; fakes: number } {
+  const tracks = linkTracks(track).filter((t) => t.t.length >= 3);
+  markFakes(tracks);
+  return { faces: tracks.filter((t) => !t.fake).length, fakes: tracks.filter((t) => t.fake).length };
 }

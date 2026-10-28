@@ -179,6 +179,7 @@ export function layoutFilters(
   sh: number,
   W: number,
   H: number,
+  srcIn = 0,
 ): string[] {
   const srcA = sw / sh;
   const end = tail.length ? `,${tail.join(",")}` : "";
@@ -202,6 +203,32 @@ export function layoutFilters(
     const c = cropPx(r, sw, sh);
     return `crop=${c.w}:${c.h}:${c.x}:${c.y},scale=${p.w}:${p.h},setsar=1`;
   };
+  if (panels.length === 1 && lay.keys?.length) {
+    // Moving speaker: a fixed-size window whose x/y follow the keys,
+    // piecewise linear in source time (the piece's t restarts at 0).
+    const p = panels[0];
+    const at = (k: { x: number; y: number }) =>
+      cropPx(applyClipFx({ ...lay.crops[0], x: k.x, y: k.y }, fx, p.w / p.h, srcA), sw, sh);
+    const c0 = at(lay.keys[0]);
+    const expr = (axis: "x" | "y") => {
+      const ks = lay.keys!;
+      let e = String(at(ks[ks.length - 1])[axis]);
+      for (let k = ks.length - 1; k >= 1; k--) {
+        const a = ks[k - 1];
+        const b = ks[k];
+        const va = at(a)[axis];
+        const vb = at(b)[axis];
+        const T = `(t+${n(srcIn)})`;
+        const seg =
+          a.ease === "hold" || b.t <= a.t || va === vb
+            ? String(va)
+            : `${va}+(${vb - va})*(${T}-${n(a.t)})/${n(b.t - a.t)}`;
+        e = `if(lt(${T},${n(b.t)}),${seg},${e})`;
+      }
+      return `if(lt((t+${n(srcIn)}),${n(ks[0].t)}),${at(ks[0])[axis]},${e})`;
+    };
+    return [`${head},crop=${c0.w}:${c0.h}:x='${expr("x")}':y='${expr("y")}',scale=${p.w}:${p.h},setsar=1${end}[${label}]`];
+  }
   if (panels.length === 1) return [`${head},${crop(0)}${end}[${label}]`];
   return [
     `${head},split=2[${label}p0][${label}p1]`,
@@ -313,7 +340,7 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     } else {
       const sw = src?.width || W;
       const sh = src?.height || H;
-      fc.push(...layoutFilters(lay, fx, `[${idx}:v]${v.join(",")}`, `v${i}`, zoomTail, sw, sh, W, H));
+      fc.push(...layoutFilters(lay, fx, `[${idx}:v]${v.join(",")}`, `v${i}`, zoomTail, sw, sh, W, H, seg.srcIn));
     }
 
     // A main clip with no audio stream gets generated silence for exactly its

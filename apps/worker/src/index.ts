@@ -21,7 +21,7 @@ import {
 } from "@toreroflow/db";
 import { conformSlide, extractThumbnail, instagramCopy, probe, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
-import { isolateVoice, processEditAsset, renderProject } from "./edit";
+import { isolateVoice, processEditAsset, reframeAsset, renderProject } from "./edit";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
@@ -1119,6 +1119,8 @@ void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: s
   async (data) => {
     if (data.job === "render" && data.editProjectId) {
       await renderProject(data.editProjectId);
+    } else if (data.job === "reframe" && data.editAssetId) {
+      await reframeAsset(data.editAssetId);
     } else if (data.job === "isolate" && data.editAssetId) {
       await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
     } else if (data.editAssetId) {
