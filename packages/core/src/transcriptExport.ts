@@ -1,5 +1,6 @@
-import type { CaptionChunk } from "./captionChunks";
-import type { CaptionSettings } from "./editDoc";
+import { chunksFor, editedWords, type CaptionChunk } from "./captionChunks";
+import type { CaptionSettings, EditDoc } from "./editDoc";
+import { edlFromDoc, outputWords } from "./edl";
 import type { Word } from "./autoCut";
 
 /** Seconds to SRT time, HH:MM:SS,mmm. */
@@ -32,4 +33,22 @@ export function toTxt(words: Word[], paragraphGap = 1.5): string {
     out += w.word.trim();
   }
   return out ? out + "\n" : "";
+}
+
+/**
+ * SRT and TXT for an edit, built exactly like the render's captions: word
+ * edits, then the cut's output times, then the same chunk packing.
+ * ponytail: plain text only; caption case and emojis stay in the burn-in.
+ */
+export function transcriptFromDoc(
+  doc: EditDoc,
+  durations: Record<string, number>,
+  rawWords: Record<string, Word[]>,
+): { srt: string; txt: string } {
+  const edl = edlFromDoc(doc, durations);
+  const byAsset: Record<string, Word[]> = {};
+  for (const [id, w] of Object.entries(rawWords)) byAsset[id] = editedWords(w, doc.wordEdits[id] ?? {});
+  const words = outputWords(edl, byAsset);
+  const st = doc.captions.style;
+  return { srt: toSrt(chunksFor(words, st.wordsPerLine, st.lines), doc.captions), txt: toTxt(words) };
 }

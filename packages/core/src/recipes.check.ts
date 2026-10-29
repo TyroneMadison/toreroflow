@@ -2,7 +2,8 @@ import type { Word } from "./autoCut";
 import { emptyDoc } from "./editDoc";
 import { edlFromDoc, outputDuration } from "./edl";
 import { applyRecipe, mapLimit, recipeSummary, versionsToPrune } from "./recipes";
-import { srtTime, toSrt, toTxt } from "./transcriptExport";
+import { srtTime, toSrt, toTxt, transcriptFromDoc } from "./transcriptExport";
+import { addCut } from "./editDoc";
 
 function ok(cond: boolean, message: string) {
   if (!cond) throw new Error(message);
@@ -87,6 +88,14 @@ ok(srtTime(3661.5) === "01:01:01,500", "srt time");
     { start: 3, end: 3.2, word: "c" },
   ]);
   ok(txt === "a b\n\nc\n", "txt paragraphs");
+}
+
+// transcriptFromDoc follows the cut and word edits.
+{
+  const d = { ...addCut(doc0, A, { start: words[6].start, end: words[6].end }, 40), wordEdits: { [A]: { 0: "We" } } };
+  const t = transcriptFromDoc(d, durations, W);
+  ok(t.txt.startsWith("We said no") && !t.txt.includes(" um "), "txt follows edits and cuts: " + t.txt.slice(0, 40));
+  ok(t.srt.startsWith("1\n00:00:00,000 --> "), "srt starts at zero");
 }
 
 // mapLimit never runs more than the limit at once and keeps order.
