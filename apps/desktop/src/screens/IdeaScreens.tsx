@@ -383,7 +383,7 @@ function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?:
   );
 }
 
-function PublicShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function PublicShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <main className="id id-public">
       <header className="id-pubhead">
