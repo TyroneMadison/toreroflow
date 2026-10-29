@@ -5,6 +5,10 @@ import {
   autoReframe,
   type FaceTrack,
   assFromDoc,
+  attachMarks,
+  outputWordRefs,
+  textsWithHook,
+  wordMarks,
   BITRATE_PRESETS,
   chunksWithTimes,
   editedWords,
@@ -299,7 +303,14 @@ export async function renderProject(editProjectId: string): Promise<void> {
     }
     const outWords = outputWords(edl, wordsByAsset);
     // Same chunks as chunksFor, plus each word's time for karaoke \k.
-    const chunks = chunksWithTimes(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    // Phase 5 keyword levels and emojis ride on the chunks, packed alike.
+    const chunks = attachMarks(
+      chunksWithTimes(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines),
+      wordMarks(outputWordRefs(edl, wordsByAsset), doc),
+      doc.captions.style.wordsPerLine * doc.captions.style.lines,
+    );
+    // The hook headline renders through the text-overlay path.
+    const texts = textsWithHook(doc);
 
     // The output name: render-<n> past every render file already in the
     // project dir, so a re-render never overwrites what the operator may
@@ -319,13 +330,13 @@ export async function renderProject(editProjectId: string): Promise<void> {
     // and no texts there is nothing to burn, so the subtitles filter is
     // skipped entirely.
     let assPath: string | null = null;
-    if (doc.captions.enabled || doc.texts.length > 0) {
+    if (doc.captions.enabled || texts.length > 0) {
       assPath = path.join(projectDir, `render-${n}.ass`);
       await fs.writeFile(
         assPath,
         assFromDoc({
           chunks: doc.captions.enabled ? chunks : [],
-          texts: doc.texts,
+          texts,
           captions: doc.captions,
         }),
         "utf8",

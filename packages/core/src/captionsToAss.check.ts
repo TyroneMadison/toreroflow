@@ -193,3 +193,32 @@ console.log("captionsToAss.check: all assertions passed");
   eq(/\{\\k50\}a \{\\k50\}b/i.test(fallback), true, "mismatched times fall back to an even split");
 }
 console.log("captionsToAss.check: word-timed karaoke passed");
+
+// ---- Phase 5: keyword highlights + emojis ----
+{
+  const capH = { ...emptyDoc(["a"]).captions, enabled: true, style: { ...emptyDoc(["a"]).captions.style, animation: "none" } };
+  const ass = assFromDoc({
+    chunks: [{ start: 0, end: 1, text: "my cousin calls", marks: [0, 1, 2], emojis: ["📞"] }],
+    texts: [],
+    captions: capH,
+  });
+  const line = ass.split("\n").find((l) => l.startsWith("Dialogue"))!;
+  if (!line.includes("{\\c&H") || !line.includes("}cousin{")) throw new Error("level 1 keyword colored: " + line);
+  if (!line.includes(hexToAss("#FFD84D"))) throw new Error("level 2 strong color: " + line);
+  if (!line.includes("{\\fnNoto Emoji}📞")) throw new Error("emoji tail in emoji font: " + line);
+  const plain = assFromDoc({ chunks: [{ start: 0, end: 1, text: "a b", marks: [0, 0] }], texts: [], captions: capH });
+  if (plain.includes("\\c&H")) throw new Error("no marks, no color tags");
+}
+console.log("captionsToAss phase 5 checks passed");
+
+// A box's color has to be in OutlineColour: libass paints BorderStyle 3 boxes there.
+{
+  const boxed: TextItem = {
+    ...textItem,
+    style: { ...textItem.style, background: { on: true, shape: "rounded", opacity: 100, size: 50, color: "#FFFFFF" } },
+  };
+  const ass = assFromDoc({ chunks: [], texts: [boxed], captions: doc.captions });
+  const st = ass.split("\n").find((l) => l.startsWith("Style:") && l.includes(",3,"));
+  if (!st || st.split(",")[5] !== hexToAss("#FFFFFF")) throw new Error("box color in OutlineColour: " + st);
+  console.log("captionsToAss box color check passed");
+}

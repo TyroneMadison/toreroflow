@@ -163,6 +163,8 @@ export interface Env {
   SUNRA_API_KEY: string;
   /** Empty means https://api.sunra.ai. */
   SUNRA_API_BASE: string;
+  /** Optional free stock b-roll search; empty hides the Stock button. */
+  PEXELS_API_KEY: string;
 }
 
 export const env: Env = {
@@ -170,6 +172,7 @@ export const env: Env = {
   JWT_SECRET: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
   API_PORT: Number.parseInt(process.env.API_PORT ?? "", 10) || 4700,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+  PEXELS_API_KEY: process.env.PEXELS_API_KEY ?? "",
   TRELLO_KEY: process.env.TRELLO_KEY ?? "",
   TRELLO_TOKEN: process.env.TRELLO_TOKEN ?? "",
   TRELLO_BOARD_ID: process.env.TRELLO_BOARD_ID ?? "",

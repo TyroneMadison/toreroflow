@@ -176,6 +176,17 @@ export interface BrollItem {
   volume: number;
   fadeIn: number;
   fadeOut: number;
+  /** Phase 5: the word this item follows; reanchorDoc keeps `at` on it after cuts. */
+  word?: { assetId: string; i: number };
+}
+
+/** Phase 5: a marked b-roll moment the operator fills from uploads or stock. */
+export interface BrollSpot {
+  id: string;
+  label: string;
+  keywords: string[];
+  word: { assetId: string; i: number };
+  dur: number;
 }
 
 export interface GraphicItem {
@@ -214,6 +225,8 @@ export interface ZoomItem {
   /** v2: explicit scale curve (sec from item start); presets expand to one. */
   curve?: { t: number; scale: number }[];
   anchor?: "face" | "center";
+  /** Phase 5: the word this zoom follows; reanchorDoc keeps `at` on it after cuts. */
+  word?: { assetId: string; i: number };
 }
 
 export interface ColorAdjust {
@@ -304,6 +317,8 @@ export interface EditDoc {
   /** Storage key of each asset's face-track JSON. */
   faces?: Record<string, string>;
   hook?: HookItem;
+  /** Phase 5: b-roll moments still to fill; render ignores them. */
+  brollSpots?: BrollSpot[];
   cuts: Record<string, CutRange[]>;
   splits: Record<string, number[]>;
   wordEdits: Record<string, Record<number, string>>;

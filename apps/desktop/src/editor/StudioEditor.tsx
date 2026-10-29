@@ -11,6 +11,7 @@ import {
   DEFAULT_CLIP_FX,
   edlFromDoc,
   emptyDoc,
+  reanchorDoc,
   locate,
   splitAt,
   ASPECTS,
@@ -191,10 +192,39 @@ function LoadedEditor({
   const [project, setProject] = useState(initial);
   const [assets, setAssets] = useState(initial.assets);
   const kit = useBrandKit(initial.clientId);
-  const { doc, update, undo, redo, canUndo, canRedo, saveState } = useEditDoc(
+  const {
+    doc,
+    update: rawUpdate,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    saveState,
+  } = useEditDoc(
     initial.id,
     initial.doc ??
       emptyDoc(initial.assets.filter((a) => a.kind === "clip").map((a) => a.id)),
+  );
+
+  // Phase 5: word-anchored zooms and b-roll follow their word through any
+  // later cut, inside the same undo step as the edit that moved them.
+  const anchorInputs = useMemo(() => {
+    const durations: Record<string, number> = {};
+    const words: Record<string, { start: number; end: number; word: string }[]> = {};
+    for (const a of assets) {
+      if (a.kind !== "clip") continue;
+      if (a.durationSec) durations[a.id] = a.durationSec;
+      if (a.words?.length) words[a.id] = a.words;
+    }
+    return { durations, words };
+  }, [assets]);
+  const update = useCallback(
+    (fn: (d: EditDoc) => EditDoc) =>
+      rawUpdate((d) => {
+        const next = fn(d);
+        return next === d ? d : reanchorDoc(next, anchorInputs.durations, anchorInputs.words);
+      }),
+    [rawUpdate, anchorInputs],
   );
 
   const [step, setStep] = useState(1);

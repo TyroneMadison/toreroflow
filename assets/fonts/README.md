@@ -41,3 +41,11 @@ These are the same families, full character set, from `github.com/google/fonts`
 Static instances rather than the variable file because libass picks weights
 by named face, and a variable TTF only exposes its default instance. Liberation
 Sans/Serif come from the OS (`fonts-liberation` in the Docker image).
+
+## Caption emojis
+
+`NotoEmoji-Regular.ttf` is Noto Emoji (monochrome, variable weight) from
+`github.com/google/fonts/ofl/notoemoji`, SIL Open Font License 1.1,
+copyright Google LLC. libass has no color emoji support, so burned-in
+caption emojis use this outline font by name (`\fnNoto Emoji`) through the
+same fontsdir as the other caption fonts.

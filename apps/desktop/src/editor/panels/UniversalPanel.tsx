@@ -12,6 +12,7 @@ import { api } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
 import { Chip, SliderRow, SubPills } from "./index";
+import AiPanel from "./AiPanel";
 
 const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }> = [
   { key: "b", title: "Brightness", lab: "B" },
@@ -30,7 +31,7 @@ const SHORTEN_WINDOWS = [
 export default function UniversalPanel() {
   const { doc, update, assets, setStep, project } = useEditor();
   const toast = useToast();
-  const [tab, setTab] = useState<"quick" | "colour">("quick");
+  const [tab, setTab] = useState<"quick" | "ai" | "colour">("quick");
   /** The window label the model is currently working on, null when idle. */
   const [thinking, setThinking] = useState<string | null>(null);
 
@@ -115,6 +116,7 @@ export default function UniversalPanel() {
       <SubPills
         tabs={[
           { id: "quick", label: "Quick actions" },
+          { id: "ai", label: "AI edit" },
           { id: "colour", label: "Universal colour" },
         ]}
         value={tab}
@@ -171,6 +173,8 @@ export default function UniversalPanel() {
           </button>
         </>
       )}
+
+      {tab === "ai" && <AiPanel />}
 
       {tab === "colour" && (
         <div className="pnl-cards">

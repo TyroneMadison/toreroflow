@@ -61,6 +61,30 @@ assert.ok(joined2.includes("-f mov"), "mov container");
 const zoomDoc: EditDoc = { ...doc, zooms: [{ id: "z1", at: 3, kind: "punchin", size: "m" }] };
 const plan3 = buildRenderPlan({ doc: zoomDoc, edl, assets, assPath: null, out });
 assert.ok(plan3.args.join(" ").includes("zoompan=z="), "zoom item renders via zoompan");
+assert.ok(plan3.args.join(" ").includes("y='ih/2-(ih/zoom/2)'"), "center anchor by default");
+
+// Phase 5: a curve zoom anchored on the face.
+const curveDoc: EditDoc = {
+  ...doc,
+  zooms: [
+    {
+      id: "z2",
+      at: 3,
+      kind: "pushin",
+      size: "m",
+      anchor: "face",
+      curve: [
+        { t: 0, scale: 1 },
+        { t: 3, scale: 1.18 },
+        { t: 4, scale: 1.18 },
+        { t: 4.2, scale: 1 },
+      ],
+    },
+  ],
+};
+const plan3c = buildRenderPlan({ doc: curveDoc, edl, assets, assPath: null, out }).args.join(" ");
+assert.ok(plan3c.includes("between((on/30),1,5.2)"), "curve gated to its span: " + plan3c.slice(plan3c.indexOf("zoompan"), plan3c.indexOf("zoompan") + 200));
+assert.ok(plan3c.includes("y='ih*0.38-(ih/zoom*0.38)'"), "face anchor shifts the zoom origin up");
 
 // Broll gates with enable, audio items are delayed and amixed over clip audio.
 const ovDoc: EditDoc = {
