@@ -118,6 +118,26 @@ ALLOW.push(
   { method: "POST", path: new RegExp(`^/templates/${ID}/apply$`) },
 );
 
+/**
+ * Clip jobs (Phase 8, K5): a bot can start a job from a file, an upload or
+ * a Drive link, follow it, read and shortlist candidates, open them and
+ * batch-render. Deleting a job, recipes and clip settings stay operator-only.
+ */
+ALLOW.push(
+  { method: "POST", path: new RegExp(`^/clients/${ID}/clip-jobs$`) },
+  { method: "POST", path: new RegExp(`^/clients/${ID}/clip-jobs/from-asset$`) },
+  { method: "POST", path: new RegExp(`^/clients/${ID}/clip-jobs/from-drive$`) },
+  { method: "GET", path: new RegExp(`^/clients/${ID}/clip-jobs$`) },
+  { method: "GET", path: new RegExp(`^/clip-jobs/${ID}$`) },
+  { method: "POST", path: new RegExp(`^/clip-jobs/${ID}/retry$`) },
+  { method: "PATCH", path: new RegExp(`^/clip-candidates/${ID}$`) },
+  { method: "POST", path: new RegExp(`^/clip-candidates/${ID}/favorite$`) },
+  { method: "POST", path: new RegExp(`^/clip-candidates/open$`) },
+  { method: "POST", path: new RegExp(`^/clip-candidates/batch-render$`) },
+  { method: "GET", path: new RegExp(`^/clip-candidates/batch-status$`) },
+  { method: "GET", path: new RegExp(`^/clients/${ID}/clip-search$`) },
+);
+
 /** True when a bot-role token may make this request. */
 export function botAllowed(method: string, url: string): boolean {
   const path = url.split("?")[0] ?? url;

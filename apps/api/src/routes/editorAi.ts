@@ -117,7 +117,7 @@ export async function editorAiRoutes(app: FastifyInstance): Promise<void> {
     const q = (request.query.q ?? "").trim().slice(0, 80);
     if (!q) return reply.status(400).send({ error: "missing query", detail: "Pass ?q=keywords." });
     const res = await fetch(
-      `https://api.pexels.com/videos/search?per_page=6&orientation=portrait&query=${encodeURIComponent(q)}`,
+      `${env.PEXELS_API_BASE}/videos/search?per_page=6&orientation=portrait&query=${encodeURIComponent(q)}`,
       { headers: { Authorization: env.PEXELS_API_KEY } },
     );
     if (!res.ok) {

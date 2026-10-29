@@ -301,8 +301,13 @@ export function isPexelsMediaUrl(u: string): boolean {
  * The mp4 nearest to `targetH` tall in the wanted orientation, never above
  * 1920 on the long side (keeps downloads small); falls back to any mp4.
  */
-export function pickPexelsFile(files: PexelsFile[], portrait = true, targetH = 1920): PexelsFile | null {
-  const ok = files.filter((f) => isPexelsMediaUrl(f.link) && (!f.file_type || f.file_type === "video/mp4") && f.width > 0 && f.height > 0);
+export function pickPexelsFile(
+  files: PexelsFile[],
+  portrait = true,
+  targetH = 1920,
+  allowed: (url: string) => boolean = isPexelsMediaUrl,
+): PexelsFile | null {
+  const ok = files.filter((f) => allowed(f.link) && (!f.file_type || f.file_type === "video/mp4") && f.width > 0 && f.height > 0);
   const orient = ok.filter((f) => (portrait ? f.height >= f.width : f.width >= f.height));
   const pool = (orient.length ? orient : ok).filter((f) => Math.max(f.width, f.height) <= 1920);
   const use = pool.length ? pool : orient.length ? orient : ok;
