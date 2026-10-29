@@ -99,6 +99,15 @@ const rows: Record<string, { fullAccess: boolean; scopes: string[] }> = {
   "agencyB/polly": { fullAccess: false, scopes: [] },
 };
 let dbDown = false;
+
+// Phase 8: clip-job routes for bots, destructive ones stay closed.
+assert.equal(botAllowed("POST", "/clients/c1/clip-jobs"), true, "bot starts a clip job");
+assert.equal(botAllowed("POST", "/clients/c1/clip-jobs/from-drive"), true, "bot starts from Drive");
+assert.equal(botAllowed("GET", "/clip-jobs/j1?q=money"), true, "bot reads a job");
+assert.equal(botAllowed("POST", "/clip-candidates/batch-render"), true, "bot batch-renders");
+assert.equal(botAllowed("DELETE", "/clip-jobs/j1"), false, "bot cannot delete a job");
+assert.equal(botAllowed("POST", "/clip-jobs/j1/refine"), false, "refine (AI spend) stays operator-only");
+assert.equal(botAllowed("PUT", "/clients/c1/auto-import"), false, "auto-import settings stay operator-only");
 Object.defineProperty(getPrisma(), "botIdentity", {
   value: {
     findUnique: async ({ where }: { where: { agencyId_name: { agencyId: string; name: string } } }) => {

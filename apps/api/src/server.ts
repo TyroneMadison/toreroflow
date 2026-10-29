@@ -48,6 +48,7 @@ import { brandKitRoutes } from "./routes/brandKit";
 import { setSunraCatalog, setSunraGenerator, sunraRoutes } from "./routes/sunra";
 import { sunraClient } from "./ideas/sunraClient";
 import { approvalLinkRoutes, publicApprovalRoutes } from "./routes/approvals";
+import { collabRoutes, publicReviewRoutes } from "./routes/collab";
 import { failedPostRoutes } from "./routes/failedPosts";
 import { assetRoutes } from "./routes/assets";
 import { repurposeRoutes } from "./routes/repurpose";
@@ -180,6 +181,7 @@ export async function buildServer(
   await app.register(clipRoutes);
   await app.register(recipeRoutes);
   await app.register(polishRoutes);
+  await app.register(collabRoutes);
   await app.register(analysisRoutes);
   await app.register(ideasRoutes);
   await app.register(hooksRoutes);
@@ -215,6 +217,7 @@ export async function buildServer(
   await app.register(sunraRoutes);
   await app.register(approvalLinkRoutes);
   await app.register(publicApprovalRoutes);
+  await app.register(publicReviewRoutes);
   await app.register(failedPostRoutes);
   await app.register(assetRoutes);
   await app.register(repurposeRoutes);

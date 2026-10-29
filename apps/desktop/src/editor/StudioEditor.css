@@ -22,3 +22,23 @@
 .stu-body{display:flex;gap:18px;align-items:flex-start;min-width:0}
 .stu-stepbody{flex:1;min-width:0}
 .stu-aspect{font-variant-numeric:tabular-nums;cursor:pointer}
+
+/* Phase 8: Review (comments, review links, export) */
+.collab { display: flex; flex-direction: column; gap: 10px; }
+.collab-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.collab-row .field-in { flex: 1; min-width: 120px; }
+.collab-new textarea { width: 100%; resize: vertical; }
+.collab-list { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow: auto; }
+.collab-thread, .collab-link { padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+.collab-thread.done, .collab-link.done { opacity: 0.55; }
+.collab-thread p { margin: 4px 0 6px; white-space: pre-wrap; }
+.collab-head { display: flex; gap: 8px; align-items: baseline; }
+.collab-at { border: 0; border-radius: 6px; padding: 1px 6px; background: var(--o, #ff9f43); color: #111; font-weight: 700; cursor: pointer; }
+.collab-tag { font-size: 10px; padding: 0 5px; border-radius: 5px; background: rgba(120, 200, 255, 0.25); margin-left: 4px; }
+.collab-reply { margin: 0 0 4px 14px; font-size: 13px; }
+.collab-link { display: flex; gap: 8px; align-items: center; }
+.collab-link code { flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.linkbtn { border: 0; background: none; color: inherit; opacity: 0.7; cursor: pointer; text-decoration: underline; font-size: 12px; }
+.review-video { position: relative; }
+.review-video video { width: 100%; max-height: 60vh; border-radius: 12px; background: #000; }
+.review-markers { position: relative; height: 16px; margin: 4px 10px 0; }

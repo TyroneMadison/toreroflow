@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ClipActivityFeed, ClipImports, ClipLibrary, ClipPerformanceTable } from "./ClipsLibrary";
 import type { MediaAssetInfo } from "../../lib/api";
 import { API_URL, ApiError, api, getToken, videoLabel } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
@@ -64,6 +65,7 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
   const [busy, setBusy] = useState<number | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const [view, setView] = useState<"jobs" | "library" | "performance" | "activity" | "imports">("jobs");
 
   const load = useCallback(async () => {
     try {
@@ -121,8 +123,30 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
     }
   }
 
+  const tabs = (
+    <div className="pnl-pills cliptabs">
+      {(["jobs", "library", "performance", "activity", "imports"] as const).map((t) => (
+        <button key={t} className={`pnl-pill${view === t ? " on" : ""}`} onClick={() => setView(t)}>
+          {t[0]!.toUpperCase() + t.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+  if (view !== "jobs") {
+    return (
+      <div className="clipshome">
+        {tabs}
+        {view === "library" && <ClipLibrary clientId={clientId} onOpen={onOpen} />}
+        {view === "performance" && <ClipPerformanceTable clientId={clientId} onOpen={onOpen} />}
+        {view === "activity" && <ClipActivityFeed clientId={clientId} onOpen={onOpen} />}
+        {view === "imports" && <ClipImports clientId={clientId} onOpen={onOpen} />}
+      </div>
+    );
+  }
+
   return (
     <div className="clipshome">
+      {tabs}
       <div
         className={`clipdrop${drag ? " over" : ""}${file ? " has" : ""}`}
         onDragOver={(e) => {

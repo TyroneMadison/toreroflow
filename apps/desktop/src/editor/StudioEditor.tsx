@@ -32,6 +32,7 @@ import ExportStep from "./steps/ExportStep";
 import { BrandKitProvider, useBrandKit } from "./brandKit";
 import VersionsPanel from "./VersionsPanel";
 import RecipesPanel from "./clips/RecipesPanel";
+import CollabPanel, { useCommentsLoader } from "./CollabPanel";
 import "./StudioEditor.css";
 
 /* ---- API shapes ---- */
@@ -238,8 +239,9 @@ function LoadedEditor({
     loadOverrides,
   );
   const [showKeys, setShowKeys] = useState(false);
-  const [panel, setPanel] = useState<"versions" | "recipes" | null>(null);
+  const [panel, setPanel] = useState<"versions" | "recipes" | "review" | null>(null);
   const [copying, setCopying] = useState(false);
+  useCommentsLoader(project.id);
   const [copyError, setCopyError] = useState<string | null>(null);
 
   /*
@@ -619,6 +621,9 @@ function LoadedEditor({
                 </option>
               ))}
             </select>
+            <button className="btn ghost" title="Comments, a client review link, and Premiere / Final Cut export" onClick={() => setPanel("review")}>
+              Review
+            </button>
             <button className="btn ghost" title="Saved versions of this edit" onClick={() => setPanel("versions")}>
               Versions
             </button>
@@ -651,6 +656,7 @@ function LoadedEditor({
         </div>
       </div>
       {panel === "versions" && <VersionsPanel onClose={() => setPanel(null)} />}
+      {panel === "review" && <CollabPanel onClose={() => setPanel(null)} />}
       {panel === "recipes" && (
         <RecipesPanel
           clientId={project.clientId}

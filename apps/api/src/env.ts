@@ -165,6 +165,17 @@ export interface Env {
   SUNRA_API_BASE: string;
   /** Optional free stock b-roll search; empty hides the Stock button. */
   PEXELS_API_KEY: string;
+  /** Phase 8: Pexels API root (overridable for the local stub in e2e). */
+  PEXELS_API_BASE: string;
+  /**
+   * Phase 8: Drive API v3 key for listing publicly shared folders. Falls
+   * back to YOUTUBE_API_KEY (same Google project); empty means folder
+   * listing is off and single shared files still import keylessly.
+   */
+  GOOGLE_DRIVE_API_KEY: string;
+  /** Phase 8: Drive roots (overridable for the local stub in e2e). */
+  DRIVE_API_BASE: string;
+  DRIVE_DOWNLOAD_BASE: string;
 }
 
 export const env: Env = {
@@ -173,6 +184,10 @@ export const env: Env = {
   API_PORT: Number.parseInt(process.env.API_PORT ?? "", 10) || 4700,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
   PEXELS_API_KEY: process.env.PEXELS_API_KEY ?? "",
+  PEXELS_API_BASE: process.env.PEXELS_API_BASE || "https://api.pexels.com",
+  GOOGLE_DRIVE_API_KEY: process.env.GOOGLE_DRIVE_API_KEY || process.env.YOUTUBE_API_KEY || "",
+  DRIVE_API_BASE: process.env.DRIVE_API_BASE || "https://www.googleapis.com/drive/v3",
+  DRIVE_DOWNLOAD_BASE: process.env.DRIVE_DOWNLOAD_BASE || "https://drive.usercontent.google.com",
   TRELLO_KEY: process.env.TRELLO_KEY ?? "",
   TRELLO_TOKEN: process.env.TRELLO_TOKEN ?? "",
   TRELLO_BOARD_ID: process.env.TRELLO_BOARD_ID ?? "",

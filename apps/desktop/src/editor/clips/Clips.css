@@ -70,3 +70,24 @@
 .vers-list { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .vers-item { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line, #333); border-radius: 10px; padding: 6px 10px; }
 .vers-item b { flex: 1; }
+
+/* Phase 8: library, performance, activity, imports */
+.cliptabs { margin-bottom: 10px; }
+.cliplib { display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+.cliplib-side { display: flex; flex-direction: column; gap: 4px; }
+.cliplib-side button:not(.linkbtn) { text-align: left; border: 0; border-radius: 8px; padding: 6px 10px; background: none; color: inherit; cursor: pointer; }
+.cliplib-side button.on { background: rgba(255, 255, 255, 0.1); font-weight: 700; }
+.cliplib-col { display: flex; align-items: center; }
+.cliplib-col button:first-child { flex: 1; }
+.cliplib-main { display: flex; flex-direction: column; gap: 8px; }
+.cliplib-row { display: flex; gap: 10px; align-items: center; }
+.cliplib-row .projmeta { flex: 1; }
+.cliplib-snip { opacity: 0.7; font-style: italic; }
+.cliplib-perf { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cliplib-perf th, .cliplib-perf td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.cliplib-perf tr { cursor: pointer; }
+.cliplib-act { padding: 6px 8px; border-radius: 8px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; cursor: pointer; }
+.cliplib-act .sub { margin-left: auto; }
+.cliplib-imports { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cliplib-imports .pnl-card { display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 760px) { .cliplib, .cliplib-imports { grid-template-columns: 1fr; } }

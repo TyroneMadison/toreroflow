@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { constants as fsc, createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -9,6 +10,8 @@ import {
   LENGTH_TARGETS,
   clipText,
   nudgeRanges,
+  parseDriveLink,
+  safeFileName,
   rangesDuration,
   applyRecipe,
   seedClipDoc,
@@ -25,6 +28,7 @@ import { env } from "../env";
 import { fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
 import { assetWords, saveVersion } from "./editShared";
+import { logActivity } from "../collab/activity";
 
 /**
  * Studio > Clips: a long source cut into scored short clips.
@@ -238,6 +242,76 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(201).send({ id: job.id });
   });
 
+  /**
+   * Phase 8 Google Drive import, no OAuth: a publicly shared ("anyone with
+   * the link") file downloads keylessly; a shared folder lists through the
+   * Drive API with GOOGLE_DRIVE_API_KEY (falls back to YOUTUBE_API_KEY).
+   * ponytail: private files need the Drive picker with OAuth, deferred
+   * (no new Google Cloud setup this phase).
+   */
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/drive/list", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found", detail: "No such brand in this workspace." });
+    const ref = parseDriveLink(String((request.body as { link?: unknown } | undefined)?.link ?? ""));
+    if (!ref) return reply.status(400).send(bad("Paste a Google Drive file or folder share link.", "not a Drive link"));
+    if (ref.kind === "file") {
+      if (!env.GOOGLE_DRIVE_API_KEY) return { kind: "file", files: [{ id: ref.id, name: null, size: null }] };
+      const r = await fetch(`${env.DRIVE_API_BASE}/files/${ref.id}?fields=id,name,size,mimeType&supportsAllDrives=true&key=${env.GOOGLE_DRIVE_API_KEY}`, { signal: AbortSignal.timeout(15_000) });
+      if (!r.ok) return reply.status(r.status === 404 ? 404 : 502).send(bad("Drive could not show that file. Is it shared as \"Anyone with the link\"?", "drive file not found"));
+      const f = (await r.json()) as { id: string; name?: string; size?: string };
+      return { kind: "file", files: [{ id: f.id, name: f.name ?? null, size: f.size ? Number(f.size) : null }] };
+    }
+    if (!env.GOOGLE_DRIVE_API_KEY) {
+      return reply.status(503).send(bad("Listing a folder needs GOOGLE_DRIVE_API_KEY. Share single files instead, they import without it.", "folder listing is off"));
+    }
+    const q = encodeURIComponent(`'${ref.id}' in parents and trashed = false and mimeType contains 'video/'`);
+    const r = await fetch(`${env.DRIVE_API_BASE}/files?q=${q}&fields=files(id,name,size,mimeType)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&key=${env.GOOGLE_DRIVE_API_KEY}`, { signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) return reply.status(502).send(bad(`Drive answered ${r.status}. Is the folder shared as "Anyone with the link"?`, "drive list failed"));
+    const data = (await r.json()) as { files?: { id: string; name: string; size?: string }[] };
+    return { kind: "folder", files: (data.files ?? []).map((f) => ({ id: f.id, name: f.name, size: f.size ? Number(f.size) : null })) };
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/clip-jobs/from-drive", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found", detail: "No such brand in this workspace." });
+    const body = (request.body ?? {}) as { fileId?: unknown; name?: unknown };
+    const fileId = typeof body.fileId === "string" && /^[A-Za-z0-9_-]{10,}$/.test(body.fileId) ? body.fileId : null;
+    if (!fileId) return reply.status(400).send(bad("Pick a Drive file.", "no file"));
+    const { fileId: _f, name: _n, ...rest } = body as Record<string, unknown>;
+    const parsed = optionsSchema.safeParse(rest);
+    if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the job options."));
+    const opts = await withRecipe(client.id, parsed.data);
+    if (!opts) return reply.status(404).send(bad("That recipe is not in this brand.", "recipe not found"));
+    const url = env.GOOGLE_DRIVE_API_KEY
+      ? `${env.DRIVE_API_BASE}/files/${fileId}?alt=media&supportsAllDrives=true&key=${env.GOOGLE_DRIVE_API_KEY}`
+      : `${env.DRIVE_DOWNLOAD_BASE}/download?id=${fileId}&export=download&confirm=t`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(30 * 60_000) });
+    const type = res.headers.get("content-type") ?? "";
+    if (!res.ok || !res.body || /^text\/html|json/.test(type)) {
+      return reply.status(res.status === 404 ? 404 : 422).send(bad("Drive did not hand over a video. Share it as \"Anyone with the link\" and try again.", "drive download failed"));
+    }
+    const disp = res.headers.get("content-disposition") ?? "";
+    const fromHeader = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp)?.[1];
+    const name = safeFileName(typeof body.name === "string" && body.name ? body.name : fromHeader ? decodeURIComponent(fromHeader) : `drive-${fileId}.mp4`);
+    const project = await holder(client.id, name);
+    const asset = await prisma.editAsset.create({
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: opts.language ?? null },
+    });
+    const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${path.extname(name) || ".mp4"}`;
+    await fs.mkdir(path.join(env.STORAGE_DIR, client.id, "edit", project.id), { recursive: true });
+    try {
+      await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), createWriteStream(path.join(env.STORAGE_DIR, storageKey)));
+    } catch {
+      await fs.rm(path.join(env.STORAGE_DIR, storageKey), { force: true });
+      await prisma.editProject.delete({ where: { id: project.id } });
+      return reply.status(502).send(bad("The Drive download stopped part way.", "drive download failed"));
+    }
+    await prisma.editAsset.update({ where: { id: asset.id }, data: { storageKey } });
+    const job = await startJob(client.id, asset.id, opts);
+    logActivity(request, { clientId: client.id, action: "imported", jobId: job.id, detail: `${name} from Drive` });
+    return reply.status(201).send({ id: job.id });
+  });
+
   app.get<{ Params: { clientId: string } }>("/clients/:clientId/clip-jobs", async (request, reply) => {
     const client = await ownedClient(request.params.clientId, request.user.agencyId);
     if (!client) return reply.status(404).send({ error: "brand not found" });
@@ -319,6 +393,10 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       data.duration = Math.round(rangesDuration(ranges) * 100) / 100;
       data.text = clipText(ranges, words);
     }
+    if (parsed.data.feedback) {
+      logActivity(request, { clientId: c.job.clientId, action: parsed.data.feedback.startsWith("up") ? "liked" : "disliked", candidateId: c.id, jobId: c.jobId, detail: c.title });
+    }
+    if (parsed.data.nudge) logActivity(request, { clientId: c.job.clientId, action: "trimmed", candidateId: c.id, jobId: c.jobId, detail: c.title });
     return prisma.clipCandidate.update({ where: { id: c.id }, data });
   });
 
@@ -406,6 +484,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       const r = await openCandidate(c);
       if (!("projectId" in r)) return reply.status(r.status).send(r.body);
       out.push({ candidateId: c.id, projectId: r.projectId });
+      logActivity(request, { clientId: c.job.clientId, action: "opened", candidateId: c.id, jobId: c.jobId, projectId: r.projectId, detail: c.title });
     }
     return { projects: out };
   });
@@ -461,6 +540,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       });
       await enqueue("edit", { editProjectId: p.id, job: "render" });
       items.push({ candidateId: id, projectId: p.id, queued: true });
+      logActivity(request, { clientId: c.job.clientId, action: send ? "rendered_sent" : "rendered", candidateId: c.id, jobId: c.jobId, projectId: p.id, detail: c.title });
     }
     return reply.status(202).send({ items });
   });

@@ -43,7 +43,7 @@ const patchSchema = z.object({
  * An asset row as the desktop sees it: raw storage keys swapped for signed
  * URLs the webview can actually load. Keys never leave the server.
  */
-function assetView<
+export function assetView<
   T extends {
     storageKey: string;
     proxyKey: string | null;

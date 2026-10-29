@@ -101,14 +101,18 @@ const BASE = "http://x";
  * and a brand's signed request form (/r/<token>). The app shell renders them
  * before sign-in, and normalizeUrl leaves them alone.
  */
-export type PublicRoute = { kind: "approval" | "request"; token: string };
+export type PublicRoute = { kind: "approval" | "request" | "review"; token: string };
 const PUBLIC_APPROVAL = /^\/a\/([A-Za-z0-9_.-]+)$/;
 const PUBLIC_REQUEST = /^\/r\/([A-Za-z0-9_.-]+)$/;
+/** Phase 8: a read-only edit review link (/v/<token>). */
+const PUBLIC_REVIEW = /^\/v\/([A-Za-z0-9_.-]+)$/;
 
 export function publicRoute(url: string): PublicRoute | null {
   const path = new URL(url, BASE).pathname.replace(/\/+$/, "");
   const a = PUBLIC_APPROVAL.exec(path);
   if (a) return { kind: "approval", token: a[1]! };
+  const v = PUBLIC_REVIEW.exec(path);
+  if (v) return { kind: "review", token: v[1]! };
   const r = PUBLIC_REQUEST.exec(path);
   return r ? { kind: "request", token: r[1]! } : null;
 }

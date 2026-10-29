@@ -37,6 +37,9 @@ eq(publicRoute("/r/ck9z.Ab_c-9?x=1"), { kind: "request", token: "ck9z.Ab_c-9" },
 eq(publicRoute("/request/caleb_1"), null, "the old per-brand form path is gone");
 eq(publicRoute("/a/"), null, "no token, no page");
 eq(publicRoute("/create/approvals"), null, "the operator screen is not public");
+eq(publicRoute("/v/ck7.Ab_c-9"), { kind: "review", token: "ck7.Ab_c-9" }, "a review link is a public page");
+eq(publicRoute("/v/"), null, "a review link needs its token");
+eq(canonicalUrl("/v/ck7.sig"), "/v/ck7.sig", "a review link is never rewritten");
 eq(canonicalUrl("/a/ck1x2.sig"), "/a/ck1x2.sig", "an approval link is never rewritten to the dashboard");
 eq(canonicalUrl("/r/ck9z.sig"), "/r/ck9z.sig", "a request form is never rewritten");
 

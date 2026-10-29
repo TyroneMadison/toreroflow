@@ -27,6 +27,7 @@ export interface ClipCandidateRow {
   feedback: "up" | "down" | null;
   origin: string;
   editProjectId: string | null;
+  favorite?: boolean;
   createdAt: string;
 }
 

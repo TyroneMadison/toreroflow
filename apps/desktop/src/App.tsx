@@ -20,6 +20,7 @@ import SettingsScreen from "./screens/SettingsScreen";
 import ReadyQueueScreen from "./screens/ReadyQueueScreen";
 import ScheduleScreen from "./screens/ScheduleScreen";
 import AuthScreen from "./screens/AuthScreen";
+import PublicReviewPage from "./screens/PublicReviewPage";
 import {
   ApprovalsScreen,
   FailedPostBanner,
@@ -149,7 +150,14 @@ function Shell() {
 
   // The client's no-login pages: no shell, no sign-in.
   const pub = publicRoute(window.location.pathname);
-  if (pub) return pub.kind === "approval" ? <PublicApprovalPage token={pub.token} /> : <PublicRequestPage token={pub.token} />;
+  if (pub)
+    return pub.kind === "approval" ? (
+      <PublicApprovalPage token={pub.token} />
+    ) : pub.kind === "review" ? (
+      <PublicReviewPage token={pub.token} />
+    ) : (
+      <PublicRequestPage token={pub.token} />
+    );
 
   if (!authReady) {
     return <AgentStateSync apiUp={apiStatus.online} />;
