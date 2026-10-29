@@ -52,6 +52,7 @@ import { collabRoutes, publicReviewRoutes } from "./routes/collab";
 import { failedPostRoutes } from "./routes/failedPosts";
 import { assetRoutes } from "./routes/assets";
 import { repurposeRoutes } from "./routes/repurpose";
+import { xPostedRoutes } from "./routes/xPosted";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
@@ -221,6 +222,7 @@ export async function buildServer(
   await app.register(failedPostRoutes);
   await app.register(assetRoutes);
   await app.register(repurposeRoutes);
+  await app.register(xPostedRoutes);
 
   return app;
 }

@@ -591,6 +591,19 @@
 .mcell .mnum{font-size:12px;font-weight:600;text-align:right;padding:1px 3px}
 .mcell .mnum span{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:50%}
 .mcell.today .mnum span{background:var(--grad);color:#000}
+/* "Posted to X" tick, own brand only: outline when clear, coral when ticked. */
+.dnumrow{display:flex;align-items:center;justify-content:center;gap:6px}
+.colhead .dnumrow .dnum,.colhead.today .dnumrow .dnum{margin:3px 0 0}
+.mcell .mnum{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.xchk{position:relative;display:inline-grid;place-items:center;flex:0 0 auto;width:20px;height:20px;margin-top:3px;border-radius:6px;border:1px solid var(--brd-soft);background:var(--glass-2);color:#fff;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.mcell .xchk{margin-top:0}
+.xchk input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.xchk svg{width:10px;height:10px;fill:currentColor}
+/* The X logo follows the theme: white on dark, black on light, ticked or not. */
+[data-theme="light"] .xchk{color:#000}
+.xchk:hover{border-color:#FF6F61}
+.xchk.on{background:#FF6F61;border-color:#FF6F61}
+.xchk:has(input:focus-visible){outline:2px solid #FF6F61;outline-offset:2px}
 .mev{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--txt-2);padding:2px 5px;border-radius:6px;background:var(--glass-2);margin-top:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 /* The month row has no accent bar and no room for a word, so the dot and the
    padlock carry the state on their own. The platform tile shrinks to suit. */

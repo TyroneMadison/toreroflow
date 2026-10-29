@@ -319,6 +319,7 @@ model Client {
   brandKit         BrandKit?
   sunraQuotes      SunraQuote[]
   repurposeJobs    RepurposeJob[]
+  xPostedDays      XPostedDay[]
 
   @@index([agencyId])
 }
@@ -1961,4 +1962,17 @@ model YouTubeImport {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, videoId])
+}
+
+/// A day the operator ticked "posted to X" on the calendar, by hand. A row
+/// means checked; unchecking deletes it. Nothing is posted or read from X.
+model XPostedDay {
+  clientId  String
+  /// Local calendar day as YYYY-MM-DD, the same day the grid shows.
+  date      String
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, date])
 }

@@ -13,7 +13,7 @@ import { THEME_STORAGE_KEY } from "../lib/theme";
 const params = new URLSearchParams(location.search);
 localStorage.setItem(THEME_STORAGE_KEY, params.get("theme") === "light" ? "light" : "dark");
 localStorage.setItem("toreroflow-token", "demo");
-localStorage.setItem("toreroflow-selected-client", "caleb");
+localStorage.setItem("toreroflow-selected-client", params.get("brand") ?? "caleb");
 const sunraOn = params.get("sunra") !== "off";
 
 const now = Date.now();
@@ -45,7 +45,7 @@ const brand = (id: string, name: string, email: string | null) => ({
   totalFollowers: 18400,
   accounts: [],
 });
-const CLIENTS = [brand("caleb", "Caleb", "caleb@cacvmotors.com"), brand("dudley", "Dudley", null), brand("jacoby", "Jacoby", "jr@jacoby.co")];
+const CLIENTS = [brand("caleb", "Caleb", "caleb@cacvmotors.com"), brand("dudley", "Dudley", null), brand("jacoby", "Jacoby", "jr@jacoby.co"), brand("torerone", "Torerone", null)];
 
 const video = (id: string, name: string, durationSec: number) => ({
   id,
@@ -91,7 +91,8 @@ const POSTS = [
 const HISTORY = Array.from({ length: 26 }, (_, i) => {
   const d = new Date(now - (i * 3 + 1) * DAY);
   d.setUTCHours([22, 23, 16, 1, 14][i % 5]!, 0, 0, 0);
-  return { id: `h${i}`, mediaType: "video", title: `Post ${i}`, publishedAt: d.toISOString(), thumbnailUrl: null, url: null, platforms: ["instagram"], views: 4000 + ((i * 7919) % 9000) + (i % 5 === 0 ? 12000 : 0), likes: 0, comments: 0, shares: 0 };
+  const views = 4000 + ((i * 7919) % 9000) + (i % 5 === 0 ? 12000 : 0);
+  return { id: `h${i}`, mediaType: "video", title: `Post ${i}`, publishedAt: d.toISOString(), thumbnailUrl: null, url: null, platforms: ["instagram"], views, likes: 0, comments: 0, shares: 0, byPlatform: [{ platform: "instagram", views }] };
 });
 
 let links = [
@@ -141,6 +142,8 @@ const MODELS = [
 ];
 
 const requestLinks = [{ id: "rl1", brandId: "caleb", token: "rl1.sig_DemoTokenAbc123", url: "/r/rl1.sig_DemoTokenAbc123", revokedAt: null, createdAt: iso(-10 * DAY) }];
+
+const xPosted = new Set([0, 2].map((n) => new Date(now - n * DAY)).map((d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`));
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
@@ -205,6 +208,12 @@ function route(path: string, method: string): Response | null {
   if (path === "/carousels/sunra/models") return json({ models: MODELS });
   if (path === "/sunra/carousel/quote")
     return json({ quoteId: "sq1", modelId: "nano-banana-2", slides: 5, creditsPerImage: 7, credits: 35, width: 1080, height: 1350, aspectRatio: "4:5", requiresApproval: true, expiresAt: iso(15 * 60_000) });
+  if (/^\/brands\/[^/]+\/x-posted$/.test(path)) return json({ dates: [...xPosted] });
+  const xDay = /^\/brands\/[^/]+\/x-posted\/(.+)$/.exec(path)?.[1];
+  if (xDay && method === "PUT") {
+    if (!xPosted.delete(xDay)) xPosted.add(xDay);
+    return json({ date: xDay, posted: xPosted.has(xDay) });
+  }
   if (path === "/alerts") return json({ alerts: [] });
   if (path === "/reports/unseen") return json({ message: null });
   return null;
