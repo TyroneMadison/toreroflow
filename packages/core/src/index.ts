@@ -28,6 +28,7 @@ export * from "./edl";
 export * from "./reframe";
 export * from "./clipScore";
 export * from "./clipCurate";
+export * from "./smartAi";
 export * from "./captionChunks";
 export * from "./captionsToAss";
 export * from "./analysis";
