@@ -8,7 +8,7 @@ process.env.PUBLISH_PROVIDER = "zernio";
 process.env.PUBLISH_PROVIDER_API_KEY = "sk_test";
 delete process.env.BOT_FULL_ACCESS;
 const { getPrisma } = await import("@toreroflow/db");
-const { FailedPostListSchema, FailedPostRetryResultSchema } = await import("@toreroflow/contracts");
+const { FailedPostListSchema, FailedPostRetryResultSchema, FailedPostDismissResultSchema } = await import("@toreroflow/contracts");
 const { failedPostRoutes, retryAction } = await import("../routes/failedPosts");
 const { publishQueue } = await import("../posts/requeue");
 const { testApp } = await import("./testApp");
@@ -40,10 +40,25 @@ mock("postTarget", {
   findMany: async ({ where }: { where: { status: string; platform: { in: string[] }; post: { client: { agencyId: string } } } }) =>
     where.post.client.agencyId !== "A"
       ? []
-      : targets.filter((t) => t.status === where.status && where.platform.in.includes(t.platform)).map((t) => ({ ...t, post: { clientId: "caleb" } })),
+      : targets
+          .filter((t) => t.status === where.status && !t.failureDismissedAt && where.platform.in.includes(t.platform))
+          .map((t) => ({ ...t, post: { clientId: t.clientId ?? "caleb" } })),
   findFirst: async ({ where }: { where: { id: string; post: { client: { agencyId: string } } } }) =>
     where.post.client.agencyId === "A" ? targets.find((t) => t.id === where.id) ?? null : null,
   update: async ({ where, data }: { where: { id: string }; data: object }) => Object.assign(targets.find((t) => t.id === where.id)!, data),
+  updateMany: async ({ where, data }: { where: { id?: { in: string[] }; status: string; failureDismissedAt: null; platform: { in: string[] }; post: { clientId?: string; client: { agencyId: string } } }; data: object }) => {
+    if (where.post.client.agencyId !== "A") return { count: 0 };
+    const hit = targets.filter(
+      (t) =>
+        (!where.id || where.id.in.includes(t.id)) &&
+        t.status === where.status &&
+        where.platform.in.includes(t.platform) &&
+        !t.failureDismissedAt &&
+        (!where.post.clientId || (t.clientId ?? "caleb") === where.post.clientId),
+    );
+    hit.forEach((t) => Object.assign(t, data));
+    return { count: hit.length };
+  },
 });
 mock("post", { update: async ({ where, data }: { where: { id: string }; data: { status: string } }) => void posts.set(where.id, data.status) });
 
@@ -133,6 +148,51 @@ res = await retry("t-yt", nova);
 assert.equal(res.statusCode, 403);
 res = await retry("t-yt", otherAgency);
 assert.equal(res.statusCode, 404);
+
+// ---- dismiss: hides the notice, never touches the post ----
+targets.push(
+  { ...base, id: "t-d1", platform: "instagram", status: "failed", error: "x", remotePostId: null, socialAccount: { status: "connected", providerAccountId: "z-ig" } },
+  { ...base, id: "t-d2", platform: "instagram", status: "failed", error: "x", remotePostId: null, socialAccount: { status: "connected", providerAccountId: "z-ig" } },
+  { ...base, id: "t-d3", platform: "tiktok", status: "failed", error: "x", remotePostId: null, clientId: "brand2", socialAccount: { status: "connected", providerAccountId: "z-tt" } },
+);
+const listIds = async () => (await app.inject({ method: "GET", url: "/failed-posts", headers: operator })).json().items.map((i: { postTargetId: string }) => i.postTargetId);
+const dismissOne = (id: string, headers = operator) => app.inject({ method: "POST", url: `/failed-posts/${id}/dismiss`, headers });
+const dismissMany = (payload: object, headers = operator) => app.inject({ method: "POST", url: "/failed-posts/dismiss", headers, payload });
+assert.deepEqual(await listIds(), ["t-tt", "t-d1", "t-d2", "t-d3"]);
+const postsBefore = new Map(posts);
+
+res = await dismissOne("t-d1", nova);
+assert.equal(res.statusCode, 403);
+res = await dismissOne("t-d1");
+assert.deepEqual(FailedPostDismissResultSchema.parse(res.json()), { dismissed: 1 });
+assert.deepEqual(await listIds(), ["t-tt", "t-d2", "t-d3"], "dismissed leaves the list and the count");
+assert.equal(targets.find((t) => t.id === "t-d1")!.status, "failed", "the post itself stays failed and retryable");
+assert.equal((await dismissOne("t-d1")).statusCode, 404, "already dismissed");
+assert.equal((await dismissOne("t-ig")).statusCode, 404, "a published post is never touched");
+assert.equal(targets[0]!.failureDismissedAt, undefined);
+assert.equal((await dismissOne("t-tt", otherAgency)).statusCode, 404);
+
+// Bulk: selected ones; a published id in the set is skipped.
+res = await dismissMany({ postTargetIds: ["t-d2", "t-ig"] });
+assert.deepEqual(res.json(), { dismissed: 1 });
+assert.equal((await dismissMany({})).statusCode, 400);
+assert.equal((await dismissMany({ all: true, postTargetIds: ["t-tt"] })).statusCode, 400);
+assert.equal((await dismissMany({ all: true }, nova)).statusCode, 403);
+// All, for one brand, then all.
+res = await dismissMany({ all: true, brandId: "brand2" });
+assert.deepEqual(res.json(), { dismissed: 1 });
+assert.deepEqual(await listIds(), ["t-tt"]);
+res = await dismissMany({ all: true });
+assert.deepEqual(res.json(), { dismissed: 1 });
+res = await app.inject({ method: "GET", url: "/failed-posts", headers: operator });
+assert.equal(res.json().count, 0);
+assert.deepEqual(posts, postsBefore, "no post was changed by a dismiss");
+assert.equal(targets[0]!.status, "posted");
+
+// A retry clears the dismissal, so a second failure shows again.
+res = await retry("t-d1");
+assert.deepEqual(res.json(), { outcome: "queued" });
+assert.equal(targets.find((t) => t.id === "t-d1")!.failureDismissedAt, null);
 
 await app.close();
 console.log("failedPosts.check: ok");

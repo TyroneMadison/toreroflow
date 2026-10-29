@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { getPrisma } from "@toreroflow/db";
 import { explainPublishFailure } from "@toreroflow/core";
 import { ZernioProvider } from "@toreroflow/publishers";
-import { WorkflowPlatformSchema } from "@toreroflow/contracts";
+import { FailedPostDismissSchema, WorkflowPlatformSchema } from "@toreroflow/contracts";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { requeueFailedTarget } from "../posts/requeue";
@@ -33,6 +33,7 @@ export async function failedPostRoutes(app: FastifyInstance): Promise<void> {
     const targets = await prisma.postTarget.findMany({
       where: {
         status: "failed",
+        failureDismissedAt: null,
         platform: { in: [...PLATFORMS] },
         post: { deletedAt: null, client: { agencyId: request.user.agencyId }, ...(request.query.brandId ? { clientId: request.query.brandId } : {}) },
       },
@@ -54,6 +55,38 @@ export async function failedPostRoutes(app: FastifyInstance): Promise<void> {
       };
     });
     return { count: items.length, items };
+  });
+
+  /*
+   * Remove failure notices from the list. Only the notice goes: the post, its
+   * media and its calendar slot stay exactly as they were, and only failed
+   * targets match, so a published post is never touched. A retry clears it.
+   */
+  const dismiss = async (agencyId: string, where: { id?: { in: string[] }; post?: { clientId: string } }) => {
+    const { count } = await prisma.postTarget.updateMany({
+      where: { ...where, status: "failed", failureDismissedAt: null, platform: { in: [...PLATFORMS] }, post: { ...where.post, client: { agencyId } } },
+      data: { failureDismissedAt: new Date() },
+    });
+    return { dismissed: count };
+  };
+  const viewer = (request: { user: unknown }) => (request.user as { role?: string }).role === "viewer";
+
+  app.post<{ Params: { postTargetId: string } }>("/failed-posts/:postTargetId/dismiss", async (request, reply) => {
+    if (viewer(request)) return reply.status(403).send({ error: "viewers cannot remove failed posts" });
+    const r = await dismiss(request.user.agencyId, { id: { in: [request.params.postTargetId] } });
+    return r.dismissed ? r : reply.status(404).send({ error: "no failed post to remove" });
+  });
+
+  /** Bulk: `{ postTargetIds }` for the selected ones, `{ all: true }` (optionally per brand) for every one. */
+  app.post("/failed-posts/dismiss", async (request, reply) => {
+    if (viewer(request)) return reply.status(403).send({ error: "viewers cannot remove failed posts" });
+    const body = FailedPostDismissSchema.safeParse(request.body ?? {});
+    if (!body.success) return reply.status(400).send({ error: "send postTargetIds, or all: true" });
+    const { postTargetIds, all, brandId } = body.data;
+    return dismiss(request.user.agencyId, {
+      ...(all ? {} : { id: { in: postTargetIds ?? [] } }),
+      ...(brandId ? { post: { clientId: brandId } } : {}),
+    });
   });
 
   app.post<{ Params: { postTargetId: string } }>("/failed-posts/:postTargetId/retry", async (request, reply) => {

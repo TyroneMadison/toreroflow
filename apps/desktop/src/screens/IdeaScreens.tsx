@@ -1039,6 +1039,9 @@ function BestTimeCard({ bt, brand }: { bt: ReturnType<typeof bestTime>; brand: s
 
 // ------------------------------------------------------- 7. failed posts
 
+/** Fired after a retry or remove so the app-wide banner recounts now, not in two minutes. */
+const FAILED_CHANGED = "toreroflow:failed-posts-changed";
+
 export function FailedPostsScreen() {
   const { clients } = useAppState();
   const toast = useToast();
@@ -1047,6 +1050,7 @@ export function FailedPostsScreen() {
   const [done, setDone] = useState<Record<string, RetryOutcome>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -1071,7 +1075,9 @@ export function FailedPostsScreen() {
     try {
       const r = await api.post<{ outcome: RetryOutcome }>(`/failed-posts/${id}/retry`);
       setDone((d) => ({ ...d, [id]: r.outcome }));
+      setPicked((s) => new Set([...s].filter((p) => p !== id)));
       toast.success(RETRY_OUTCOME[r.outcome]);
+      window.dispatchEvent(new Event(FAILED_CHANGED));
     } catch (err) {
       toast.fail("Retry did not go through", err);
     } finally {
@@ -1080,8 +1086,39 @@ export function FailedPostsScreen() {
   };
 
   const brandName = (id: string) => clients.find((c) => c.id === id)?.name ?? "Unknown brand";
-  const open = list ? list.items.filter((i) => !done[i.postTargetId] || done[i.postTargetId] === "needs_reconnect").length : 0;
-  const state = error ? "error" : list === null ? "loading" : list.count === 0 ? "empty" : "ready";
+  // Still failed: not retried, or retried into "reconnect first".
+  const openIds = list ? list.items.filter((i) => !done[i.postTargetId] || done[i.postTargetId] === "needs_reconnect").map((i) => i.postTargetId) : [];
+  const open = openIds.length;
+  const allPicked = open > 0 && openIds.every((id) => picked.has(id));
+  const toggle = (id: string) =>
+    setPicked((s) => {
+      const next = new Set(s);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const state = error ? "error" : list === null ? "loading" : list.items.length === 0 ? "empty" : "ready";
+
+  // Removing hides the failure notice only; the post and its media stay put.
+  const remove = async (ids: string[] | "all") => {
+    if (ids === "all" && !window.confirm(`Remove all ${open} failure notices? The posts themselves are not deleted.`)) return;
+    setBusy("remove");
+    try {
+      const r = await (ids === "all"
+        ? api.post<{ dismissed: number }>("/failed-posts/dismiss", { all: true })
+        : ids.length === 1
+          ? api.post<{ dismissed: number }>(`/failed-posts/${ids[0]}/dismiss`)
+          : api.post<{ dismissed: number }>("/failed-posts/dismiss", { postTargetIds: ids }));
+      const gone = new Set(ids === "all" ? openIds : ids);
+      setList((l) => l && { count: Math.max(0, l.count - gone.size), items: l.items.filter((i) => !gone.has(i.postTargetId)) });
+      setPicked(new Set());
+      toast.success(`Removed ${r.dismissed} ${r.dismissed === 1 ? "notice" : "notices"}. The posts are untouched.`);
+      window.dispatchEvent(new Event(FAILED_CHANGED));
+    } catch (err) {
+      toast.fail("Remove did not go through", err);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <Screen id="failed" state={state} title="Failed posts" sub="Every failure with the reason, and one tap to retry. Nothing retries on its own.">
@@ -1091,11 +1128,39 @@ export function FailedPostsScreen() {
       {state === "ready" && (
         <>
           {open > 0 && (
-            <div className="id-alert" role="status">
-              <b>
-                {open} {open === 1 ? "post" : "posts"} failed.
-              </b>{" "}
-              Fix and retry below.
+            <div className="id-alert id-fail-bar" role="region" aria-label="Failed posts actions">
+              <label className="id-check">
+                <input
+                  type="checkbox"
+                  checked={allPicked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = picked.size > 0 && !allPicked;
+                  }}
+                  onChange={() => setPicked(allPicked ? new Set() : new Set(openIds))}
+                  aria-label={allPicked ? "Clear selection" : "Select all failed posts"}
+                />
+                <span>Select all</span>
+              </label>
+              <span className="id-fail-count" role="status">
+                <b>
+                  {open} {open === 1 ? "post" : "posts"} failed.
+                </b>{" "}
+                {picked.size ? `${picked.size} selected.` : "Fix and retry below."}
+              </span>
+              <span className="id-fail-acts">
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={!picked.size || busy === "remove"}
+                  onClick={() => void remove([...picked])}
+                  aria-label={`Remove ${picked.size} selected failure ${picked.size === 1 ? "notice" : "notices"}`}
+                >
+                  Remove selected{picked.size ? ` (${picked.size})` : ""}
+                </button>
+                <button type="button" className="btn ghost" disabled={busy === "remove"} onClick={() => void remove("all")} aria-label="Remove all failure notices">
+                  Remove all
+                </button>
+              </span>
             </div>
           )}
           <div className="card glass id-card">
@@ -1103,10 +1168,21 @@ export function FailedPostsScreen() {
               {list!.items.map((i) => {
                 const outcome = done[i.postTargetId];
                 const reconnect = i.action === "reconnect" || outcome === "needs_reconnect";
+                const stillFailed = !outcome || outcome === "needs_reconnect";
+                const name = names[i.postTargetId] ?? "A post";
                 return (
-                  <li className="id-row" key={i.postTargetId}>
+                  <li className={`id-row${picked.has(i.postTargetId) ? " picked" : ""}`} key={i.postTargetId}>
+                    {stillFailed && (
+                      <input
+                        type="checkbox"
+                        className="id-rowcheck"
+                        checked={picked.has(i.postTargetId)}
+                        onChange={() => toggle(i.postTargetId)}
+                        aria-label={`Select ${name}, ${PLATFORM_LABELS[i.platform]}`}
+                      />
+                    )}
                     <div className="id-rowtext">
-                      <b>{names[i.postTargetId] ?? "A post"}</b> {brandName(i.brandId)}, {PLATFORM_LABELS[i.platform]}
+                      <b>{name}</b> {brandName(i.brandId)}, {PLATFORM_LABELS[i.platform]}
                       {i.scheduledAt ? `, ${fmtEt(i.scheduledAt)}` : ""}
                       {outcome && outcome !== "needs_reconnect" && (
                         <>
@@ -1130,6 +1206,20 @@ export function FailedPostsScreen() {
                         </button>
                       )
                     )}
+                    {stillFailed && (
+                      <button
+                        type="button"
+                        className="iconbtn id-dismiss"
+                        disabled={busy === "remove"}
+                        onClick={() => void remove([i.postTargetId])}
+                        aria-label={`Remove the failure notice for ${name}, ${PLATFORM_LABELS[i.platform]}`}
+                        title="Remove from this list. The post is not deleted."
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M6 6l12 12M18 6L6 18" />
+                        </svg>
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -1152,7 +1242,11 @@ export function FailedPostBanner() {
         .catch(() => {});
     poll();
     const t = setInterval(poll, 2 * 60 * 1000);
-    return () => clearInterval(t);
+    window.addEventListener(FAILED_CHANGED, poll);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener(FAILED_CHANGED, poll);
+    };
   }, []);
   if (!count) return null;
   return (

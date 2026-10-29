@@ -94,6 +94,16 @@ button.id-cmt{cursor:pointer}
 .id-alert{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;padding:12px 16px;border-radius:var(--r-tile);
   background:rgba(240,80,110,.14);border:1px solid rgba(240,80,110,.6);color:var(--text);font-size:14px;margin-bottom:16px}
 .id-alert-global{margin:0 0 12px}
+.id-fail-bar{justify-content:flex-start}
+.id-fail-count{flex:1;min-width:160px}
+.id-fail-acts{display:flex;gap:8px;flex-wrap:wrap}
+.id-check{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-weight:600;cursor:pointer}
+.id-check input,.id-rowcheck{width:20px;height:20px;margin:0;flex:none;accent-color:#FF6F61;cursor:pointer}
+.id-check input:focus-visible,.id-rowcheck:focus-visible,.id-dismiss:focus-visible{outline:2px solid #FF6F61;outline-offset:2px}
+.id-row.picked{border-color:#FF6F61;background:rgba(255,111,97,.10)}
+.id-dismiss{flex:none;width:44px;height:44px}
+.id-dismiss:hover:not(:disabled){color:#FF6F61}
+.id-dismiss:disabled{opacity:.5;cursor:default}
 
 /* ---- Studio: brand kit ---- */
 .id-swatches{display:flex;flex-wrap:wrap;gap:8px;align-items:center}

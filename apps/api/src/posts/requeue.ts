@@ -32,6 +32,7 @@ export async function requeueFailedTarget(
       // last one, which is what makes "it failed the same way" readable.
       error: null,
       scheduledAt: when,
+      failureDismissedAt: null,
       options: nextOptions as never,
     },
   });
