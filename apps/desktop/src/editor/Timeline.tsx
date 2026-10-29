@@ -30,6 +30,7 @@ import { useEditor, type EditAssetInfo, type Selection } from "./StudioEditor";
 import "./Timeline.css";
 
 import PanelArea from "./panels";
+import { useCommentMarkers } from "./commentStore";
 import {
   ASSET_DRAG_MIME as DRAG_MIME,
   ClipsDrawer,
@@ -113,6 +114,7 @@ export default function Timeline() {
     tool,
     setTool,
   } = useEditor();
+  const markers = useCommentMarkers();
 
   const [drawer, setDrawer] = useState<DrawerKind | null>(null);
   const [zoomPps, setZoomPps] = useState<number | null>(null);
@@ -715,6 +717,18 @@ export default function Timeline() {
             onPointerUp={onBodyUp}
           >
             <div className="tl-ruler">
+              {markers.map((m) => (
+                <button
+                  key={m.id}
+                  className={`tl-cmark${m.resolved ? " done" : ""}`}
+                  style={{ left: X(m.at) }}
+                  title={`${m.count} comment${m.count > 1 ? "s" : ""}`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => seek(m.at)}
+                >
+                  {m.count > 1 ? m.count : ""}
+                </button>
+              ))}
               {seconds.map((s) => (
                 <span key={s}>
                   <i

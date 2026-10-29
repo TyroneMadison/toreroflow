@@ -31,8 +31,15 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).p
  * suggestions over the live doc, then applies them in one update() so a
  * pass is one undo step, and says what it changed.
  */
+interface StockHit {
+  id: number;
+  page: string;
+  thumb: string;
+  by: string;
+}
+
 export default function AiPanel() {
-  const { doc, update, assets, project } = useEditor();
+  const { doc, update, assets, project, refreshAssets } = useEditor();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -143,7 +150,8 @@ export default function AiPanel() {
 
   /* ---- b-roll spots ---- */
   const [stockOk, setStockOk] = useState(false);
-  const [stock, setStock] = useState<Record<string, { page: string; thumb: string; by: string }[]>>({});
+  const [stock, setStock] = useState<Record<string, StockHit[]>>({});
+  const [importing, setImporting] = useState<number | null>(null);
   const spots = doc.brollSpots ?? [];
   const findSpots = async () => {
     const r = await call<{ spots: BrollSpotSuggestion[]; stock: boolean }>("broll-spots");
@@ -203,9 +211,28 @@ export default function AiPanel() {
       };
     });
   };
+  /** Phase 8: download the Pexels file into the project, then fill the spot with it. */
+  const importStock = async (spotId: string, hit: StockHit) => {
+    setImporting(hit.id);
+    try {
+      const portrait = doc.output.aspect === "9:16" || doc.output.aspect === "4:5";
+      const r = await api.post<{ asset: { id: string }; credit: string | null }>(
+        `/edit-projects/${project.id}/broll/stock-import`,
+        { pexelsId: hit.id, portrait },
+      );
+      await refreshAssets();
+      fillSpot(spotId, r.asset.id);
+      setStock((m) => ({ ...m, [spotId]: [] }));
+      toast.success(`B-roll placed. Video by ${r.credit ?? "a Pexels creator"} on Pexels.`);
+    } catch (e: unknown) {
+      toast.fail("Importing the stock clip", e);
+    } finally {
+      setImporting(null);
+    }
+  };
   const searchStock = async (spotId: string, q: string) => {
     try {
-      const r = await api.get<{ results: { page: string; thumb: string; by: string }[] }>(
+      const r = await api.get<{ results: StockHit[] }>(
         `/broll/stock?q=${encodeURIComponent(q)}`,
       );
       setStock((m) => ({ ...m, [spotId]: r.results.slice(0, 3) }));
@@ -404,9 +431,14 @@ export default function AiPanel() {
               {stockOk && <Chip onClick={() => void searchStock(s.id, s.keywords.join(" "))}>Stock</Chip>}
             </div>
             {stock[s.id]?.map((r) => (
-              <a key={r.page} href={r.page} target="_blank" rel="noreferrer" className="ai-stock">
-                <img src={r.thumb} alt="" /> Pexels · {r.by}
-              </a>
+              <div key={r.page} className="ai-stock">
+                <a href={r.page} target="_blank" rel="noreferrer">
+                  <img src={r.thumb} alt="" /> Pexels · {r.by}
+                </a>
+                <Chip disabled={importing !== null} onClick={() => void importStock(s.id, r)}>
+                  {importing === r.id ? "Importing..." : "Use"}
+                </Chip>
+              </div>
             ))}
           </div>
         ))}
