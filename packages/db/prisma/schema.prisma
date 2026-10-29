@@ -215,6 +215,8 @@ model Client {
   /// Phase 7 censor word list (a trailing * matches any word starting so).
   /// The editor snapshots it into doc.censor.words when censor is switched on.
   censorWords           String[]       @default([])
+  /// Phase 8: AutoImportSettings from @toreroflow/core (own YouTube channel).
+  autoImport            Json?
   /// Absolute URL of the last published report page; null until first publish.
   reportUrl             String?
   /// When that page was last pushed. Also the flag month-end republishing
@@ -293,6 +295,9 @@ model Client {
   clipJobs         ClipJob[]
   editProjects     EditProject[]
   recipes          Recipe[]
+  clipCollections  ClipCollection[]
+  clipActivity     ClipActivity[]
+  youtubeImports   YouTubeImport[]
   captionTemplates CaptionTemplate[]
   videoAnalyses    VideoAnalysis[]
   contentIdeas     ContentIdea[]
@@ -513,29 +518,29 @@ model Post {
 }
 
 model PostTarget {
-  id              String           @id @default(cuid())
-  postId          String
-  socialAccountId String
-  platform        Platform
-  caption         String?
-  hashtags        String[]         @default([])
+  id                 String           @id @default(cuid())
+  postId             String
+  socialAccountId    String
+  platform           Platform
+  caption            String?
+  hashtags           String[]         @default([])
   /// Per-platform publish options: { instagram: {...} } or { youtubeTitle }.
-  options         Json?
+  options            Json?
   /// Fan-out (W1): fields this target overrides from the draft
   /// ({ caption, title, cover, cutId, postAt }). Present key = overridden;
   /// reset deletes the key.
-  overrides       Json             @default("{}")
-  scheduledAt     DateTime?
-  status          PostTargetStatus @default(scheduled)
-  remotePostId    String?
-  remoteUrl       String?
-  error           String?
-  publishedAt     DateTime?
+  overrides          Json             @default("{}")
+  scheduledAt        DateTime?
+  status             PostTargetStatus @default(scheduled)
+  remotePostId       String?
+  remoteUrl          String?
+  error              String?
+  publishedAt        DateTime?
   /// Failed posts screen: the operator removed the failure notice. The post
   /// itself is untouched; a retry clears this.
   failureDismissedAt DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   post          Post          @relation(fields: [postId], references: [id])
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
@@ -1146,9 +1151,11 @@ model EditProject {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  client   Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  assets   EditAsset[]
-  versions EditVersion[]
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assets      EditAsset[]
+  versions    EditVersion[]
+  comments    EditComment[]
+  reviewLinks ReviewLink[]
 
   @@index([clientId])
 }
@@ -1771,9 +1778,9 @@ model ClipJob {
 
 /// One scored clip of a ClipJob: source ranges in play order plus scores.
 model ClipCandidate {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   jobId         String
-  rank          Int      @default(0)
+  rank          Int       @default(0)
   /// [[start, end], ...] seconds in the source, in play order.
   ranges        Json
   duration      Float
@@ -1782,29 +1789,35 @@ model ClipCandidate {
   title         String
   why           String?
   description   String?
-  hashtags      String[] @default([])
+  hashtags      String[]  @default([])
   /// The clip's words in play order, for transcript search.
   text          String?
-  hook          Int      @default(0)
-  flow          Int      @default(0)
-  value         Int      @default(0)
-  trend         Int      @default(0)
+  hook          Int       @default(0)
+  flow          Int       @default(0)
+  value         Int       @default(0)
+  trend         Int       @default(0)
   relevance     Int?
   sponsorship   Int?
-  raw           Int      @default(0)
+  raw           Int       @default(0)
   /// Shown 0-99 score (rank curve within the job).
-  score         Int      @default(0)
+  score         Int       @default(0)
   /// { hook, flow, value, trend, relevance? } judge comments.
   comments      Json?
   /// up | down
   feedback      String?
   /// "curate" | "refine": refine rows survive a curate rerun.
-  origin        String   @default("curate")
+  origin        String    @default("curate")
   /// The EditProject "Open in editor" made, reused on a second open.
   editProjectId String?
-  createdAt     DateTime @default(now())
+  /// Phase 8: starred in Collections.
+  favorite      Boolean   @default(false)
+  /// Phase 8: ClipPerformance from @toreroflow/core, pulled from post metrics.
+  perf          Json?
+  perfAt        DateTime?
+  createdAt     DateTime  @default(now())
 
-  job ClipJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job         ClipJob              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  collections ClipCollectionItem[]
 
   @@index([jobId])
 }
@@ -1839,4 +1852,102 @@ model EditVersion {
   project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
+}
+
+/// Phase 8: a timestamped note on an edit, from the team or a client
+/// through a review link. Replies hang off a root; only roots carry atSec.
+model EditComment {
+  id         String    @id @default(cuid())
+  projectId  String
+  parentId   String?
+  /// Output time in seconds (roots only).
+  atSec      Float?
+  body       String
+  authorName String
+  /// team | client
+  authorKind String    @default("team")
+  userId     String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  project EditProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent  EditComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies EditComment[] @relation("CommentReplies")
+
+  @@index([projectId, createdAt])
+}
+
+/// Phase 8: signed read-only review link for an edit project. The token is
+/// "<id>.<HMAC>", never stored, like ApprovalLink.
+model ReviewLink {
+  id          String    @id @default(cuid())
+  projectId   String
+  createdById String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+/// Phase 8: a named folder of clips per client.
+model ClipCollection {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  client Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items  ClipCollectionItem[]
+
+  @@unique([clientId, name])
+}
+
+model ClipCollectionItem {
+  collectionId String
+  candidateId  String
+  addedAt      DateTime @default(now())
+
+  collection ClipCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  candidate  ClipCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, candidateId])
+}
+
+/// Phase 8: who did what to which clip (team activity feed).
+model ClipActivity {
+  id          String   @id @default(cuid())
+  clientId    String
+  actor       String
+  /// favorited, collected, opened, rendered, sent, commented, review_link, imported, ...
+  action      String
+  candidateId String?
+  jobId       String?
+  projectId   String?
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// Phase 8: one video seen on the client's own YouTube channel by auto-import.
+model YouTubeImport {
+  id          String    @id @default(cuid())
+  clientId    String
+  videoId     String
+  title       String
+  publishedAt DateTime?
+  /// imported | skipped | failed
+  status      String
+  reason      String?
+  clipJobId   String?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, videoId])
 }
