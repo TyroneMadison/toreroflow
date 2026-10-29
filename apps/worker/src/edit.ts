@@ -6,6 +6,10 @@ import {
   type FaceTrack,
   assFromDoc,
   attachMarks,
+  captionEmojiOverlays,
+  censorSpans,
+  maskText,
+  stickerOverlays,
   outputWordRefs,
   textsWithHook,
   wordMarks,
@@ -304,11 +308,20 @@ export async function renderProject(editProjectId: string): Promise<void> {
     const outWords = outputWords(edl, wordsByAsset);
     // Same chunks as chunksFor, plus each word's time for karaoke \k.
     // Phase 5 keyword levels and emojis ride on the chunks, packed alike.
-    const chunks = attachMarks(
+    const marked = attachMarks(
       chunksWithTimes(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines),
       wordMarks(outputWordRefs(edl, wordsByAsset), doc),
       doc.captions.style.wordsPerLine * doc.captions.style.lines,
     );
+    // Phase 7 censor: listed words dashed in captions (word count unchanged,
+    // so karaoke times still line up) and their spans muted or bleeped.
+    // ponytail: manual break overrides keep their typed text unmasked.
+    const censorList = doc.censor?.words ?? [];
+    const chunks =
+      doc.censor?.mask && censorList.length
+        ? marked.map((c) => ({ ...c, text: maskText(c.text, censorList) }))
+        : marked;
+    const spans = doc.censor && doc.censor.audio !== "off" ? censorSpans(outWords, censorList) : [];
     // The hook headline renders through the text-overlay path.
     const texts = textsWithHook(doc);
 
@@ -338,6 +351,8 @@ export async function renderProject(editProjectId: string): Promise<void> {
           chunks: doc.captions.enabled ? chunks : [],
           texts,
           captions: doc.captions,
+          // Emojis render as Twemoji PNG overlays below, not libass glyphs.
+          colorEmoji: true,
         }),
         "utf8",
       );
@@ -366,6 +381,28 @@ export async function renderProject(editProjectId: string): Promise<void> {
           if (m) hasAudio.set(a.id, m.audioCodec !== "");
         }),
     );
+    // Face tracks (written by auto reframe) aim face zooms at the real face.
+    const faceTracks: Record<string, FaceTrack> = {};
+    for (const a of clips) {
+      if (a.storageKey === "pending") continue;
+      // doc.faces holds the key auto reframe wrote (clip projects point at
+      // the source project's file); else the conventional sibling path.
+      const key = doc.faces?.[a.id] ?? `${path.posix.dirname(a.storageKey)}/${a.id}-faces.json`;
+      const raw = await fs.readFile(path.join(env.STORAGE_DIR, key), "utf8").catch(() => null);
+      if (!raw) continue;
+      try {
+        faceTracks[a.id] = JSON.parse(raw) as FaceTrack;
+      } catch {
+        // A broken track only costs the anchor; the zoom keeps the fixed point.
+      }
+    }
+    const emojiOverlays = [
+      ...captionEmojiOverlays(chunks, doc.captions, width, height),
+      ...stickerOverlays(doc.overlays?.stickers, width, height),
+    ];
+    // Fonts: the bundled set plus the client's uploads, linked into one dir
+    // per render so libass sees both.
+    const fontsDir = await renderFontsDir(projectDir, n, project.clientId);
     const plan = buildRenderPlan({
       doc,
       edl,
@@ -381,8 +418,13 @@ export async function renderProject(editProjectId: string): Promise<void> {
       assPath,
       // Resolved the way the insights template is: relative to the repo root,
       // which the Dockerfile also registers with fontconfig.
-      fontsDir: path.join(env.REPO_ROOT, "assets", "fonts"),
+      fontsDir,
       out: { path: outPath, width, height, fps, format: ext, videoBitrateK },
+      faceTracks,
+      emoji: emojiOverlays.length
+        ? { dir: path.join(env.REPO_ROOT, "assets", "emoji"), overlays: emojiOverlays }
+        : undefined,
+      censorSpans: spans,
     });
 
     // Whole percents only, written when the number actually moves; the last
@@ -413,6 +455,24 @@ export async function renderProject(editProjectId: string): Promise<void> {
   } catch (error) {
     await fail(error instanceof Error ? error.message : String(error));
   }
+}
+
+/**
+ * The fonts dir for one render: bundled fonts alone when the client has no
+ * uploads, else a temp dir of copies of both (copies, not symlinks, so it
+ * works the same on Windows dev boxes).
+ */
+async function renderFontsDir(projectDir: string, n: number, clientId: string): Promise<string> {
+  const bundled = path.join(env.REPO_ROOT, "assets", "fonts");
+  const clientFonts = path.join(env.STORAGE_DIR, clientId, "fonts");
+  const uploads = (await fs.readdir(clientFonts).catch(() => [] as string[])).filter((f) => /\.(ttf|otf)$/i.test(f));
+  if (uploads.length === 0) return bundled;
+  const dir = path.join(projectDir, `render-${n}-fonts`);
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(dir, { recursive: true });
+  for (const f of await fs.readdir(bundled)) await fs.copyFile(path.join(bundled, f), path.join(dir, f)).catch(() => {});
+  for (const f of uploads) await fs.copyFile(path.join(clientFonts, f), path.join(dir, f));
+  return dir;
 }
 
 /**

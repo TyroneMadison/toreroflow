@@ -5,8 +5,10 @@
  *
  * Documented libass approximations (the phone preview is the operator's
  * truth, ASS gets as close as libass allows):
- * - Background boxes (BorderStyle 3) are always square. "rounded" corners are
- *   a libass limitation, and a box replaces the letter outline and shadow.
+ * - Caption background boxes (BorderStyle 3) are square, and a box replaces
+ *   the letter outline and shadow. Text items (hook, lower thirds) with a
+ *   "rounded" box get a vector-drawn rounded rectangle behind them instead,
+ *   sized from estimateTextWidth (an average advance, not real metrics).
  * - Glow, lineSpaceX/lineSpaceY, and outline distance have no ASS equivalent
  *   and are dropped.
  * - Left/right alignment anchors the text edge at the position point instead
@@ -26,6 +28,7 @@ import {
   type TextStyle,
 } from "./editDoc";
 import type { CaptionChunk } from "./captionChunks";
+import { roundedBoxSize, roundedRectPath } from "./polish";
 
 /** "#RRGGBB" plus an alpha byte (0 solid, 255 clear) to ASS &HAABBGGRR&. */
 export function hexToAss(hex: string, alpha = 0): string {
@@ -268,6 +271,24 @@ function textEvents(item: TextItem, style: string, w: number, h: number): string
   return [dialogue(1, start, end, style, lead + escapeText(text))];
 }
 
+/** A rounded rectangle drawing behind a text item, same position and timing. */
+function roundedBoxEvent(item: TextItem, w: number, h: number): string {
+  const { px, py } = posOf(item.x, item.y, w, h);
+  const D = Math.round(item.dur * 1000);
+  const text = applyCase(item.content, item.style.case);
+  const box = roundedBoxSize(text, item.style);
+  const bg = item.style.background;
+  let tags = "\\an5\\bord0\\shad0";
+  if (item.animIn === "slideup") tags += `\\move(${px},${py + 60},${px},${py},0,200)`;
+  else if (item.animOut === "slideup") tags += `\\move(${px},${py},${px},${py - 60},${Math.max(0, D - 200)},${D})`;
+  else tags += `\\pos(${px},${py})`;
+  const fadIn = item.animIn === "fade" ? 160 : 0;
+  const fadOut = item.animOut === "fade" ? 160 : 0;
+  if (fadIn || fadOut) tags += `\\fad(${fadIn},${fadOut})`;
+  tags += `\\1c&H${hexToAss(bg.color).slice(4)}\\1a&H${alphaByte(bg.opacity).toString(16).padStart(2, "0").toUpperCase()}&\\p1`;
+  return dialogue(0, item.at, item.at + item.dur, "B", `{${tags}}${roundedRectPath(box.w, box.h, box.r)}{\\p0}`);
+}
+
 /**
  * The whole ASS file: Script Info, one Style per distinct look (C for
  * captions, T1..Tn for text items), and every Dialogue event. Chunks and
@@ -279,6 +300,8 @@ export function assFromDoc(input: {
   chunks: CaptionChunk[];
   texts: TextItem[];
   captions: CaptionSettings;
+  /** Phase 7: emojis are composited as colour images, so no mono tail. */
+  colorEmoji?: boolean;
   playResX?: number;
   playResY?: number;
 }): string {
@@ -326,19 +349,30 @@ export function assFromDoc(input: {
         (karaoke
           ? karaokeText(text, chunk.end - chunk.start, chunk.times, chunk.start)
           : markedText(text, marks, cap.style.color, cap.style.accentColor)) +
-        emojiTail(chunk.emojis, cap.style.font);
+        (input.colorEmoji ? "" : emojiTail(chunk.emojis, cap.style.font));
       events.push(dialogue(0, chunk.start, chunk.end, "C", posTag + body));
     });
   }
 
   const styleNames = new Map<string, string>();
   for (const item of input.texts) {
-    const key = JSON.stringify(item.style);
+    // A rounded box is drawn as its own shape, so the text style itself
+    // carries no BorderStyle 3 box (which would paint square corners).
+    const rounded = item.style.background.on && item.style.background.shape === "rounded";
+    const st = rounded ? { ...item.style, background: { ...item.style.background, on: false } } : item.style;
+    const key = JSON.stringify(st);
     let name = styleNames.get(key);
     if (!name) {
       name = `T${styleNames.size + 1}`;
       styleNames.set(key, name);
-      styleLines.push(styleLine(name, item.style, hexToAss(item.style.color)));
+      styleLines.push(styleLine(name, st, hexToAss(st.color)));
+    }
+    if (rounded) {
+      if (!styleNames.has("__box")) {
+        styleNames.set("__box", "B");
+        styleLines.push(styleLine("B", { ...st, outline: { ...st.outline, on: false }, shadow: { ...st.shadow, on: false } }, hexToAss("#000000")));
+      }
+      events.push(roundedBoxEvent(item, w, h));
     }
     events.push(...textEvents(item, name, w, h));
   }

@@ -27,6 +27,15 @@ import {
   textsWithHook,
   curveScale,
   HIGHLIGHT_STRONG,
+  SAFE_ZONES,
+  captionEmojiOverlays,
+  censorSpans,
+  maskText,
+  stickerOverlays,
+  transitionAt,
+  transitionCss,
+  transitionJoins,
+  type EmojiOverlay,
   type ColorAdjust,
   type TextStyle,
   type Word,
@@ -34,6 +43,14 @@ import {
 import { fileUrl } from "../lib/api";
 import { useEditor, type EditAssetInfo } from "./StudioEditor";
 import "./PhonePreview.css";
+
+/** Twemoji PNGs, the same files the render overlays. */
+const EMOJI_URLS = import.meta.glob("../../../../assets/emoji/*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+const emojiUrl = (file: string): string | undefined => EMOJI_URLS[`../../../../assets/emoji/${file}`];
 
 /** Stage width in px; must match .pv-screen in PhonePreview.css. */
 const STAGE_W = 300;
@@ -299,7 +316,10 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     const seg = edl[segRef.current];
     const vol = seg ? (doc.clipFx[seg.assetId]?.volume ?? 100) : 100;
     v.volume = Math.max(0, Math.min(1, vol / 100));
-    v.muted = false;
+    // Phase 7 censor: muted inside listed-word spans (the render bleeps or
+    // mutes; ponytail: the preview only mutes).
+    const t = outputTime;
+    v.muted = censorNow.some((sp) => t >= sp.start && t < sp.end);
   }, [doc, edl, outputTime]);
 
   // Overlay media (b-roll video, audio items) mount only inside their window
@@ -349,9 +369,18 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [edl, wordsByAsset, doc.captions.highlight],
   );
+  const censorList = doc.censor?.words ?? [];
+  const maskOn = !!doc.censor?.mask && censorList.length > 0;
+  const censorNow = useMemo(
+    () => (doc.censor && doc.censor.audio !== "off" ? censorSpans(outWords, censorList) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [outWords, doc.censor?.audio, censorList.join("|")],
+  );
   const chunks = useMemo(() => {
     if (!doc.captions.enabled) return [];
-    const list = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    const raw = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    // Masked like the worker does, before break overrides.
+    const list = maskOn ? raw.map((c) => ({ ...c, text: maskText(c.text, censorList) })) : raw;
     for (const b of doc.captions.breaks) {
       const c = list[b.chunkIndex];
       if (c) list[b.chunkIndex] = { ...c, text: b.text };
@@ -363,6 +392,8 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     doc.captions.style.lines,
     doc.captions.breaks,
     outWords,
+    maskOn,
+    censorList.join("|"),
   ]);
 
   const chunkIndex = chunks.findIndex((c) => c.start <= clampT && clampT < c.end);
@@ -387,13 +418,28 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     caption && (karaoke || marked)
       ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk)
       : null;
-  const captionEmojis = chunkMarks.map((m) => m.emoji).filter(Boolean).join(" ");
+  const captionEmojiList = chunkMarks.map((m) => m.emoji).filter((e): e is string => !!e);
   // Same colors as the export: karaoke owns color when on, else keyword levels.
   const wordColor = (w: { start: number; end: number }, i: number): string | undefined => {
     if (karaoke) return w.start <= clampT && clampT < w.end ? doc.captions.style.accentColor : undefined;
     const lvl = chunkMarks[i]?.level ?? 0;
     return lvl === 2 ? HIGHLIGHT_STRONG : lvl === 1 ? doc.captions.style.accentColor : undefined;
   };
+
+  // Colour emoji as the render places them: a PNG row above the caption,
+  // plus stickers, positioned in output pixels.
+  const outPx = outputSize(doc.output.aspect, 1080);
+  const emojiNow: EmojiOverlay[] = [
+    ...(caption && captionEmojiList.length
+      ? captionEmojiOverlays([{ ...caption, emojis: captionEmojiList }], doc.captions, outPx.width, outPx.height)
+      : []),
+    ...stickerOverlays(doc.overlays?.stickers, outPx.width, outPx.height).filter(
+      (e) => clampT >= e.start && clampT < e.end,
+    ),
+  ];
+  const trNow = transitionAt(transitionJoins(doc.transitions, edl), clampT);
+  const trCss = trNow ? transitionCss(trNow.join.preset, trNow.p) : null;
+  const progress = doc.overlays?.progress;
 
   // The hook headline rides the text-overlay path, as in the export.
   const visibleTexts = textsWithHook(doc).filter((t) => clampT >= t.at && clampT < t.at + t.dur);
@@ -449,8 +495,16 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     })`,
     filter: colorFilter(doc.color, fx?.color),
     // Face-anchored zooms grow toward where a reframed face sits (render FACE_Y).
+    // ponytail: the render aims at the tracked face; the preview keeps the fixed point.
     ...(zoomFace ? { transformOrigin: "50% 38%" } : {}),
   };
+  // Phase 7 transition preview, approximated over black (ponytail: the
+  // render blends with the outgoing clip's frozen last frame).
+  if (trCss) {
+    if (trCss.opacity !== undefined) wrapStyle.opacity = trCss.opacity;
+    if (trCss.transform) wrapStyle.transform = `${trCss.transform} ${wrapStyle.transform}`;
+    if (trCss.filter) wrapStyle.filter = `${wrapStyle.filter ?? ""} ${trCss.filter}`.trim();
+  }
 
   /* ---- layouts: fill / fit / split / screenshare ---- */
 
@@ -665,14 +719,58 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
                         style={wordColor(w, i) ? { color: wordColor(w, i) } : undefined}
                       >
                         {(i === 0 ? "" : i % doc.captions.style.wordsPerLine === 0 ? "\n" : " ") +
-                          w.word}
+                          (maskOn ? maskText(w.word, censorList) : w.word)}
                       </span>
                     ))
                   : caption.text}
-                {captionEmojis && <span className="pv-emoji"> {captionEmojis}</span>}
+
               </div>
             )}
           </div>
+          <div className="pv-overlays">
+            {emojiNow.map((e, k) => {
+              const src = emojiUrl(e.file);
+              return src ? (
+                <img
+                  key={`${e.file}${k}`}
+                  className="pv-emoji-img"
+                  src={src}
+                  alt=""
+                  style={{
+                    position: "absolute",
+                    left: `${(e.x / outPx.width) * 100}%`,
+                    top: `${(e.y / outPx.height) * 100}%`,
+                    width: `${(e.size / outPx.width) * 100}%`,
+                  }}
+                />
+              ) : null;
+            })}
+          </div>
+          {trCss?.dip && (
+            <div
+              style={{ position: "absolute", inset: 0, background: trCss.dip.color, opacity: trCss.dip.opacity, zIndex: 3 }}
+            />
+          )}
+          {progress?.on && total > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                [progress.position === "top" ? "top" : "bottom"]: 0,
+                height: Math.max(2, (progress.height / 1920) * stageH),
+                width: `${(clampT / total) * 100}%`,
+                background: progress.color,
+                zIndex: 3,
+              }}
+            />
+          )}
+          {doc.safeZone && SAFE_ZONES[doc.safeZone] && (
+            <div className="pv-safe">
+              {SAFE_ZONES[doc.safeZone].covered.map((r, k) => (
+                <div key={k} style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }} />
+              ))}
+            </div>
+          )}
           {safe && (
             <div className="pv-safe">
               <div className="pv-safe-top">

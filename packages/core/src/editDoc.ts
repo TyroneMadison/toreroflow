@@ -7,6 +7,8 @@
  * edl.ts maps between the two.
  */
 
+import type { PolishFields } from "./polish";
+
 export interface EditAssetRef {
   assetId: string;
 }
@@ -304,7 +306,8 @@ export type EditDocV1 = Omit<EditDoc, "v" | "clips" | "output" | "layout" | "sho
   clips: EditAssetRef[];
 };
 
-export interface EditDoc {
+/** Phase 7 fields (transitions, lowerThirds, censor, look, enhance, overlays) are optional, see polish.ts. */
+export interface EditDoc extends PolishFields {
   v: 2;
   clips: EditClip[];
   output: { aspect: Aspect };

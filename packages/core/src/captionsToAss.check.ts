@@ -215,10 +215,26 @@ console.log("captionsToAss phase 5 checks passed");
 {
   const boxed: TextItem = {
     ...textItem,
-    style: { ...textItem.style, background: { on: true, shape: "rounded", opacity: 100, size: 50, color: "#FFFFFF" } },
+    style: { ...textItem.style, background: { on: true, shape: "square", opacity: 100, size: 50, color: "#FFFFFF" } },
   };
   const ass = assFromDoc({ chunks: [], texts: [boxed], captions: doc.captions });
   const st = ass.split("\n").find((l) => l.startsWith("Style:") && l.includes(",3,"));
   if (!st || st.split(",")[5] !== hexToAss("#FFFFFF")) throw new Error("box color in OutlineColour: " + st);
   console.log("captionsToAss box color check passed");
+}
+
+// Phase 7: a rounded box is a vector drawing on layer 0; the text style has no square box.
+{
+  const rounded: TextItem = {
+    ...textItem,
+    style: { ...textItem.style, background: { on: true, shape: "rounded", opacity: 100, size: 50, color: "#FF6B5B" } },
+  };
+  const ass = assFromDoc({ chunks: [], texts: [rounded], captions: doc.captions });
+  const ev = ass.split("\n").filter((l) => l.startsWith("Dialogue"));
+  const box = ev.find((l) => l.includes("\\p1"));
+  if (!box || !box.startsWith("Dialogue: 0,") || !box.includes(",B,") || !box.includes("\\1c&H5B6BFF&") || !/m \d+ 0 l/.test(box)) throw new Error("rounded box drawing: " + box);
+  if (ass.split("\n").some((l) => l.startsWith("Style: T") && l.split(",")[15] === "3")) throw new Error("rounded text style has no square box");
+  const emo = assFromDoc({ chunks: [{ start: 0, end: 1, text: "a", emojis: ["📞"] }], texts: [], captions: doc.captions, colorEmoji: true });
+  if (emo.includes("Noto Emoji")) throw new Error("colour emoji drops the mono tail");
+  console.log("captionsToAss rounded box checks passed");
 }
