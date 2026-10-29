@@ -12,6 +12,7 @@ import PostDetailModal from "../modals/PostDetailModal";
 import { Empty, ErrorState, Loading } from "../components/states";
 import { useIsPhone } from "../lib/phone";
 import { navigate } from "../lib/routes";
+import { dayKey, isOwnBrand, xPostedLabel } from "../lib/xPosted";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -66,6 +67,22 @@ const mondayOf = (d: Date): Date => {
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
   return x;
 };
+
+/** Simple Icons' X mark. */
+const X_LOGO =
+  "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z";
+
+/** "Posted to X" tick beside a day's date. A record only: nothing is posted. */
+function XPostedCheck({ day, checked, onToggle }: { day: Date; checked: boolean; onToggle(): void }) {
+  return (
+    <label className={`xchk${checked ? " on" : ""}`} title={checked ? "Posted to X (click to clear)" : "Mark as posted to X"}>
+      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={xPostedLabel(day)} />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d={X_LOGO} />
+      </svg>
+    </label>
+  );
+}
 
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -145,6 +162,61 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedClient, view, anchor.getTime()],
   );
+
+  /*
+   * Tyrone's own brand only: which days he posted to X by hand. Loaded per
+   * range, toggled optimistically, put back if the save fails.
+   */
+  const ownBrand = isOwnBrand(selectedClient?.name);
+  const [xPosted, setXPosted] = useState<Set<string>>(new Set());
+  const fromKey = dayKey(rangeStart);
+  const toKey = dayKey(rangeEnd);
+  useEffect(() => {
+    setXPosted(new Set());
+    if (!selectedClient || !ownBrand) return;
+    let cancelled = false;
+    api
+      .get<{ dates: string[] }>(`/brands/${selectedClient.id}/x-posted?from=${fromKey}&to=${toKey}`)
+      .then((r) => {
+        if (!cancelled) setXPosted(new Set(r.dates));
+      })
+      .catch(() => {
+        // The ticks stay blank; the calendar itself is unaffected.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient, ownBrand, fromKey, toKey]);
+
+  const flip = (set: Set<string>, key: string) => {
+    const next = new Set(set);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  };
+  const toggleX = async (day: Date) => {
+    if (!selectedClient) return;
+    const key = dayKey(day);
+    const posted = !xPosted.has(key);
+    setXPosted((s) => flip(s, key));
+    try {
+      await api.put(`/brands/${selectedClient.id}/x-posted/${key}`, { posted });
+    } catch (err) {
+      setXPosted((s) => flip(s, key));
+      toast.fail("Could not save the X tick", err);
+    }
+  };
+  const xCheck = (day: Date) =>
+    ownBrand ? <XPostedCheck day={day} checked={xPosted.has(dayKey(day))} onToggle={() => void toggleX(day)} /> : null;
+  /** The date, with the X tick beside it on the own brand only. */
+  const dnum = (day: Date) =>
+    ownBrand ? (
+      <div className="dnumrow">
+        <div className="dnum">{day.getDate()}</div>
+        {xCheck(day)}
+      </div>
+    ) : (
+      <div className="dnum">{day.getDate()}</div>
+    );
 
   const state = !selectedClient ? "empty" : loadError ? "error" : loaded ? "ready" : "loading";
 
@@ -592,7 +664,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 <div className="col" key={i} {...dragProps(day)} style={dropStyle(day)}>
                   <div className={`colhead${day.toDateString() === today ? " today" : ""}`}>
                     <div className="dow">{DOW[i]}</div>
-                    <div className="dnum">{day.getDate()}</div>
+                    {dnum(day)}
                     {holidayRow(day)}
                   </div>
                   <div className="slotwrap">
@@ -614,7 +686,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <div className="col" {...dragProps(anchor)} style={dropStyle(anchor)}>
               <div className={`colhead${anchor.toDateString() === today ? " today" : ""}`}>
                 <div className="dow">{DOW[(anchor.getDay() + 6) % 7]}</div>
-                <div className="dnum">{anchor.getDate()}</div>
+                {dnum(anchor)}
                 {holidayRow(anchor)}
               </div>
               <div className="slotwrap" style={{ maxWidth: 460, margin: "0 auto", width: "100%" }}>
@@ -650,6 +722,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                     style={dropStyle(day)}
                   >
                     <div className="mnum">
+                      {xCheck(day)}
                       <span>{day.getDate()}</span>
                     </div>
                     {holidayRow(day, true)}
