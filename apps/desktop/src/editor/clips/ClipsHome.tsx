@@ -4,6 +4,7 @@ import { API_URL, ApiError, api, getToken, videoLabel } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { formatDuration } from "../../lib/video";
 import { RUNNING, type ClipJobRow } from "./clipTypes";
+import RecipesPanel, { useRecipes } from "./RecipesPanel";
 import "./Clips.css";
 
 /**
@@ -56,6 +57,10 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
   const [length, setLength] = useState("auto");
   const [aspect, setAspect] = useState("9:16");
   const [prompt, setPrompt] = useState("");
+  const { recipes, load: loadRecipes } = useRecipes(clientId);
+  // "" = the brand default, applied when a clip opens.
+  const [recipeId, setRecipeId] = useState("");
+  const [showRecipes, setShowRecipes] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -85,7 +90,12 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
   }, [running, load]);
 
   async function start() {
-    const options = { length, aspect, ...(prompt.trim() ? { prompt: prompt.trim() } : {}) };
+    const options = {
+      length,
+      aspect,
+      ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
+      ...(recipeId ? { recipeId } : {}),
+    };
     setBusy(0);
     try {
       const res = file
@@ -167,6 +177,16 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
             ))}
           </div>
         </div>
+        <div className="row">
+          <span>Recipe</span>
+          <select value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
+            <option value="">{recipes.find((r) => r.isDefault) ? `Brand default (${recipes.find((r) => r.isDefault)!.name})` : "Brand default (none set)"}</option>
+            {recipes.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+          <button className="btn sm ghost" onClick={() => setShowRecipes(true)}>Recipes</button>
+        </div>
         <label>
           <span>Prompt (optional)</span>
           <input value={prompt} maxLength={300} placeholder="e.g. moments about pricing" onChange={(e) => setPrompt(e.target.value)} />
@@ -179,6 +199,15 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
       <div className="studiohead">
         <h3>Clip jobs</h3>
       </div>
+      {showRecipes && (
+        <RecipesPanel
+          clientId={clientId}
+          onClose={() => {
+            setShowRecipes(false);
+            void loadRecipes();
+          }}
+        />
+      )}
       {jobs === null ? (
         <div className="stagger">
           <div className="skel projskel" />
