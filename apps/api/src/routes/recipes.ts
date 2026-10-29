@@ -158,7 +158,7 @@ export async function recipeRoutes(app: FastifyInstance): Promise<void> {
 
   // Transcript export ------------------------------------------------------
 
-  app.get<{ Params: { id: string }; Querystring: { format?: string } }>("/edit-projects/:id/transcript", async (request, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { format?: string; json?: string } }>("/edit-projects/:id/transcript", async (request, reply) => {
     const p = await ownedProject(request.params.id, request.user.agencyId);
     if (!p) return reply.status(404).send({ error: "project not found" });
     const format = request.query.format === "txt" ? "txt" : "srt";
@@ -166,6 +166,9 @@ export async function recipeRoutes(app: FastifyInstance): Promise<void> {
     const { durations, words } = await projectMedia(p.id);
     const t = transcriptFromDoc(p.doc as unknown as EditDoc, durations, words);
     const base = (p.name || "transcript").replace(/[^\w\- ]+/g, "").trim().slice(0, 80) || "transcript";
+    const text = format === "srt" ? t.srt : t.txt;
+    // The desktop asks for JSON (it saves through the webview, not a download).
+    if (request.query.json) return { fileName: `${base}.${format}`, text };
     return reply
       .header("content-type", format === "srt" ? "application/x-subrip; charset=utf-8" : "text/plain; charset=utf-8")
       .header("content-disposition", `attachment; filename="${base}.${format}"`)

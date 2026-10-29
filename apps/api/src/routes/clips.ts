@@ -65,6 +65,9 @@ const patchSchema = z.object({
   feedback: z.string().regex(/^(up|down)(:[^\n]{1,80})?$/, "Feedback is up or down.").nullable().optional(),
   nudge: z.object({ edge: z.enum(["start", "end"]), dir: z.enum(["extend", "shrink"]) }).optional(),
   title: z.string().min(1).max(120).optional(),
+  /** Phase 6: the drafted copy, edited before a batch send. */
+  description: z.string().max(2200).optional(),
+  hashtags: z.array(z.string().trim().min(1).max(60).transform((h) => h.replace(/^#/, ""))).max(30).optional(),
 });
 
 const openSchema = z.object({ ids: z.array(z.string()).min(1).max(20) });
@@ -307,6 +310,8 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     const data: Prisma.ClipCandidateUpdateInput = {};
     if (parsed.data.feedback !== undefined) data.feedback = parsed.data.feedback;
     if (parsed.data.title) data.title = parsed.data.title;
+    if (parsed.data.description !== undefined) data.description = parsed.data.description;
+    if (parsed.data.hashtags) data.hashtags = parsed.data.hashtags;
     if (parsed.data.nudge) {
       const words = await wordsOf(c.job.source);
       const ranges = nudgeRanges(c.ranges as unknown as Range[], sentences(words), parsed.data.nudge.edge, parsed.data.nudge.dir);
