@@ -360,7 +360,7 @@ const STOP = new Set(
   "the a an and or but so to of in on for with is are was were be been it its this that i you we they he she my your our their me us them at as by from not do does did have has had just like really very can will would could should what about there here then than when if into out up down over more most some any all one get got know think going go".split(" "),
 );
 
-function terms(text: string): Set<string> {
+export function terms(text: string): Set<string> {
   return new Set(
     text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)),
   );

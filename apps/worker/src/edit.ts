@@ -23,6 +23,8 @@ import {
   migrateDoc,
   outputSize,
   type Word,
+  LANG_MIN_PROB,
+  languageHint,
 } from "@toreroflow/core";
 import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import {
@@ -65,6 +67,31 @@ export async function assetWords(a: { words: unknown; wordsKey: string | null })
  * already is, which for phone and CapCut exports is almost always. Only
  * footage a webview cannot decode gets a converted copy.
  */
+/** The language set up front, or null when whisper should detect it. */
+export function forcedLanguage(a: { language: string | null; languageSource: string | null; status: string }): string | null {
+  if (!a.language) return null;
+  if (a.languageSource === "set") return a.language;
+  // ponytail: rows from before Phase 9 carry no source; a language on a row
+  // nothing has processed yet can only have come from the job's option.
+  return a.languageSource == null && a.status === "uploaded" ? a.language : null;
+}
+
+/** The client's usual language from its trusted transcripts ("en" when none). */
+export async function clientLanguageHint(clientId: string, exceptId?: string): Promise<string> {
+  const rows = await prisma.editAsset.findMany({
+    where: {
+      project: { clientId },
+      id: exceptId ? { not: exceptId } : undefined,
+      language: { not: null },
+      OR: [{ languageSource: "set" }, { languageSource: "detected", languageProb: { gte: LANG_MIN_PROB } }],
+    },
+    select: { language: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  return languageHint(rows.map((r) => r.language));
+}
+
 export async function processEditAsset(editAssetId: string): Promise<void> {
   const asset = await prisma.editAsset.findUnique({
     where: { id: editAssetId },
@@ -123,8 +150,12 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
 
     const peaksKey = `${dir}/${asset.id}-peaks.json`;
     // A language set up front (a clip job's option) skips whisper's guess.
+    // A language whisper guessed earlier is not "set": a re-process guesses
+    // again, and a weak guess falls back to the client's usual language.
+    const forced = forcedLanguage(asset);
+    const hint = forced ? null : await clientLanguageHint(asset.project.clientId, asset.id);
     const runTranscribe = () =>
-      transcribeStrict(sourcePath, { durationSec: meta.durationSec, language: asset.language }).then(
+      transcribeStrict(sourcePath, { durationSec: meta.durationSec, language: forced, hint }).then(
         (t) => ({ ok: true as const, t }),
         (e: Error) => ({ ok: false as const, reason: e.message }),
       );
@@ -132,8 +163,11 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
     // talk transcribed beside the proxy and filmstrip encodes came back with
     // its first minutes missing and the language guessed wrong (ko, zh, nl);
     // the same audio alone came back whole, every time. Root cause not found
-    // in whisper; this keeps the CPU to it. Short clips keep the parallel win.
-    const serial = (meta.durationSec ?? 0) > 300;
+    // in whisper; this keeps the CPU to it. Phase 9: short clips too. A 75 s
+    // talk transcribed beside its encodes came back as 31 words (172 alone),
+    // and that thin audio is what whisper misread as "ar". Serial costs a few
+    // seconds on a short clip.
+    const serial = true;
     const early = serial ? await runTranscribe() : null;
     const [, , transcript, peaks] = await Promise.all([
       proxyKey === asset.storageKey
@@ -166,7 +200,9 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
         stripKey,
         words: wordsKey ? Prisma.DbNull : (words as unknown as Prisma.InputJsonValue),
         wordsKey,
-        language: transcript.ok ? (transcript.t.language ?? null) : null,
+        language: transcript.ok ? (transcript.t.language ?? null) : forced,
+        languageProb: transcript.ok ? (transcript.t.languageProbability ?? null) : null,
+        languageSource: transcript.ok ? (transcript.t.languageSource ?? null) : forced ? "set" : null,
         peaksKey: peaks ? peaksKey : null,
         error: transcript.ok ? null : transcript.reason.slice(0, 500),
         status: "ready",

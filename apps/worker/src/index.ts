@@ -1,4 +1,5 @@
 import { autoImportAll, runAutoImport, syncAllClipPerf, syncClipPerf } from "./clips/collab";
+import { refreshAllTrends, refreshClientTrends, refreshJudgeTuning } from "./clips/smart";
 import path from "node:path";
 import fs from "node:fs/promises";
 import {
@@ -1138,8 +1139,11 @@ for (let slot = 0; slot < env.EDIT_CONCURRENCY; slot++) {
 
 // Studio clips: analyze, curate, score, refine, rescore. One at a time, for
 // the same reason as edit: whisper and ffmpeg share the machine.
-void work<ClipQueueData | { autoImport: string } | { clipPerf: string }>("clips", { concurrency: 1 }, async (data) => {
-  if ("autoImport" in data) await runAutoImport(data.autoImport, true);
+void work<ClipQueueData | { autoImport: string } | { clipPerf: string } | { smart: string }>("clips", { concurrency: 1 }, async (data) => {
+  if ("smart" in data) {
+    await refreshClientTrends(data.smart);
+    await refreshJudgeTuning(data.smart);
+  } else if ("autoImport" in data) await runAutoImport(data.autoImport, true);
   else if ("clipPerf" in data) await syncClipPerf(data.clipPerf);
   else await runClipStage(data);
 });
@@ -1150,6 +1154,8 @@ void work<ClipQueueData | { autoImport: string } | { clipPerf: string }>("clips"
  */
 setInterval(() => void autoImportAll().catch((e: unknown) => console.error("[auto-import]", e)), 30 * 60_000).unref();
 setInterval(() => void syncAllClipPerf().catch((e: unknown) => console.error("[clip-perf]", e)), 3 * 3600_000).unref();
+// Phase 9: trend terms per client, daily (no web search; see smartAi.ts).
+setInterval(() => void refreshAllTrends().catch((e: unknown) => console.error("[trends]", e)), 24 * 3600_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);

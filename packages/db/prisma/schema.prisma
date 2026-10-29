@@ -215,6 +215,11 @@ model Client {
   /// Phase 7 censor word list (a trailing * matches any word starting so).
   /// The editor snapshots it into doc.censor.words when censor is switched on.
   censorWords           String[]       @default([])
+  /// Phase 9: { terms: TrendTerm[], at } rebuilt daily from niche, keywords
+  /// and top posts (no web search, see smartAi.ts).
+  trends                Json?
+  /// Phase 9: JudgeTuning from likes, dislikes and post performance.
+  judgeTuning           Json?
   /// Phase 8: AutoImportSettings from @toreroflow/core (own YouTube channel).
   autoImport            Json?
   /// Absolute URL of the last published report page; null until first publish.
@@ -1183,6 +1188,10 @@ model EditAsset {
   wordsKey     String?
   /// Spoken language whisper used or detected (ISO code).
   language     String?
+  /// Phase 9: whisper's detection probability (null when set up front).
+  languageProb Float?
+  /// Phase 9: "set" | "detected" | "fallback" (weak detection -> hint/en).
+  languageSource String?
   /// Waveform peaks file (JSON number[], 50 per second, 0..100).
   peaksKey     String?
   /// Why words are missing on a ready asset, e.g. a transcription timeout.
@@ -1798,6 +1807,8 @@ model ClipCandidate {
   trend         Int       @default(0)
   relevance     Int?
   sponsorship   Int?
+  /// Phase 9: 0-10 from scene cuts and sampled face frames.
+  visual        Int?
   raw           Int       @default(0)
   /// Shown 0-99 score (rank curve within the job).
   score         Int       @default(0)

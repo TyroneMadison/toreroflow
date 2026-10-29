@@ -21,8 +21,13 @@ export interface SubScores {
 
 const clamp10 = (n: number) => Math.max(0, Math.min(10, Math.round(Number.isFinite(n) ? n : 0)));
 
-export function rawScore(s: SubScores, hasPrompt = false): number {
-  const base = clamp10(s.hook) + clamp10(s.flow) + clamp10(s.value) + clamp10(s.trend);
+/** Phase 9: per-client rubric weights (average 1), see tuneJudge. */
+export type ScoreWeights = { hook: number; flow: number; value: number; trend: number };
+
+export function rawScore(s: SubScores, hasPrompt = false, w?: ScoreWeights | null): number {
+  const base = w
+    ? Math.round(w.hook * clamp10(s.hook) + w.flow * clamp10(s.flow) + w.value * clamp10(s.value) + w.trend * clamp10(s.trend))
+    : clamp10(s.hook) + clamp10(s.flow) + clamp10(s.value) + clamp10(s.trend);
   if (!hasPrompt || s.relevance == null) return base;
   return Math.round(0.8 * base + 0.2 * clamp10(s.relevance) * 4);
 }
@@ -39,8 +44,8 @@ export interface Ranked<T> {
 }
 
 /** Stable: equal raw, hook and flow keep their input order. */
-export function rankClips<T extends SubScores>(items: T[], hasPrompt = false): Ranked<T>[] {
-  const withRaw = items.map((item, i) => ({ item, raw: rawScore(item, hasPrompt), i }));
+export function rankClips<T extends SubScores>(items: T[], hasPrompt = false, w?: ScoreWeights | null): Ranked<T>[] {
+  const withRaw = items.map((item, i) => ({ item, raw: rawScore(item, hasPrompt, w), i }));
   withRaw.sort(
     (a, b) =>
       b.raw - a.raw ||

@@ -183,7 +183,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     const name = file.filename ?? "upload.mp4";
     const project = await holder(client.id, name);
     const asset = await prisma.editAsset.create({
-      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: parsed.data.language ?? null },
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: parsed.data.language ?? null, languageSource: parsed.data.language ? "set" : null },
     });
     const ext = path.extname(name) || ".mp4";
     const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${ext}`;
@@ -216,7 +216,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
         data: {
           projectId: project.id, kind: "clip", storageKey: ea.storageKey, proxyKey: ea.proxyKey, stripKey: ea.stripKey,
           originalName: ea.originalName, durationSec: ea.durationSec, width: ea.width, height: ea.height,
-          words: ea.words ?? Prisma.DbNull, wordsKey: ea.wordsKey, language: ea.language, peaksKey: ea.peaksKey,
+          words: ea.words ?? Prisma.DbNull, wordsKey: ea.wordsKey, language: ea.language, languageProb: ea.languageProb, languageSource: ea.languageSource, peaksKey: ea.peaksKey,
           status: ea.status === "ready" ? "ready" : "uploaded",
         },
       });
@@ -227,7 +227,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     if (!ma) return reply.status(404).send(bad("That upload is not in this brand.", "upload not found"));
     const project = await holder(client.id, ma.originalName);
     const asset = await prisma.editAsset.create({
-      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: ma.originalName, status: "uploaded", language: opts.language ?? null },
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: ma.originalName, status: "uploaded", language: opts.language ?? null, languageSource: opts.language ? "set" : null },
     });
     const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${path.extname(ma.originalName) || ".mp4"}`;
     await fs.mkdir(path.join(env.STORAGE_DIR, client.id, "edit", project.id), { recursive: true });
@@ -295,7 +295,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     const name = safeFileName(typeof body.name === "string" && body.name ? body.name : fromHeader ? decodeURIComponent(fromHeader) : `drive-${fileId}.mp4`);
     const project = await holder(client.id, name);
     const asset = await prisma.editAsset.create({
-      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: opts.language ?? null },
+      data: { projectId: project.id, kind: "clip", storageKey: "pending", originalName: name, status: "uploaded", language: opts.language ?? null, languageSource: opts.language ? "set" : null },
     });
     const storageKey = `${client.id}/edit/${project.id}/${asset.id}-source${path.extname(name) || ".mp4"}`;
     await fs.mkdir(path.join(env.STORAGE_DIR, client.id, "edit", project.id), { recursive: true });
@@ -397,7 +397,10 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       logActivity(request, { clientId: c.job.clientId, action: parsed.data.feedback.startsWith("up") ? "liked" : "disliked", candidateId: c.id, jobId: c.jobId, detail: c.title });
     }
     if (parsed.data.nudge) logActivity(request, { clientId: c.job.clientId, action: "trimmed", candidateId: c.id, jobId: c.jobId, detail: c.title });
-    return prisma.clipCandidate.update({ where: { id: c.id }, data });
+    const updated = await prisma.clipCandidate.update({ where: { id: c.id }, data });
+    // Phase 9: every like or dislike retunes the client's judge rubric.
+    if (parsed.data.feedback !== undefined) await enqueue("clips", { smart: c.job.clientId }, { key: `smart:${c.job.clientId}` });
+    return updated;
   });
 
   app.post<{ Params: { id: string } }>("/clip-candidates/:id/rescore", async (request, reply) => {
@@ -455,7 +458,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       data: {
         projectId: project.id, kind: "clip", storageKey: src.storageKey, proxyKey: src.proxyKey, stripKey: src.stripKey,
         originalName: src.originalName, durationSec: src.durationSec, width: src.width, height: src.height,
-        words: src.words ?? Prisma.DbNull, wordsKey: src.wordsKey, language: src.language, peaksKey: src.peaksKey,
+        words: src.words ?? Prisma.DbNull, wordsKey: src.wordsKey, language: src.language, languageProb: src.languageProb, languageSource: src.languageSource, peaksKey: src.peaksKey,
         status: "ready",
       },
     });

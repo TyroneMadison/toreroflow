@@ -42,6 +42,10 @@ class TranscribeRequest(BaseModel):
     # one request never outlives its timeout; times come back absolute.
     start: float | None = None
     dur: float | None = None
+    # Phase 9: used instead of a weak detection (probability under
+    # min_language_prob), e.g. the client's usual language or "en".
+    fallback_language: str | None = None
+    min_language_prob: float = 0.6
 
 
 def _window_audio(path: str, start: float, dur: float | None):
@@ -131,16 +135,24 @@ def transcribe(req: TranscribeRequest) -> dict:
             audio = _window_audio(req.path, offset, req.dur)
         else:
             audio = _window_audio(req.path, 0.0, None)
-        segments, info = get_model().transcribe(
-            audio, vad_filter=True, word_timestamps=True, language=req.language,
-            # ponytail: on a 20 min talk, conditioning on the previous text let
-            # one hallucinated loop ("you know what") swallow the first ten
-            # minutes; 0-600 s alone transcribed fine. Off keeps windows honest.
-            condition_on_previous_text=False,
-            # Language from four 30 s probes, not one: the same talk came back
-            # "ur", "nl", "zh" off its opening alone and lost most English words.
-            language_detection_segments=4,
-        )
+        def run(language):
+            return get_model().transcribe(
+                audio, vad_filter=True, word_timestamps=True, language=language,
+                # ponytail: on a 20 min talk, conditioning on the previous text let
+                # one hallucinated loop ("you know what") swallow the first ten
+                # minutes; 0-600 s alone transcribed fine. Off keeps windows honest.
+                condition_on_previous_text=False,
+                # Language from four 30 s probes, not one: the same talk came back
+                # "ur", "nl", "zh" off its opening alone and lost most English words.
+                language_detection_segments=4,
+            )
+
+        segments, info = run(req.language)
+        detected, prob, source = info.language, info.language_probability, "set" if req.language else "detected"
+        # Segments are lazy, so a weak guess costs only the detection probes.
+        if not req.language and req.fallback_language and prob < req.min_language_prob and detected != req.fallback_language:
+            segments, info = run(req.fallback_language)
+            source = "fallback"
         out = [
             {
                 "start": round(s.start + offset, 3),
@@ -159,7 +171,14 @@ def transcribe(req: TranscribeRequest) -> dict:
         ]
     except Exception as exc:  # surface as a clean 500 for the worker
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"language": info.language, "durationSec": info.duration, "segments": out}
+    return {
+        "language": info.language,
+        "languageProbability": None if source == "set" else round(float(prob), 3),
+        "languageSource": source,
+        "detectedLanguage": detected,
+        "durationSec": info.duration,
+        "segments": out,
+    }
 
 
 class FacesRequest(BaseModel):

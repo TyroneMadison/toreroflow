@@ -194,6 +194,8 @@ export async function judge(
   ss: ClipSentence[],
   prompt: string | undefined,
   log: (line: string) => Promise<void>,
+  /** Phase 9: the client's tuned rubric line (tuningPrompt); model only. */
+  taste = "",
 ): Promise<Judged[]> {
   if (provider === "heuristic") return heuristicJudge(clips, ss, prompt);
   const out: Judged[] = [];
@@ -204,7 +206,8 @@ export async function judge(
     const part = clips.slice(b * batch, (b + 1) * batch);
     const res = await askJson<{ scores: (Judged & { n: number })[] }>(
       JUDGE,
-      (prompt ? `Job prompt: ${prompt}\n\n` : "") +
+      (taste ? `${taste}\n\n` : "") +
+        (prompt ? `Job prompt: ${prompt}\n\n` : "") +
         part.map((c, i) => `Clip ${i}: ${c.title}\n${c.text.slice(0, 3000)}`).join("\n\n"),
       JUDGE_SCHEMA,
     );

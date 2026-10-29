@@ -13,9 +13,17 @@ import {
   type Range,
   type ClipSentence,
   type Word,
+  transcriptSuspect,
+  tuningPrompt,
+  visualFeatures,
+  applyVisual,
+  trendScore,
+  blendTrend,
+  type ScoreWeights,
 } from "@toreroflow/core";
-import { assetWords, processEditAsset, reframeAsset, reframeStatusPath } from "../edit";
+import { assetWords, clientLanguageHint, processEditAsset, reframeAsset, reframeStatusPath } from "../edit";
 import { curate, judge, resolveProvider } from "./provider";
+import { clientTrends, refreshJudgeTuning, sourceFrames } from "./smart";
 
 const prisma = getPrisma();
 
@@ -74,7 +82,23 @@ async function analyze(jobId: string): Promise<void> {
   // A source that came back "ready" with no words (the captions service was
   // down) is processed again on retry rather than failing on the empty words.
   const noWords = job.source.status === "ready" && !(await assetWords(job.source)).length;
-  if (job.source.status !== "ready" || !job.source.stripKey || noWords) {
+  // Phase 9: a retry never reuses a transcript in the wrong language. The
+  // job's own language option wins; a weak (or, before Phase 9, unscored)
+  // guess that disagrees with the client's usual language is redone with
+  // that language set.
+  let relang: string | null = null;
+  if (job.source.status === "ready" && !noWords) {
+    if (opts.language && opts.language !== job.source.language) relang = opts.language;
+    else if (!opts.language) {
+      const hint = await clientLanguageHint(job.clientId, job.sourceAssetId);
+      if (transcriptSuspect(job.source, hint)) relang = hint;
+    }
+    if (relang) {
+      await step(jobId, `language ${job.source.language ?? "?"} looks wrong, transcribing again as ${relang}`);
+      await prisma.editAsset.update({ where: { id: job.sourceAssetId }, data: { language: relang, languageSource: "set", languageProb: null } });
+    }
+  }
+  if (job.source.status !== "ready" || !job.source.stripKey || noWords || relang) {
     await step(jobId, "transcribe", { status: "transcribing", pct: 10 });
     await processEditAsset(job.sourceAssetId);
     job = (await loadJob(jobId))!;
@@ -82,7 +106,10 @@ async function analyze(jobId: string): Promise<void> {
   if (job.source.status !== "ready") throw new Error("the source could not be processed");
   const words = await assetWords(job.source);
   if (!words.length) throw new Error(job.source.error ?? "no speech found in the source");
-  await step(jobId, `${job.source.language ?? "?"} · ${words.length} words`, { status: "analyzing", pct: 35 });
+  const ls = job.source.languageSource;
+  const lp = job.source.languageProb;
+  const how = ls === "fallback" ? ` (fallback, detection ${lp != null ? Math.round(lp * 100) + "%" : "weak"})` : ls === "set" ? " (set)" : lp != null ? ` (${Math.round(lp * 100)}%)` : "";
+  await step(jobId, `${job.source.language ?? "?"}${how} · ${words.length} words`, { status: "analyzing", pct: 35 });
   if (opts.reframe !== false && (job.source.durationSec ?? 0) > 1800) {
     // Same ceiling the editor's Auto reframe button has: /faces samples the
     // whole file inside one request.
@@ -182,14 +209,42 @@ async function runScore(jobId: string, only?: string): Promise<void> {
   const toJudge =
     provider === "heuristic" ? all : all.filter((c) => (only ? c.id === only : c.raw === 0 && c.hook === 0));
   const target = only ? all.filter((c) => c.id === only) : toJudge;
+  // Phase 9: the client's taste, trend terms and the source's frames.
+  const tuning = await refreshJudgeTuning(job.clientId);
+  const trends = await clientTrends(job.clientId);
+  const frames = await sourceFrames(job.source);
+  if (!only) {
+    await step(
+      jobId,
+      `smart: ${trends?.terms.length ?? 0} trend terms · ${frames.cuts.length} cuts, ${frames.track ? "faces sampled" : "no face samples"} · rubric ${tuning.n >= 3 ? `tuned on ${tuning.n}` : "even"}`,
+    );
+  }
   if (toJudge.length) {
-    const judged = await judge(
+    const raw = await judge(
       provider,
       toJudge.map((c) => ({ ranges: c.ranges as unknown as Range[], text: c.text ?? "", title: c.title })),
       ss,
       opts.prompt,
       (l) => step(jobId, l),
+      tuningPrompt(tuning),
     );
+    const haveTerms = !!trends?.terms.length;
+    const judged = raw.map((j, i) => {
+      const c = toJudge[i];
+      const ranges = c.ranges as unknown as Range[];
+      const v = visualFeatures(ranges, frames.cuts, frames.track);
+      const t = trendScore(`${c.title} ${c.text ?? ""}`, trends?.terms ?? []);
+      const withV = applyVisual({ ...j, comments: (j.comments ?? {}) as Record<string, string> }, v);
+      return {
+        ...withV,
+        visual: v.visual,
+        trend: blendTrend(withV.trend, t, haveTerms),
+        comments: {
+          ...withV.comments,
+          ...(haveTerms ? { trend: t.hits.length ? `Rides ${t.hits.join(", ")}.` : `${withV.comments.trend ?? ""} No client trend terms.`.trim() } : {}),
+        },
+      };
+    });
     const ids = new Set(target.map((t) => t.id));
     await prisma.$transaction(
       toJudge
@@ -203,6 +258,7 @@ async function runScore(jobId: string, only?: string): Promise<void> {
               flow: j.flow,
               value: j.value,
               trend: j.trend,
+              visual: j.visual,
               relevance: j.relevance,
               comments: j.comments as unknown as Prisma.InputJsonValue,
             },
@@ -210,14 +266,14 @@ async function runScore(jobId: string, only?: string): Promise<void> {
         ),
     );
   }
-  await rerank(jobId, !!opts.prompt);
+  await rerank(jobId, !!opts.prompt, tuning.n >= 3 ? tuning.weights : null);
   const n = await prisma.clipCandidate.count({ where: { jobId } });
   await step(jobId, `ready · ${n} clips`, { status: "ready", pct: 100 });
 }
 
-export async function rerank(jobId: string, hasPrompt: boolean): Promise<void> {
+export async function rerank(jobId: string, hasPrompt: boolean, weights?: ScoreWeights | null): Promise<void> {
   const rows = await prisma.clipCandidate.findMany({ where: { jobId }, orderBy: { createdAt: "asc" } });
-  const ranked = rankClips(rows, hasPrompt);
+  const ranked = rankClips(rows, hasPrompt, weights);
   await prisma.$transaction(
     ranked.map((r) =>
       prisma.clipCandidate.update({ where: { id: r.item.id }, data: { raw: r.raw, rank: r.rank, score: r.score } }),
