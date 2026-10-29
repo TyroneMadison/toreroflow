@@ -1,0 +1,70 @@
+/* Account Overview: brand list on the left, the selected brand as a profile on the right. */
+.ao{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:18px;align-items:start}
+.ao-left{display:flex;flex-direction:column;gap:18px;min-width:0}
+.ao-list,.ao-week{border-radius:var(--r-chart);padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ao-rows{display:flex;flex-direction:column;gap:8px;outline:none}
+.ao-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;cursor:pointer;
+  border:1.5px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);transition:border-color .15s,background .15s}
+.ao-row:hover{background:rgba(255,255,255,.08)}
+.ao-row.on{border-color:#FF6F61;background:rgba(255,111,97,.14)}
+.ao-row:focus-visible{outline:2px solid #FF6F61;outline-offset:2px}
+.ao-row-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.ao-row-txt b{font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ao-row-txt small{font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ao-enroll{align-self:flex-start;padding:7px 14px;font-size:12.5px}
+
+/* Real photo, never blurred; initials on the brand color when there is none. */
+.ao-av{flex:none;width:44px;height:44px;border-radius:12px;overflow:hidden;display:grid;place-items:center;font-weight:700;color:#fff}
+.ao-av img{width:100%;height:100%;object-fit:cover;display:block}
+
+.ao-pill{flex:none;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.ao-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.ao-pill.bad{color:#FF8A7E;background:rgba(255,111,97,.16)}
+.ao-pill.warn{color:#F2BE6E;background:rgba(242,190,110,.16)}
+.ao-pill.ok{color:#4ADE9A;background:rgba(74,222,154,.14)}
+
+.ao-week-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+
+.ao-profile{border-radius:var(--r-chart);overflow:hidden;min-width:0;outline:none}
+.ao-cover{height:170px}
+.ao-body{position:relative;padding:0 24px 24px;display:flex;flex-direction:column;gap:12px}
+.ao-big-av{margin-top:-78px;width:max-content;border-radius:26px;padding:4px;background:var(--bg-base)}
+.ao-big-av .ao-av{width:120px;height:120px;border-radius:22px;font-size:40px}
+.ao-name{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ao-name h3{margin:0;font-size:28px;font-weight:800;letter-spacing:-.02em;color:var(--text)}
+.ao-plats{display:flex;gap:6px;margin-left:auto}
+.ao-summary{margin:0;color:var(--text-2);font-size:14.5px}
+.ao-pipe{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.ao-step i{display:block;height:6px;border-radius:3px;background:#4ADE9A}
+.ao-step.warn i{background:repeating-linear-gradient(90deg,#F2BE6E 0 8px,rgba(242,190,110,.45) 8px 12px)}
+.ao-step.bad i{background:#F0506E}
+.ao-step span{display:block;font-size:11.5px;color:var(--text-2);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ao-step.warn span{color:#F2BE6E;font-weight:700}.ao-step.bad span{color:#FF8A7E;font-weight:700}
+.ao-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ao-tiles .gx-statv{font-size:24px;line-height:1.15;overflow-wrap:anywhere}
+.ao-actions{display:flex;gap:10px;flex-wrap:wrap}
+
+[data-theme="light"] .ao-row{border-color:rgba(30,30,70,.1);background:rgba(255,255,255,.5)}
+[data-theme="light"] .ao-row:hover{background:rgba(255,255,255,.75)}
+[data-theme="light"] .ao-row.on{border-color:#FF6F61;background:rgba(255,111,97,.12)}
+[data-theme="light"] .ao-pill.bad{color:#c2352a}
+[data-theme="light"] .ao-pill.warn{color:#a8650f}
+[data-theme="light"] .ao-pill.ok{color:#14915a}
+[data-theme="light"] .ao-step.warn span{color:#a8650f}[data-theme="light"] .ao-step.bad span{color:#c2352a}
+[data-theme="light"] .ao-big-av{background:#fff}
+
+/* Phone: the selected brand first, the list under it. */
+@media (max-width:768px){
+  .ao{grid-template-columns:minmax(0,1fr)}
+  .ao-profile{order:-1}
+  .ao-cover{height:110px}
+  .ao-body{padding:0 16px 18px}
+  .ao-big-av{margin-top:-52px}
+  .ao-big-av .ao-av{width:84px;height:84px;border-radius:18px;font-size:28px}
+  .ao-name h3{font-size:24px}
+  .ao-plats{margin-left:0}
+  .ao-step span{font-size:10.5px}
+  .ao-tiles{gap:6px}
+  .ao-tiles .gx-stat{padding:10px}
+  .ao-tiles .gx-statv{font-size:17px}
+}
