@@ -109,7 +109,7 @@ export function visualFeatures(ranges: Range[], cuts: number[], track: FaceTrack
 }
 
 /** The visual score nudges hook (first look) and value; at most +-2. */
-export function applyVisual<T extends SubScores & { comments?: Record<string, string> }>(j: T, v: VisualFeatures): T {
+export function applyVisual<T extends SubScores & { comments?: Record<string, string> }>(j: T, v: VisualFeatures): T & { comments: Record<string, string> } {
   const d = Math.round((v.visual - 5) / 2.5);
   return {
     ...j,

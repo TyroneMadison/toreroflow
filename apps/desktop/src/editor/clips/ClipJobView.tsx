@@ -239,6 +239,12 @@ export default function ClipJobView({
                     <dd>{d.comments?.[k] ?? ""}</dd>
                   </div>
                 ))}
+                {d.visual != null && (
+                  <div>
+                    <dt>visual {d.visual}</dt>
+                    <dd>{(d.comments as Record<string, string> | null)?.visual ?? ""}</dd>
+                  </div>
+                )}
               </dl>
               {d.hashtags.length > 0 && <div className="sub">{d.hashtags.map((h) => `#${h}`).join(" ")}</div>}
               <p className="transcript">{d.text}</p>

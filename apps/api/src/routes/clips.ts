@@ -397,7 +397,10 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
       logActivity(request, { clientId: c.job.clientId, action: parsed.data.feedback.startsWith("up") ? "liked" : "disliked", candidateId: c.id, jobId: c.jobId, detail: c.title });
     }
     if (parsed.data.nudge) logActivity(request, { clientId: c.job.clientId, action: "trimmed", candidateId: c.id, jobId: c.jobId, detail: c.title });
-    return prisma.clipCandidate.update({ where: { id: c.id }, data });
+    const updated = await prisma.clipCandidate.update({ where: { id: c.id }, data });
+    // Phase 9: every like or dislike retunes the client's judge rubric.
+    if (parsed.data.feedback !== undefined) await enqueue("clips", { smart: c.job.clientId }, { key: `smart:${c.job.clientId}` });
+    return updated;
   });
 
   app.post<{ Params: { id: string } }>("/clip-candidates/:id/rescore", async (request, reply) => {

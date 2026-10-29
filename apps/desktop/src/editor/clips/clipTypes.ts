@@ -21,6 +21,8 @@ export interface ClipCandidateRow {
   value: number;
   trend: number;
   relevance: number | null;
+  /** Phase 9: 0-10 from scene cuts and face frames; null before Phase 9. */
+  visual?: number | null;
   raw: number;
   score: number;
   comments: Record<string, string> | null;

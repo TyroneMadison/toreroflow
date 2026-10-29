@@ -287,6 +287,57 @@ export function ClipActivityFeed({ clientId, onOpen }: { clientId: string; onOpe
   );
 }
 
+interface SmartView {
+  trends: { terms: { term: string; weight: number; source: string }[]; at: string | null; manual?: string[]; sources: { niche: boolean; keywords: number; topPosts: number; liked: number } | null } | null;
+  tuning: { weights: Record<"hook" | "flow" | "value" | "trend", number>; n: number; reasons: Record<string, number>; at?: string } | null;
+  webSearch: boolean;
+}
+
+/** Phase 9: the brand's trend terms and how its likes have tuned the judge. */
+function SmartCard({ clientId }: { clientId: string }) {
+  const toast = useToast();
+  const [v, setV] = useState<SmartView | null>(null);
+  const [topics, setTopics] = useState("");
+  const load = useCallback(
+    () =>
+      api.get<SmartView>(`/clients/${clientId}/smart`).then((r) => {
+        setV(r);
+        setTopics((r.trends?.manual ?? []).join(", "));
+      }, (e) => toast.fail("Loading smart AI", e)),
+    [clientId, toast],
+  );
+  useEffect(() => void load(), [load]);
+  async function saveTopics() {
+    try {
+      await api.put(`/clients/${clientId}/smart/topics`, { topics: topics.split(",").map((t) => t.trim()).filter((t) => t.length >= 2) });
+      toast.success("Topics saved. Trend terms rebuild now.");
+      window.setTimeout(() => void load(), 4000);
+    } catch (e) {
+      toast.fail("Saving topics", e);
+    }
+  }
+  const t = v?.tuning;
+  return (
+    <div className="glass-sm pnl-card">
+      <b>Smart scoring</b>
+      {/* ponytail: no web search (spend); terms come from niche, topics, top posts and liked clips, rebuilt daily. */}
+      <p className="sub">Trend terms come from the niche, the topics below, the brand's best posts and liked clips. Rebuilt daily.</p>
+      <div className="collab-row">
+        <input className="field-in" placeholder="Topics trending in this niche, comma separated" value={topics} onChange={(e) => setTopics(e.target.value)} />
+        <button className="btn sm" onClick={() => void saveTopics()}>Save</button>
+      </div>
+      <div className="sub">
+        {v?.trends?.terms.length ? v.trends.terms.slice(0, 20).map((x) => x.term).join(" · ") : "No trend terms yet."}
+      </div>
+      <div className="sub">
+        {t && t.n >= 3
+          ? `Judge tuned on ${t.n} rated or posted clips: hook ×${t.weights.hook}, flow ×${t.weights.flow}, value ×${t.weights.value}, trend ×${t.weights.trend}.`
+          : `Judge rubric is even. Rate ${Math.max(0, 3 - (t?.n ?? 0))} more clips (👍 / 👎) to tune it.`}
+      </div>
+    </div>
+  );
+}
+
 interface AutoImportView {
   settings: { on: boolean; channelId: string | null; playlists: string[]; uploads: boolean; recipeId: string | null; lastCheckAt: string | null; lastResult: string | null };
   keyReady: boolean;
@@ -388,6 +439,7 @@ export function ClipImports({ clientId, onOpen }: { clientId: string; onOpen: (j
           </div>
         ))}
       </div>
+      <SmartCard clientId={clientId} />
       <div className="glass-sm pnl-card">
         <b>Google Drive</b>
         <p className="sub">Paste a file or folder link shared as "Anyone with the link". Files import directly; folders list their videos.</p>
