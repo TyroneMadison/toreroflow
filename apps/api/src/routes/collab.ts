@@ -95,7 +95,7 @@ export async function collabRoutes(app: FastifyInstance): Promise<void> {
 
   const ownedProject = (id: string, agencyId: string) => prisma.editProject.findFirst({ where: { id, client: { agencyId } } });
   const ownedClient = (id: string, agencyId: string) =>
-    prisma.client.findFirst({ where: { id, agencyId, deletedAt: null }, select: { id: true, autoImport: true } });
+    prisma.client.findFirst({ where: { id, agencyId, deletedAt: null }, select: { id: true, autoImport: true, trends: true, judgeTuning: true } });
   const ownedCandidate = (id: string, agencyId: string) =>
     prisma.clipCandidate.findFirst({ where: { id, job: { client: { agencyId } } }, include: { job: { select: { clientId: true } } } });
 
@@ -389,6 +389,37 @@ export async function collabRoutes(app: FastifyInstance): Promise<void> {
     const client = await ownedClient(request.params.clientId, request.user.agencyId);
     if (!client) return reply.status(404).send(bad("No such brand.", "brand not found"));
     await enqueue("clips", { clipPerf: client.id }, { key: `perf:${client.id}` });
+    return reply.status(202).send({ queued: true });
+  });
+
+  // ---------- Phase 9: smart AI (trend terms, judge tuning) ----------
+
+  app.get<{ Params: { clientId: string } }>("/clients/:clientId/smart", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send(bad("No such brand.", "brand not found"));
+    // ponytail: webSearch stays false: daily web_search trends are spend, so
+    // the terms come from the niche, typed topics, top posts and liked clips.
+    return { trends: client.trends ?? null, tuning: client.judgeTuning ?? null, webSearch: false };
+  });
+
+  const topicsBody = z.object({ topics: z.array(z.string().trim().min(2).max(60)).max(20) });
+  app.put<{ Params: { clientId: string } }>("/clients/:clientId/smart/topics", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send(bad("No such brand.", "brand not found"));
+    const parsed = topicsBody.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the topics."));
+    const prev = (client.trends ?? {}) as Record<string, unknown>;
+    // "at" cleared so the next score (or the queued refresh) rebuilds the terms.
+    const next = { terms: [], sources: null, ...prev, manual: [...new Set(parsed.data.topics)], at: null };
+    await prisma.client.update({ where: { id: client.id }, data: { trends: next as unknown as Prisma.InputJsonValue } });
+    await enqueue("clips", { smart: client.id }, { key: `smart:${client.id}` });
+    return reply.status(202).send({ queued: true, trends: next });
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/smart/refresh", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send(bad("No such brand.", "brand not found"));
+    await enqueue("clips", { smart: client.id }, { key: `smart:${client.id}` });
     return reply.status(202).send({ queued: true });
   });
 
