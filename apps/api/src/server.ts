@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { MAX_VIDEO_UPLOAD_BYTES } from "./uploadLimits";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
@@ -102,7 +103,7 @@ export async function buildServer(
   await app.register(multipart, {
     // Ten files, because that is how many images Instagram takes in one
     // carousel. Video upload still reads a single file and is unaffected.
-    limits: { fileSize: 4 * 1024 * 1024 * 1024, files: CAROUSEL_ABSOLUTE_MAX },
+    limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES, files: CAROUSEL_ABSOLUTE_MAX },
   });
   /*
    * Media for the desktop webview.
