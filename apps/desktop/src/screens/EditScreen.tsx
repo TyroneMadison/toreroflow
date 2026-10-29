@@ -10,14 +10,17 @@ import IdeasHome from "../editor/ideas/IdeasHome";
 import ClipsHome from "../editor/clips/ClipsHome";
 import ClipJobView from "../editor/clips/ClipJobView";
 import { Empty } from "../components/states";
+import { AssetsArea, BrandKitArea, RepurposeCard } from "./StudioIdeas";
 
-type EditArea = "studio" | "clips" | "analyze" | "ideas";
+type EditArea = "studio" | "clips" | "analyze" | "ideas" | "kit" | "assets";
 
 const AREAS: { id: EditArea; label: string }[] = [
   { id: "studio", label: "Edit" },
   { id: "clips", label: "Clips" },
   { id: "analyze", label: "Analyze" },
   { id: "ideas", label: "Ideas" },
+  { id: "kit", label: "Brand kit" },
+  { id: "assets", label: "Assets" },
 ];
 
 export default function EditScreen() {
@@ -83,7 +86,10 @@ export default function EditScreen() {
               onClose={() => setOpenProjectId(null)}
             />
           ) : (
-            <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+            <>
+              <RepurposeCard brandId={selectedClient.id} />
+              <StudioHome clientId={selectedClient.id} onOpen={setOpenProjectId} />
+            </>
           )
         ) : area === "clips" ? (
           openClipJobId ? (
@@ -98,6 +104,10 @@ export default function EditScreen() {
           ) : (
             <ClipsHome clientId={selectedClient.id} onOpen={setOpenClipJobId} />
           )
+        ) : area === "kit" ? (
+          <BrandKitArea brandId={selectedClient.id} brandName={selectedClient.name} />
+        ) : area === "assets" ? (
+          <AssetsArea />
         ) : area === "analyze" ? (
           openAnalysisId ? (
             <AnalysisDetail

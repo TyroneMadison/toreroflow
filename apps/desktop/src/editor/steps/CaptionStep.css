@@ -54,3 +54,6 @@
 .cst-break .field-in{flex:1;font-size:12.5px;padding:9px 11px}
 .cst-breaktime{flex:0 0 auto;min-width:96px;font-variant-numeric:tabular-nums}
 .cst-break .pnl-reset:disabled{opacity:.35;cursor:default}
+.cst-kit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.cst-kit .btn{min-height:44px}
+.cst-kitnote{margin:-4px 0 10px}

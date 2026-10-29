@@ -48,6 +48,9 @@ normalizeUrl();
 // is false in production builds, so this branch and its chunk are dropped.
 if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "coral") {
   void import("./demo/coralDemo");
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "ideas") {
+  // Dev-only stubbed API for the ideas screens (src/demo/ideasDemo.tsx).
+  void import("./demo/ideasDemo");
 } else {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

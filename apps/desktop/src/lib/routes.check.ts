@@ -4,7 +4,7 @@
  * deep link.
  */
 import { SECTIONS } from "./nav";
-import { canonicalUrl, clientPath, parseUrl, pathFor, PATHS, SETTINGS_SECTIONS, scrubToken } from "./routes";
+import { canonicalUrl, clientPath, parseUrl, pathFor, PATHS, publicRoute, SETTINGS_SECTIONS, scrubToken } from "./routes";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   const a = JSON.stringify(actual);
@@ -14,7 +14,7 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 // Every screen has a unique path that parses back to it.
 const screens = SECTIONS.flatMap((s) => s.pages.map((p) => p.id));
-eq(new Set(screens.map((s) => PATHS[s])).size, 19, "nineteen screens, nineteen paths");
+eq(new Set(screens.map((s) => PATHS[s])).size, 24, "twenty-four screens, twenty-four paths");
 for (const s of screens) eq(parseUrl(pathFor(s)).screen, s, `${PATHS[s]} round-trips to ${s}`);
 for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));
@@ -30,6 +30,15 @@ eq(canonicalUrl("/"), "/dashboard", "/ is rewritten to /dashboard");
 eq(canonicalUrl("/nope?client=a"), "/dashboard?client=a", "the rewrite keeps the query");
 eq(canonicalUrl("/create/upload?range=90"), "/create/upload?range=90", "a known path is left alone");
 eq(canonicalUrl("/settings/nope"), "/settings", "an unknown Settings section opens Settings");
+
+// The client's no-login pages stay where they are.
+eq(publicRoute("/a/ck1x2.Ab_c-9"), { kind: "approval", token: "ck1x2.Ab_c-9" }, "an approval link is a public page");
+eq(publicRoute("/r/ck9z.Ab_c-9?x=1"), { kind: "request", token: "ck9z.Ab_c-9" }, "a signed request form is a public page");
+eq(publicRoute("/request/caleb_1"), null, "the old per-brand form path is gone");
+eq(publicRoute("/a/"), null, "no token, no page");
+eq(publicRoute("/create/approvals"), null, "the operator screen is not public");
+eq(canonicalUrl("/a/ck1x2.sig"), "/a/ck1x2.sig", "an approval link is never rewritten to the dashboard");
+eq(canonicalUrl("/r/ck9z.sig"), "/r/ck9z.sig", "a request form is never rewritten");
 
 // Query.
 const q = parseUrl("/dashboard?client=c_123&range=90");

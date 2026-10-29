@@ -23,6 +23,11 @@ export type ScreenId =
   | "queue"
   | "rollup"
   | "templates"
+  | "approvals"
+  | "requests"
+  | "failed"
+  | "insights"
+  | "monthly"
   | "settings";
 
 export type SectionId = "overview" | "create" | "measure" | "settings";
@@ -54,6 +59,7 @@ export const SECTIONS: SectionDef[] = [
       { id: "financials", label: "Financials", slug: "financials" },
       { id: "overview", label: "Account Overview", slug: "account-overview" },
       { id: "templates", label: "Templates", slug: "templates" },
+      { id: "failed", label: "Failed posts", slug: "failed-posts" },
     ],
   },
   {
@@ -66,11 +72,13 @@ export const SECTIONS: SectionDef[] = [
       { id: "preflight", label: "Preflight", slug: "preflight", hidden: true },
       { id: "queue", label: "Upload queue", slug: "queue" },
       { id: "ready", label: "Ready queue", slug: "ready" },
+      { id: "approvals", label: "Approvals", slug: "approvals" },
       { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
       { id: "edit", label: "Studio", slug: "edit" },
       { id: "calendar", label: "Calendar", slug: "calendar" },
       { id: "carousels", label: "Carousels", slug: "carousels" },
       { id: "workflows", label: "Workflows", slug: "workflows" },
+      { id: "requests", label: "Requests", slug: "requests" },
     ],
   },
   {
@@ -81,6 +89,8 @@ export const SECTIONS: SectionDef[] = [
       { id: "analytics", label: "Analytics", slug: "analytics" },
       { id: "reports", label: "Reports", slug: "reports" },
       { id: "rollup", label: "Rollup", slug: "rollup" },
+      { id: "monthly", label: "Monthly report", slug: "monthly-report" },
+      { id: "insights", label: "Insights", slug: "insights" },
       { id: "comments", label: "Comments", slug: "comments" },
     ],
   },
