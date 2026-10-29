@@ -258,6 +258,16 @@ export const FailedPostRetryResultSchema = z.object({
   outcome: z.enum(["queued", "already_live", "needs_reconnect"]),
 });
 
+/** POST /failed-posts/dismiss: hides failure notices; never deletes the post. */
+export const FailedPostDismissSchema = z
+  .object({
+    postTargetIds: z.array(id).min(1).max(500).optional(),
+    all: z.literal(true).optional(),
+    brandId: id.optional(),
+  })
+  .refine((b) => Boolean(b.all) !== Boolean(b.postTargetIds), "send postTargetIds or all: true, not both");
+export const FailedPostDismissResultSchema = z.object({ dismissed: z.number().int().nonnegative() });
+
 // ---- Asset library ----
 
 export const AssetSchema = z.object({

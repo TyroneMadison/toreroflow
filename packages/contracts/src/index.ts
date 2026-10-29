@@ -59,6 +59,8 @@ export const ENDPOINTS = {
   publicApprovalDecision: { method: "POST", path: "/a/:token/decision", request: I.ApprovalDecisionSchema, response: I.PublicApprovalSchema },
   listFailedPosts: { method: "GET", path: "/failed-posts", response: I.FailedPostListSchema },
   retryFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/retry", response: I.FailedPostRetryResultSchema },
+  dismissFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/dismiss", response: I.FailedPostDismissResultSchema },
+  dismissFailedPosts: { method: "POST", path: "/failed-posts/dismiss", request: I.FailedPostDismissSchema, response: I.FailedPostDismissResultSchema },
   listAssets: { method: "GET", path: "/assets", response: I.AssetListSchema },
   uploadAsset: { method: "POST", path: "/assets", response: I.AssetSchema },
   deleteAsset: { method: "DELETE", path: "/assets/:id", response: Ok },

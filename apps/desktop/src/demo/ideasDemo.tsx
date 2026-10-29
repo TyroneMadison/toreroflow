@@ -186,13 +186,16 @@ function route(path: string, method: string): Response | null {
     });
   if (path === "/failed-posts")
     return json({
-      count: 2,
+      count: 3,
       items: [
+        { postTargetId: "t1", brandId: "caleb", platform: "youtube", error: "Publishing failed due to max retries reached", reason: "YouTube did not take the upload", action: "retry", advice: "Retry now", scheduledAt: iso(-2 * DAY) },
         { postTargetId: "t3", brandId: "caleb", platform: "instagram", error: "OAuthException 190", reason: "The Instagram login expired", action: "reconnect", advice: "Reconnect Instagram, then retry", scheduledAt: iso(-DAY) },
         { postTargetId: "t2", brandId: "caleb", platform: "tiktok", error: "spam_risk_too_many_posts", reason: "TikTok paused uploads for today", action: "retry", advice: "Retry after 6 PM ET", scheduledAt: iso(-5 * DAY) },
       ],
     });
   if (/^\/failed-posts\/[^/]+\/retry$/.test(path)) return json({ outcome: "already_live" });
+  if (/^\/failed-posts\/[^/]+\/dismiss$/.test(path)) return json({ dismissed: 1 });
+  if (path === "/failed-posts/dismiss") return json({ dismissed: 2 });
   if (path === "/brand-kit/fonts") return json({ fonts: FONTS });
   if (/^\/brands\/[^/]+\/kit$/.test(path)) return json(kit);
   if (path === "/assets") return json({ assets: ASSETS });
