@@ -10,8 +10,11 @@ import {
   clipText,
   nudgeRanges,
   rangesDuration,
+  applyRecipe,
   seedClipDoc,
   sentences,
+  type EditDoc,
+  type RecipeSettings,
   type Aspect,
   type Range,
   type Shot,
@@ -21,6 +24,7 @@ import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
+import { assetWords, saveVersion } from "./editShared";
 
 /**
  * Studio > Clips: a long source cut into scored short clips.
@@ -41,6 +45,8 @@ const optionsSchema = z.object({
   range: z.tuple([z.number().min(0), z.number().positive()]).refine(([a, b]) => b > a, "range end is before its start").optional(),
   language: z.string().max(8).optional(),
   reframe: z.boolean().default(true),
+  /** Phase 6: the recipe applied when a clip opens; none means the brand default. */
+  recipeId: z.string().max(40).optional(),
 });
 
 const fromAssetSchema = optionsSchema.extend({
@@ -63,6 +69,18 @@ const patchSchema = z.object({
 
 const openSchema = z.object({ ids: z.array(z.string()).min(1).max(20) });
 
+const batchSchema = z.object({
+  ids: z.array(z.string()).min(1).max(20),
+  export: z.object({
+    resolution: z.union([z.literal(720), z.literal(1080), z.literal(1440)]).default(1080),
+    fps: z.union([z.literal(30), z.literal(60)]).default(30),
+    format: z.enum(["mp4", "mov"]).default("mp4"),
+    bitrateK: z.number().int().min(500).max(200_000).default(12_000),
+  }).default({}),
+  /** Send each finished render to Uploads with the clip's copy drafted. */
+  send: z.boolean().default(false),
+});
+
 const bad = (detail: string, error = "that request was not right") => ({ error, detail });
 
 export async function clipRoutes(app: FastifyInstance): Promise<void> {
@@ -80,6 +98,18 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
 
   async function holder(clientId: string, name: string) {
     return prisma.editProject.create({ data: { clientId, name: `Clips source: ${name}`.slice(0, 200), status: "clipsource" } });
+  }
+
+  /**
+   * A job's recipe must be this brand's. Its aspect wins over the job's, so
+   * auto reframe computes shots for the framing the recipe will open with.
+   */
+  async function withRecipe(clientId: string, options: z.infer<typeof optionsSchema>) {
+    if (!options.recipeId) return options;
+    const r = await prisma.recipe.findFirst({ where: { id: options.recipeId, clientId } });
+    if (!r) return null;
+    const aspect = (r.settings as RecipeSettings).aspect;
+    return aspect ? { ...options, aspect } : options;
   }
 
   async function startJob(clientId: string, sourceAssetId: string, options: z.infer<typeof optionsSchema>) {
@@ -140,6 +170,9 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     }
     const parsed = optionsSchema.safeParse(raw);
     if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the job options."));
+    const withR = await withRecipe(client.id, parsed.data);
+    if (!withR) return reply.status(404).send(bad("That recipe is not in this brand.", "recipe not found"));
+    parsed.data = withR;
     const name = file.filename ?? "upload.mp4";
     const project = await holder(client.id, name);
     const asset = await prisma.editAsset.create({
@@ -166,7 +199,8 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     const parsed = fromAssetSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the job options."));
     const { mediaAssetId, editAssetId, ...options } = parsed.data;
-    const opts = optionsSchema.parse(options);
+    const opts = await withRecipe(client.id, optionsSchema.parse(options));
+    if (!opts) return reply.status(404).send(bad("That recipe is not in this brand.", "recipe not found"));
     if (editAssetId) {
       const ea = await prisma.editAsset.findFirst({ where: { id: editAssetId, kind: "clip", project: { clientId: client.id } } });
       if (!ea) return reply.status(404).send(bad("That clip is not in this brand's projects.", "clip not found"));
@@ -295,6 +329,68 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
    * with the clip's ranges in play order, the source's auto-reframe shots
    * and captions on. A second open of the same candidate returns its project.
    */
+  type Owned = NonNullable<Awaited<ReturnType<typeof ownedCandidate>>>;
+
+  /** The recipe a job opens with: its own, else the brand default, else none. */
+  async function recipeFor(c: Owned): Promise<RecipeSettings | null> {
+    const opts = (c.job.options ?? {}) as { recipeId?: string };
+    const r =
+      (opts.recipeId ? await prisma.recipe.findFirst({ where: { id: opts.recipeId, clientId: c.job.clientId } }) : null) ??
+      (await prisma.recipe.findFirst({ where: { clientId: c.job.clientId, isDefault: true } }));
+    return r ? (r.settings as RecipeSettings) : null;
+  }
+
+  /**
+   * One candidate as an editor project: seeded with the clip's ranges in play
+   * order, the source's auto-reframe shots, captions on, then the recipe.
+   * A second open returns the same project.
+   */
+  async function openCandidate(c: Owned): Promise<{ projectId: string } | { status: number; body: { error: string; detail: string } }> {
+    if (c.editProjectId) {
+      const still = await prisma.editProject.findFirst({ where: { id: c.editProjectId }, select: { id: true } });
+      if (still) return { projectId: still.id };
+    }
+    const src = c.job.source;
+    if (src.status !== "ready") return { status: 409, body: bad("The source is still processing.", "source not ready") };
+    const opts = (c.job.options ?? {}) as { aspect?: Aspect };
+    let shots: Shot[] | undefined;
+    let facesKey: string | undefined;
+    try {
+      const st = JSON.parse(
+        await fs.readFile(path.join(env.STORAGE_DIR, path.posix.dirname(src.storageKey), `${src.id}-reframe.json`), "utf8"),
+      ) as { status: string; shots?: Shot[]; facesKey?: string; aspect?: string };
+      // Shots are computed for one aspect; only reuse them for that one.
+      if (st.status === "ready" && (st.aspect ?? "9:16") === (opts.aspect ?? "9:16")) {
+        shots = st.shots;
+        facesKey = st.facesKey;
+      }
+    } catch {
+      // No reframe: the editor's default framing.
+    }
+    const project = await prisma.editProject.create({ data: { clientId: c.job.clientId, name: c.title.slice(0, 200) } });
+    const asset = await prisma.editAsset.create({
+      data: {
+        projectId: project.id, kind: "clip", storageKey: src.storageKey, proxyKey: src.proxyKey, stripKey: src.stripKey,
+        originalName: src.originalName, durationSec: src.durationSec, width: src.width, height: src.height,
+        words: src.words ?? Prisma.DbNull, wordsKey: src.wordsKey, language: src.language, peaksKey: src.peaksKey,
+        status: "ready",
+      },
+    });
+    let doc: EditDoc = seedClipDoc(asset.id, c.ranges as unknown as Range[], { shots, facesKey, aspect: opts.aspect ?? "9:16", name: c.title });
+    const recipe = await recipeFor(c);
+    if (recipe) {
+      // The seeded aspect matches the reframe shots; a different recipe
+      // aspect would throw them away, so a job-time recipe already set it.
+      const { aspect: _drop, ...rest } = recipe;
+      void _drop;
+      const words = await assetWords(src);
+      doc = applyRecipe(doc, rest, { [asset.id]: src.durationSec ?? 0 }, { [asset.id]: words }).doc;
+    }
+    await prisma.editProject.update({ where: { id: project.id }, data: { doc: doc as unknown as Prisma.InputJsonValue } });
+    await prisma.clipCandidate.update({ where: { id: c.id }, data: { editProjectId: project.id } });
+    return { projectId: project.id };
+  }
+
   app.post("/clip-candidates/open", async (request, reply) => {
     const parsed = openSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.status(400).send(bad("Pick at least one clip."));
@@ -302,44 +398,95 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     for (const id of parsed.data.ids) {
       const c = await ownedCandidate(id, request.user.agencyId);
       if (!c) return reply.status(404).send({ error: "clip not found", detail: `No clip ${id} in this workspace.` });
-      if (c.editProjectId) {
-        const still = await prisma.editProject.findFirst({ where: { id: c.editProjectId }, select: { id: true } });
-        if (still) {
-          out.push({ candidateId: c.id, projectId: still.id });
-          continue;
-        }
-      }
-      const src = c.job.source;
-      if (src.status !== "ready") return reply.status(409).send(bad("The source is still processing.", "source not ready"));
-      const opts = (c.job.options ?? {}) as { aspect?: Aspect };
-      let shots: Shot[] | undefined;
-      let facesKey: string | undefined;
-      try {
-        const st = JSON.parse(
-          await fs.readFile(path.join(env.STORAGE_DIR, path.posix.dirname(src.storageKey), `${src.id}-reframe.json`), "utf8"),
-        ) as { status: string; shots?: Shot[]; facesKey?: string; aspect?: string };
-        // Shots are computed for one aspect; only reuse them for that one.
-        if (st.status === "ready" && (st.aspect ?? "9:16") === (opts.aspect ?? "9:16")) {
-          shots = st.shots;
-          facesKey = st.facesKey;
-        }
-      } catch {
-        // No reframe: the editor's default framing.
-      }
-      const project = await prisma.editProject.create({ data: { clientId: c.job.clientId, name: c.title.slice(0, 200) } });
-      const asset = await prisma.editAsset.create({
-        data: {
-          projectId: project.id, kind: "clip", storageKey: src.storageKey, proxyKey: src.proxyKey, stripKey: src.stripKey,
-          originalName: src.originalName, durationSec: src.durationSec, width: src.width, height: src.height,
-          words: src.words ?? Prisma.DbNull, wordsKey: src.wordsKey, language: src.language, peaksKey: src.peaksKey,
-          status: "ready",
-        },
-      });
-      const doc = seedClipDoc(asset.id, c.ranges as unknown as Range[], { shots, facesKey, aspect: opts.aspect ?? "9:16", name: c.title });
-      await prisma.editProject.update({ where: { id: project.id }, data: { doc: doc as unknown as Prisma.InputJsonValue } });
-      await prisma.clipCandidate.update({ where: { id: c.id }, data: { editProjectId: project.id } });
-      out.push({ candidateId: c.id, projectId: project.id });
+      const r = await openCandidate(c);
+      if (!("projectId" in r)) return reply.status(r.status).send(r.body);
+      out.push({ candidateId: c.id, projectId: r.projectId });
     }
     return { projects: out };
+  });
+
+  /**
+   * Phase 6 batch: open (recipe applied) and queue a render for each clip.
+   * With send, the worker drops each finished file in Uploads with the
+   * clip's title, description and hashtags as its drafted copy.
+   * ponytail: copy comes from the curated candidate, not POST
+   * /media/:id/caption, so a batch never spends on an LLM.
+   * Clips already rendering are left alone; failed ones re-queue (Retry).
+   */
+  app.post("/clip-candidates/batch-render", async (request, reply) => {
+    const parsed = batchSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the batch."));
+    const { ids, export: ex, send } = parsed.data;
+    const items: { candidateId: string; projectId: string | null; queued: boolean; error?: string }[] = [];
+    for (const id of ids) {
+      const c = await ownedCandidate(id, request.user.agencyId);
+      if (!c) {
+        items.push({ candidateId: id, projectId: null, queued: false, error: "clip not found" });
+        continue;
+      }
+      const r = await openCandidate(c);
+      if (!("projectId" in r)) {
+        items.push({ candidateId: id, projectId: null, queued: false, error: r.body.detail });
+        continue;
+      }
+      const p = await prisma.editProject.findUnique({ where: { id: r.projectId } });
+      if (!p || !p.doc) {
+        items.push({ candidateId: id, projectId: r.projectId, queued: false, error: "nothing to render" });
+        continue;
+      }
+      if (p.status === "rendering") {
+        items.push({ candidateId: id, projectId: p.id, queued: false, error: "already rendering" });
+        continue;
+      }
+      const name = c.title.replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 120) || "clip";
+      const doc = { ...(p.doc as Record<string, unknown>), export: { name, resolution: ex.resolution, fps: ex.fps, format: ex.format, bitrate: ex.bitrateK } };
+      await saveVersion(p.id, p.doc, "Before batch render", true);
+      await prisma.editProject.update({
+        where: { id: p.id },
+        data: {
+          status: "rendering",
+          renderPct: 0,
+          renderError: null,
+          uploadAssetId: null,
+          doc: doc as Prisma.InputJsonValue,
+          afterRender: send
+            ? ({ send: true, title: c.title, description: c.description ?? "", hashtags: c.hashtags } as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        },
+      });
+      await enqueue("edit", { editProjectId: p.id, job: "render" });
+      items.push({ candidateId: id, projectId: p.id, queued: true });
+    }
+    return reply.status(202).send({ items });
+  });
+
+  /** Per-clip batch progress: status, percent, error, and the upload once sent. */
+  app.get<{ Querystring: { ids?: string } }>("/clip-candidates/batch-status", async (request, reply) => {
+    const ids = (request.query.ids ?? "").split(",").filter(Boolean).slice(0, 50);
+    if (!ids.length) return reply.status(400).send(bad("Pass ids=a,b,c."));
+    const cands = await prisma.clipCandidate.findMany({
+      where: { id: { in: ids }, job: { client: { agencyId: request.user.agencyId } } },
+      select: { id: true, editProjectId: true },
+    });
+    const projects = await prisma.editProject.findMany({
+      where: { id: { in: cands.map((c) => c.editProjectId).filter((x): x is string => !!x) } },
+      select: { id: true, status: true, renderPct: true, renderError: true, uploadAssetId: true, afterRender: true },
+    });
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    return {
+      items: cands.map((c) => {
+        const p = c.editProjectId ? byId.get(c.editProjectId) : undefined;
+        const wantsSend = !!(p?.afterRender as { send?: boolean } | null)?.send;
+        return {
+          candidateId: c.id,
+          projectId: p?.id ?? null,
+          // queued = waiting for a free render slot (pct still 0).
+          status: !p ? "none" : p.uploadAssetId ? "sent" : p.status === "rendering" && !p.renderPct ? "queued" : p.status === "rendered" && wantsSend ? "sending" : p.status,
+          renderPct: p?.renderPct ?? 0,
+          error: p?.renderError ?? null,
+          uploadAssetId: p?.uploadAssetId ?? null,
+        };
+      }),
+    };
   });
 }
