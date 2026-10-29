@@ -167,10 +167,12 @@ res = await dismissOne("t-d1");
 assert.deepEqual(FailedPostDismissResultSchema.parse(res.json()), { dismissed: 1 });
 assert.deepEqual(await listIds(), ["t-tt", "t-d2", "t-d3"], "dismissed leaves the list and the count");
 assert.equal(targets.find((t) => t.id === "t-d1")!.status, "failed", "the post itself stays failed and retryable");
-assert.equal((await dismissOne("t-d1")).statusCode, 404, "already dismissed");
-assert.equal((await dismissOne("t-ig")).statusCode, 404, "a published post is never touched");
+assert.deepEqual((await dismissOne("t-d1")).json(), { dismissed: 0 }, "already dismissed: the card can still go");
+assert.deepEqual((await dismissOne("t-ig")).json(), { dismissed: 0 }, "a published post is never touched");
 assert.equal(targets[0]!.failureDismissedAt, undefined);
+assert.equal(targets[0]!.status, "posted");
 assert.equal((await dismissOne("t-tt", otherAgency)).statusCode, 404);
+assert.equal((await dismissOne("nope")).statusCode, 404);
 
 // Bulk: selected ones; a published id in the set is skipped.
 res = await dismissMany({ postTargetIds: ["t-d2", "t-ig"] });
@@ -188,6 +190,24 @@ res = await app.inject({ method: "GET", url: "/failed-posts", headers: operator 
 assert.equal(res.json().count, 0);
 assert.deepEqual(posts, postsBefore, "no post was changed by a dismiss");
 assert.equal(targets[0]!.status, "posted");
+
+// Every kind of card dismisses the same way: token/reconnect, disconnected account, upload, plain retry.
+targets.push(
+  { ...base, id: "k-token", platform: "instagram", status: "failed", error: "Invalid OAuth access token - Cannot parse access token", remotePostId: null, socialAccount: { status: "connected", providerAccountId: "z-ig" } },
+  { ...base, id: "k-acct", platform: "tiktok", status: "failed", error: null, remotePostId: null, socialAccount: { status: "needs_reconnect", providerAccountId: "z-tt" } },
+  { ...base, id: "k-upload", platform: "youtube", status: "failed", error: "Media upload failed: file could not be fetched", remotePostId: null, socialAccount: { status: "connected", providerAccountId: "z-yt" } },
+  { ...base, id: "k-retry", platform: "instagram", status: "failed", error: "Publishing failed due to max retries reached", remotePostId: "late-ig2", socialAccount: { status: "connected", providerAccountId: "z-ig" } },
+);
+const kinds = (await app.inject({ method: "GET", url: "/failed-posts", headers: operator })).json().items as { postTargetId: string; action: string }[];
+assert.deepEqual(kinds.map((i) => [i.postTargetId, i.action]), [["k-token", "reconnect"], ["k-acct", "reconnect"], ["k-upload", "retry"], ["k-retry", "retry"]]);
+for (const { postTargetId } of kinds) {
+  res = await dismissOne(postTargetId);
+  assert.deepEqual(res.json(), { dismissed: 1 }, postTargetId);
+  assert.ok(!(await listIds()).includes(postTargetId), `${postTargetId} leaves the list`);
+  assert.equal(targets.find((t) => t.id === postTargetId)!.status, "failed", `${postTargetId}: the post is untouched`);
+}
+assert.equal((await app.inject({ method: "GET", url: "/failed-posts", headers: operator })).json().count, 0);
+assert.deepEqual(posts, postsBefore, "no post was changed by any dismiss");
 
 // A retry clears the dismissal, so a second failure shows again.
 res = await retry("t-d1");
