@@ -212,6 +212,9 @@ model Client {
   /// "northstar-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.
   reportSlug            String?        @unique
+  /// Phase 7 censor word list (a trailing * matches any word starting so).
+  /// The editor snapshots it into doc.censor.words when censor is switched on.
+  censorWords           String[]       @default([])
   /// Absolute URL of the last published report page; null until first publish.
   reportUrl             String?
   /// When that page was last pushed. Also the flag month-end republishing

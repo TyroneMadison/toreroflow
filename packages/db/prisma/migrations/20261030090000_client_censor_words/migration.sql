@@ -1,0 +1,1 @@
+ALTER TABLE "Client" ADD COLUMN "censorWords" TEXT[] DEFAULT ARRAY[]::TEXT[];
