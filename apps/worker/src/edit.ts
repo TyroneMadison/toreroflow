@@ -163,8 +163,11 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
     // talk transcribed beside the proxy and filmstrip encodes came back with
     // its first minutes missing and the language guessed wrong (ko, zh, nl);
     // the same audio alone came back whole, every time. Root cause not found
-    // in whisper; this keeps the CPU to it. Short clips keep the parallel win.
-    const serial = (meta.durationSec ?? 0) > 300;
+    // in whisper; this keeps the CPU to it. Phase 9: short clips too. A 75 s
+    // talk transcribed beside its encodes came back as 31 words (172 alone),
+    // and that thin audio is what whisper misread as "ar". Serial costs a few
+    // seconds on a short clip.
+    const serial = true;
     const early = serial ? await runTranscribe() : null;
     const [, , transcript, peaks] = await Promise.all([
       proxyKey === asset.storageKey
