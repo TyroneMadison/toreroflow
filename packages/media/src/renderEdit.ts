@@ -30,7 +30,13 @@ import {
   layoutBoundaries,
   outputDuration,
   panelsFor,
+  enhanceChain,
+  faceCenterAt,
+  pointInFrame,
+  transitionJoins,
   type EditDoc,
+  type EmojiOverlay,
+  type FaceTrack,
   type EdlSegment,
 } from "@toreroflow/core";
 
@@ -66,6 +72,12 @@ export interface RenderPlanInput {
   /** Passed to subtitles=fontsdir so libass finds the bundled fonts. */
   fontsDir?: string;
   out: RenderOutput;
+  /** Phase 7: face tracks by asset id, so face zooms aim at the real face. */
+  faceTracks?: Record<string, FaceTrack>;
+  /** Phase 7: colour emoji (caption emojis + stickers) and where the PNGs live. */
+  emoji?: { dir: string; overlays: EmojiOverlay[] };
+  /** Phase 7: output-time spans of censored words (bleeped or muted per doc.censor). */
+  censorSpans?: { start: number; end: number }[];
 }
 
 export interface RenderPlan {
@@ -102,7 +114,14 @@ export const FACE_Y = 0.38;
  * "last one wins" rule. The whole z expression is quoted so its commas
  * survive the graph parser.
  */
-function zoompanFor(zooms: SegZoom[], segLen: number, fps: number, w: number, h: number): string {
+function zoompanFor(
+  zooms: SegZoom[],
+  segLen: number,
+  fps: number,
+  w: number,
+  h: number,
+  face?: { x: number; y: number } | null,
+): string {
   const T = `(on/${fps})`;
   let z = "1";
   const q = ZOOM.quickzoom;
@@ -140,12 +159,16 @@ function zoompanFor(zooms: SegZoom[], segLen: number, fps: number, w: number, h:
         `${n(S)}-${n(S - 1)}*(${T}-${n(tHold)})/${n(q.outSec)})),${z})`;
     }
   }
-  // Face anchor: zoom toward the upper-middle where a reframed face sits.
-  // ponytail: a fixed point, not the face track; reframed layouts already
-  // keep the face there. Upgrade path: per-frame centers from faces.json.
-  const fy = zooms.some((zz) => zz.anchor === "face") ? FACE_Y : 0.5;
-  const yExpr = fy === 0.5 ? "ih/2-(ih/zoom/2)" : `ih*${fy}-(ih/zoom*${fy})`;
-  return `zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='${yExpr}':d=1:s=${w}x${h}:fps=${fps}`;
+  // Face anchor: the real face centre (faces.json, mapped into the frame at
+  // the zoom's start) when the worker passed a track; else the fixed
+  // upper-middle point where a reframed face usually sits.
+  // ponytail: one anchor per segment, not per frame.
+  const faceZoom = zooms.some((zz) => zz.anchor === "face");
+  const fx = faceZoom && face ? face.x : 0.5;
+  const fy = faceZoom ? (face ? face.y : FACE_Y) : 0.5;
+  const xExpr = fx === 0.5 ? "iw/2-(iw/zoom/2)" : `iw*${n(fx)}-(iw/zoom*${n(fx)})`;
+  const yExpr = fy === 0.5 ? "ih/2-(ih/zoom/2)" : `ih*${n(fy)}-(ih/zoom*${n(fy)})`;
+  return `zoompan=z='${z}':x='${xExpr}':y='${yExpr}':d=1:s=${w}x${h}:fps=${fps}`;
 }
 
 /**
@@ -360,7 +383,19 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     const src = byId.get(seg.assetId);
     const lay = layoutAt(doc, seg.clipId, seg.assetId, seg.srcIn, src?.width ?? W, src?.height ?? H, W, H);
     const zooms = zoomsBySeg.get(i);
-    const zoomTail = zooms?.length ? [`fps=${F}`, zoompanFor(zooms, seg.srcOut - seg.srcIn, F, W, H)] : [];
+    let face: { x: number; y: number } | null = null;
+    const track = input.faceTracks?.[seg.assetId];
+    if (track && zooms?.some((z) => z.anchor === "face")) {
+      const t0 = Math.min(...zooms.filter((z) => z.anchor === "face").map((z) => z.t0));
+      const c = faceCenterAt(track, seg.srcIn + t0);
+      const srcA = (src?.width || W) / (src?.height || H);
+      // Single-panel fills map through their crop; fit and legacy through the
+      // letterbox; split/screenshare keep the fixed point.
+      if (c && (lay.kind === "fill" || lay.kind === "fit" || lay.kind === "legacy")) {
+        face = pointInFrame(c, lay.kind === "fill" ? lay.crops[0] : null, srcA, W / H);
+      }
+    }
+    const zoomTail = zooms?.length ? [`fps=${F}`, zoompanFor(zooms, seg.srcOut - seg.srcIn, F, W, H, face)] : [];
     if (lay.kind === "legacy") {
       const fxMoved = !!fx && ((fx.zoom ?? 1) !== 1 || (fx.x ?? 0) !== 0 || (fx.y ?? 0) !== 0);
       if (fxMoved) v.push(...fxFrame(fx.zoom ?? 1, fx.x ?? 0, fx.y ?? 0, W, H));
@@ -388,7 +423,36 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     fc.push(`[${idx}:a]${a.join(",")}[a${i}]`);
   });
 
-  fc.push(edl.map((_, i) => `[v${i}][a${i}]`).join("") + `concat=n=${edl.length}:v=1:a=1[vcat][acat]`);
+  const joins = transitionJoins(doc.transitions, edl);
+  if (joins.length === 0) {
+    fc.push(edl.map((_, i) => `[v${i}][a${i}]`).join("") + `concat=n=${edl.length}:v=1:a=1[vcat][acat]`);
+  } else {
+    // Phase 7 transitions, duration-preserving: segments between joins are
+    // concatenated into runs, normalized to one fps/format (xfade needs it),
+    // then each run joins the next with the outgoing side frozen for dur
+    // (tpad clone) and an xfade at the join's output time. Output length,
+    // and so caption timing, never moves. Audio stays a plain concat.
+    // ponytail: the outgoing picture holds still during the transition.
+    const starts = [0, ...joins.map((j) => j.seg), edl.length];
+    const runs: string[] = [];
+    for (let k = 0; k + 1 < starts.length; k++) {
+      const from = starts[k];
+      const to = starts[k + 1];
+      const label = `r${k}`;
+      const parts = Array.from({ length: to - from }, (_, m) => `[v${from + m}]`).join("");
+      const head = to - from === 1 ? parts : `${parts}concat=n=${to - from}:v=1:a=0,`;
+      fc.push(`${head}fps=${F},format=yuv420p,setsar=1[${label}]`);
+      runs.push(label);
+    }
+    let cur = runs[0];
+    joins.forEach((j, k) => {
+      const next = k === joins.length - 1 ? "vcat" : `x${k}`;
+      fc.push(`[${cur}]tpad=stop_mode=clone:stop_duration=${n(j.dur)}[p${k}]`);
+      fc.push(`[p${k}][${runs[k + 1]}]xfade=transition=${j.xfade}:duration=${n(j.dur)}:offset=${n(j.at)}[${next}]`);
+      cur = next;
+    });
+    fc.push(edl.map((_, i) => `[a${i}]`).join("") + `concat=n=${edl.length}:v=0:a=1[acat]`);
+  }
 
   // Overlays: broll first, then graphics on top. x/y are percent offsets
   // from center (the preview's calc(50% + x%)), scale is a fraction of the
@@ -443,6 +507,32 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     vcur = next;
   });
 
+  // Phase 7 colour emoji (caption emojis, stickers): one single-frame PNG input
+  // each, scaled to size, gated by enable. Inputs come after every v1 input
+  // so plans without emoji keep their input order.
+  const emojiInputs: string[] = [];
+  (input.emoji?.overlays ?? []).forEach((e, k) => {
+    const idx = inputPaths.length + emojiInputs.length;
+    emojiInputs.push(`${input.emoji!.dir.replace(/\\/g, "/")}/${e.file}`);
+    fc.push(`[${idx}:v]scale=${e.size}:${e.size},format=rgba[em${k}]`);
+    const next = `ve${k}`;
+    fc.push(`[${vcur}][em${k}]overlay=x=${e.x}:y=${e.y}:enable='between(t,${n(e.start)},${n(e.end)})'[${next}]`);
+    vcur = next;
+  });
+
+  // Phase 7 progress bar: a solid strip sliding in from the left, its right
+  // edge at W * t / total, so it is full exactly at the end.
+  const pb = doc.overlays?.progress;
+  if (pb?.on) {
+    const total = outputDuration(edl);
+    const ph = Math.max(2, Math.round((pb.height * H) / 1920 / 2) * 2);
+    fc.push(`color=c=0x${pb.color.replace(/^#/, "")}:s=${W}x${ph}:r=${F}:d=${n(total)}[pbar]`);
+    fc.push(
+      `[${vcur}][pbar]overlay=x='-W+W*t/${n(Math.max(0.001, total))}':y=${pb.position === "top" ? 0 : "H-h"}:eof_action=pass[vpb]`,
+    );
+    vcur = "vpb";
+  }
+
   // Global fps after concat, subtitles last so captions and texts sit above
   // everything at final output timing.
   const post: string[] = [`fps=${F}`];
@@ -487,15 +577,36 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     mixLabels.push(`[ab${k}]`);
   });
   let acur = "acat";
+  // Phase 7 enhance speech (highpass, denoise, loudnorm back at 48k) and the
+  // censor: listed words muted on the voice track, plus a sine bleep that
+  // only sounds inside those spans.
+  const enh = enhanceChain(doc.enhance);
+  const spans = doc.censor && doc.censor.audio !== "off" ? (input.censorSpans ?? []) : [];
+  if (enh.length || spans.length) {
+    const chain = [...enh];
+    if (enh.length) chain.push("aresample=48000");
+    const inSpan = spans.map((sp) => `between(t,${n(sp.start)},${n(sp.end)})`).join("+");
+    if (spans.length) chain.push(`volume=0:enable='${inSpan}'`);
+    fc.push(`[acat]${chain.join(",")}[aclean]`);
+    acur = "aclean";
+    if (spans.length && doc.censor!.audio === "bleep") {
+      const total = outputDuration(edl);
+      fc.push(
+        `sine=frequency=1000:sample_rate=48000:duration=${n(total)},volume=0.25,volume=0:enable='not(${inSpan})',aformat=channel_layouts=stereo[bleep]`,
+      );
+      mixLabels.push("[bleep]");
+    }
+  }
   if (mixLabels.length > 0) {
     fc.push(
-      "[acat]" + mixLabels.join("") + `amix=inputs=${mixLabels.length + 1}:duration=first:normalize=0[aout]`,
+      `[${acur}]` + mixLabels.join("") + `amix=inputs=${mixLabels.length + 1}:duration=first:normalize=0[aout]`,
     );
     acur = "aout";
   }
 
   const args: string[] = ["-y", "-nostats", "-progress", "pipe:1"];
   for (const p of inputPaths) args.push("-i", p);
+  for (const p of emojiInputs) args.push("-i", p);
   args.push("-filter_complex", fc.join(";"), "-map", "[vout]", "-map", `[${acur}]`);
   const kbps = out.videoBitrateK;
   args.push(

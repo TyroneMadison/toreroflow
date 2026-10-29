@@ -691,8 +691,8 @@ export function faceCenterAt(track: FaceTrack | null | undefined, t: number): { 
 }
 
 /**
- * A source-fraction point to a fraction of the output frame. crop (source
- * fractions) for reframed layouts; null = the legacy letterbox fit. Clamped
+ * A source-fraction point to a fraction of the output frame. crop (a reframe
+ * Rect: size in source fractions, x/y centre offsets) for reframed layouts; null = the legacy letterbox fit. Clamped
  * to 0.15..0.85 so a zoom never drives into an edge.
  */
 export function pointInFrame(
@@ -704,8 +704,9 @@ export function pointInFrame(
   let x: number;
   let y: number;
   if (crop) {
-    x = (p.x - crop.x) / crop.w;
-    y = (p.y - crop.y) / crop.h;
+    // Rect x/y are centre offsets from 0.5 (reframe.ts cropPx).
+    x = (p.x - (0.5 + crop.x - crop.w / 2)) / crop.w;
+    y = (p.y - (0.5 + crop.y - crop.h / 2)) / crop.h;
   } else if (srcA > outA) {
     // Wider source: letterboxed top and bottom.
     const hFrac = outA / srcA;

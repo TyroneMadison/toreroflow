@@ -118,7 +118,7 @@ const track = { fps: 2, w: 1920, h: 1080, frames: [{ t: 0, faces: [] }, { t: 1, 
 const fc = faceCenterAt(track, 0.8);
 ok(fc !== null && Math.abs(fc.x - 0.65) < 1e-9 && Math.abs(fc.y - 0.3) < 1e-9, "face centre");
 ok(faceCenterAt(track, 5) === null && faceCenterAt(null, 0) === null, "no face far away");
-const inCrop = pointInFrame({ x: 0.65, y: 0.3 }, { x: 0.5, y: 0, w: 0.3, h: 1 }, 16 / 9, 9 / 16);
+const inCrop = pointInFrame({ x: 0.65, y: 0.3 }, { x: 0.15, y: 0, w: 0.3, h: 1 }, 16 / 9, 9 / 16);
 ok(inCrop.x === 0.5 && inCrop.y === 0.3, "face in crop");
 const lb = pointInFrame({ x: 0.5, y: 0.1 }, null, 16 / 9, 9 / 16);
 ok(lb.y === 0.373 && lb.x === 0.5, "letterbox maps into the band");
