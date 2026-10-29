@@ -13,8 +13,9 @@ import {
   type Range,
   type ClipSentence,
   type Word,
+  transcriptSuspect,
 } from "@toreroflow/core";
-import { assetWords, processEditAsset, reframeAsset, reframeStatusPath } from "../edit";
+import { assetWords, clientLanguageHint, processEditAsset, reframeAsset, reframeStatusPath } from "../edit";
 import { curate, judge, resolveProvider } from "./provider";
 
 const prisma = getPrisma();
@@ -74,7 +75,23 @@ async function analyze(jobId: string): Promise<void> {
   // A source that came back "ready" with no words (the captions service was
   // down) is processed again on retry rather than failing on the empty words.
   const noWords = job.source.status === "ready" && !(await assetWords(job.source)).length;
-  if (job.source.status !== "ready" || !job.source.stripKey || noWords) {
+  // Phase 9: a retry never reuses a transcript in the wrong language. The
+  // job's own language option wins; a weak (or, before Phase 9, unscored)
+  // guess that disagrees with the client's usual language is redone with
+  // that language set.
+  let relang: string | null = null;
+  if (job.source.status === "ready" && !noWords) {
+    if (opts.language && opts.language !== job.source.language) relang = opts.language;
+    else if (!opts.language) {
+      const hint = await clientLanguageHint(job.clientId, job.sourceAssetId);
+      if (transcriptSuspect(job.source, hint)) relang = hint;
+    }
+    if (relang) {
+      await step(jobId, `language ${job.source.language ?? "?"} looks wrong, transcribing again as ${relang}`);
+      await prisma.editAsset.update({ where: { id: job.sourceAssetId }, data: { language: relang, languageSource: "set", languageProb: null } });
+    }
+  }
+  if (job.source.status !== "ready" || !job.source.stripKey || noWords || relang) {
     await step(jobId, "transcribe", { status: "transcribing", pct: 10 });
     await processEditAsset(job.sourceAssetId);
     job = (await loadJob(jobId))!;
@@ -82,7 +99,10 @@ async function analyze(jobId: string): Promise<void> {
   if (job.source.status !== "ready") throw new Error("the source could not be processed");
   const words = await assetWords(job.source);
   if (!words.length) throw new Error(job.source.error ?? "no speech found in the source");
-  await step(jobId, `${job.source.language ?? "?"} · ${words.length} words`, { status: "analyzing", pct: 35 });
+  const ls = job.source.languageSource;
+  const lp = job.source.languageProb;
+  const how = ls === "fallback" ? ` (fallback, detection ${lp != null ? Math.round(lp * 100) + "%" : "weak"})` : ls === "set" ? " (set)" : lp != null ? ` (${Math.round(lp * 100)}%)` : "";
+  await step(jobId, `${job.source.language ?? "?"}${how} · ${words.length} words`, { status: "analyzing", pct: 35 });
   if (opts.reframe !== false && (job.source.durationSec ?? 0) > 1800) {
     // Same ceiling the editor's Auto reframe button has: /faces samples the
     // whole file inside one request.
