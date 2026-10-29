@@ -385,7 +385,9 @@ export async function renderProject(editProjectId: string): Promise<void> {
     const faceTracks: Record<string, FaceTrack> = {};
     for (const a of clips) {
       if (a.storageKey === "pending") continue;
-      const key = `${path.posix.dirname(a.storageKey)}/${a.id}-faces.json`;
+      // doc.faces holds the key auto reframe wrote (clip projects point at
+      // the source project's file); else the conventional sibling path.
+      const key = doc.faces?.[a.id] ?? `${path.posix.dirname(a.storageKey)}/${a.id}-faces.json`;
       const raw = await fs.readFile(path.join(env.STORAGE_DIR, key), "utf8").catch(() => null);
       if (!raw) continue;
       try {
