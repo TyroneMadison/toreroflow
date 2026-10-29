@@ -1115,21 +1115,25 @@ void work<{ ideaId: string }>("ideagifs", { concurrency: 1 }, async ({ ideaId })
 // two concurrent encodes on a small box finish later than two queued ones.
 // EDIT_CONCURRENCY raises it for batch renders on a machine with the cores.
 // The one queue carries asset processing (the default) and full renders.
-void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
-  "edit",
-  { concurrency: env.EDIT_CONCURRENCY },
-  async (data) => {
-    if (data.job === "render" && data.editProjectId) {
-      await renderProject(data.editProjectId);
-    } else if (data.job === "reframe" && data.editAssetId) {
-      await reframeAsset(data.editAssetId);
-    } else if (data.job === "isolate" && data.editAssetId) {
-      await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
-    } else if (data.editAssetId) {
-      await processEditAsset(data.editAssetId);
-    }
-  },
-);
+// work() runs a fetched batch one job at a time, so batchSize alone never
+// overlaps two encodes; N single-job pollers do, each failing on its own.
+for (let slot = 0; slot < env.EDIT_CONCURRENCY; slot++) {
+  void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
+    "edit",
+    { concurrency: 1 },
+    async (data) => {
+      if (data.job === "render" && data.editProjectId) {
+        await renderProject(data.editProjectId);
+      } else if (data.job === "reframe" && data.editAssetId) {
+        await reframeAsset(data.editAssetId);
+      } else if (data.job === "isolate" && data.editAssetId) {
+        await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
+      } else if (data.editAssetId) {
+        await processEditAsset(data.editAssetId);
+      }
+    },
+  );
+}
 
 // Studio clips: analyze, curate, score, refine, rescore. One at a time, for
 // the same reason as edit: whisper and ffmpeg share the machine.
