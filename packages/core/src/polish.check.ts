@@ -1,10 +1,12 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { EMOJI_DICT } from "./aiPasses";
 import { emptyDoc } from "./editDoc";
 import { textsWithHook } from "./aiPasses";
 import {
   HOOK_PRESETS,
   LOOKS,
   SAFE_ZONES,
+  STICKER_PACK,
   TRANSITIONS,
   applyHookPreset,
   captionEmojiOverlays,
@@ -127,5 +129,9 @@ const ttf = readFileSync(new URL("../../../assets/fonts/Anton-Regular.ttf", impo
 ok(fontFamilyName(new Uint8Array(ttf)) === "Anton", "font family from name table");
 ok(fontFamilyName(new Uint8Array([1, 2, 3])) === null, "junk is null");
 ok(fontFileName("My Brand Font!.TTF") === "My-Brand-Font.ttf" && fontFileName("x.woff") === null, "fontFileName");
+
+for (const e of new Set([...Object.values(EMOJI_DICT), ...STICKER_PACK])) {
+  ok(existsSync(new URL(`../../../assets/emoji/${emojiFile(e)}`, import.meta.url)), `emoji file for ${e}`);
+}
 
 console.log("polish.check: all assertions passed");
