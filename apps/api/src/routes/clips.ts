@@ -1,4 +1,5 @@
 import path from "node:path";
+import { MAX_VIDEO_UPLOAD_BYTES } from "../uploadLimits";
 import fs from "node:fs/promises";
 import { constants as fsc, createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
@@ -166,7 +167,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { clientId: string } }>("/clients/:clientId/clip-jobs", async (request, reply) => {
     const client = await ownedClient(request.params.clientId, request.user.agencyId);
     if (!client) return reply.status(404).send({ error: "brand not found" });
-    const file = await request.file();
+    const file = await request.file({ limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES } });
     if (!file) return reply.status(400).send(bad("Choose a video file.", "no file uploaded"));
     const field = file.fields?.options as { value?: string } | undefined;
     let raw: unknown = {};
@@ -192,7 +193,7 @@ export async function clipRoutes(app: FastifyInstance): Promise<void> {
     if (file.file.truncated) {
       await fs.rm(path.join(env.STORAGE_DIR, storageKey), { force: true });
       await prisma.editProject.delete({ where: { id: project.id } });
-      return reply.status(413).send({ error: "file too large", detail: "That file is over the upload limit." });
+      return reply.status(413).send({ error: "file too large", detail: "That file is over the 10 GB upload limit." });
     }
     await prisma.editAsset.update({ where: { id: asset.id }, data: { storageKey } });
     const job = await startJob(client.id, asset.id, parsed.data);

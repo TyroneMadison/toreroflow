@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { MAX_VIDEO_UPLOAD_BYTES } from "../uploadLimits";
 import { createWriteStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -28,7 +29,7 @@ export const MAX_BYTES: Record<AssetType, number> = {
   image: 50 * 1024 * 1024,
   template: 50 * 1024 * 1024,
   audio: 200 * 1024 * 1024,
-  video: 4 * 1024 * 1024 * 1024,
+  video: MAX_VIDEO_UPLOAD_BYTES,
 };
 
 /** The visibility and filter rules, pure so they are checked on their own. */
