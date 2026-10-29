@@ -403,7 +403,8 @@ export async function collabRoutes(app: FastifyInstance): Promise<void> {
   });
 
   const autoImportView = async (clientId: string, raw: unknown) => {
-    const imports = await prisma.youTubeImport.findMany({ where: { clientId, NOT: { reason: "Published before auto-import was on." } }, orderBy: { createdAt: "desc" }, take: 20 });
+    // A bare NOT would also drop rows whose reason is NULL (the imported ones).
+    const imports = await prisma.youTubeImport.findMany({ where: { clientId, OR: [{ reason: null }, { reason: { not: "Published before auto-import was on." } }] }, orderBy: { createdAt: "desc" }, take: 20 });
     return { settings: readAutoImport(raw), keyReady: !!env.YOUTUBE_API_KEY, imports: imports.map((i) => ({ ...i, publishedAt: i.publishedAt?.toISOString() ?? null, createdAt: i.createdAt.toISOString() })) };
   };
 
