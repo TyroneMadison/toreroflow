@@ -1111,7 +1111,7 @@ export function FailedPostsScreen() {
       const gone = new Set(ids === "all" ? openIds : ids);
       setList((l) => l && { count: Math.max(0, l.count - gone.size), items: l.items.filter((i) => !gone.has(i.postTargetId)) });
       setPicked(new Set());
-      toast.success(`Removed ${r.dismissed} ${r.dismissed === 1 ? "notice" : "notices"}. The posts are untouched.`);
+      toast.success(`Removed ${gone.size} ${gone.size === 1 ? "notice" : "notices"}. The posts are untouched.`);
       window.dispatchEvent(new Event(FAILED_CHANGED));
     } catch (err) {
       toast.fail("Remove did not go through", err);

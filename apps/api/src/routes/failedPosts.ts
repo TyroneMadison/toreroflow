@@ -74,7 +74,13 @@ export async function failedPostRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { postTargetId: string } }>("/failed-posts/:postTargetId/dismiss", async (request, reply) => {
     if (viewer(request)) return reply.status(403).send({ error: "viewers cannot remove failed posts" });
     const r = await dismiss(request.user.agencyId, { id: { in: [request.params.postTargetId] } });
-    return r.dismissed ? r : reply.status(404).send({ error: "no failed post to remove" });
+    if (r.dismissed) return r;
+    // Already gone from the list (removed elsewhere, retried, or live): the card can go, nothing to change.
+    const known = await prisma.postTarget.findFirst({
+      where: { id: request.params.postTargetId, post: { client: { agencyId: request.user.agencyId } } },
+      select: { id: true },
+    });
+    return known ? r : reply.status(404).send({ error: "no failed post to remove" });
   });
 
   /** Bulk: `{ postTargetIds }` for the selected ones, `{ all: true }` (optionally per brand) for every one. */
