@@ -5,6 +5,7 @@ import {
   DEFAULT_LONGFORM_RETENTION_DAYS,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_THUMB_RETENTION_DAYS,
+  parseConcurrency,
 } from "@toreroflow/core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +22,11 @@ export const env = {
    * heuristic. See clips/provider.ts for why Sunra is not an option.
    */
   CLIPS_AI: process.env.CLIPS_AI ?? "auto",
+  /**
+   * Phase 6: edit-queue jobs at once (renders, reframes, processing), 1-4.
+   * 1 keeps the old one-at-a-time behavior; 2 suits a batch on a big box.
+   */
+  EDIT_CONCURRENCY: parseConcurrency(process.env.EDIT_CONCURRENCY, 1, 4),
   /** Where the insights PDF template lives, alongside the report template. */
   REPO_ROOT: repoRoot,
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),

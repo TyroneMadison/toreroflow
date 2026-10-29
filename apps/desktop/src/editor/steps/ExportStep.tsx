@@ -202,6 +202,28 @@ export default function ExportStep() {
     </button>
   );
 
+  /**
+   * SRT/TXT of the cut as last autosaved (a second behind at most); the
+   * text is copied to the clipboard (works in Tauri) and offered as a
+   * download (works in a browser).
+   */
+  async function transcript(format: "srt" | "txt") {
+    try {
+      const r = await api.get<{ fileName: string; text: string }>(
+        `/edit-projects/${project.id}/transcript?format=${format}&json=1`,
+      );
+      await navigator.clipboard?.writeText(r.text).catch(() => {});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([r.text], { type: "text/plain" }));
+      a.download = r.fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast.success(`${format.toUpperCase()} copied (${r.fileName}).`);
+    } catch (e) {
+      toast.fail(`Exporting the ${format.toUpperCase()}`, e);
+    }
+  }
+
   return (
     <div className="exs">
       <div className="card glass exs-card">
@@ -285,6 +307,16 @@ export default function ExportStep() {
               )}
             </div>
           </div>
+        </div>
+
+        <div className="exs-transcript" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+          <span className="lab">Transcript</span>
+          {(["srt", "txt"] as const).map((f) => (
+            <button key={f} className="btn sm ghost" onClick={() => void transcript(f)}>
+              {f.toUpperCase()}
+            </button>
+          ))}
+          <span className="mini">Matches the burned-in captions. Copied, and saved where the app can.</span>
         </div>
 
         <div className="mini exs-summary">

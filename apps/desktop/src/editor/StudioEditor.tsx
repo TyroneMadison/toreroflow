@@ -30,6 +30,8 @@ import EditStep from "./steps/EditStep";
 import CaptionStep from "./steps/CaptionStep";
 import ExportStep from "./steps/ExportStep";
 import { BrandKitProvider, useBrandKit } from "./brandKit";
+import VersionsPanel from "./VersionsPanel";
+import RecipesPanel from "./clips/RecipesPanel";
 import "./StudioEditor.css";
 
 /* ---- API shapes ---- */
@@ -236,6 +238,7 @@ function LoadedEditor({
     loadOverrides,
   );
   const [showKeys, setShowKeys] = useState(false);
+  const [panel, setPanel] = useState<"versions" | "recipes" | null>(null);
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -616,6 +619,12 @@ function LoadedEditor({
                 </option>
               ))}
             </select>
+            <button className="btn ghost" title="Saved versions of this edit" onClick={() => setPanel("versions")}>
+              Versions
+            </button>
+            <button className="btn ghost" title="Apply a saved recipe to this clip" onClick={() => setPanel("recipes")}>
+              Recipe
+            </button>
             <button
               className="btn ghost"
               title="Keyboard shortcuts, and where to change them"
@@ -641,6 +650,25 @@ function LoadedEditor({
           )}
         </div>
       </div>
+      {panel === "versions" && <VersionsPanel onClose={() => setPanel(null)} />}
+      {panel === "recipes" && (
+        <RecipesPanel
+          clientId={project.clientId}
+          onClose={() => setPanel(null)}
+          onApply={async (recipeId) => {
+            try {
+              const r = await api.post<{ doc: EditDoc; change: { cuts: number; hook: string | null } }>(
+                `/recipes/${recipeId}/apply/${project.id}`,
+                { doc },
+              );
+              update(() => r.doc);
+              setPanel(null);
+            } catch (e) {
+              setCopyError(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
+      )}
       {showKeys && (
         <KeymapModal
           overrides={keyOverrides}

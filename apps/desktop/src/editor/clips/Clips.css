@@ -40,3 +40,33 @@
 .cj-detail .transcript { font-size: 12px; opacity: 0.75; max-height: 160px; overflow: auto; }
 .cj-batch { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--accent, #ff7a6b); border-radius: 14px; padding: 10px 14px; background: var(--bg, #0b0b0b); }
 .cj-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Phase 6: batch render (15, 16) and recipes (17). */
+.bat { display: grid; gap: 12px; }
+.bat h3 { margin: 0; }
+.bat-chips, .rcp-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bat-cards { display: grid; gap: 10px; max-height: 52vh; overflow: auto; }
+.bat-card { display: flex; gap: 10px; border: 1px solid var(--line, #333); border-radius: 12px; padding: 10px; }
+.bat-card .thumb { width: 60px; aspect-ratio: 9 / 16; border-radius: 8px; overflow: hidden; background: #111; flex: none; }
+.bat-card .thumb video { width: 100%; height: 100%; object-fit: cover; }
+.bat-card .meta { flex: 1; display: grid; gap: 6px; }
+.bat-card .row { display: flex; gap: 8px; align-items: center; }
+.bat-foot, .rcp-foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.bat-foot .sub:first-child { margin-right: auto; }
+.bat-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bat-table td { padding: 6px 8px; border-bottom: 1px solid var(--line, #222); }
+.bat-table .t { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bat-table .barcell { width: 160px; }
+.bat-table .bar { height: 6px; border-radius: 3px; background: var(--line, #222); overflow: hidden; }
+.bat-table .bar i { display: block; height: 100%; background: var(--accent, #ff7a6b); transform-origin: left; transition: transform 0.4s; }
+.bat-table .err { color: #ff6b6b; }
+.rcp { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+.rcp-head { display: flex; justify-content: space-between; align-items: center; }
+.rcp-head h3 { margin: 0; }
+.rcp-list { display: grid; gap: 8px; align-content: start; }
+.rcp-item { border: 1px solid var(--line, #333); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.rcp-item.on { border-color: var(--accent, #ff7a6b); }
+.rcp-edit { display: grid; gap: 10px; align-content: start; }
+.vers { display: grid; gap: 10px; }
+.vers-list { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.vers-item { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line, #333); border-radius: 10px; padding: 6px 10px; }
+.vers-item b { flex: 1; }

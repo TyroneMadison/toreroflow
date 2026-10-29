@@ -18,6 +18,7 @@ import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
+import { saveVersion } from "./editShared";
 
 /**
  * Studio projects and the source files they own.
@@ -379,12 +380,16 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const { name, resolution, fps, format, bitrateK } = parsed.data;
+    // Phase 6: every export snapshots the edit it rendered.
+    await saveVersion(project.id, project.doc, `Export ${name}`.slice(0, 120), true);
     await prisma.editProject.update({
       where: { id: project.id },
       data: {
         status: "rendering",
         renderPct: 0,
         renderError: null,
+        // A manual export never auto-sends; only a batch sets this.
+        afterRender: Prisma.DbNull,
         doc: {
           ...(project.doc as Record<string, unknown>),
           // A concrete kbps number, so the worker never re-derives presets.

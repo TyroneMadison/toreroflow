@@ -289,6 +289,7 @@ model Client {
   carouselDrafts   CarouselDraft[]
   clipJobs         ClipJob[]
   editProjects     EditProject[]
+  recipes          Recipe[]
   captionTemplates CaptionTemplate[]
   videoAnalyses    VideoAnalysis[]
   contentIdeas     ContentIdea[]
@@ -1122,23 +1123,29 @@ model KnowledgeNote {
 /// One Studio project: its sources, its edit document, and where the render
 /// landed. Past renders never mutate; Save Copy forks the row.
 model EditProject {
-  id          String   @id @default(cuid())
-  clientId    String
-  name        String   @default("Untitled project")
+  id            String   @id @default(cuid())
+  clientId      String
+  name          String   @default("Untitled project")
   /// draft | rendering | rendered | failed
-  status      String   @default("draft")
+  status        String   @default("draft")
   /// The whole edit document as one versioned JSON blob (v:1), autosaved.
-  doc         Json?
+  doc           Json?
   /// Storage key of the finished render.
-  renderedKey String?
+  renderedKey   String?
   /// Render progress percent, parsed from ffmpeg while rendering.
-  renderPct   Int?
-  renderError String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  renderPct     Int?
+  renderError   String?
+  /// Phase 6: {send, title, description, hashtags} handled by the worker
+  /// once a render lands (batch "Render + send to Uploads").
+  afterRender   Json?
+  /// The MediaAsset a render was sent to, so batch status can say "Sent".
+  uploadAssetId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  client Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  assets EditAsset[]
+  client   Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assets   EditAsset[]
+  versions EditVersion[]
 
   @@index([clientId])
 }
@@ -1797,4 +1804,36 @@ model ClipCandidate {
   job ClipJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([jobId])
+}
+
+/// Phase 6: a client's saved edit style (captions, framing, AI passes),
+/// applied when a clip opens. At most one isDefault per client (API-enforced).
+model Recipe {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  isDefault Boolean  @default(false)
+  /// RecipeSettings from @toreroflow/core.
+  settings  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// Phase 6: a saved snapshot of an EditProject doc. Capped at 50 per project.
+model EditVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  label     String
+  /// true for the snapshot taken automatically before each render.
+  auto      Boolean  @default(false)
+  doc       Json
+  createdAt DateTime @default(now())
+
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
 }

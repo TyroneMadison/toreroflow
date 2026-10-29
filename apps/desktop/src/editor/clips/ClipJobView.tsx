@@ -3,6 +3,7 @@ import { api, fileUrl } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import Modal from "../../modals/Modal";
 import ScoreDial from "../analyze/ScoreDial";
+import BatchRender from "./BatchRender";
 import { RUNNING, mmss, type ClipCandidateRow, type ClipJobRow } from "./clipTypes";
 import "./Clips.css";
 
@@ -39,6 +40,7 @@ export default function ClipJobView({
   const [detail, setDetail] = useState<string | null>(null);
   const [downFor, setDownFor] = useState<string | null>(null);
   const [refine, setRefine] = useState({ start: "", end: "", prompt: "" });
+  const [batch, setBatch] = useState<{ send: boolean } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -255,8 +257,22 @@ export default function ClipJobView({
       {sel.size > 0 && (
         <div className="cj-batch">
           <span>{sel.size} selected</span>
-          <button className="btn" onClick={() => void open([...sel])}>Open in editor</button>
+          <span style={{ display: "flex", gap: 8 }}>
+            <button className="btn ghost" onClick={() => void open([...sel])}>Open in editor</button>
+            <button className="btn ghost" disabled={sel.size > 20} title={sel.size > 20 ? "Up to 20 at once" : undefined} onClick={() => setBatch({ send: false })}>Render selected</button>
+            <button className="btn" disabled={sel.size > 20} title={sel.size > 20 ? "Up to 20 at once" : undefined} onClick={() => setBatch({ send: true })}>Render + send to Uploads</button>
+          </span>
         </div>
+      )}
+
+      {batch && (
+        <BatchRender
+          clips={(job.candidates ?? []).filter((c) => sel.has(c.id))}
+          send={batch.send}
+          proxyUrl={job.source.proxyUrl}
+          onClose={() => setBatch(null)}
+          onChanged={() => void load()}
+        />
       )}
 
       {downFor && (

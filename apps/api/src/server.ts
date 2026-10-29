@@ -15,6 +15,7 @@ import { carouselRoutes } from "./routes/carousels";
 import { editorRoutes } from "./routes/editor";
 import { editorAiRoutes } from "./routes/editorAi";
 import { clipRoutes } from "./routes/clips";
+import { recipeRoutes } from "./routes/recipes";
 import { analysisRoutes } from "./routes/analysis";
 import { ideasRoutes } from "./routes/ideas";
 import { hooksRoutes } from "./routes/hooks";
@@ -176,6 +177,7 @@ export async function buildServer(
   await app.register(editorRoutes);
   await app.register(editorAiRoutes);
   await app.register(clipRoutes);
+  await app.register(recipeRoutes);
   await app.register(analysisRoutes);
   await app.register(ideasRoutes);
   await app.register(hooksRoutes);
