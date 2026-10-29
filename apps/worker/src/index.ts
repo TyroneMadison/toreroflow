@@ -1111,12 +1111,13 @@ void work<{ ideaId: string }>("ideagifs", { concurrency: 1 }, async ({ ideaId })
   await runIdeaGifs(ideaId);
 });
 
-// One at a time, all three: each is ffmpeg or whisper on the same disk, and
-// two concurrent encodes finish later than two queued ones. The one queue
-// carries both jobs: asset processing (the default) and full renders.
+// One at a time by default: each is ffmpeg or whisper on the same disk, and
+// two concurrent encodes on a small box finish later than two queued ones.
+// EDIT_CONCURRENCY raises it for batch renders on a machine with the cores.
+// The one queue carries asset processing (the default) and full renders.
 void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
   "edit",
-  { concurrency: 1 },
+  { concurrency: env.EDIT_CONCURRENCY },
   async (data) => {
     if (data.job === "render" && data.editProjectId) {
       await renderProject(data.editProjectId);

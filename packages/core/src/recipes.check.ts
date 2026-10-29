@@ -1,7 +1,7 @@
 import type { Word } from "./autoCut";
 import { emptyDoc } from "./editDoc";
 import { edlFromDoc, outputDuration } from "./edl";
-import { applyRecipe, mapLimit, recipeSummary, versionsToPrune } from "./recipes";
+import { applyRecipe, mapLimit, parseConcurrency, recipeSummary, versionsToPrune } from "./recipes";
 import { srtTime, toSrt, toTxt, transcriptFromDoc } from "./transcriptExport";
 import { addCut } from "./editDoc";
 
@@ -111,4 +111,5 @@ ok(srtTime(3661.5) === "01:01:01,500", "srt time");
   });
   ok(peak === 2 && out.join() === "50,10,30,20", "mapLimit");
 }
+ok(parseConcurrency(undefined) === 1 && parseConcurrency("2") === 2 && parseConcurrency("9") === 4 && parseConcurrency("x") === 1 && parseConcurrency("0") === 1, "parseConcurrency");
 console.log("recipes.check: all assertions passed");

@@ -20,7 +20,7 @@ import {
   outputSize,
   type Word,
 } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import {
   buildRenderPlan,
   conformProxy,
@@ -406,12 +406,57 @@ export async function renderProject(editProjectId: string): Promise<void> {
       where: { id: editProjectId },
       data: { status: "rendered", renderedKey, renderPct: 100, renderError: null },
     });
+    await sendAfterRender(editProjectId);
     console.log(
       `[worker] render ${n} ready for project ${project.id} (${Math.round(plan.totalOutSec)}s to ${renderedKey})`,
     );
   } catch (error) {
     await fail(error instanceof Error ? error.message : String(error));
   }
+}
+
+/**
+ * Phase 6 "Render + send to Uploads": once a batch render lands, the file
+ * goes to Uploads like the editor's Send button, with the clip's curated
+ * title, description and hashtags as the drafted copy. Nothing posts.
+ * A failed send keeps the render and says why in renderError.
+ */
+async function sendAfterRender(editProjectId: string): Promise<void> {
+  const prisma = getPrisma();
+  const p = await prisma.editProject.findUnique({ where: { id: editProjectId } });
+  const after = p?.afterRender as { send?: boolean; title?: string; description?: string; hashtags?: string[] } | null;
+  if (!p || !p.renderedKey || !after?.send || p.uploadAssetId) return;
+  const ext = path.extname(p.renderedKey) || ".mp4";
+  const base = (p.doc as { export?: { name?: string } } | null)?.export?.name?.trim() || p.name;
+  const asset = await prisma.mediaAsset.create({
+    data: {
+      clientId: p.clientId,
+      originalName: `${base}${ext}`,
+      storageKey: "pending",
+      status: "uploaded",
+      draftCopy: {
+        name: after.title ?? p.name,
+        description: after.description ?? "",
+        hashtags: Array.isArray(after.hashtags) ? after.hashtags : [],
+      },
+    },
+  });
+  const storageKey = `${p.clientId}/${asset.id}/source${ext}`;
+  try {
+    await fs.mkdir(path.join(env.STORAGE_DIR, p.clientId, asset.id), { recursive: true });
+    await fs.copyFile(path.join(env.STORAGE_DIR, p.renderedKey), path.join(env.STORAGE_DIR, storageKey));
+  } catch (error) {
+    await prisma.mediaAsset.delete({ where: { id: asset.id } });
+    await prisma.editProject.updateMany({
+      where: { id: editProjectId },
+      data: { renderError: `rendered, but sending to Uploads failed: ${error instanceof Error ? error.message : String(error)}` },
+    });
+    return;
+  }
+  await prisma.mediaAsset.update({ where: { id: asset.id }, data: { storageKey } });
+  await enqueue("media", { assetId: asset.id });
+  await prisma.editProject.updateMany({ where: { id: editProjectId }, data: { uploadAssetId: asset.id } });
+  console.log(`[worker] sent render of ${editProjectId} to Uploads as ${asset.id}`);
 }
 
 /** Where the API and desktop read an auto reframe's progress and result. */

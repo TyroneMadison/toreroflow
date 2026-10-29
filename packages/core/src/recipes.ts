@@ -157,3 +157,9 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: nu
   await Promise.all(lanes);
   return out;
 }
+
+/** EDIT_CONCURRENCY: a whole number from 1 to max, else the fallback. */
+export function parseConcurrency(raw: string | undefined, fallback = 1, max = 4): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, max) : fallback;
+}
