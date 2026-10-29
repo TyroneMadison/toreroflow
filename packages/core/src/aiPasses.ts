@@ -9,6 +9,7 @@
  * ponytail: rules, not a model. The spec routes are the swap point for an
  * LLM later; today every answer comes from these functions so no AI spend.
  */
+import { lowerThirdItems } from "./polish";
 import type { Word } from "./autoCut";
 import type { EditDoc, TextItem, TextStyle, ZoomItem } from "./editDoc";
 import { DEFAULT_TEXT_STYLE } from "./editDoc";
@@ -398,10 +399,12 @@ export function hookAsText(doc: EditDoc): TextItem | null {
   };
 }
 
-/** doc.texts plus the hook, the list renderers draw. */
+/** doc.texts plus the hook and any Phase 7 lower thirds, the list renderers draw. */
 export function textsWithHook(doc: EditDoc): TextItem[] {
   const h = hookAsText(doc);
-  return h ? [h, ...doc.texts] : doc.texts;
+  const base = h ? [h, ...doc.texts] : doc.texts;
+  const lts = lowerThirdItems(doc);
+  return lts.length ? [...base, ...lts] : base;
 }
 
 /* ------------------------------------------------------------------ */
