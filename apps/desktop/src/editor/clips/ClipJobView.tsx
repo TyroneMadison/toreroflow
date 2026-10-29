@@ -195,6 +195,17 @@ export default function ClipJobView({
                   </div>
                   <div className="acts" onClick={(e) => e.stopPropagation()}>
                     <button className="btn sm" onClick={() => void open([c.id])}>{c.editProjectId ? "Edit" : "Open"}</button>
+                    <button
+                      className={`btn sm ghost${c.favorite ? " on" : ""}`}
+                      title={c.favorite ? "Unfavorite" : "Favorite"}
+                      onClick={() =>
+                        void api
+                          .post<{ favorite: boolean }>(`/clip-candidates/${c.id}/favorite`, { on: !c.favorite })
+                          .then((r) => patchLocal({ ...c, favorite: r.favorite }), (e) => toast.fail("Favoriting", e))
+                      }
+                    >
+                      {c.favorite ? "★" : "☆"}
+                    </button>
                     <button className="btn sm ghost" title="Rescore" onClick={() => void post(`/clip-candidates/${c.id}/rescore`, {}, "Rescoring")}>↻</button>
                     <button className={`btn sm ghost${c.feedback === "up" ? " on" : ""}`} onClick={() => void patch(c.id, { feedback: c.feedback === "up" ? null : "up" })}>👍</button>
                     <button className={`btn sm ghost${c.feedback?.startsWith("down") ? " on" : ""}`} onClick={() => setDownFor(c.id)}>👎</button>
