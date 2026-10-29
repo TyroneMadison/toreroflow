@@ -37,6 +37,11 @@ export const PATHS: Record<ScreenId, string> = {
   queue: "/create/queue",
   rollup: "/rollup",
   templates: "/templates",
+  approvals: "/create/approvals",
+  requests: "/create/requests",
+  failed: "/failed-posts",
+  insights: "/insights",
+  monthly: "/reports/monthly",
   analytics: "/analytics",
   reports: "/reports",
   comments: "/comments",
@@ -90,6 +95,23 @@ const CLIENT_SCHEDULE = new RegExp(`^/clients/${SEG}/schedule/${SEG}$`);
 const CREATE_DRAFT = new RegExp(`^/create/${SEG}$`);
 
 const BASE = "http://x";
+
+/**
+ * The two pages a client opens with no login: an approval link (/a/<token>)
+ * and a brand's signed request form (/r/<token>). The app shell renders them
+ * before sign-in, and normalizeUrl leaves them alone.
+ */
+export type PublicRoute = { kind: "approval" | "request"; token: string };
+const PUBLIC_APPROVAL = /^\/a\/([A-Za-z0-9_.-]+)$/;
+const PUBLIC_REQUEST = /^\/r\/([A-Za-z0-9_.-]+)$/;
+
+export function publicRoute(url: string): PublicRoute | null {
+  const path = new URL(url, BASE).pathname.replace(/\/+$/, "");
+  const a = PUBLIC_APPROVAL.exec(path);
+  if (a) return { kind: "approval", token: a[1]! };
+  const r = PUBLIC_REQUEST.exec(path);
+  return r ? { kind: "request", token: r[1]! } : null;
+}
 
 /** Reads "/path?query". Unknown paths land on the dashboard. */
 export function parseUrl(url: string): Route {
@@ -150,6 +172,7 @@ export function pathFor(screen: ScreenId, section?: SettingsSection | null): str
 
 /** The canonical form of a URL: its route's own path, query untouched. */
 export function canonicalUrl(url: string): string {
+  if (publicRoute(url)) return url;
   const r = parseUrl(url);
   const own = new URL(url, BASE).pathname;
   if (r.screen === "fanout" && CREATE_DRAFT.test(own) && own !== PATHS.fanout) return own + new URL(url, BASE).search;
