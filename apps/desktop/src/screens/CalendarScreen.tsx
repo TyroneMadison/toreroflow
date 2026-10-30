@@ -84,6 +84,32 @@ function XPostedCheck({ day, checked, onToggle }: { day: Date; checked: boolean;
   );
 }
 
+/**
+ * Pause uploads / Continue uploads for one brand. Shows pause while posting
+ * and play while paused; the two bars morph into the play triangle.
+ */
+function PauseToggle({ brand, paused, busy, onToggle }: { brand: string; paused: boolean; busy: boolean; onToggle(): void }) {
+  const label = paused ? `Continue uploads for ${brand}` : `Pause uploads for ${brand}`;
+  return (
+    <button
+      type="button"
+      className={`pausetgl${paused ? " on" : ""}`}
+      aria-pressed={paused}
+      aria-label={label}
+      title={paused ? `${brand} uploads are paused. Click to continue; held posts move forward.` : `Pause uploads for ${brand}. Scheduled posts are held, not deleted.`}
+      disabled={busy}
+      onClick={onToggle}
+      data-testid="calendar.pause"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path className="pz-l" />
+        <path className="pz-r" />
+      </svg>
+      <span>{paused ? "Paused" : "Uploads on"}</span>
+    </button>
+  );
+}
+
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -220,6 +246,64 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
 
   const state = !selectedClient ? "empty" : loadError ? "error" : loaded ? "ready" : "loading";
 
+  /* Pause uploads: held on the server, the calendar just shows and flips it. */
+  const [pausedAt, setPausedAt] = useState<string | null>(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  useEffect(() => {
+    setPausedAt(null);
+    if (!selectedClient) return;
+    let cancelled = false;
+    api
+      .get<{ pausedAt: string | null }>(`/brands/${selectedClient.id}/pause`)
+      .then((r) => {
+        if (!cancelled) setPausedAt(r.pausedAt);
+      })
+      .catch(() => {
+        // Shown as posting; the worker still holds a paused brand either way.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient]);
+  const paused = pausedAt !== null;
+  const togglePause = async () => {
+    if (!selectedClient) return;
+    setPauseBusy(true);
+    try {
+      if (paused) {
+        const r = await api.post<{ moved: number; held: number; from: string | null }>(`/brands/${selectedClient.id}/resume`, {});
+        setPausedAt(null);
+        toast.success(
+          r.moved
+            ? `Uploads continue. Moved ${r.moved} ${r.moved === 1 ? "post" : "posts"}, the first now ${new Date(r.from!).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`
+            : "Uploads continue. Nothing needed to move.",
+        );
+      } else {
+        const r = await api.post<{ pausedAt: string; held?: number }>(`/brands/${selectedClient.id}/pause`, {});
+        setPausedAt(r.pausedAt);
+        toast.info(`Uploads paused for ${selectedClient.name}. ${r.held ?? 0} scheduled ${r.held === 1 ? "post is" : "posts are"} held.`);
+      }
+    } catch (err) {
+      toast.fail(paused ? "Could not continue uploads" : "Could not pause uploads", err);
+    } finally {
+      setPauseBusy(false);
+    }
+    void load();
+  };
+  /** A scheduled post of a paused brand: held, shown dimmed with a badge. */
+  const isHeld = (t: PostTargetInfo) => paused && t.status === "scheduled";
+  const heldBadge = <span className="heldbadge">Paused</span>;
+  const pauseToggle = selectedClient && (
+    <PauseToggle brand={selectedClient.name} paused={paused} busy={pauseBusy} onToggle={() => void togglePause()} />
+  );
+  const pauseBanner = paused && selectedClient && (
+    <div className="pausebar" role="status">
+      <b>Uploads paused</b> for {selectedClient.name} since{" "}
+      {new Date(pausedAt!).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.
+      Scheduled posts are held. Continue moves them forward so the first lands on the day you resume.
+    </div>
+  );
+
   useEffect(() => {
     void load({ announce: true });
     const t = setInterval(() => void load(), 15_000);
@@ -335,9 +419,9 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     const label = POST_STATUS[t.status].label;
     return (
       <div
-        className={`ev st-${t.status}`}
+        className={`ev st-${t.status}${isHeld(t) ? " held" : ""}`}
         key={t.id}
-        title={evTitle(t)}
+        title={isHeld(t) ? `${evTitle(t)} (held: uploads paused)` : evTitle(t)}
         draggable={movable}
         onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
         onClick={() => setDetail(t)}
@@ -349,6 +433,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <span className="evwhen">{when ? `${when} · ${label}` : label}</span>
           <StatusIcon status={t.status} />
         </div>
+        {isHeld(t) && heldBadge}
         <div className="t2">
           {t.assetKind === "carousel" && (
             <span className="qcarousel" title="A carousel of images">
@@ -445,6 +530,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             </h2>
           </div>
           <div className="mcal-nav">
+            {pauseToggle}
             <button type="button" className="mcal-ib" aria-label="Previous" onClick={() => step(-1)}>
               <svg aria-hidden="true" style={{ transform: "rotate(90deg)" }}><use href="#i-chev" /></svg>
             </button>
@@ -462,6 +548,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <button type="button" onClick={() => setAnchor(startOfDay(new Date()))}>Today</button>
         </div>
 
+        {pauseBanner}
         {state === "empty" && <Empty screen="calendar" title="No brand selected" hint="Pick a brand at the top to see its calendar." />}
         {state === "loading" && <Loading screen="calendar" label="Loading the calendar" />}
         {state === "error" && (
@@ -502,13 +589,14 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 const [hm, ap] = (t.scheduledAt ? fmtTime(t.scheduledAt) : "").split(" ");
                 const reconnect = t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? "");
                 return (
-                  <div className={`mcal-item st-${t.status}`} key={t.id}>
+                  <div className={`mcal-item st-${t.status}${isHeld(t) ? " held" : ""}`} key={t.id}>
                     <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
                     <div className="mcal-body">
                       <div className="mcal-name"><Pf p={PF_ID[t.platform]} size="sm" /> <span>{t.assetName}</span></div>
                       <div className={`mcal-st st-${t.status}`}>
                         <StatusIcon status={t.status} />
                         {POST_STATUS[t.status].label}
+                        {isHeld(t) && <> {heldBadge}</>}
                         {t.status === "failed" && t.error ? ` · ${t.error}` : canMove(t.status) ? " · can move" : ""}
                       </div>
                       <div className="mcal-acts">
@@ -621,10 +709,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <span className="d" style={{ background: "var(--v)" }} />{" "}
             {selectedClient?.name ?? "No brand selected"}
           </div>
+          {pauseToggle}
           <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt-2)" }}>
             {rangeLabel}
           </div>
         </div>
+
+        {pauseBanner}
 
         {/* Always on, in every view: the key to the dots and the padlocks. */}
         <div className="callegend">
@@ -635,6 +726,11 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
               {POST_STATUS[s].label}<span className="lhint">, {POST_STATUS[s].hint}</span>
             </span>
           ))}
+          <span className="litem held">
+            <StatusDot status="scheduled" decorative />
+            <StatusIcon status="scheduled" />
+            Paused<span className="lhint">, held until uploads continue</span>
+          </span>
         </div>
 
         {state === "empty" && (
@@ -732,7 +828,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                         const movable = canMove(t.status);
                         return (
                           <div
-                            className={`mev st-${t.status}`}
+                            className={`mev st-${t.status}${isHeld(t) ? " held" : ""}`}
                             key={t.id}
                             title={evTitle(t)}
                             draggable={movable}

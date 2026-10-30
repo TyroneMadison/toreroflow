@@ -85,7 +85,12 @@ const POSTS = [
   target("t1", "p1", "2021 M3 Competition", "instagram", "posted", -2 * DAY),
   target("t2", "p2", "Urus walkaround", "tiktok", "posted", -5 * DAY),
   target("t3", "p3", "Price drop Friday", "instagram", "failed", -1 * DAY),
+  // Ten scheduled for the pause demo (&paused=1 opens it paused).
+  ...[3, 6, 22, 26, 31, 46, 50, 55, 70, 74].map((h, i) =>
+    target(`s${i}`, `ps${i}`, ["Cayenne reveal", "Weekend lot tour", "AMG GT walk", "Trade-in tips", "M5 cold start", "Sunday drive", "Detail day", "Financing 101", "G-Wagon test", "New arrivals"][i]!, (["instagram", "tiktok", "youtube"] as const)[i % 3]!, "scheduled", h * 3600_000),
+  ),
 ];
+let pausedAt: string | null = params.get("paused") === "1" ? iso(-2 * 3600_000) : null;
 
 // 26 posts over the last 90 days, Thursday evenings ahead.
 const HISTORY = Array.from({ length: 26 }, (_, i) => {
@@ -213,6 +218,14 @@ function route(path: string, method: string): Response | null {
   if (xDay && method === "PUT") {
     if (!xPosted.delete(xDay)) xPosted.add(xDay);
     return json({ date: xDay, posted: xPosted.has(xDay) });
+  }
+  if (/^\/brands\/[^/]+\/pause$/.test(path)) {
+    if (method === "POST") pausedAt = iso(0);
+    return json({ paused: pausedAt !== null, pausedAt, held: 10 });
+  }
+  if (/^\/brands\/[^/]+\/resume$/.test(path)) {
+    pausedAt = null;
+    return json({ paused: false, moved: 0, held: 10, delta: 0, from: null, to: null });
   }
   if (path === "/alerts") return json({ alerts: [] });
   if (path === "/reports/unseen") return json({ message: null });

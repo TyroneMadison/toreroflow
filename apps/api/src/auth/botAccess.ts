@@ -54,6 +54,8 @@ const ALLOW: Rule[] = [
   // Its own scheduled posts, so it can confirm what it just did. Read-only:
   // rescheduling, retrying and deleting stay human actions.
   { method: "GET", path: new RegExp(`^/clients/${ID}/posts$`) },
+  // Read-only: whether a brand's uploads are paused. Pausing stays with the operator.
+  { method: "GET", path: new RegExp(`^/brands/${ID}/pause$`) },
 
   // Close the loop on the pipeline card it just scheduled: move it from
   // Ready for posting to "Approved by Client/ uploaded". The route only moves

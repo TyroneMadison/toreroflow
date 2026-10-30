@@ -37,6 +37,7 @@
       accent colour tells you nothing.
     */
     --info:var(--c-info);
+    --paused:var(--c-paused);
     --grad:linear-gradient(135deg,var(--accent) 0%,var(--accent-hi) 100%);
     --radius:var(--r-card);
     --radius-sm:var(--r-tile);
@@ -2078,3 +2079,30 @@
   .fmtseg .pd-seg{flex-direction:column;border-radius:24px;width:100%}
   .fmtseg .pd-seg button{width:100%;white-space:normal;line-height:1.25}
 }
+
+/* ---- Calendar: Pause uploads / Continue uploads, per brand ---- */
+.pausetgl{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 7px;border-radius:999px;border:1px solid var(--brd-soft);background:var(--glass-2);color:var(--txt);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.pausetgl:hover{border-color:#FF6F61}
+.pausetgl:focus-visible{outline:2px solid #FF6F61;outline-offset:2px}
+.pausetgl:disabled{opacity:.6;cursor:progress}
+.pausetgl svg{width:18px;height:18px;padding:2px;border-radius:50%;background:var(--glass-3);fill:currentColor;transition:transform .3s ease,background .2s}
+.pausetgl .pz-l,.pausetgl .pz-r{transition:d .3s ease}
+.pausetgl .pz-l{d:path("M6.5 5 L10 5 L10 19 L6.5 19 Z")}
+.pausetgl .pz-r{d:path("M14 5 L17.5 5 L17.5 19 L14 19 Z")}
+/* Paused: the bars close into the play triangle. */
+.pausetgl.on{background:var(--paused);border-color:var(--paused);color:#000}
+.pausetgl.on svg{background:rgba(0,0,0,.14)}
+.pausetgl.on .pz-l{d:path("M7 5 L13 8.5 L13 15.5 L7 19 Z")}
+.pausetgl.on .pz-r{d:path("M13 8.5 L19 12 L19 12 L13 15.5 Z")}
+.mcal-nav .pausetgl{height:34px}
+.pausebar{display:block;margin:0 0 10px;padding:9px 13px;border-radius:12px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);color:var(--txt);font-size:12.5px}
+.pausebar b{color:var(--c-paused-ink)}
+.mcal .pausebar{margin:8px 0}
+/* Dimmed, but the badge stays at full strength so the state reads at a glance. */
+/* Held posts: scheduled blue turns paused orange (bar, dot, icon, status text). */
+.held .st-scheduled,.held.st-scheduled{--st:var(--paused)}
+.mcal-item.held .mcal-st.st-scheduled{color:var(--c-paused-ink)}
+/* Dimmed, but the status marks and the badge stay at full strength so the state reads at a glance. */
+.ev.held .t1>:not(.stdot):not(.sticon),.ev.held .t2,.ev.held .evthumb,.mev.held>:not(.stdot):not(.sticon),.mcal-item.held .mcal-time,.mcal-item.held .mcal-name,.mcal-item.held .mcal-acts{opacity:.5;filter:saturate(.35)}
+.heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:var(--paused);color:#000;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+@media (prefers-reduced-motion:reduce){.pausetgl,.pausetgl svg,.pausetgl .pz-l,.pausetgl .pz-r{transition:none}}
