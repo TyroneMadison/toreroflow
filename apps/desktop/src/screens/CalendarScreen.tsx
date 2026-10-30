@@ -726,6 +726,11 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
               {POST_STATUS[s].label}<span className="lhint">, {POST_STATUS[s].hint}</span>
             </span>
           ))}
+          <span className="litem held">
+            <StatusDot status="scheduled" decorative />
+            <StatusIcon status="scheduled" />
+            Paused<span className="lhint">, held until uploads continue</span>
+          </span>
         </div>
 
         {state === "empty" && (
