@@ -222,6 +222,10 @@ model Client {
   judgeTuning           Json?
   /// Phase 8: AutoImportSettings from @toreroflow/core (own YouTube channel).
   autoImport            Json?
+  /// Uploads paused since this moment; null means publishing normally. The
+  /// worker holds every scheduled post of a paused brand, and resuming moves
+  /// them with planResume from @toreroflow/core.
+  pausedAt              DateTime?
   /// Absolute URL of the last published report page; null until first publish.
   reportUrl             String?
   /// When that page was last pushed. Also the flag month-end republishing

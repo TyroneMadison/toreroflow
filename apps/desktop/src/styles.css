@@ -2078,3 +2078,26 @@
   .fmtseg .pd-seg{flex-direction:column;border-radius:24px;width:100%}
   .fmtseg .pd-seg button{width:100%;white-space:normal;line-height:1.25}
 }
+
+/* ---- Calendar: Pause uploads / Continue uploads, per brand ---- */
+.pausetgl{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 7px;border-radius:999px;border:1px solid var(--brd-soft);background:var(--glass-2);color:var(--txt);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.pausetgl:hover{border-color:#FF6F61}
+.pausetgl:focus-visible{outline:2px solid #FF6F61;outline-offset:2px}
+.pausetgl:disabled{opacity:.6;cursor:progress}
+.pausetgl svg{width:18px;height:18px;padding:2px;border-radius:50%;background:var(--glass-3);fill:currentColor;transition:transform .3s ease,background .2s}
+.pausetgl .pz-l,.pausetgl .pz-r{transition:d .3s ease}
+.pausetgl .pz-l{d:path("M6.5 5 L10 5 L10 19 L6.5 19 Z")}
+.pausetgl .pz-r{d:path("M14 5 L17.5 5 L17.5 19 L14 19 Z")}
+/* Paused: the bars close into the play triangle. */
+.pausetgl.on{background:#FF6F61;border-color:#FF6F61;color:#fff}
+.pausetgl.on svg{background:rgba(255,255,255,.22)}
+.pausetgl.on .pz-l{d:path("M7 5 L13 8.5 L13 15.5 L7 19 Z")}
+.pausetgl.on .pz-r{d:path("M13 8.5 L19 12 L19 12 L13 15.5 Z")}
+.mcal-nav .pausetgl{height:34px}
+.pausebar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;margin:0 0 10px;padding:9px 13px;border-radius:12px;border:1px solid rgba(255,111,97,.45);background:rgba(255,111,97,.12);color:var(--txt);font-size:12.5px}
+.pausebar b{color:#FF6F61}
+[data-theme="light"] .pausebar b{color:#c8392b}
+.mcal .pausebar{margin:8px 0}
+.ev.held,.mev.held,.mcal-item.held{opacity:.55;filter:saturate(.35)}
+.heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:#FF6F61;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;filter:saturate(2.8)}
+@media (prefers-reduced-motion:reduce){.pausetgl,.pausetgl svg,.pausetgl .pz-l,.pausetgl .pz-r{transition:none}}

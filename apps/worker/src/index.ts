@@ -40,6 +40,7 @@ import { syncDmStats } from "./dmStats";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
+import { claimForPublish } from "./pauseGuard";
 
 const prisma = getPrisma();
 
@@ -339,17 +340,19 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   // Idempotency: reschedules replace the job; stale fires must not double post.
   if (target.status !== "scheduled") return;
   if (target.scheduledAt && target.scheduledAt.getTime() - Date.now() > 60_000) return;
+  // Paused brand: held as scheduled, untouched. Resuming re-queues it.
+  if (target.post.client.pausedAt) {
+    console.log(`[worker] target ${target.id} held: ${target.post.client.name} uploads are paused`);
+    return;
+  }
 
   /*
-   * Claimed only if still scheduled. A long-form "Both" post publishes its
-   * partner target in the same request, and the partner's own job must then
-   * find nothing to do rather than post the video a second time.
+   * Claimed only if still scheduled and the brand still not paused. A
+   * long-form "Both" post publishes its partner target in the same request,
+   * and the partner's own job must then find nothing to do rather than post
+   * the video a second time.
    */
-  const claimed = await prisma.postTarget.updateMany({
-    where: { id: target.id, status: "scheduled" },
-    data: { status: "publishing" },
-  });
-  if (claimed.count === 0) return;
+  if (!(await claimForPublish(prisma, target.id))) return;
 
   /** Partner targets published inside this target's request, if any. */
   const partnerIds: string[] = [];
@@ -1065,7 +1068,8 @@ void scheduleCron("bank", "0 3 * * *");
 void (async () => {
   try {
     const coming = await prisma.postTarget.findMany({
-      where: { status: "scheduled", scheduledAt: { gt: new Date() } },
+      // Paused brands are re-queued by their resume instead.
+      where: { status: "scheduled", scheduledAt: { gt: new Date() }, post: { client: { pausedAt: null } } },
       select: { id: true, scheduledAt: true, post: { select: { queuePriority: true, queuePosition: true } } },
     });
     for (const target of coming) {
