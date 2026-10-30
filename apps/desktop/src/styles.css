@@ -2094,10 +2094,11 @@
 .pausetgl.on .pz-l{d:path("M7 5 L13 8.5 L13 15.5 L7 19 Z")}
 .pausetgl.on .pz-r{d:path("M13 8.5 L19 12 L19 12 L13 15.5 Z")}
 .mcal-nav .pausetgl{height:34px}
-.pausebar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;margin:0 0 10px;padding:9px 13px;border-radius:12px;border:1px solid rgba(255,111,97,.45);background:rgba(255,111,97,.12);color:var(--txt);font-size:12.5px}
+.pausebar{display:block;margin:0 0 10px;padding:9px 13px;border-radius:12px;border:1px solid rgba(255,111,97,.45);background:rgba(255,111,97,.12);color:var(--txt);font-size:12.5px}
 .pausebar b{color:#FF6F61}
 [data-theme="light"] .pausebar b{color:#c8392b}
 .mcal .pausebar{margin:8px 0}
-.ev.held,.mev.held,.mcal-item.held{opacity:.55;filter:saturate(.35)}
-.heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:#FF6F61;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;filter:saturate(2.8)}
+/* Dimmed, but the badge stays at full strength so the state reads at a glance. */
+.ev.held>:not(.heldbadge),.mev.held,.mcal-item.held .mcal-time,.mcal-item.held .mcal-name,.mcal-item.held .mcal-acts{opacity:.5;filter:saturate(.35)}
+.heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:#FF6F61;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){.pausetgl,.pausetgl svg,.pausetgl .pz-l,.pausetgl .pz-r{transition:none}}
