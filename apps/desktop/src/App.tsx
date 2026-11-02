@@ -41,7 +41,7 @@ import UpdateBanner from "./components/UpdateBanner";
 import { useApiStatus } from "./components/ApiStatus";
 import { api, getActivity, subscribeActivity, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { buildAgentState, publishAgentState } from "./lib/agentState";
-import { navigate, pathFor, publicRoute, useRoute } from "./lib/routes";
+import { linkProps, navigate, pathFor, publicRoute, useRoute } from "./lib/routes";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
 // The screen list lives in lib/nav.ts beside the section map; re-exported
@@ -204,8 +204,20 @@ function Shell() {
         <main className="main">
           {/* The Dashboard draws its own header with its controls; the screens
               not yet restyled get the shared one above their old topbar. */}
-          {activeScreen !== "dashboard" && activeScreen !== "analytics" && (
-            <PageHeader screen={activeScreen} />
+          {activeScreen !== "dashboard" && (
+            <PageHeader
+              screen={activeScreen}
+              controls={
+                activeScreen === "analytics" && (
+                  <a className="tf-btn" {...linkProps("reports")} data-testid="analytics.open-reports">
+                    <svg aria-hidden="true" style={{ width: 16, height: 16, stroke: "currentColor", fill: "none", strokeWidth: 1.8 }}>
+                      <use href="#i-report" />
+                    </svg>
+                    Reports
+                  </a>
+                )
+              }
+            />
           )}
           {activeScreen !== "failed" && <FailedPostBanner />}
           {activeScreen === "dashboard" && (

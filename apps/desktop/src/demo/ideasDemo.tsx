@@ -158,6 +158,14 @@ function route(path: string, method: string): Response | null {
   if (/^\/clients\/[^/]+\/media$/.test(path)) return json(MEDIA);
   if (/^\/clients\/[^/]+\/posts$/.test(path)) return json(POSTS);
   if (/^\/clients\/[^/]+\/analytics\/posts$/.test(path)) return json({ posts: HISTORY });
+  if (/^\/clients\/[^/]+\/analytics$/.test(path))
+    return json({
+      client: { id: "caleb", name: "Caleb", plan: null },
+      days: 30,
+      accounts: [],
+      totals: { views: 0, reach: 0, followers: 0, engagementRate: null, avgWatchSec: null, likes: 0, comments: 0, shares: 0 },
+      hasData: false,
+    });
   if (/^\/clients\/[^/]+\/edit-projects$/.test(path))
     return json([{ id: "ep1", name: "Urus walkaround cut", status: "draft", clipCount: 4, durationSec: 38, updatedAt: iso(-3600_000) }]);
   if (path === "/approval-links" && method === "GET") return json({ links });
@@ -229,6 +237,8 @@ function route(path: string, method: string): Response | null {
   }
   if (path === "/alerts") return json({ alerts: [] });
   if (path === "/reports/unseen") return json({ message: null });
+  if (/^\/clients\/[^/]+\/results$/.test(path)) return json({ error: "Not in the demo" }, 404);
+  if (path === "/reports/publishing") return json({ configured: false, reason: "Demo data, publishing is off.", clients: [] });
   return null;
 }
 

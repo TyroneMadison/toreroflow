@@ -3,7 +3,7 @@
  * The query param a bot passes, and the html attributes it ends up as.
  */
 import { automationAttributes, automationParam } from "./theme";
-import { SECTIONS, pageOf, sectionOf } from "./nav";
+import { SECTIONS, pageOf, sectionHome, sectionOf } from "./nav";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   const a = JSON.stringify(actual);
@@ -24,14 +24,25 @@ eq(
 );
 eq(automationAttributes(false), {}, "off sets neither");
 
-// Every screen sits in exactly one section, with a unique slug.
-const pages = SECTIONS.flatMap((s) => s.pages);
+// Every screen sits in exactly one section, with a unique slug. Measure mirrors
+// Reports' page list, so it is left out of the count.
+const measure = SECTIONS.find((s) => s.id === "measure")!;
+const reports = SECTIONS.find((s) => s.id === "reports")!;
+eq(measure.pages === reports.pages, true, "Measure keeps the same pages as Reports");
+eq(SECTIONS.map((s) => s.id), ["overview", "create", "measure", "reports", "settings"], "the Reports tab sits between Measure and Settings");
+eq([sectionHome(measure), sectionHome(reports)], ["analytics", "reports"], "Measure opens Analytics, Reports opens /reports");
+const pages = SECTIONS.filter((s) => s !== measure).flatMap((s) => s.pages);
 eq(new Set(pages.map((p) => p.id)).size, 24, "all twenty-four screens are mapped once");
 eq(new Set(pages.map((p) => p.slug)).size, pages.length, "slugs are unique");
 eq(sectionOf("calendar").id, "create", "calendar lives under Create");
 eq(pageOf("overview").slug, "account-overview", "Account Overview does not collide with the section");
-eq(sectionOf("comments").id, "measure", "the comments inbox lives under Measure");
-eq([sectionOf("fanout").id, sectionOf("queue").id, sectionOf("rollup").id, sectionOf("templates").id], ["create", "create", "measure", "overview"], "the workflow pages sit where the mockups put them");
-eq([sectionOf("approvals").id, sectionOf("requests").id, sectionOf("failed").id, sectionOf("insights").id, sectionOf("monthly").id], ["create", "create", "overview", "measure", "measure"], "the ideas pages sit in their sections");
+eq(sectionOf("comments").id, "reports", "the comments inbox lights the Reports tab");
+eq(
+  reports.pages.map((p) => sectionOf(p.id).id),
+  ["reports", "reports", "reports", "reports", "reports", "reports"],
+  "every Reports page lights the Reports tab",
+);
+eq([sectionOf("fanout").id, sectionOf("queue").id, sectionOf("rollup").id, sectionOf("templates").id], ["create", "create", "reports", "overview"], "the workflow pages sit where the mockups put them");
+eq([sectionOf("approvals").id, sectionOf("requests").id, sectionOf("failed").id, sectionOf("insights").id, sectionOf("monthly").id], ["create", "create", "overview", "reports", "reports"], "the ideas pages sit in their sections");
 
 console.log("automation: all checks passed");

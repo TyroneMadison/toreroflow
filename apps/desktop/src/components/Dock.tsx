@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SECTIONS, sectionOf, type ScreenId } from "../lib/nav";
+import { SECTIONS, sectionHome, sectionOf, type ScreenId } from "../lib/nav";
 import { linkProps } from "../lib/routes";
 import type { Theme } from "../lib/theme";
 import { useAppState } from "../state/AppState";
@@ -21,7 +21,7 @@ interface DockProps {
 }
 
 /**
- * The bottom dock that replaced the sidebar: API status on the left, the four
+ * The bottom dock that replaced the sidebar: API status on the left, the five
  * sections in the middle, theme and the active brand on the right. A section
  * opens its first page; the page tabs live in each screen's header.
  */
@@ -81,7 +81,7 @@ export default function Dock({
           aria-current={active === s.id ? "page" : undefined}
           aria-label={s.label}
           title={s.id === "measure" && reportNotice ? reportNotice : s.label}
-          {...linkProps(s.pages[0]!.id)}
+          {...linkProps(sectionHome(s))}
           data-testid={`nav.section.${s.id}`}
         >
           <svg aria-hidden="true">
