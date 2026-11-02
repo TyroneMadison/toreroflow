@@ -9,7 +9,7 @@ import BrandAvatar from "./BrandAvatar";
 
 /*
  * The phone shell (Direction C, approved 2026-10): a compact top bar with the
- * brand switcher, a bottom tab bar (Overview, Calendar, Create, Ideas, More)
+ * brand switcher, a bottom tab bar (Overview, Calendar, Create, Ideas, Reports, More)
  * and the sheets those open. Renders nothing above the phone breakpoint, where
  * the dock stays exactly as it was.
  */
@@ -74,6 +74,7 @@ function PhoneNav({ activeScreen, api, theme, onToggleTheme, onOpenConnect, aler
     : onIdeas ? "ideas"
     : activeScreen === "calendar" ? "calendar"
     : sectionOf(activeScreen).id === "overview" ? "overview"
+    : sectionOf(activeScreen).id === "reports" ? "reports"
     : "more";
 
   // Escape closes a sheet; a route change closes it too.
@@ -230,7 +231,7 @@ function PhoneNav({ activeScreen, api, theme, onToggleTheme, onOpenConnect, aler
             </button>
           </div>
           <div className="mb-scroll">
-            {SECTIONS.map((s) => (
+            {SECTIONS.filter((s) => s.id !== "measure").map((s) => (
               <section key={s.id} className="mb-group" aria-label={s.label}>
                 <h3>{s.label}</h3>
                 <div className="mb-tiles">
@@ -325,6 +326,10 @@ function PhoneNav({ activeScreen, api, theme, onToggleTheme, onOpenConnect, aler
         >
           <Svg>{Ico.bulb}</Svg>
           <span>Ideas</span>
+        </a>
+        <a className={tab === "reports" ? "on" : undefined} aria-current={tab === "reports" ? "page" : undefined} {...linkProps("reports")} data-testid="mobile.tab.reports">
+          <Svg href="#i-report" />
+          <span>Reports</span>
         </a>
         <button
           type="button"

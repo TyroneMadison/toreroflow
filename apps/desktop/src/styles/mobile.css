@@ -42,13 +42,14 @@
   .mb-alert .tf-badge{position:absolute;top:2px;right:2px}
   .mb-alert.bad .tf-badge{background:var(--c-bad);color:#fff}
 
-  /* ---- tab bar: four tabs and the Create circle sitting inside it ---- */
-  .mb-tabs{order:2;flex:none;position:relative;z-index:45;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:stretch;
+  /* ---- tab bar: five tabs and the Create circle sitting inside it ---- */
+  .mb-tabs{order:2;flex:none;position:relative;z-index:45;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:stretch;
     height:calc(var(--mb-tabh) + var(--mb-safe-b));padding:0 max(4px,env(safe-area-inset-right)) var(--mb-safe-b) max(4px,env(safe-area-inset-left));
     background:var(--mb-surface);box-shadow:0 -1px 0 var(--mb-hair)}
   .mb-tabs>a,.mb-tabs>button{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:0;min-height:44px;
     padding:0 0 9px;border:0;background:none;font:inherit;font-size:11.5px;font-weight:600;color:var(--mb-muted);text-decoration:none;cursor:pointer}
   .mb-tabs>a svg,.mb-tabs>button>svg{width:34px;height:26px;padding:2px 6px;border-radius:13px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-tabs>*>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .mb-tabs .on{color:var(--mb-acc)}
   .mb-tabs .on>svg{background:rgba(255,111,97,.16)}
   .mb-create{gap:2px !important}
