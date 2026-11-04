@@ -4,6 +4,7 @@ export * from "./text";
 export * from "./postCopy";
 export * from "./captionBlock";
 export * from "./revisions";
+export * from "./shortsLimit";
 export * from "./reportSlug";
 export * from "./money";
 export * from "./expenseCategories";

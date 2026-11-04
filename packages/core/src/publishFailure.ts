@@ -60,6 +60,21 @@ export function explainPublishFailure(raw: string | null | undefined): PublishFa
   }
 
   /*
+   * Our own hard stop, written before any provider call. Retrying sends the
+   * same file to the same place and fails the same way, so the button is not
+   * offered. The raw reason stays "Over 3:00, Shorts limit".
+   */
+  if (has(error, "shorts limit")) {
+    return {
+      summary: "Over 3:00, Shorts limit",
+      advice:
+        "YouTube Shorts stops at 3:00. Trim the video, or schedule it as a long-form upload. Retrying this file will not post it.",
+      outlook: "never",
+      tiktokDailyCap: false,
+    };
+  }
+
+  /*
    * TikTok's app-level cap, and the single most confusing failure in the app,
    * because nothing about it is the client's account or the video.
    *

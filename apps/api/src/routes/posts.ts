@@ -12,12 +12,16 @@ import {
   instagramVideoError,
   INSTAGRAM_STORY_MAX_SECONDS,
   instagramLongformFit,
+  measuredDurationSec,
   schedulePostSchema,
   scheduleTimeError,
   uploadSizeError,
+  youtubeShortsBlockMessage,
+  youtubeShortsPublishBlock,
   youtubeTitleFor,
   type Platform,
 } from "@toreroflow/core";
+import { probeDuration } from "@toreroflow/media";
 import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
 import { enrichFieldsFrom, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
@@ -333,6 +337,33 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const igTooLong = igAccount && !igLongform && asset.kind === "video" ? instagramVideoError(asset.durationSec) : null;
     if (igTooLong) {
       return reply.status(400).send({ error: "too long for Instagram", detail: igTooLong });
+    }
+
+    /*
+     * YouTube Shorts stop at 3:00. The schedule screen disables the Shorts
+     * switch for a longer video; this is the same refusal for a request that
+     * skipped the screen. A long-form YouTube upload is a different post and
+     * is not checked here. The length is the file's, from ffprobe, with the
+     * stored measurement only when the file cannot be read.
+     */
+    if (asset.kind === "video" && accounts.some(({ platform }) => platform === "youtube")) {
+      const probed =
+        asset.sourceDeletedAt || !asset.storageKey
+          ? null
+          : await probeDuration(nodePath.join(env.STORAGE_DIR, asset.storageKey));
+      const durationSec = measuredDurationSec(probed, asset.durationSec);
+      const shortsBlock = youtubeShortsPublishBlock({
+        platform: "youtube",
+        format: asset.format,
+        kind: asset.kind,
+        durationSec,
+      });
+      if (shortsBlock) {
+        return reply.status(400).send({
+          error: shortsBlock,
+          detail: durationSec != null ? youtubeShortsBlockMessage(durationSec) : shortsBlock,
+        });
+      }
     }
 
     if (wantsStory && asset.durationSec != null && asset.durationSec > INSTAGRAM_STORY_MAX_SECONDS) {

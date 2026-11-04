@@ -16,6 +16,7 @@ import {
 import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 import { captionFor, composeCaption, instagramVideoError, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
+import { schedulePlatformBlock } from "../lib/shortsSchedule";
 import { YT_CATEGORIES } from "../lib/youtube";
 import {
   AudioNameField,
@@ -29,7 +30,6 @@ import {
 import {
   captionProblems,
   igPhotoBody,
-  imagePostBlocked,
   TIKTOK_DEFAULTS,
   tiktokBody,
   tkTouched,
@@ -89,7 +89,8 @@ export default function ScheduleModal({
   // to 10 as a media list, TikTok takes them as a photo post. The rest are
   // shown switched off with the reason, never silently missing.
   const allConnected = (selectedClient?.accounts ?? []).filter((a) => a.status === "connected");
-  const blockedWhy = (platform: Platform): string | null => (isCarousel ? imagePostBlocked(platform) : null);
+  const blockedWhy = (platform: Platform): string | null => schedulePlatformBlock(platform, asset);
+  const shortsMessage = !isCarousel ? blockedWhy("youtube") : null;
   const connected = allConnected.filter((a) => !blockedWhy(a.platform));
   // The exact accounts ticked. Platform alone stopped being an address the
   // day a client got a second page on the same platform.
@@ -400,7 +401,7 @@ export default function ScheduleModal({
         <label className="flabel" style={{ marginTop: 18 }}>
           Platforms
         </label>
-        {connected.length === 0 && (
+        {connected.length === 0 && allConnected.length === 0 && (
           <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
             No connected platforms. Connect them in Settings first.
           </p>
@@ -457,6 +458,11 @@ export default function ScheduleModal({
               </div>
             ))}
         </div>
+        {shortsMessage && (
+          <div className="autherr" role="alert" data-testid="shorts-limit-message">
+            {shortsMessage}
+          </div>
+        )}
 
         {tkSelected && (
           <div className="igopts">

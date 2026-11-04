@@ -8,8 +8,10 @@ import {
   defaultFormat,
   instagramCopyKbps,
   instagramLongformFit,
+  measuredDurationSec,
   QUOTA_DEFERRALS_MAX,
   quotaDeferralAt,
+  youtubeShortsPublishBlock,
 } from "@toreroflow/core";
 import {
   getPrisma,
@@ -21,7 +23,7 @@ import {
   upsertExternalVideo,
   work,
 } from "@toreroflow/db";
-import { conformSlide, extractThumbnail, instagramCopy, probe, type CropRect } from "@toreroflow/media";
+import { conformSlide, extractThumbnail, instagramCopy, probe, probeDuration, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
 import { isolateVoice, processEditAsset, reframeAsset, renderProject } from "./edit";
 import { runClipStage, type ClipQueueData } from "./clips/pipeline";
@@ -41,6 +43,7 @@ import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
 import { claimForPublish } from "./pauseGuard";
+import { markYoutubeShortsOverLimit } from "./shortsLimit";
 
 const prisma = getPrisma();
 
@@ -358,6 +361,34 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   const partnerIds: string[] = [];
 
   try {
+    const assetForLimit = target.post.mediaAsset;
+    /*
+     * YouTube Shorts hard stop, before any upload or provider call.
+     *
+     * A scheduled Short over 3:00 is skipped and marked failed. It is not
+     * retried: the file will not get shorter between attempts. Long-form
+     * YouTube and every other platform pass through. Duration is ffprobe on
+     * the file when it is still on disk, otherwise the stored measurement.
+     */
+    if (assetForLimit && target.platform === "youtube") {
+      const probed =
+        assetForLimit.kind === "video" && !assetForLimit.sourceDeletedAt && assetForLimit.storageKey
+          ? await probeDuration(path.join(env.STORAGE_DIR, assetForLimit.storageKey))
+          : null;
+      const durationSec = measuredDurationSec(probed, assetForLimit.durationSec);
+      const shortsBlock = youtubeShortsPublishBlock({
+        platform: target.platform,
+        format: assetForLimit.format,
+        kind: assetForLimit.kind,
+        durationSec,
+      });
+      if (shortsBlock) {
+        await markYoutubeShortsOverLimit(prisma, { id: target.id, postId: target.postId });
+        console.log(`[worker] target ${target.id} skipped: ${shortsBlock} (${durationSec ?? "unknown"}s)`);
+        return;
+      }
+    }
+
     const caption = [
       target.caption ?? "",
       target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" "),
