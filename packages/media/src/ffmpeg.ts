@@ -62,6 +62,22 @@ export async function probe(path: string): Promise<ProbeResult> {
 }
 
 /**
+ * Duration in seconds from ffprobe, or null when the file cannot be read.
+ *
+ * A missing or unreadable file is not a duration of zero. Callers that also
+ * have a stored measurement can fall back to it; inventing 0 would look like
+ * a clip that is allowed everywhere.
+ */
+export async function probeDuration(filePath: string): Promise<number | null> {
+  try {
+    const meta = await probe(filePath);
+    return Number.isFinite(meta.durationSec) && meta.durationSec > 0 ? meta.durationSec : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Whether a file can go straight into a `<video>` element as it is.
  *
  * The editor's preview needs something the webview can decode. Making that
