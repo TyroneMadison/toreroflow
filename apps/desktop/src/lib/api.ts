@@ -706,6 +706,8 @@ export interface PostTargetInfo {
   mediaAssetId: string | null;
   /** A failure the operator cleared off the queue card. Still on the calendar. */
   queueDismissed: boolean;
+  /** An Instagram trial reel. Optional: servers before it never send one. */
+  trial?: boolean;
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */
@@ -1059,8 +1061,15 @@ export interface DriveSourceView {
   imports: DriveImportRow[];
   /** Connected through the publishing provider, so a trial reel can post there. */
   instagramAccounts: { id: string; handle: string }[];
+  /**
+   * Videos, one per Drive file however many accounts are ticked. today: taken
+   * today toward the daily limit, in the current mode, including ones still
+   * being worked on. posted: sent to trial reels so far. dryRuns: dry runs so
+   * far. Missing from older servers.
+   */
+  counts?: { today: number; posted: number; dryRuns: number };
 }
-export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountIds" | "graduation" | "mode" | "on">;
+export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountIds" | "graduation" | "mode" | "on" | "dailyLimit">;
 export type DriveFolderCheck = { ok: true; videos: number; sample: string[] } | { ok: false; reason: string };
 
 export const getDriveSource = (clientId: string) => api.get<DriveSourceView>(`/clients/${clientId}/drive-source`);

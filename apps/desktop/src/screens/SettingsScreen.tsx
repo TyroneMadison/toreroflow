@@ -306,7 +306,22 @@ const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
  * card. Saved behind a button rather than on blur like the fields above,
  * because switching it on in Live posts to a client's account.
  */
-function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean }) {
+function DriveAutoPost({
+  client,
+  open,
+  pending,
+  connecting,
+  onConnect,
+}: {
+  client: ClientSummary;
+  open: boolean;
+  /** An Instagram connect was started for this brand and is waiting on Sync accounts. */
+  pending: boolean;
+  /** The connect request is in flight. */
+  connecting: boolean;
+  /** Opens the provider's page to connect one more Instagram account to this brand. */
+  onConnect(): void;
+}) {
   const toast = useToast();
   const [view, setView] = useState<DriveSourceView | null>(null);
   const [form, setForm] = useState<DriveSourceSave>({
@@ -315,6 +330,7 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
     graduation: "MANUAL",
     mode: "dryrun",
     on: false,
+    dailyLimit: null,
   });
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [check, setCheck] = useState<DriveFolderCheck | null>(null);
@@ -339,6 +355,7 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
       graduation: s.graduation,
       mode: s.mode,
       on: s.on,
+      dailyLimit: s.dailyLimit,
     });
   };
 
@@ -346,6 +363,35 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
     if (!open || view) return;
     getDriveSource(client.id).then(apply, (err) => toast.fail(`Could not load ${client.name}'s Drive auto-post`, err));
   }, [open, view, client.id, client.name, toast]);
+
+  /*
+   * A newly connected Instagram account (Sync accounts, or coming back to the
+   * window) shows up to tick without a reload. Only the account list is
+   * refreshed, so nothing typed into the form is lost.
+   */
+  const igKey = client.accounts
+    .filter((a) => a.platform === "instagram" && a.status === "connected")
+    .map((a) => a.id)
+    .sort()
+    .join(",");
+  const loadedKey = useRef(igKey);
+  useEffect(() => {
+    if (!view || loadedKey.current === igKey) return;
+    loadedKey.current = igKey;
+    getDriveSource(client.id).then(
+      (v) => {
+        setView((cur) => (cur ? { ...cur, instagramAccounts: v.instagramAccounts } : cur));
+        // An account that disconnected is unticked too, so Save never sends one the API refuses.
+        setForm((f) => ({
+          ...f,
+          socialAccountIds: f.socialAccountIds.filter((id) => v.instagramAccounts.some((a) => a.id === id)),
+        }));
+      },
+      () => {
+        // The list just stays as it was; Save still checks every ticked account.
+      },
+    );
+  }, [igKey, view, client.id]);
 
   const save = async () => {
     setBusy("save");
@@ -355,7 +401,7 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
         !form.on
           ? "Drive auto-post saved. It is off."
           : form.mode === "live"
-            ? `Drive auto-post is live for ${client.name}. New videos post as trial reels.`
+            ? `Drive auto-post is live for ${client.name}. New videos post as Instagram trial reels only.`
             : `Drive auto-post is on for ${client.name} as a dry run. Nothing posts.`,
       );
     } catch (err) {
@@ -379,10 +425,12 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
 
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
-      <div className="flabel">Drive auto-post</div>
+      <div className="flabel">Drive auto-post: Instagram trial reels only</div>
       <p className="sub" style={{ fontSize: 11.5, margin: "0 0 8px" }}>
-        New videos added to a shared Drive folder post to Instagram as trial reels, with a caption written by AI
-        from the video. Videos already in the folder when you switch this on are left alone.
+        New videos added to a shared Drive folder post as <b>Instagram trial reels only</b>, to every Instagram account
+        ticked below at the same time, with a caption written by AI from the video. Nothing goes to TikTok, YouTube,
+        Facebook or this brand's other accounts, and nothing posts as a regular reel. Videos already in the folder when
+        you switch this on are left alone.
       </p>
       {!view ? (
         <p className="sub" style={{ fontSize: 11.5 }}>Loading...</p>
@@ -407,7 +455,7 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
             />
           </label>
           <div className="cfield">
-            <span className="lab">Instagram accounts</span>
+            <span className="lab">Instagram accounts (trial reels only)</span>
             {view.instagramAccounts.length > 0 ? (
               <>
                 {view.instagramAccounts.map((a) => (
@@ -421,12 +469,29 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
                   </label>
                 ))}
                 <span className="sub" style={{ fontSize: 11 }}>
-                  Each new video posts as a trial reel to every ticked account.
+                  Each new video posts as a trial reel to every ticked account at the same time. Only Instagram accounts
+                  are listed, because only Instagram has trial reels.
                 </span>
               </>
             ) : (
               <span style={{ fontSize: 12, color: "var(--amber)" }}>
-                A connected Instagram account is needed. Connect one under Platforms above.
+                A connected Instagram account is needed. Connect one below.
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn ghost"
+              style={{ alignSelf: "flex-start", fontSize: 11.5 }}
+              title={`Connect one more Instagram account to ${client.name}, for trial reels`}
+              disabled={connecting}
+              onClick={onConnect}
+            >
+              {connecting ? "Opening..." : "+ Connect another Instagram account"}
+            </button>
+            {pending && (
+              <span style={{ fontSize: 11, color: "var(--amber)" }}>
+                In the browser, log in to Instagram as the account you are adding, not one already connected. Then click
+                Sync accounts under Platforms above, and it shows up here to tick.
               </span>
             )}
             {view.settings.socialAccountIds.some((id) => !view.instagramAccounts.some((a) => a.id === id)) && (
@@ -435,6 +500,29 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
               </span>
             )}
           </div>
+          <label className="cfield">
+            <span className="lab">Videos per day</span>
+            <input
+              className="field-in"
+              type="number"
+              min={1}
+              max={50}
+              step={1}
+              style={{ width: 120 }}
+              placeholder="No limit"
+              value={form.dailyLimit ?? ""}
+              onChange={(e) => {
+                // Half-typed text like "1e" keeps the last good number rather than becoming no limit.
+                if (e.target.validity.badInput) return;
+                const n = e.target.valueAsNumber;
+                setForm({ ...form, dailyLimit: Number.isFinite(n) ? n : null });
+              }}
+            />
+            <span className="sub" style={{ fontSize: 11 }}>
+              The most new videos that post as trial reels each day. Extra videos wait in the folder and post on the next
+              days. Leave empty for no limit.
+            </span>
+          </label>
           <label className="cfield">
             <span className="lab">Graduation</span>
             <select
@@ -492,6 +580,23 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
                   : `The folder opened. ${check.videos} ${check.videos === 1 ? "video" : "videos"}: ${check.sample.join(", ")}${check.videos > check.sample.length ? ", and more" : ""}.`}
             </p>
           )}
+          {view.counts && (
+            <span style={{ fontSize: 11.5 }}>
+              <b>Today:</b> {view.counts.today}
+              {view.settings.dailyLimit ? ` of ${view.settings.dailyLimit}` : ""}{" "}
+              {view.counts.today === 1 ? "video" : "videos"}
+              {view.settings.mode === "live" ? "" : " (dry run)"}
+              {view.settings.waiting != null && (
+                <>
+                  {" · "}
+                  <b>Waiting in the folder:</b> {view.settings.waiting}
+                </>
+              )}
+              {" · "}
+              <b>Videos sent as trial reels:</b> {view.counts.posted}
+              {view.counts.dryRuns > 0 && ` · Dry runs: ${view.counts.dryRuns}`}
+            </span>
+          )}
           <span className="sub" style={{ fontSize: 11 }}>
             {view.settings.lastCheckAt
               ? `Last checked ${new Date(view.settings.lastCheckAt).toLocaleString()}.${view.settings.lastResult ? ` ${view.settings.lastResult}` : ""}`
@@ -539,6 +644,7 @@ function ProfileCard({
   onDelete,
   busyKey,
   pending,
+  igPending,
   connections,
   googleConfigured,
   onConnectionsChanged,
@@ -551,6 +657,8 @@ function ProfileCard({
   onDelete(): void;
   busyKey: string | null;
   pending: boolean;
+  /** The pending connect is an Instagram one. */
+  igPending: boolean;
   connections: Map<string, PlatformConnection>;
   googleConfigured: boolean;
   onConnectionsChanged(): void;
@@ -927,7 +1035,13 @@ function ProfileCard({
             )}
           </div>
 
-          <DriveAutoPost client={client} open={open} />
+          <DriveAutoPost
+            client={client}
+            open={open}
+            pending={igPending}
+            connecting={busyKey === `${client.id}:instagram`}
+            onConnect={() => onConnect("instagram")}
+          />
         </div>
       </div>
     </div>
@@ -1069,7 +1183,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       );
       if (res.authUrl) {
         await openExternal(res.authUrl);
-        setPendingSync(clientId);
+        // Which platform too, so the Drive section only gives Instagram advice for an Instagram connect.
+        setPendingSync(`${clientId}:${platform}`);
       } else {
         await refreshClients();
       }
@@ -1115,7 +1230,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     try {
       await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
-      setPendingSync((p) => (p === clientId ? null : p));
+      setPendingSync((p) => (p?.startsWith(`${clientId}:`) ? null : p));
       // A sync that finds nothing new leaves the card looking untouched.
       toast.success("Accounts synced.");
     } catch (err) {
@@ -1239,7 +1354,8 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                   key={client.id}
                   client={client}
                   busyKey={busyKey}
-                  pending={pendingSync === client.id}
+                  pending={pendingSync?.startsWith(`${client.id}:`) ?? false}
+                  igPending={pendingSync === `${client.id}:instagram`}
                   onConnect={(p) => void connect(client.id, p)}
                   onDisconnect={(id) => void disconnect(id)}
                   onSync={() => void sync(client.id)}

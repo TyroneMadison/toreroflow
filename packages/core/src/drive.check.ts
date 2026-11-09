@@ -1,15 +1,55 @@
 // Drive trial reels decide what posts to a client's Instagram with nobody
 // watching, so every refusal path is pinned here.
 import assert from "node:assert/strict";
-import { decideDriveAction, driveAccountIds, isDriveId, isDriveVideo, pickDriveFiles, readDriveSource, type DriveFile } from "./drive";
+import {
+  decideDriveAction,
+  driveAccountIds,
+  driveUsedToday,
+  isDriveId,
+  isDriveVideo,
+  pickDriveFiles,
+  readDailyLimit,
+  readDriveSource,
+  type DriveFile,
+} from "./drive";
 
 /* ---- settings ---- */
+
+// Daily limit: a whole number 1 to 50, anything else is no limit.
+assert.equal(readDailyLimit(3), 3, "a whole number is kept");
+assert.equal(readDailyLimit(50), 50, "the top of the range is kept");
+for (const bad of [0, -1, 51, 2.5, "3", null, undefined, NaN]) assert.equal(readDailyLimit(bad), null, `${String(bad)} is no limit`);
+assert.equal(readDriveSource({ dailyLimit: 4 }).dailyLimit, 4, "a stored limit reads back");
+assert.equal(readDriveSource({ waiting: 7 }).waiting, 7, "the waiting count reads back");
+assert.equal(readDriveSource({ waiting: -2 }).waiting, null, "a negative waiting count is dropped");
+
+// Today's count: in-progress and the current mode's own results, on the business's day.
+{
+  const NY = "America/New_York";
+  const now = new Date("2026-11-09T15:00:00Z"); // 10am in New York
+  const at = (iso: string) => new Date(iso);
+  const rows = [
+    { status: "scheduled", createdAt: at("2026-11-09T13:00:00Z") }, // today, live post
+    { status: "dryrun", createdAt: at("2026-11-09T13:30:00Z") }, // today, dry run
+    { status: "downloaded", createdAt: at("2026-11-09T14:00:00Z") }, // today, in progress
+    { status: "claimed", createdAt: at("2026-11-09T14:30:00Z") }, // today, in progress
+    { status: "held", createdAt: at("2026-11-09T14:40:00Z") }, // today, never posted
+    { status: "skipped", createdAt: at("2026-11-09T14:41:00Z") },
+    { status: "failed", createdAt: at("2026-11-09T14:42:00Z") },
+    // 11:30pm New York yesterday, already the 9th in UTC: yesterday's.
+    { status: "scheduled", createdAt: at("2026-11-09T04:30:00Z") },
+  ];
+  assert.equal(driveUsedToday(rows, { now, timeZone: NY, mode: "live" }), 3, "live counts live posts and in-progress only");
+  assert.equal(driveUsedToday(rows, { now, timeZone: NY, mode: "dryrun" }), 3, "a dry run counts dry runs and in-progress only");
+  assert.equal(driveUsedToday(rows, { now, timeZone: "UTC", mode: "live" }), 4, "the day follows the timezone given");
+  assert.equal(driveUsedToday([], { now, timeZone: NY, mode: "live" }), 0, "nothing today is zero");
+}
 
 const FOLDER = "1AbCdEfGhIjKlMnOpQ";
 assert.deepEqual(readDriveSource(null), {
   on: false, link: "", folderId: "", socialAccountIds: [], graduation: "MANUAL", mode: "dryrun",
-  linkedAt: null, lastCheckAt: null, lastResult: null,
-}, "nothing stored reads as off, dry run, MANUAL");
+  linkedAt: null, dailyLimit: null, waiting: null, lastCheckAt: null, lastResult: null,
+}, "nothing stored reads as off, dry run, MANUAL, no limit");
 assert.deepEqual(readDriveSource("junk"), readDriveSource(null), "a non-object never throws");
 assert.deepEqual(readDriveSource([1]), readDriveSource(null), "an array is not settings");
 const s = readDriveSource({

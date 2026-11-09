@@ -8,6 +8,7 @@ import {
   composeCaption,
   decideDriveAction,
   decodeEscapes,
+  driveUsedToday,
   instagramVideoError,
   pickDriveFiles,
   PLATFORM_MAX_UPLOAD_BYTES,
@@ -189,7 +190,8 @@ export async function driveAll(): Promise<void> {
           console.error(`[drive] client ${c.id}: ${plain(e)}`);
         }
       }
-      await saveResult(c.id, notes.filter(Boolean).join(" ") || "Nothing to do.");
+      const lastResult = (notes.filter(Boolean).join(" ") || "Nothing to do.").slice(0, 500);
+      await patchSource(c.id, { lastCheckAt: new Date().toISOString(), lastResult });
     }
   } finally {
     running = false;
@@ -197,11 +199,12 @@ export async function driveAll(): Promise<void> {
 }
 
 /**
- * Merged into the stored settings in one statement, so an operator's save
- * that lands mid-check is never written back over.
+ * The check's own fields (lastCheckAt, lastResult, waiting), merged into the
+ * stored settings in one statement, so an operator's save that lands
+ * mid-check is never written back over.
  */
-async function saveResult(clientId: string, lastResult: string): Promise<void> {
-  const patch = JSON.stringify({ lastCheckAt: new Date().toISOString(), lastResult: lastResult.slice(0, 500) });
+async function patchSource(clientId: string, fields: Partial<Pick<DriveSource, "lastCheckAt" | "lastResult" | "waiting">>): Promise<void> {
+  const patch = JSON.stringify(fields);
   await prisma.$executeRaw`UPDATE "Client" SET "driveSource" = "driveSource" || ${patch}::jsonb
     WHERE "id" = ${clientId} AND jsonb_typeof("driveSource") = 'object'`;
 }
@@ -233,7 +236,25 @@ async function ingestNext(c: DriveClient): Promise<string> {
   // ponytail: one new file per client per tick paces the Instagram quota and the downloads;
   // read zernio.instagramPublishingLimit here if a folder ever fills faster than that.
   const file = fresh[0];
-  if (!file) return `${files.length} videos in the folder, nothing new.`;
+  if (!file) {
+    await patchSource(c.id, { waiting: 0 });
+    return `${files.length} videos in the folder, nothing new.`;
+  }
+
+  // The operator's daily limit: past it, new videos wait in the folder for tomorrow.
+  if (s.dailyLimit) {
+    const recent = await prisma.driveImport.findMany({
+      // Two days back covers today in any timezone; the business day is decided in code.
+      where: { clientId: c.id, createdAt: { gte: new Date(Date.now() - 48 * 3600_000) } },
+      select: { status: true, createdAt: true },
+    });
+    const used = driveUsedToday(recent, { now: new Date(), timeZone: env.BUSINESS_TIMEZONE, mode: s.mode });
+    if (used >= s.dailyLimit) {
+      await patchSource(c.id, { waiting: fresh.length });
+      return `Daily limit reached (${used} of ${s.dailyLimit} today). ${fresh.length} ${fresh.length === 1 ? "video waits" : "videos wait"} for tomorrow.`;
+    }
+  }
+  await patchSource(c.id, { waiting: fresh.length - 1 });
   const later = fresh.length > 1 ? ` ${fresh.length - 1} more follow on later checks.` : "";
 
   const over = file.size != null ? instagramVideoError(null, file.size) : null;

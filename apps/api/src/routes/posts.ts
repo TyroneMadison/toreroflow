@@ -609,6 +609,19 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           t.platform === "youtube"
             ? (((t.options as Record<string, unknown> | null) ?? {}).youtubeTitle as string | undefined) ?? null
             : null,
+        // An Instagram trial reel (non-followers first). The calendar paints these teal.
+        // Only what the publisher really sends as a trial: never a carousel, a
+        // story, or a reel retried plain (instagramFeedPost), which went to every follower.
+        trial: (() => {
+          const o = (t.options as { instagram?: { trial?: unknown; story?: unknown }; instagramFeedPost?: unknown } | null) ?? {};
+          return (
+            t.platform === "instagram" &&
+            o.instagram?.trial === true &&
+            o.instagram.story !== true &&
+            o.instagramFeedPost !== true &&
+            t.post.mediaAsset?.kind !== "carousel"
+          );
+        })(),
         // Cleared from the queue card by the operator; still on the calendar.
         queueDismissed: Boolean(
           ((t.options as Record<string, unknown> | null) ?? {}).queueDismissedAt,

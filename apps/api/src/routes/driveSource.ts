@@ -3,8 +3,10 @@ import { z } from "zod";
 import { Prisma, getPrisma } from "@toreroflow/db";
 import {
   driveAccountIds,
+  driveUsedToday,
   isDriveId,
   MAX_DRIVE_ACCOUNTS,
+  MAX_DRIVE_DAILY,
   parseDriveLink,
   readDriveSource,
   type DriveSource,
@@ -44,6 +46,14 @@ const saveBody = z.object({
   graduation: z.enum(["MANUAL", "SS_PERFORMANCE"]),
   mode: z.enum(["dryrun", "live"]),
   on: z.boolean(),
+  /** Null is no limit. Left out (apps from before the limit) keeps the saved one. */
+  dailyLimit: z
+    .number()
+    .int("Videos per day must be a whole number.")
+    .min(1, "Videos per day must be at least 1, or empty for no limit.")
+    .max(MAX_DRIVE_DAILY, `Videos per day can be at most ${MAX_DRIVE_DAILY}.`)
+    .nullable()
+    .optional(),
 });
 
 const checkBody = z.object({ link: z.string().trim().max(500).optional() });
@@ -71,7 +81,7 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
     });
 
   const view = async (clientId: string, settings: DriveSource) => {
-    const [imports, accounts] = await Promise.all([
+    const [imports, accounts, recent, totals] = await Promise.all([
       prisma.driveImport.findMany({
         where: { clientId },
         orderBy: { createdAt: "desc" },
@@ -80,10 +90,28 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, fileId: true, name: true, status: true, reason: true, assetId: true, postId: true, createdAt: true, updatedAt: true },
       }),
       instagramAccounts(clientId),
+      // Two days back covers today in any timezone; the day is decided in code.
+      prisma.driveImport.findMany({
+        where: { clientId, createdAt: { gte: new Date(Date.now() - 48 * 3600_000) } },
+        select: { status: true, createdAt: true },
+      }),
+      prisma.driveImport.groupBy({ by: ["status"], where: { clientId, status: { in: ["scheduled", "dryrun"] } }, _count: true }),
     ]);
+    const total = (status: string) => totals.find((t) => t.status === status)?._count ?? 0;
+    const counts = {
+      today: driveUsedToday(recent, { now: new Date(), timeZone: env.BUSINESS_TIMEZONE, mode: settings.mode }),
+      posted: total("scheduled"),
+      dryRuns: total("dryrun"),
+    };
     const legacy = legacyAccountId(settings.socialAccountIds, new Set(accounts.map((a) => a.id)));
     // socialAccountId is for apps still installed from before the list. Shown only, never stored.
-    return { settings: { ...settings, socialAccountId: legacy }, keyReady: !!env.GOOGLE_DRIVE_API_KEY, imports, instagramAccounts: accounts };
+    return {
+      settings: { ...settings, socialAccountId: legacy },
+      keyReady: !!env.GOOGLE_DRIVE_API_KEY,
+      imports,
+      instagramAccounts: accounts,
+      counts,
+    };
   };
 
   app.get<{ Params: { clientId: string } }>("/clients/:clientId/drive-source", async (request, reply) => {
@@ -98,7 +126,7 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
     if (!client) return reply.status(404).send(bad("No such brand.", "brand not found"));
     const parsed = saveBody.safeParse(request.body ?? {});
     if (!parsed.success) return reply.status(400).send(bad(parsed.error.issues[0]?.message ?? "Check the settings."));
-    const { socialAccountIds, socialAccountId, ...b } = parsed.data;
+    const { socialAccountIds, socialAccountId, dailyLimit, ...b } = parsed.data;
 
     const folderId = b.link ? folderIdOf(b.link) : "";
     if (folderId === null) return reply.status(400).send(bad(NOT_FOLDER, "not a folder link"));
@@ -145,7 +173,10 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
       ...b,
       socialAccountIds: ids,
       folderId,
+      dailyLimit: dailyLimit === undefined ? prev.dailyLimit : dailyLimit,
       linkedAt: restart ? new Date().toISOString() : prev.linkedAt,
+      // A restart (new folder, or switched back on) drops what was waiting, and off counts nothing.
+      waiting: restart || !b.on ? null : prev.waiting,
     };
     await prisma.client.update({ where: { id: client.id }, data: { driveSource: next as unknown as Prisma.InputJsonValue } });
     return view(client.id, next);

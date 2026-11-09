@@ -31,7 +31,11 @@ const accounts = [
   { ...ig, id: "tt1", clientId: "c1", handle: "brand", connectedAt: new Date(4), platform: "tiktok" },
   { ...ig, id: "igB", clientId: "c2", handle: "other", connectedAt: new Date(5) },
 ];
-const imports = [{ id: "d1", clientId: "c1", fileId: "f1aaaaaaaaaa", name: "a.mp4", status: "held", reason: "No speech.", createdAt: new Date() }];
+const imports = [
+  { id: "d1", clientId: "c1", fileId: "f1aaaaaaaaaa", name: "a.mp4", status: "held", reason: "No speech.", createdAt: new Date() },
+  { id: "d2", clientId: "c1", fileId: "f2aaaaaaaaaa", name: "b.mp4", status: "dryrun", reason: null, createdAt: new Date() },
+  { id: "d3", clientId: "c1", fileId: "f3aaaaaaaaaa", name: "c.mp4", status: "scheduled", reason: null, createdAt: new Date(Date.now() - 72 * 3600_000) },
+];
 
 const prisma = getPrisma();
 const stub = (name: string, value: unknown) => Object.defineProperty(prisma, name, { value });
@@ -43,7 +47,15 @@ stub("socialAccount", {
   findMany: async ({ where }: any) =>
     accounts.filter((a) => Object.entries(where).every(([k, v]) => (a as Record<string, unknown>)[k] === v)).map((a) => ({ id: a.id, handle: a.handle })),
 });
-stub("driveImport", { findMany: async ({ where }: any) => imports.filter((i) => i.clientId === where.clientId) });
+stub("driveImport", {
+  findMany: async ({ where }: any) =>
+    imports.filter((i) => i.clientId === where.clientId && (!where.createdAt || i.createdAt >= where.createdAt.gte)),
+  groupBy: async ({ where }: any) =>
+    ["scheduled", "dryrun"].map((status) => ({
+      status,
+      _count: imports.filter((i) => i.clientId === where.clientId && i.status === status).length,
+    })),
+});
 stub("botIdentity", { findUnique: async () => null });
 
 let driveStatus = 200;
@@ -82,8 +94,10 @@ assert.deepEqual(
   [{ id: "ig1", handle: "brand" }, { id: "ig2", handle: "brand.rents" }],
   "provider-connected Instagram only",
 );
-assert.equal(first.imports.length, 1);
+assert.equal(first.imports.length, 3);
 assert.equal(first.imports[0].reason, "No speech.");
+assert.deepEqual(first.counts, { today: 1, posted: 1, dryRuns: 1 }, "today counts the dry run (dry run mode); totals by status");
+assert.equal(first.settings.dailyLimit, null, "no daily limit by default");
 assert.equal(first.keyReady, true);
 
 // Scoping.
@@ -185,6 +199,32 @@ clients[0]!.driveSource = { ...stored(), socialAccountIds: ["igOld"] };
 const nonePicked = await legacySave({ socialAccountId: "" });
 assert.equal(nonePicked.statusCode, 400);
 assert.match(nonePicked.json().detail, /Pick the Instagram account/, "in words the old app's picker matches");
+clients[0]!.driveSource = null;
+
+// Daily limit: saved, kept when an older app leaves it out, cleared with null, bad values refused.
+assert.equal((await save({ dailyLimit: 3 })).statusCode, 200);
+assert.equal(stored().dailyLimit, 3, "limit saved");
+assert.equal((await save({})).statusCode, 200);
+assert.equal(stored().dailyLimit, 3, "a save without it keeps the limit");
+for (const bad of [0, 51, 2.5, "3"]) {
+  const r = await save({ dailyLimit: bad });
+  assert.equal(r.statusCode, 400, `limit ${String(bad)} refused`);
+  assert.equal(stored().dailyLimit, 3, "nothing written");
+}
+assert.equal((await save({ dailyLimit: null })).statusCode, 200);
+assert.equal(stored().dailyLimit, null, "null clears it");
+// The worker's waiting count stays for the same folder and resets for a new one.
+clients[0]!.driveSource = { ...stored(), waiting: 4 };
+await save({});
+assert.equal(stored().waiting, 4, "same folder keeps waiting");
+await save({ link: folderLink(OTHER) });
+assert.equal(stored().waiting, null, "a new folder has not been counted");
+clients[0]!.driveSource = { ...stored(), waiting: 4 };
+await save({ link: folderLink(OTHER), on: false });
+assert.equal(stored().waiting, null, "off counts nothing");
+clients[0]!.driveSource = { ...stored(), waiting: 4 };
+await save({ link: folderLink(OTHER) });
+assert.equal(stored().waiting, null, "switching back on drops what was waiting, as linkedAt restarts");
 clients[0]!.driveSource = null;
 
 // Switching on starts the clock.
