@@ -1060,7 +1060,7 @@ export interface DriveSourceView {
   /** Connected through the publishing provider, so a trial reel can post there. */
   instagramAccounts: { id: string; handle: string }[];
 }
-export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountId" | "graduation" | "mode" | "on">;
+export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountIds" | "graduation" | "mode" | "on">;
 export type DriveFolderCheck = { ok: true; videos: number; sample: string[] } | { ok: false; reason: string };
 
 export const getDriveSource = (clientId: string) => api.get<DriveSourceView>(`/clients/${clientId}/drive-source`);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DriveError } from "@toreroflow/publishers";
 import { readDriveSource } from "@toreroflow/core";
-import { downloadRetries, settingsMoved, transcriptionRetries, trialReelPlan } from "./drive";
+import { downloadRetries, driveTargets, settingsMoved, transcriptionRetries, trialReelPlan } from "./drive";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/worker test`.
@@ -60,7 +60,7 @@ for (const msg of [
 /* ---- a save during a check ---- */
 
 const saved = readDriveSource({
-  on: true, folderId: "1AbCdEfGhIjKlMnOpQ", socialAccountId: "acc1", graduation: "MANUAL", mode: "live",
+  on: true, folderId: "1AbCdEfGhIjKlMnOpQ", socialAccountIds: ["acc1", "acc2"], graduation: "MANUAL", mode: "live",
   linkedAt: "2026-11-08T10:00:00Z", lastCheckAt: "2026-11-08T10:05:00Z", lastResult: "ok",
 });
 assert.equal(settingsMoved(saved, { ...saved }), false, "nothing saved, nothing moved");
@@ -69,14 +69,62 @@ assert.equal(
   false,
   "the check's own fields are not a save",
 );
+assert.equal(settingsMoved(saved, { ...saved, socialAccountIds: ["acc2", "acc1"] }), false, "the same accounts in another order");
 for (const moved of [
   { on: false },
   { mode: "dryrun" as const },
-  { socialAccountId: "acc2" },
+  { socialAccountIds: ["acc1"] },
+  { socialAccountIds: ["acc1", "acc3"] },
+  { socialAccountIds: ["acc1", "acc2", "acc3"] },
+  { socialAccountIds: [] },
   { graduation: "SS_PERFORMANCE" as const },
   { linkedAt: "2026-11-08T11:00:00Z" },
 ]) {
   assert.equal(settingsMoved(saved, { ...saved, ...moved }), true, `a save of ${JSON.stringify(moved)} stops the post`);
 }
+
+/* ---- which ticked accounts a video posts to ---- */
+
+const acct = (id: string, extra: object = {}) => ({
+  id,
+  clientId: "c1",
+  handle: id,
+  platform: "instagram",
+  status: "connected",
+  deletedAt: null as Date | null,
+  tokensEncrypted: "provider:zernio",
+  ...extra,
+});
+const found = [
+  acct("dudthecarguy"),
+  acct("dud.rents_"),
+  acct("reminder", { tokensEncrypted: "reminder" }),
+  acct("stale", { status: "needs_reconnect" }),
+  acct("gone", { deletedAt: new Date() }),
+  acct("tiktok", { platform: "tiktok" }),
+  acct("theirs", { clientId: "c2" }),
+];
+const handles = (r: ReturnType<typeof driveTargets>) => r.eligible.map((a) => a.handle);
+
+const both = driveTargets("c1", ["dud.rents_", "dudthecarguy"], found, "live");
+assert.deepEqual(handles(both), ["dud.rents_", "dudthecarguy"], "every eligible account, in the order ticked");
+assert.deepEqual(both.skipped, [], "nothing skipped");
+
+const live = driveTargets("c1", ["dudthecarguy", "reminder", "stale", "gone", "tiktok", "theirs", "missing"], found, "live");
+assert.deepEqual(handles(live), ["dudthecarguy"], "only the eligible one posts");
+assert.deepEqual(live.skipped, [
+  "@reminder is not connected through the publishing provider",
+  "@stale is not connected",
+  "@gone was removed",
+  "an account that is no longer one of this client's Instagram accounts",
+  "an account that is no longer one of this client's Instagram accounts",
+  "an account that is no longer one of this client's Instagram accounts",
+], "each skip names its problem");
+assert.ok(!live.skipped.some((n) => n.includes("@theirs") || n.includes("@tiktok")), "another client's or platform's handle is never named");
+
+const dry = driveTargets("c1", ["dudthecarguy", "reminder"], found, "dryrun");
+assert.deepEqual(handles(dry), ["dudthecarguy", "reminder"], "a dry run needs no provider connection");
+assert.deepEqual(driveTargets("c1", ["stale", "gone"], found, "dryrun").eligible, [], "none eligible, none posted");
+assert.deepEqual(driveTargets("c1", [], found, "live"), { eligible: [], skipped: [] }, "no ids, nothing");
 
 console.log("drive.check.ts: ok");

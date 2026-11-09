@@ -1,19 +1,19 @@
 // Drive trial reels decide what posts to a client's Instagram with nobody
 // watching, so every refusal path is pinned here.
 import assert from "node:assert/strict";
-import { decideDriveAction, isDriveId, isDriveVideo, pickDriveFiles, readDriveSource, type DriveFile } from "./drive";
+import { decideDriveAction, driveAccountIds, isDriveId, isDriveVideo, pickDriveFiles, readDriveSource, type DriveFile } from "./drive";
 
 /* ---- settings ---- */
 
 const FOLDER = "1AbCdEfGhIjKlMnOpQ";
 assert.deepEqual(readDriveSource(null), {
-  on: false, link: "", folderId: "", socialAccountId: "", graduation: "MANUAL", mode: "dryrun",
+  on: false, link: "", folderId: "", socialAccountIds: [], graduation: "MANUAL", mode: "dryrun",
   linkedAt: null, lastCheckAt: null, lastResult: null,
 }, "nothing stored reads as off, dry run, MANUAL");
 assert.deepEqual(readDriveSource("junk"), readDriveSource(null), "a non-object never throws");
 assert.deepEqual(readDriveSource([1]), readDriveSource(null), "an array is not settings");
 const s = readDriveSource({
-  on: true, link: "https://drive.google.com/drive/folders/" + FOLDER, folderId: FOLDER, socialAccountId: "acc1",
+  on: true, link: "https://drive.google.com/drive/folders/" + FOLDER, folderId: FOLDER, socialAccountIds: ["acc1", "acc2"],
   graduation: "SS_PERFORMANCE", mode: "live", linkedAt: "2026-11-08T10:00:00Z", lastCheckAt: 5, lastResult: "ok",
 });
 assert.equal(s.on && s.mode === "live" && s.graduation === "SS_PERFORMANCE", true, "valid settings kept");
@@ -24,6 +24,27 @@ assert.equal(readDriveSource({ on: "true", folderId: FOLDER }).on, false, "on mu
 assert.equal(readDriveSource({ on: true, folderId: "x' or '1'='1" }).on, false, "on needs a valid folder");
 assert.equal(readDriveSource({ on: true, folderId: "x' or '1'='1" }).folderId, "", "a quoted folder id is dropped");
 assert.equal(readDriveSource({ linkedAt: "soon" }).linkedAt, null, "an unreadable linkedAt is null");
+
+// Accounts: saved settings from before the list read as a list of one.
+assert.deepEqual(s.socialAccountIds, ["acc1", "acc2"], "the list is kept in order");
+assert.deepEqual(readDriveSource({ socialAccountId: "acc1" }).socialAccountIds, ["acc1"], "a legacy single id becomes a list");
+assert.equal("socialAccountId" in readDriveSource({ socialAccountId: "acc1" }), false, "the legacy field is not read back out");
+assert.deepEqual(readDriveSource({ socialAccountId: "" }).socialAccountIds, [], "a legacy empty id is no account");
+assert.deepEqual(readDriveSource({ socialAccountId: 7 }).socialAccountIds, [], "a legacy non-string is no account");
+assert.deepEqual(
+  readDriveSource({ socialAccountIds: ["acc2"], socialAccountId: "acc1" }).socialAccountIds,
+  ["acc2"],
+  "the list wins over a leftover legacy id",
+);
+assert.deepEqual(readDriveSource({ socialAccountIds: [], socialAccountId: "acc1" }).socialAccountIds, [], "an emptied list stays empty");
+assert.deepEqual(readDriveSource({ socialAccountIds: "acc1" }).socialAccountIds, [], "a string is not a list");
+assert.deepEqual(
+  driveAccountIds(["a", " a ", "b", "", "  ", 3, null, "a", "c"]),
+  ["a", "b", "c"],
+  "trimmed, deduped in order, non-strings and blanks dropped",
+);
+assert.equal(driveAccountIds(Array.from({ length: 12 }, (_, i) => `acc${i}`)).length, 10, "at most 10 accounts");
+assert.deepEqual(driveAccountIds({ 0: "a" }), [], "not an array, no accounts");
 
 /* ---- ids and file types ---- */
 
@@ -61,7 +82,7 @@ assert.deepEqual(ids(pickDriveFiles(files, { linkedAt: "2026-11-08T11:00:00Z", s
 /* ---- deciding ---- */
 
 const ready = { status: "ready", format: "short_form", durationSec: 30, width: 1080, height: 1920, bytes: 50 * 1024 * 1024 };
-const on = { on: true, socialAccountId: "acc1", mode: "dryrun" as const, linkedAt: "2026-11-08T10:00:00Z" };
+const on = { on: true, socialAccountIds: ["acc1", "acc2"], mode: "dryrun" as const, linkedAt: "2026-11-08T10:00:00Z" };
 const caption = "We take the ZR1X out for the first time.\n\n#zr1x #corvette";
 const reasonOf = (a: ReturnType<typeof decideDriveAction>) => ("reason" in a ? a.reason : "");
 const decide = (input: Omit<Parameters<typeof decideDriveAction>[0], "claimedAt"> & { claimedAt?: Date }) =>
@@ -120,7 +141,10 @@ assert.equal(
   "a vertical video is short-form however long it runs",
 );
 
-assert.equal(decide({ asset: ready, caption, settings: { ...on, socialAccountId: "" } }).kind, "hold", "no account holds");
+const noAccount = decide({ asset: ready, caption, settings: { ...on, mode: "live", socialAccountIds: [] } });
+assert.equal(noAccount.kind, "hold", "an empty account list holds, even live");
+assert.match(reasonOf(noAccount), /No Instagram account is ticked/);
+assert.deepEqual(decide({ asset: ready, caption, settings: { ...on, socialAccountIds: ["acc1"] } }), { kind: "post", mode: "dryrun" }, "one account posts");
 for (const none of [null, "", "  \n "]) {
   const held = decide({ asset: ready, caption: none, settings: on });
   assert.equal(held.kind, "hold", `never an empty caption: ${JSON.stringify(none)}`);

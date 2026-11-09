@@ -14,8 +14,8 @@ export interface DriveSource {
   /** The folder link as the operator pasted it. */
   link: string;
   folderId: string;
-  /** The client's Instagram SocialAccount the trial reels post to. */
-  socialAccountId: string;
+  /** The client's Instagram SocialAccounts each trial reel posts to, every one. */
+  socialAccountIds: string[];
   graduation: "MANUAL" | "SS_PERFORMANCE";
   /** dryrun runs the whole pipeline and records the payload instead of posting. */
   mode: "dryrun" | "live";
@@ -32,6 +32,17 @@ export interface DriveSource {
  */
 export const isDriveId = (s: string) => /^[A-Za-z0-9_-]{10,128}$/.test(s);
 
+export const MAX_DRIVE_ACCOUNTS = 10;
+
+/** Trimmed, non-empty, deduped in the order given, at most MAX_DRIVE_ACCOUNTS. */
+export const driveAccountIds = (raw: unknown): string[] =>
+  Array.isArray(raw)
+    ? [...new Set(raw.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean))].slice(
+        0,
+        MAX_DRIVE_ACCOUNTS,
+      )
+    : [];
+
 const isoOrNull = (v: unknown) => (typeof v === "string" && Number.isFinite(Date.parse(v)) ? v : null);
 
 /** Never throws. Anything missing or malformed reads as off, dry run, MANUAL. */
@@ -43,7 +54,8 @@ export function readDriveSource(raw: unknown): DriveSource {
     on: r.on === true && folderId !== "",
     link: typeof r.link === "string" ? r.link.slice(0, 500) : "",
     folderId,
-    socialAccountId: typeof r.socialAccountId === "string" ? r.socialAccountId : "",
+    // Settings saved before several accounts could be picked held one id.
+    socialAccountIds: driveAccountIds(Array.isArray(r.socialAccountIds) ? r.socialAccountIds : [r.socialAccountId]),
     graduation: r.graduation === "SS_PERFORMANCE" ? "SS_PERFORMANCE" : "MANUAL",
     mode: r.mode === "live" ? "live" : "dryrun",
     linkedAt: isoOrNull(r.linkedAt),
@@ -128,7 +140,7 @@ export function decideDriveAction(input: {
   asset: DriveAssetFacts;
   caption: string | null;
   claimedAt: Date;
-  settings: Pick<DriveSource, "on" | "socialAccountId" | "mode" | "linkedAt">;
+  settings: Pick<DriveSource, "on" | "socialAccountIds" | "mode" | "linkedAt">;
 }): DriveAction {
   const { asset, settings } = input;
   if (asset.status === "failed") {
@@ -169,10 +181,10 @@ export function decideDriveAction(input: {
     };
   }
 
-  if (!settings.socialAccountId) {
+  if (!settings.socialAccountIds.length) {
     return {
       kind: "hold",
-      reason: "No Instagram account is picked for this Drive folder. Pick one in Settings, then schedule this video by hand from Uploads.",
+      reason: "No Instagram account is ticked for this Drive folder. Tick one in Settings, then schedule this video by hand from Uploads.",
     };
   }
 

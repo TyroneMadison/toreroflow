@@ -36,8 +36,9 @@ import { transcribeStrict } from "./transcribe";
  *
  * Per client with a linked folder: pass 1 claims and downloads at most one new
  * video into Uploads, pass 2 writes the caption for each one the media queue
- * has made ready and then posts it as a trial reel (or records the dry run),
- * or holds, skips or fails it with a reason the operator can act on.
+ * has made ready and then posts it as a trial reel to every ticked Instagram
+ * account (or records the dry run), or holds, skips or fails it with a reason
+ * the operator can act on.
  *
  * Once-only is the database's job: the DriveImport row is created before the
  * download, and its unique (clientId, fileId) refuses a second claim.
@@ -99,13 +100,46 @@ export const downloadRetries = (e: unknown) =>
 export const transcriptionRetries = (e: unknown) =>
   /^(the transcription service did not answer|transcription timed out|transcription failed: 50[234]\b)/.test(plain(e));
 
+/** The same accounts, in any order. */
+const sameIds = (a: string[], b: string[]) => new Set(a).size === new Set(b).size && a.every((id) => b.includes(id));
+
 /** Whether a save moved anything a post is made from (lastCheckAt and lastResult are the check's own). */
 export const settingsMoved = (a: DriveSource, b: DriveSource) =>
   a.on !== b.on ||
   a.mode !== b.mode ||
-  a.socialAccountId !== b.socialAccountId ||
+  !sameIds(a.socialAccountIds, b.socialAccountIds) ||
   a.graduation !== b.graduation ||
   a.linkedAt !== b.linkedAt;
+
+type TickedAccount = {
+  id: string;
+  clientId: string;
+  handle: string;
+  platform: string;
+  status: string;
+  deletedAt: Date | null;
+  tokensEncrypted: string | null;
+};
+
+/**
+ * The ticked accounts a Drive video posts to, in the order ticked, and a note
+ * for each ticked one it cannot. An id that is not this client's Instagram is
+ * never named, since its handle may be another client's.
+ */
+export function driveTargets(clientId: string, ids: string[], found: TickedAccount[], mode: DriveSource["mode"]) {
+  const eligible: TickedAccount[] = [];
+  const skipped: string[] = [];
+  for (const id of ids) {
+    const a = found.find((x) => x.id === id && x.clientId === clientId && x.platform === "instagram");
+    if (!a) skipped.push("an account that is no longer one of this client's Instagram accounts");
+    else if (a.deletedAt) skipped.push(`@${a.handle} was removed`);
+    else if (a.status !== "connected") skipped.push(`@${a.handle} is not connected`);
+    else if (mode === "live" && a.tokensEncrypted !== "provider:zernio") {
+      skipped.push(`@${a.handle} is not connected through the publishing provider`);
+    } else eligible.push(a);
+  }
+  return { eligible, skipped };
+}
 
 /**
  * The settings as saved now. One check can run for many minutes (downloads,
@@ -309,21 +343,25 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
   const pre = decideDriveAction({ asset: facts, caption: "-", claimedAt: row.createdAt, settings: s });
   if (pre.kind !== "post") return settle(row.id, pre);
 
-  const account = await prisma.socialAccount.findFirst({
-    where: { id: s.socialAccountId, clientId: c.id, platform: "instagram", status: "connected", deletedAt: null },
-  });
-  if (!account) {
+  const { eligible, skipped } = driveTargets(
+    c.id,
+    s.socialAccountIds,
+    await prisma.socialAccount.findMany({
+      where: { id: { in: s.socialAccountIds }, clientId: c.id },
+      select: { id: true, clientId: true, handle: true, platform: true, status: true, deletedAt: true, tokensEncrypted: true },
+    }),
+    s.mode,
+  );
+  if (!eligible.length) {
     return settle(row.id, {
       kind: "hold",
-      reason: "The Instagram account picked for this Drive folder is not a connected account of this client. Pick one in Settings, then schedule this video by hand from Uploads.",
+      reason: `No ticked Instagram account can post (${skipped.join("; ")}), so nothing was posted. Reconnect one or tick another in Settings, then schedule this video by hand from Uploads.`,
     });
   }
-  if (s.mode === "live" && account.tokensEncrypted !== "provider:zernio") {
-    return settle(row.id, {
-      kind: "hold",
-      reason: `@${account.handle} is not connected through the publishing provider, so nothing was posted. Reconnect it in Settings, then schedule this video by hand from Uploads.`,
-    });
-  }
+  // Posted to the rest, with the ones left out on the row for the operator.
+  const partial = skipped.length
+    ? `Not posted to every ticked account: ${skipped.join("; ")}. Reconnect or untick ${skipped.length === 1 ? "it" : "them"} in Settings.`
+    : null;
 
   let written: { description: string; hashtags: string[] } | null;
   try {
@@ -351,24 +389,27 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
   const plan = trialReelPlan({ graduation: s.graduation, format: asset.format, durationSec: asset.durationSec, caption: words });
 
   if (action.mode === "dryrun") {
-    const result = await new DryRunPublisher("instagram").publish({
-      account: { id: account.id, platform: "instagram", handle: account.handle },
-      videoUrl: asset.storageKey,
-      caption: words,
-      hashtags,
-      extras: plan.extras,
-    });
-    const detail = {
-      caption: body,
-      hashtags,
-      options: plan.options,
-      extras: plan.extras,
-      account: { id: account.id, handle: account.handle },
-      remotePostId: result.remotePostId,
-    };
+    const planned = [];
+    for (const a of eligible) {
+      const result = await new DryRunPublisher("instagram").publish({
+        account: { id: a.id, platform: "instagram", handle: a.handle },
+        videoUrl: asset.storageKey,
+        caption: words,
+        hashtags,
+        extras: plan.extras,
+      });
+      planned.push({
+        account: { id: a.id, handle: a.handle },
+        caption: body,
+        hashtags,
+        options: plan.options,
+        extras: plan.extras,
+        remotePostId: result.remotePostId,
+      });
+    }
     await prisma.driveImport.update({
       where: { id: row.id },
-      data: { status: "dryrun", reason: null, detail: detail as unknown as Prisma.InputJsonValue },
+      data: { status: "dryrun", reason: partial, detail: { targets: planned, skipped } as unknown as Prisma.InputJsonValue },
     });
     console.log(`[drive] import ${row.id} dryrun`);
     return "dry run";
@@ -384,7 +425,7 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
 
   const scheduledAt = new Date();
   // One transaction, so a crash cannot leave a post whose row still reads downloaded and posts again.
-  const target = await prisma.$transaction(async (tx) => {
+  const targets = await prisma.$transaction(async (tx) => {
     // Locking the client row makes a settings save, and a hand schedule (its
     // Post references this row), wait for this or land before it is read.
     const [locked] = await tx.$queryRaw<Array<{ driveSource: Prisma.JsonValue }>>`
@@ -399,35 +440,38 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
         mediaAssetId: asset.id,
         createdById: owner.id,
         status: "scheduled",
+        // One target per account, the same trial reel on each.
         targets: {
-          create: {
-            socialAccountId: account.id,
+          create: eligible.map((a) => ({
+            socialAccountId: a.id,
             platform: "instagram",
             caption: body,
             hashtags,
             scheduledAt,
             status: "scheduled",
             options: plan.options as unknown as Prisma.InputJsonValue,
-          },
+          })),
         },
       },
       include: { targets: true },
     });
     const moved = await tx.driveImport.updateMany({
       where: { id: row.id, status: "downloaded" },
-      data: { status: "scheduled", reason: null, postId: post.id },
+      data: { status: "scheduled", reason: partial, postId: post.id },
     });
     if (!moved.count) throw new Error("this import was moved on by another check");
-    return post.targets[0]!;
+    return post.targets;
   });
-  if (!target) return settle(row.id, BY_HAND);
-  // As the schedule route queues it: keyed on the target so nothing can queue it twice.
-  await enqueue(
-    "publish",
-    { targetId: target.id },
-    { key: target.id, startAfter: scheduledAt, retryLimit: 3, retryDelaySeconds: 30, retryBackoff: true },
-  );
-  console.log(`[drive] import ${row.id} scheduled as target ${target.id}`);
+  if (!targets) return settle(row.id, BY_HAND);
+  // As the schedule route queues them: each keyed on its own target so nothing can queue one twice.
+  for (const target of targets) {
+    await enqueue(
+      "publish",
+      { targetId: target.id },
+      { key: target.id, startAfter: scheduledAt, retryLimit: 3, retryDelaySeconds: 30, retryBackoff: true },
+    );
+  }
+  console.log(`[drive] import ${row.id} scheduled as targets ${targets.map((t) => t.id).join(", ")}`);
   return "scheduled";
 }
 

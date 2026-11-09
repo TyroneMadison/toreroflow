@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { readDriveSource } from "@toreroflow/core";
 import DeployCard from "../components/DeployCard";
 import UpdateCard from "../components/UpdateCard";
 import BusinessCard from "../components/BusinessCard";
@@ -298,8 +299,8 @@ const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
 };
 
 /**
- * Drive auto-post: new videos in the client's shared Drive folder post to one
- * Instagram account as trial reels, captioned by AI from the video.
+ * Drive auto-post: new videos in the client's shared Drive folder post to each
+ * ticked Instagram account as trial reels, captioned by AI from the video.
  *
  * Loaded on first expand, so a long client list does not fire a request per
  * card. Saved behind a button rather than on blur like the fields above,
@@ -310,28 +311,31 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
   const [view, setView] = useState<DriveSourceView | null>(null);
   const [form, setForm] = useState<DriveSourceSave>({
     link: "",
-    socialAccountId: "",
+    socialAccountIds: [],
     graduation: "MANUAL",
     mode: "dryrun",
     on: false,
   });
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [check, setCheck] = useState<DriveFolderCheck | null>(null);
+  const tick = (id: string, on: boolean) =>
+    setForm((f) => ({
+      ...f,
+      socialAccountIds: on ? [...f.socialAccountIds.filter((x) => x !== id), id] : f.socialAccountIds.filter((x) => x !== id),
+    }));
 
   const apply = (v: DriveSourceView) => {
-    const s = v.settings;
+    // A server from before several accounts could be ticked sends one id, not a list.
+    const s = readDriveSource(v.settings);
     const ids = v.instagramAccounts.map((a) => a.id);
-    setView(v);
+    setView({ ...v, settings: s });
     setForm({
       link: s.link,
-      // An account that has since disconnected reads as unpicked, so a save
+      // An account that has since disconnected reads as unticked, so a save
       // never sends one the API refuses, and never moves the trial reels to
-      // another account nobody picked. Only a first setup picks the one there is.
-      socialAccountId: ids.includes(s.socialAccountId)
-        ? s.socialAccountId
-        : !s.socialAccountId && ids.length === 1
-          ? ids[0]!
-          : "",
+      // another account nobody ticked. Only a first setup ticks the one there is.
+      socialAccountIds:
+        !s.socialAccountIds.length && ids.length === 1 ? [ids[0]!] : s.socialAccountIds.filter((id) => ids.includes(id)),
       graduation: s.graduation,
       mode: s.mode,
       on: s.on,
@@ -402,27 +406,35 @@ function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean 
               }}
             />
           </label>
-          <label className="cfield">
-            <span className="lab">Instagram account</span>
+          <div className="cfield">
+            <span className="lab">Instagram accounts</span>
             {view.instagramAccounts.length > 0 ? (
-              <select
-                className="field-in"
-                value={form.socialAccountId}
-                onChange={(e) => setForm({ ...form, socialAccountId: e.target.value })}
-              >
-                <option value="">Pick an account</option>
+              <>
                 {view.instagramAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
+                  <label key={a.id} style={{ fontSize: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={form.socialAccountIds.includes(a.id)}
+                      onChange={(e) => tick(a.id, e.target.checked)}
+                    />{" "}
                     @{a.handle}
-                  </option>
+                  </label>
                 ))}
-              </select>
+                <span className="sub" style={{ fontSize: 11 }}>
+                  Each new video posts as a trial reel to every ticked account.
+                </span>
+              </>
             ) : (
               <span style={{ fontSize: 12, color: "var(--amber)" }}>
                 A connected Instagram account is needed. Connect one under Platforms above.
               </span>
             )}
-          </label>
+            {view.settings.socialAccountIds.some((id) => !view.instagramAccounts.some((a) => a.id === id)) && (
+              <span style={{ fontSize: 11, color: "var(--amber)" }}>
+                An account ticked before is no longer connected, so it is unticked. Saving leaves it out.
+              </span>
+            )}
+          </div>
           <label className="cfield">
             <span className="lab">Graduation</span>
             <select
