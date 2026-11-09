@@ -37,6 +37,14 @@ export const env = {
   /** Empty means lifetime YouTube refresh is skipped, not failed. */
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   /**
+   * Drive trial reels: lists and downloads folders shared as "Anyone with the
+   * link". Falls back to YOUTUBE_API_KEY (same Google project), as the API
+   * does. Sent in a header, never in a URL. Empty means no folder is read.
+   */
+  GOOGLE_DRIVE_API_KEY: process.env.GOOGLE_DRIVE_API_KEY || process.env.YOUTUBE_API_KEY || "",
+  /** Drive API root, overridable for a local stub. */
+  DRIVE_API_BASE: process.env.DRIVE_API_BASE || "https://www.googleapis.com/drive/v3",
+  /**
    * The Google OAuth client, used here only to mint an hour-long access token
    * from each channel's stored refresh token. Empty means the YouTube Analytics
    * sync is skipped and the numbers stay exactly as the catalogue sync left

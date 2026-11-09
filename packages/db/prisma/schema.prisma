@@ -222,6 +222,9 @@ model Client {
   judgeTuning           Json?
   /// Phase 8: AutoImportSettings from @toreroflow/core (own YouTube channel).
   autoImport            Json?
+  /// Drive source settings, read with readDriveSource from @toreroflow/core.
+  driveSource           Json?
+  driveImports          DriveImport[]
   /// Uploads paused since this moment; null means publishing normally. The
   /// worker holds every scheduled post of a paused brand, and resuming moves
   /// them with planResume from @toreroflow/core.
@@ -1966,6 +1969,29 @@ model YouTubeImport {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, videoId])
+}
+
+/// One file seen in a client's linked Drive folder. The row is written BEFORE
+/// the download, so each file is ingested exactly once.
+model DriveImport {
+  id        String   @id @default(cuid())
+  clientId  String
+  fileId    String
+  name      String
+  /// claimed | downloaded | dryrun | scheduled | held | skipped | failed
+  status    String
+  reason    String?
+  assetId   String?
+  postId    String?
+  /// Dry-run payload or other structured detail (never secrets).
+  detail    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, fileId])
+  @@index([clientId, createdAt])
 }
 
 /// A day the operator ticked "posted to X" on the calendar, by hand. A row

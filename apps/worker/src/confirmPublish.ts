@@ -83,6 +83,15 @@ export function entryFor(
   return undefined;
 }
 
+/**
+ * A trial reel goes only to non-followers, which is the whole point of one.
+ * The plain-reel retry drops the trial, so retrying a refused trial would post
+ * it to every follower instead; a refused trial is failed, never retried.
+ */
+export function isTrialReel(options: unknown): boolean {
+  return (options as { instagram?: { trial?: unknown } } | null)?.instagram?.trial === true;
+}
+
 export type Outcome = "posted" | "failed" | "waiting";
 
 /** What a provider status means for a target, with unknown treated as waiting. */
@@ -177,11 +186,13 @@ export async function confirmPublishing(zernio: ZernioProvider | null): Promise<
          * instagramFeedPost), so the retry cannot fail again on an option
          * rather than on the video. There is no feed-video road; the provider
          * makes every single video a reel. The flag makes it strictly once:
-         * a retry that fails is simply failed.
+         * a retry that fails is simply failed. A trial reel is never retried
+         * (see isTrialReel).
          */
         const opts = (target.options as Record<string, unknown> | null) ?? {};
         const alreadyRetried = opts.instagramFeedPost === true;
-        if (target.platform === "instagram" && !alreadyRetried) {
+        const trialRefused = target.platform === "instagram" && !alreadyRetried && isTrialReel(opts);
+        if (target.platform === "instagram" && !alreadyRetried && !trialRefused) {
           await prisma.postTarget.update({
             where: { id: target.id },
             data: {
@@ -250,7 +261,9 @@ export async function confirmPublishing(zernio: ZernioProvider | null): Promise<
               ? `TikTok's shared daily cap was full on ${QUOTA_DEFERRALS_MAX} consecutive nights, ` +
                 `so this was not published. The cap belongs to the publishing tool and is shared ` +
                 `with every agency using it; ask them to raise it, or post this one by hand.`
-              : why.slice(0, 500),
+              : trialRefused
+                ? `Instagram refused this trial reel (${why}). It was not retried as a plain reel, so it was not posted publicly.`.slice(0, 500)
+                : why.slice(0, 500),
           },
         });
         await prisma.post.update({ where: { id: target.postId }, data: { status: "failed" } });

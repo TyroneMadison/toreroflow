@@ -6,7 +6,16 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
-import { CAROUSEL_ABSOLUTE_MAX, decodeEscapes, looksLikeRevisionOf, parseVideoFormat } from "@toreroflow/core";
+import {
+  buildCaptionUserMessage,
+  CAPTION_SCHEMA,
+  CAPTION_SYSTEM_PROMPT,
+  CAROUSEL_ABSOLUTE_MAX,
+  decodeEscapes,
+  looksLikeRevisionOf,
+  parseVideoFormat,
+  readCaptionReply,
+} from "@toreroflow/core";
 import { getPrisma, Prisma, cancelByKey, enqueue } from "@toreroflow/db";
 import { extractThumbnail } from "@toreroflow/media";
 import { env } from "../env";
@@ -22,24 +31,6 @@ const revisionSchema = z.object({
 const formatSchema = z.object({
   format: z.enum(["short", "long", "short_form", "long_form"]).transform((v) => parseVideoFormat(v)!),
 });
-
-/**
- * The shape a generated caption comes back in. Structured output rather than
- * parsing prose, so a stray sentence of preamble cannot end up in a client's
- * caption. Note the model's structured output rejects maxItems and any
- * minItems above 1, so the hashtag count is asked for in the prompt and
- * trimmed on the way out instead.
- */
-const CAPTION_SCHEMA = {
-  type: "object",
-  properties: {
-    description: { type: "string" },
-    title: { type: "string" },
-    hashtags: { type: "array", items: { type: "string" } },
-  },
-  required: ["description", "title", "hashtags"],
-  additionalProperties: false,
-} as const;
 
 /** Carousels post nowhere that takes a title, so the shape is words and tags. */
 const CAROUSEL_CAPTION_SCHEMA = {
@@ -576,24 +567,8 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
           effort: "low",
           format: { type: "json_schema", schema: CAPTION_SCHEMA },
         },
-        system:
-          "You write short-form video captions for a social media agency whose clients are car " +
-          "dealerships and automotive personalities. Given what is said in the video, write a " +
-          "description that makes someone stop and watch, and that can be found by search.\n\n" +
-          "The description is 2 to 4 sentences, posted as the caption on Instagram, TikTok, " +
-          "Facebook and Snapchat and as the YouTube description. Open on the most interesting " +
-          "thing in the video, not a summary of it. Name the specific cars, models, years, " +
-          "prices and places that are actually mentioned, because those are the words people " +
-          "search for. End with a question or a reason to comment. No hashtags inside the " +
-          "description, no emoji spam, and never invent a fact that is not in the transcript.\n\n" +
-          "Also give a title under 100 characters for YouTube, and 5 to 8 hashtags without the " +
-          "# sign, ordered from most specific to broadest.",
-        messages: [
-          {
-            role: "user",
-            content: `Brand: ${asset.client.name}\nWhat is said in the video:\n${transcriptText.slice(0, 6000)}`,
-          },
-        ],
+        system: CAPTION_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: buildCaptionUserMessage(asset.client.name, transcriptText) }],
       });
       if (response.stop_reason === "refusal") {
         return reply.status(502).send({
@@ -605,14 +580,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
       if (!text || text.type !== "text") {
         return reply.status(502).send({ error: "no caption came back" });
       }
-      const parsed = JSON.parse(text.text) as {
-        description?: unknown;
-        title?: unknown;
-        hashtags?: unknown;
-      };
-      const hashtags = Array.isArray(parsed.hashtags)
-        ? parsed.hashtags.filter((h): h is string => typeof h === "string").slice(0, 8)
-        : [];
+      const { description, title, hashtags } = readCaptionReply(text.text);
       // Hashtags save now rather than riding the visible fields: there is no
       // hashtag box on the card to fill, and scheduling reads them from the
       // draft. Name and description stay a suggestion until the operator
@@ -624,11 +592,7 @@ export async function mediaRoutes(app: FastifyInstance): Promise<void> {
           data: { draftCopy: { ...current, hashtags } },
         });
       }
-      return {
-        description: typeof parsed.description === "string" ? parsed.description : "",
-        title: typeof parsed.title === "string" ? parsed.title : "",
-        hashtags,
-      };
+      return { description, title, hashtags };
     } catch (error) {
       request.log.error({ err: error }, "caption generation failed");
       return reply.status(502).send({

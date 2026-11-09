@@ -108,6 +108,15 @@ assert.equal(botAllowed("POST", "/clip-candidates/batch-render"), true, "bot bat
 assert.equal(botAllowed("DELETE", "/clip-jobs/j1"), false, "bot cannot delete a job");
 assert.equal(botAllowed("POST", "/clip-jobs/j1/refine"), false, "refine (AI spend) stays operator-only");
 assert.equal(botAllowed("PUT", "/clients/c1/auto-import"), false, "auto-import settings stay operator-only");
+// Drive auto-post: Live posts with no one looking, so every route stays operator-only.
+for (const [method, path] of [
+  ["GET", "/clients/c1/drive-source"],
+  ["PUT", "/clients/c1/drive-source"],
+  ["POST", "/clients/c1/drive-source/check"],
+  ["POST", "/clients/c1/drive-source/check?link=x"],
+] as const) {
+  assert.equal(botAllowed(method, path), false, `${method} ${path} stays operator-only`);
+}
 Object.defineProperty(getPrisma(), "botIdentity", {
   value: {
     findUnique: async ({ where }: { where: { agencyId_name: { agencyId: string; name: string } } }) => {

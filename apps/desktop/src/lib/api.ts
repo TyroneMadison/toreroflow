@@ -1,4 +1,4 @@
-import type { AuthUser, LoginResponse, Platform } from "@toreroflow/core";
+import type { AuthUser, DriveSource, LoginResponse, Platform } from "@toreroflow/core";
 
 /** Base URL of the Toreroflow API (Fastify service). */
 export const API_URL: string =
@@ -1038,3 +1038,34 @@ export function uploadTrelloAttachment(
     xhr.send(form);
   });
 }
+
+/* ---- Drive auto-post (Drive folder -> Instagram trial reels) ---- */
+export interface DriveImportRow {
+  id: string;
+  fileId: string;
+  name: string;
+  /** claimed | downloaded | dryrun | scheduled | held | skipped | failed */
+  status: string;
+  reason: string | null;
+  assetId: string | null;
+  postId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface DriveSourceView {
+  settings: DriveSource;
+  /** False when the server has no Google API key, so the folder cannot be read. */
+  keyReady: boolean;
+  imports: DriveImportRow[];
+  /** Connected through the publishing provider, so a trial reel can post there. */
+  instagramAccounts: { id: string; handle: string }[];
+}
+export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountId" | "graduation" | "mode" | "on">;
+export type DriveFolderCheck = { ok: true; videos: number; sample: string[] } | { ok: false; reason: string };
+
+export const getDriveSource = (clientId: string) => api.get<DriveSourceView>(`/clients/${clientId}/drive-source`);
+export const saveDriveSource = (clientId: string, body: DriveSourceSave) =>
+  api.put<DriveSourceView>(`/clients/${clientId}/drive-source`, body);
+/** Lists the folder once. Sends the pasted link when there is one, else the saved folder is checked. */
+export const checkDriveFolder = (clientId: string, link: string) =>
+  api.post<DriveFolderCheck>(`/clients/${clientId}/drive-source/check`, link ? { link } : {});

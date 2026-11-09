@@ -1,4 +1,5 @@
 import { autoImportAll, runAutoImport, syncAllClipPerf, syncClipPerf } from "./clips/collab";
+import { driveAll } from "./drive";
 import { refreshAllTrends, refreshClientTrends, refreshJudgeTuning } from "./clips/smart";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -251,12 +252,11 @@ async function zernioMediaUrl(assetId: string, filePath: string): Promise<string
   // assetId is a cache key: the Instagram copy passes its own.
   const cached = mediaUrlCache.get(assetId);
   if (cached) return cached;
-  const { uploadUrl, publicUrl } = await zernio!.presignMedia(
-    path.basename(filePath),
-    "video/mp4",
-  );
+  // A .mov is QuickTime; declared as mp4 the platform can refuse the bytes.
+  const contentType = /\.mov$/i.test(filePath) ? "video/quicktime" : "video/mp4";
+  const { uploadUrl, publicUrl } = await zernio!.presignMedia(path.basename(filePath), contentType);
   const body = await fs.readFile(filePath);
-  await zernio!.uploadMedia(uploadUrl, body, "video/mp4");
+  await zernio!.uploadMedia(uploadUrl, body, contentType);
   mediaUrlCache.set(assetId, publicUrl);
   return publicUrl;
 }
@@ -1191,6 +1191,11 @@ setInterval(() => void autoImportAll().catch((e: unknown) => console.error("[aut
 setInterval(() => void syncAllClipPerf().catch((e: unknown) => console.error("[clip-perf]", e)), 3 * 3600_000).unref();
 // Phase 9: trend terms per client, daily (no web search; see smartAi.ts).
 setInterval(() => void refreshAllTrends().catch((e: unknown) => console.error("[trends]", e)), 24 * 3600_000).unref();
+// Drive trial reels: every linked folder every 5 minutes, first a minute after
+// boot. driveAll itself skips a tick while the last one is still running.
+const driveTick = () => void driveAll().catch((e: unknown) => console.error("[drive]", e instanceof Error ? e.message : e));
+setTimeout(driveTick, 60_000).unref();
+setInterval(driveTick, 5 * 60_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);

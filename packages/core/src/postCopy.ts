@@ -58,3 +58,61 @@ export function captionFor(platform: string, draft: DraftCopy): string {
 export function youtubeTitleFor(draft: DraftCopy): string {
   return firstOf(draft.youtubeTitle, draft.name);
 }
+
+// ---------- AI caption writer ----------
+// One copy for the upload card's "Write with AI" (POST /media/:id/caption)
+// and the Drive trial reels, so both write the same way.
+
+/**
+ * The shape a generated caption comes back in. Structured output rather than
+ * parsing prose, so a stray sentence of preamble cannot end up in a client's
+ * caption. Note the model's structured output rejects maxItems and any
+ * minItems above 1, so the hashtag count is asked for in the prompt and
+ * trimmed on the way out instead.
+ */
+export const CAPTION_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    title: { type: "string" },
+    hashtags: { type: "array", items: { type: "string" } },
+  },
+  required: ["description", "title", "hashtags"],
+  additionalProperties: false,
+} as const;
+
+export const CAPTION_SYSTEM_PROMPT =
+  "You write short-form video captions for a social media agency whose clients are car " +
+  "dealerships and automotive personalities. Given what is said in the video, write a " +
+  "description that makes someone stop and watch, and that can be found by search.\n\n" +
+  "The description is 2 to 4 sentences, posted as the caption on Instagram, TikTok, " +
+  "Facebook and Snapchat and as the YouTube description. Open on the most interesting " +
+  "thing in the video, not a summary of it. Name the specific cars, models, years, " +
+  "prices and places that are actually mentioned, because those are the words people " +
+  "search for. End with a question or a reason to comment. No hashtags inside the " +
+  "description, no emoji spam, and never invent a fact that is not in the transcript.\n\n" +
+  "Also give a title under 100 characters for YouTube, and 5 to 8 hashtags without the " +
+  "# sign, ordered from most specific to broadest.";
+
+export function buildCaptionUserMessage(brand: string, transcript: string): string {
+  return `Brand: ${brand}\nWhat is said in the video:\n${transcript.slice(0, 6000)}`;
+}
+
+export interface WrittenCaption {
+  description: string;
+  title: string;
+  /** Without the # sign, at most 8. */
+  hashtags: string[];
+}
+
+/** The model's JSON reply as fields. Throws when the reply is not JSON. */
+export function readCaptionReply(text: string): WrittenCaption {
+  const parsed = JSON.parse(text) as { description?: unknown; title?: unknown; hashtags?: unknown };
+  return {
+    description: typeof parsed.description === "string" ? parsed.description : "",
+    title: typeof parsed.title === "string" ? parsed.title : "",
+    hashtags: Array.isArray(parsed.hashtags)
+      ? parsed.hashtags.filter((h): h is string => typeof h === "string").slice(0, 8)
+      : [],
+  };
+}

@@ -8,8 +8,14 @@ import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
 import {
   api,
+  checkDriveFolder,
+  getDriveSource,
+  saveDriveSource,
   type ClientAnalytics,
   type ClientSummary,
+  type DriveFolderCheck,
+  type DriveSourceSave,
+  type DriveSourceView,
   type PlatformConnection,
 } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
@@ -276,6 +282,238 @@ function BillingFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
           </button>
         </div>
       </label>
+    </div>
+  );
+}
+
+/** One pill per DriveImport status, in the tag colours the Financials rows use. */
+const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
+  claimed: { label: "Claimed", tag: "due" },
+  downloaded: { label: "Downloaded", tag: "due" },
+  dryrun: { label: "Dry run", tag: "ok" },
+  scheduled: { label: "Scheduled", tag: "ok" },
+  held: { label: "Held", tag: "warn" },
+  skipped: { label: "Skipped", tag: "warn" },
+  failed: { label: "Failed", tag: "miss" },
+};
+
+/**
+ * Drive auto-post: new videos in the client's shared Drive folder post to one
+ * Instagram account as trial reels, captioned by AI from the video.
+ *
+ * Loaded on first expand, so a long client list does not fire a request per
+ * card. Saved behind a button rather than on blur like the fields above,
+ * because switching it on in Live posts to a client's account.
+ */
+function DriveAutoPost({ client, open }: { client: ClientSummary; open: boolean }) {
+  const toast = useToast();
+  const [view, setView] = useState<DriveSourceView | null>(null);
+  const [form, setForm] = useState<DriveSourceSave>({
+    link: "",
+    socialAccountId: "",
+    graduation: "MANUAL",
+    mode: "dryrun",
+    on: false,
+  });
+  const [busy, setBusy] = useState<"save" | "check" | null>(null);
+  const [check, setCheck] = useState<DriveFolderCheck | null>(null);
+
+  const apply = (v: DriveSourceView) => {
+    const s = v.settings;
+    const ids = v.instagramAccounts.map((a) => a.id);
+    setView(v);
+    setForm({
+      link: s.link,
+      // An account that has since disconnected reads as unpicked, so a save
+      // never sends one the API refuses, and never moves the trial reels to
+      // another account nobody picked. Only a first setup picks the one there is.
+      socialAccountId: ids.includes(s.socialAccountId)
+        ? s.socialAccountId
+        : !s.socialAccountId && ids.length === 1
+          ? ids[0]!
+          : "",
+      graduation: s.graduation,
+      mode: s.mode,
+      on: s.on,
+    });
+  };
+
+  useEffect(() => {
+    if (!open || view) return;
+    getDriveSource(client.id).then(apply, (err) => toast.fail(`Could not load ${client.name}'s Drive auto-post`, err));
+  }, [open, view, client.id, client.name, toast]);
+
+  const save = async () => {
+    setBusy("save");
+    try {
+      apply(await saveDriveSource(client.id, { ...form, link: form.link.trim() }));
+      toast.success(
+        !form.on
+          ? "Drive auto-post saved. It is off."
+          : form.mode === "live"
+            ? `Drive auto-post is live for ${client.name}. New videos post as trial reels.`
+            : `Drive auto-post is on for ${client.name} as a dry run. Nothing posts.`,
+      );
+    } catch (err) {
+      toast.fail(`Could not save ${client.name}'s Drive auto-post`, err);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const checkFolder = async () => {
+    setBusy("check");
+    setCheck(null);
+    try {
+      setCheck(await checkDriveFolder(client.id, form.link.trim()));
+    } catch (err) {
+      toast.fail("Could not check the folder", err);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
+      <div className="flabel">Drive auto-post</div>
+      <p className="sub" style={{ fontSize: 11.5, margin: "0 0 8px" }}>
+        New videos added to a shared Drive folder post to Instagram as trial reels, with a caption written by AI
+        from the video. Videos already in the folder when you switch this on are left alone.
+      </p>
+      {!view ? (
+        <p className="sub" style={{ fontSize: 11.5 }}>Loading...</p>
+      ) : (
+        <div className="pcontact">
+          {!view.keyReady && (
+            <p style={{ fontSize: 12, color: "var(--amber)", margin: 0 }}>
+              The server has no Google API key (GOOGLE_DRIVE_API_KEY), so it cannot read Drive folders yet.
+            </p>
+          )}
+          <label className="cfield">
+            <span className="lab">Drive folder link</span>
+            <input
+              className="field-in"
+              placeholder="https://drive.google.com/drive/folders/..."
+              value={form.link}
+              maxLength={500}
+              onChange={(e) => {
+                setForm({ ...form, link: e.target.value });
+                setCheck(null);
+              }}
+            />
+          </label>
+          <label className="cfield">
+            <span className="lab">Instagram account</span>
+            {view.instagramAccounts.length > 0 ? (
+              <select
+                className="field-in"
+                value={form.socialAccountId}
+                onChange={(e) => setForm({ ...form, socialAccountId: e.target.value })}
+              >
+                <option value="">Pick an account</option>
+                {view.instagramAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    @{a.handle}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--amber)" }}>
+                A connected Instagram account is needed. Connect one under Platforms above.
+              </span>
+            )}
+          </label>
+          <label className="cfield">
+            <span className="lab">Graduation</span>
+            <select
+              className="field-in"
+              value={form.graduation}
+              title="Manual: you decide in Instagram whether a trial reel goes to followers. Based on performance: Instagram shares it with followers when it does well."
+              onChange={(e) => setForm({ ...form, graduation: e.target.value as DriveSourceSave["graduation"] })}
+            >
+              <option value="MANUAL">Manual</option>
+              <option value="SS_PERFORMANCE">Based on performance</option>
+            </select>
+          </label>
+          <div className="cfield">
+            <span className="lab">Mode</span>
+            <div className="modepick">
+              <button className={form.mode === "dryrun" ? "on" : ""} onClick={() => setForm({ ...form, mode: "dryrun" })}>
+                Dry run
+              </button>
+              <button className={form.mode === "live" ? "on" : ""} onClick={() => setForm({ ...form, mode: "live" })}>
+                Live
+              </button>
+            </div>
+            <span className="sub" style={{ fontSize: 11 }}>
+              Dry run does everything except post. Live posts trial reels automatically.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ alignSelf: "flex-start", fontSize: 11.5 }}
+            onClick={() => setForm({ ...form, on: !form.on })}
+          >
+            <span className={`switch${form.on ? " on" : ""}`} style={{ marginRight: 8 }} />
+            {form.on ? "On" : "Off"}
+          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button className="cbtn" disabled={busy !== null} onClick={() => void save()}>
+              {busy === "save" ? "Saving..." : "Save"}
+            </button>
+            <button
+              className="btn ghost"
+              style={{ fontSize: 11.5 }}
+              disabled={busy !== null || (!form.link.trim() && !view.settings.folderId)}
+              onClick={() => void checkFolder()}
+            >
+              {busy === "check" ? "Checking..." : "Check folder"}
+            </button>
+          </div>
+          {check && (
+            <p style={{ fontSize: 11.5, margin: 0, color: check.ok ? "var(--green)" : "var(--red)" }}>
+              {!check.ok
+                ? check.reason
+                : check.videos === 0
+                  ? "The folder opened. It has no .mp4 or .mov videos yet."
+                  : `The folder opened. ${check.videos} ${check.videos === 1 ? "video" : "videos"}: ${check.sample.join(", ")}${check.videos > check.sample.length ? ", and more" : ""}.`}
+            </p>
+          )}
+          <span className="sub" style={{ fontSize: 11 }}>
+            {view.settings.lastCheckAt
+              ? `Last checked ${new Date(view.settings.lastCheckAt).toLocaleString()}.${view.settings.lastResult ? ` ${view.settings.lastResult}` : ""}`
+              : "Not checked yet."}
+          </span>
+          {view.imports.length > 0 && (
+            <div className="cfield">
+              <span className="lab">Recent videos</span>
+              {view.imports.map((i) => {
+                const pill = DRIVE_STATUS[i.status] ?? { label: i.status, tag: "due" };
+                return (
+                  <div
+                    key={i.id}
+                    style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
+                    title={new Date(i.createdAt).toLocaleString()}
+                  >
+                    <span className={`tag ${pill.tag}`} style={{ flex: "0 0 auto" }}>
+                      {pill.label}
+                    </span>
+                    <div style={{ minWidth: 0, fontSize: 11.5 }}>
+                      <b style={{ wordBreak: "break-all" }}>{i.name}</b>
+                      {i.reason && (
+                        <div className="sub" style={{ fontSize: 11 }}>
+                          {i.reason}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -676,6 +914,8 @@ function ProfileCard({
               </div>
             )}
           </div>
+
+          <DriveAutoPost client={client} open={open} />
         </div>
       </div>
     </div>
