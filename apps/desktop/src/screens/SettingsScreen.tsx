@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { readDriveSource } from "@toreroflow/core";
 import DeployCard from "../components/DeployCard";
 import UpdateCard from "../components/UpdateCard";
 import BusinessCard from "../components/BusinessCard";
@@ -7,18 +6,7 @@ import CaptionBlockCard from "../components/CaptionBlockCard";
 import TrelloLabelCard from "../components/TrelloLabelCard";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
-import {
-  api,
-  checkDriveFolder,
-  getDriveSource,
-  saveDriveSource,
-  type ClientAnalytics,
-  type ClientSummary,
-  type DriveFolderCheck,
-  type DriveSourceSave,
-  type DriveSourceView,
-  type PlatformConnection,
-} from "../lib/api";
+import { api, type ClientAnalytics, type ClientSummary, type PlatformConnection } from "../lib/api";
 import { clientAvatarUrl } from "../lib/avatar";
 import { getAutostart, isTauri, setAutostart } from "../lib/autostart";
 import { loadAutomation, setAutomation } from "../lib/theme";
@@ -287,354 +275,6 @@ function BillingFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
   );
 }
 
-/** One pill per DriveImport status, in the tag colours the Financials rows use. */
-const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
-  claimed: { label: "Claimed", tag: "due" },
-  downloaded: { label: "Downloaded", tag: "due" },
-  dryrun: { label: "Dry run", tag: "ok" },
-  scheduled: { label: "Scheduled", tag: "ok" },
-  held: { label: "Held", tag: "warn" },
-  skipped: { label: "Skipped", tag: "warn" },
-  failed: { label: "Failed", tag: "miss" },
-};
-
-/**
- * Drive auto-post: new videos in the client's shared Drive folder post to each
- * ticked Instagram account as trial reels, captioned by AI from the video.
- *
- * Loaded on first expand, so a long client list does not fire a request per
- * card. Saved behind a button rather than on blur like the fields above,
- * because switching it on in Live posts to a client's account.
- */
-function DriveAutoPost({
-  client,
-  open,
-  pending,
-  connecting,
-  onConnect,
-}: {
-  client: ClientSummary;
-  open: boolean;
-  /** An Instagram connect was started for this brand and is waiting on Sync accounts. */
-  pending: boolean;
-  /** The connect request is in flight. */
-  connecting: boolean;
-  /** Opens the provider's page to connect one more Instagram account to this brand. */
-  onConnect(): void;
-}) {
-  const toast = useToast();
-  const [view, setView] = useState<DriveSourceView | null>(null);
-  const [form, setForm] = useState<DriveSourceSave>({
-    link: "",
-    socialAccountIds: [],
-    graduation: "MANUAL",
-    mode: "dryrun",
-    on: false,
-    dailyLimit: null,
-  });
-  const [busy, setBusy] = useState<"save" | "check" | null>(null);
-  const [check, setCheck] = useState<DriveFolderCheck | null>(null);
-  const tick = (id: string, on: boolean) =>
-    setForm((f) => ({
-      ...f,
-      socialAccountIds: on ? [...f.socialAccountIds.filter((x) => x !== id), id] : f.socialAccountIds.filter((x) => x !== id),
-    }));
-
-  const apply = (v: DriveSourceView) => {
-    // A server from before several accounts could be ticked sends one id, not a list.
-    const s = readDriveSource(v.settings);
-    const ids = v.instagramAccounts.map((a) => a.id);
-    setView({ ...v, settings: s });
-    setForm({
-      link: s.link,
-      // An account that has since disconnected reads as unticked, so a save
-      // never sends one the API refuses, and never moves the trial reels to
-      // another account nobody ticked. Only a first setup ticks the one there is.
-      socialAccountIds:
-        !s.socialAccountIds.length && ids.length === 1 ? [ids[0]!] : s.socialAccountIds.filter((id) => ids.includes(id)),
-      graduation: s.graduation,
-      mode: s.mode,
-      on: s.on,
-      dailyLimit: s.dailyLimit,
-    });
-  };
-
-  useEffect(() => {
-    if (!open || view) return;
-    getDriveSource(client.id).then(apply, (err) => toast.fail(`Could not load ${client.name}'s Drive auto-post`, err));
-  }, [open, view, client.id, client.name, toast]);
-
-  /*
-   * A newly connected Instagram account (Sync accounts, or coming back to the
-   * window) shows up to tick without a reload. Only the account list is
-   * refreshed, so nothing typed into the form is lost.
-   */
-  const igKey = client.accounts
-    .filter((a) => a.platform === "instagram" && a.status === "connected")
-    .map((a) => a.id)
-    .sort()
-    .join(",");
-  const loadedKey = useRef(igKey);
-  useEffect(() => {
-    if (!view || loadedKey.current === igKey) return;
-    loadedKey.current = igKey;
-    getDriveSource(client.id).then(
-      (v) => {
-        setView((cur) => (cur ? { ...cur, instagramAccounts: v.instagramAccounts } : cur));
-        // An account that disconnected is unticked too, so Save never sends one the API refuses.
-        setForm((f) => ({
-          ...f,
-          socialAccountIds: f.socialAccountIds.filter((id) => v.instagramAccounts.some((a) => a.id === id)),
-        }));
-      },
-      () => {
-        // The list just stays as it was; Save still checks every ticked account.
-      },
-    );
-  }, [igKey, view, client.id]);
-
-  const save = async () => {
-    setBusy("save");
-    try {
-      apply(await saveDriveSource(client.id, { ...form, link: form.link.trim() }));
-      toast.success(
-        !form.on
-          ? "Drive auto-post saved. It is off."
-          : form.mode === "live"
-            ? `Drive auto-post is live for ${client.name}. New videos post as Instagram trial reels only.`
-            : `Drive auto-post is on for ${client.name} as a dry run. Nothing posts.`,
-      );
-    } catch (err) {
-      toast.fail(`Could not save ${client.name}'s Drive auto-post`, err);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const checkFolder = async () => {
-    setBusy("check");
-    setCheck(null);
-    try {
-      setCheck(await checkDriveFolder(client.id, form.link.trim()));
-    } catch (err) {
-      toast.fail("Could not check the folder", err);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--brd-soft)" }}>
-      <div className="flabel">Drive auto-post: Instagram trial reels only</div>
-      <p className="sub" style={{ fontSize: 11.5, margin: "0 0 8px" }}>
-        New videos added to a shared Drive folder post as <b>Instagram trial reels only</b>, to every Instagram account
-        ticked below at the same time, with a caption written by AI from the video. Nothing goes to TikTok, YouTube,
-        Facebook or this brand's other accounts, and nothing posts as a regular reel. Videos already in the folder when
-        you switch this on are left alone.
-      </p>
-      {!view ? (
-        <p className="sub" style={{ fontSize: 11.5 }}>Loading...</p>
-      ) : (
-        <div className="pcontact">
-          {!view.keyReady && (
-            <p style={{ fontSize: 12, color: "var(--amber)", margin: 0 }}>
-              The server has no Google API key (GOOGLE_DRIVE_API_KEY), so it cannot read Drive folders yet.
-            </p>
-          )}
-          <label className="cfield">
-            <span className="lab">Drive folder link</span>
-            <input
-              className="field-in"
-              placeholder="https://drive.google.com/drive/folders/..."
-              value={form.link}
-              maxLength={500}
-              onChange={(e) => {
-                setForm({ ...form, link: e.target.value });
-                setCheck(null);
-              }}
-            />
-          </label>
-          <div className="cfield">
-            <span className="lab">Instagram accounts (trial reels only)</span>
-            {view.instagramAccounts.length > 0 ? (
-              <>
-                {view.instagramAccounts.map((a) => (
-                  <label key={a.id} style={{ fontSize: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={form.socialAccountIds.includes(a.id)}
-                      onChange={(e) => tick(a.id, e.target.checked)}
-                    />{" "}
-                    @{a.handle}
-                  </label>
-                ))}
-                <span className="sub" style={{ fontSize: 11 }}>
-                  Each new video posts as a trial reel to every ticked account at the same time. Only Instagram accounts
-                  are listed, because only Instagram has trial reels.
-                </span>
-              </>
-            ) : (
-              <span style={{ fontSize: 12, color: "var(--amber)" }}>
-                A connected Instagram account is needed. Connect one below.
-              </span>
-            )}
-            <button
-              type="button"
-              className="btn ghost"
-              style={{ alignSelf: "flex-start", fontSize: 11.5 }}
-              title={`Connect one more Instagram account to ${client.name}, for trial reels`}
-              disabled={connecting}
-              onClick={onConnect}
-            >
-              {connecting ? "Opening..." : "+ Connect another Instagram account"}
-            </button>
-            {pending && (
-              <span style={{ fontSize: 11, color: "var(--amber)" }}>
-                In the browser, log in to Instagram as the account you are adding, not one already connected. Then click
-                Sync accounts under Platforms above, and it shows up here to tick.
-              </span>
-            )}
-            {view.settings.socialAccountIds.some((id) => !view.instagramAccounts.some((a) => a.id === id)) && (
-              <span style={{ fontSize: 11, color: "var(--amber)" }}>
-                An account ticked before is no longer connected, so it is unticked. Saving leaves it out.
-              </span>
-            )}
-          </div>
-          <label className="cfield">
-            <span className="lab">Videos per day</span>
-            <input
-              className="field-in"
-              type="number"
-              min={1}
-              max={50}
-              step={1}
-              style={{ width: 120 }}
-              placeholder="No limit"
-              value={form.dailyLimit ?? ""}
-              onChange={(e) => {
-                // Half-typed text like "1e" keeps the last good number rather than becoming no limit.
-                if (e.target.validity.badInput) return;
-                const n = e.target.valueAsNumber;
-                setForm({ ...form, dailyLimit: Number.isFinite(n) ? n : null });
-              }}
-            />
-            <span className="sub" style={{ fontSize: 11 }}>
-              The most new videos that post as trial reels each day. Extra videos wait in the folder and post on the next
-              days. Leave empty for no limit.
-            </span>
-          </label>
-          <label className="cfield">
-            <span className="lab">Graduation</span>
-            <select
-              className="field-in"
-              value={form.graduation}
-              title="Manual: you decide in Instagram whether a trial reel goes to followers. Based on performance: Instagram shares it with followers when it does well."
-              onChange={(e) => setForm({ ...form, graduation: e.target.value as DriveSourceSave["graduation"] })}
-            >
-              <option value="MANUAL">Manual</option>
-              <option value="SS_PERFORMANCE">Based on performance</option>
-            </select>
-          </label>
-          <div className="cfield">
-            <span className="lab">Mode</span>
-            <div className="modepick">
-              <button className={form.mode === "dryrun" ? "on" : ""} onClick={() => setForm({ ...form, mode: "dryrun" })}>
-                Dry run
-              </button>
-              <button className={form.mode === "live" ? "on" : ""} onClick={() => setForm({ ...form, mode: "live" })}>
-                Live
-              </button>
-            </div>
-            <span className="sub" style={{ fontSize: 11 }}>
-              Dry run does everything except post. Live posts trial reels automatically.
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn ghost"
-            style={{ alignSelf: "flex-start", fontSize: 11.5 }}
-            onClick={() => setForm({ ...form, on: !form.on })}
-          >
-            <span className={`switch${form.on ? " on" : ""}`} style={{ marginRight: 8 }} />
-            {form.on ? "On" : "Off"}
-          </button>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button className="cbtn" disabled={busy !== null} onClick={() => void save()}>
-              {busy === "save" ? "Saving..." : "Save"}
-            </button>
-            <button
-              className="btn ghost"
-              style={{ fontSize: 11.5 }}
-              disabled={busy !== null || (!form.link.trim() && !view.settings.folderId)}
-              onClick={() => void checkFolder()}
-            >
-              {busy === "check" ? "Checking..." : "Check folder"}
-            </button>
-          </div>
-          {check && (
-            <p style={{ fontSize: 11.5, margin: 0, color: check.ok ? "var(--green)" : "var(--red)" }}>
-              {!check.ok
-                ? check.reason
-                : check.videos === 0
-                  ? "The folder opened. It has no .mp4 or .mov videos yet."
-                  : `The folder opened. ${check.videos} ${check.videos === 1 ? "video" : "videos"}: ${check.sample.join(", ")}${check.videos > check.sample.length ? ", and more" : ""}.`}
-            </p>
-          )}
-          {view.counts && (
-            <span style={{ fontSize: 11.5 }}>
-              <b>Today:</b> {view.counts.today}
-              {view.settings.dailyLimit ? ` of ${view.settings.dailyLimit}` : ""}{" "}
-              {view.counts.today === 1 ? "video" : "videos"}
-              {view.settings.mode === "live" ? "" : " (dry run)"}
-              {view.settings.waiting != null && (
-                <>
-                  {" · "}
-                  <b>Waiting in the folder:</b> {view.settings.waiting}
-                </>
-              )}
-              {" · "}
-              <b>Videos sent as trial reels:</b> {view.counts.posted}
-              {view.counts.dryRuns > 0 && ` · Dry runs: ${view.counts.dryRuns}`}
-            </span>
-          )}
-          <span className="sub" style={{ fontSize: 11 }}>
-            {view.settings.lastCheckAt
-              ? `Last checked ${new Date(view.settings.lastCheckAt).toLocaleString()}.${view.settings.lastResult ? ` ${view.settings.lastResult}` : ""}`
-              : "Not checked yet."}
-          </span>
-          {view.imports.length > 0 && (
-            <div className="cfield">
-              <span className="lab">Recent videos</span>
-              {view.imports.map((i) => {
-                const pill = DRIVE_STATUS[i.status] ?? { label: i.status, tag: "due" };
-                return (
-                  <div
-                    key={i.id}
-                    style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
-                    title={new Date(i.createdAt).toLocaleString()}
-                  >
-                    <span className={`tag ${pill.tag}`} style={{ flex: "0 0 auto" }}>
-                      {pill.label}
-                    </span>
-                    <div style={{ minWidth: 0, fontSize: 11.5 }}>
-                      <b style={{ wordBreak: "break-all" }}>{i.name}</b>
-                      {i.reason && (
-                        <div className="sub" style={{ fontSize: 11 }}>
-                          {i.reason}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ProfileCard({
   client,
   onConnect,
@@ -644,7 +284,6 @@ function ProfileCard({
   onDelete,
   busyKey,
   pending,
-  igPending,
   connections,
   googleConfigured,
   onConnectionsChanged,
@@ -657,8 +296,6 @@ function ProfileCard({
   onDelete(): void;
   busyKey: string | null;
   pending: boolean;
-  /** The pending connect is an Instagram one. */
-  igPending: boolean;
   connections: Map<string, PlatformConnection>;
   googleConfigured: boolean;
   onConnectionsChanged(): void;
@@ -1034,14 +671,6 @@ function ProfileCard({
               </div>
             )}
           </div>
-
-          <DriveAutoPost
-            client={client}
-            open={open}
-            pending={igPending}
-            connecting={busyKey === `${client.id}:instagram`}
-            onConnect={() => onConnect("instagram")}
-          />
         </div>
       </div>
     </div>
@@ -1183,8 +812,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
       );
       if (res.authUrl) {
         await openExternal(res.authUrl);
-        // Which platform too, so the Drive section only gives Instagram advice for an Instagram connect.
-        setPendingSync(`${clientId}:${platform}`);
+        setPendingSync(clientId);
       } else {
         await refreshClients();
       }
@@ -1230,7 +858,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
     try {
       await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
-      setPendingSync((p) => (p?.startsWith(`${clientId}:`) ? null : p));
+      setPendingSync((p) => (p === clientId ? null : p));
       // A sync that finds nothing new leaves the card looking untouched.
       toast.success("Accounts synced.");
     } catch (err) {
@@ -1354,8 +982,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
                   key={client.id}
                   client={client}
                   busyKey={busyKey}
-                  pending={pendingSync?.startsWith(`${client.id}:`) ?? false}
-                  igPending={pendingSync === `${client.id}:instagram`}
+                  pending={pendingSync === client.id}
                   onConnect={(p) => void connect(client.id, p)}
                   onDisconnect={(id) => void disconnect(id)}
                   onSync={() => void sync(client.id)}

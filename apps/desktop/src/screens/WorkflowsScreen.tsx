@@ -6,6 +6,7 @@ import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from 
 import { useAppState } from "../state/AppState";
 import DmCampaigns from "../components/DmCampaigns";
 import DmInbox from "../components/DmInbox";
+import DriveAutoPost from "../components/DriveAutoPost";
 import { Empty, ErrorState, Loading } from "../components/states";
 
 export default function WorkflowsScreen() {
@@ -21,14 +22,17 @@ export default function WorkflowsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Keyed on the id, so a client-list refresh (Sync accounts in Drive auto-post)
+  // does not blank and reload the rules below.
+  const clientId = selectedClient?.id;
   const load = useCallback(async () => {
-    if (!selectedClient) {
+    if (!clientId) {
       setWorkflows([]);
       return;
     }
-    const list = await api.get<WorkflowInfo[]>(`/clients/${selectedClient.id}/workflows`);
+    const list = await api.get<WorkflowInfo[]>(`/clients/${clientId}/workflows`);
     setWorkflows(list);
-  }, [selectedClient]);
+  }, [clientId]);
 
   // Reloads after an edit throw into that edit's own catch; only this first
   // load feeds the screen's error state.
@@ -93,13 +97,14 @@ export default function WorkflowsScreen() {
         <div className="h">
           <h2>Workflows</h2>
           <p>
-            Fan-out rules for reposting one upload across platforms. Saved here, but
-            nothing runs them yet, so a video only ever goes to the platforms you tick
-            when you schedule it.
+            Automations for this brand. Drive auto-post runs on its own. The fan-out rules
+            below are saved but nothing runs them yet, so a scheduled video only goes to the
+            platforms you tick.
           </p>
         </div>
       </div>
       <div className="stage">
+        {selectedClient && <DriveAutoPost client={selectedClient} />}
         {!selectedClient ? (
           <Empty
             screen="workflows"
