@@ -44,7 +44,7 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
     on: false,
     dailyLimit: null,
   });
-  const [busy, setBusy] = useState<"save" | "check" | "connect" | "sync" | null>(null);
+  const [busy, setBusy] = useState<"save" | "check" | "connect" | "copy" | "sync" | null>(null);
   // An Instagram connect was opened in the browser and is waiting on Sync accounts.
   const [pending, setPending] = useState(false);
   const [check, setCheck] = useState<DriveFolderCheck | null>(null);
@@ -106,11 +106,21 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
     );
   }, [igKey, view, client.id]);
 
-  const connect = async () => {
-    setBusy("connect");
+  /*
+   * "copy" hands the link over instead of opening it here, for a phone or for
+   * the account's owner: Instagram's sign-in runs in a browser and never uses
+   * the Instagram app's session, so it has to open wherever that account can
+   * sign in. The same link the welcome page gives clients, so it works anywhere.
+   */
+  const connect = async (how: "open" | "copy") => {
+    setBusy(how === "open" ? "connect" : "copy");
     try {
       const res = await api.post<{ authUrl?: string }>(`/clients/${client.id}/accounts/instagram`, {});
-      if (res.authUrl) {
+      if (res.authUrl && how === "copy") {
+        await navigator.clipboard.writeText(res.authUrl);
+        setPending(true);
+        toast.success("Connect link copied. Open it on the phone, or send it to the account's owner.");
+      } else if (res.authUrl) {
         await openExternal(res.authUrl);
         setPending(true);
       } else {
@@ -230,9 +240,19 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
                 style={{ fontSize: 11.5 }}
                 title={`Connect one more Instagram account to ${client.name}, for trial reels`}
                 disabled={busy !== null}
-                onClick={() => void connect()}
+                onClick={() => void connect("open")}
               >
                 {busy === "connect" ? "Opening..." : "+ Connect another Instagram account"}
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                style={{ fontSize: 11.5 }}
+                title="Copy the connect link to open on a phone, or to send to the account's owner"
+                disabled={busy !== null}
+                onClick={() => void connect("copy")}
+              >
+                {busy === "copy" ? "Copying..." : "Copy link for phone"}
               </button>
               <button
                 type="button"
@@ -247,8 +267,9 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
             </div>
             {pending && (
               <span style={{ fontSize: 11, color: "var(--amber)" }}>
-                In the browser, log in to Instagram as the account you are adding, not one already connected. Then click
-                Sync accounts, and it shows up here to tick.
+                Sign in to Instagram as the account you are adding, not one already connected. Instagram asks for that
+                account's login in the browser even if it is signed in on the Instagram app. Then click Sync accounts, and
+                it shows up here to tick.
               </span>
             )}
             {view.settings.socialAccountIds.some((id) => !view.instagramAccounts.some((a) => a.id === id)) && (
