@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
+import { PHONE_MAX } from "../lib/phone";
 
 interface GlassDateTimeProps {
   /** Local datetime value, "YYYY-MM-DDTHH:mm", same shape as datetime-local. */
@@ -64,6 +66,28 @@ export function choosePlacement(
   return { up, maxHeight: Math.max(MIN_USABLE_HEIGHT, room) };
 }
 
+/** A phone turned sideways is at most this tall, whatever its width. */
+const SHEET_MAX_HEIGHT = 500;
+
+export type SheetMode = "none" | "portrait" | "landscape";
+
+/**
+ * Whether the picker opens as a phone sheet, and which shape.
+ *
+ * Anchored under its trigger, the panel only works where there is room around
+ * the trigger. On a phone there is not: upright, the month and the three time
+ * columns are wider than the screen and drew on top of each other; sideways,
+ * the window is under 400px tall and the panel ran off the bottom with Done
+ * out of reach. So on a phone the panel leaves the trigger and docks to the
+ * screen instead: a bottom sheet upright, a full height side by side panel
+ * sideways.
+ */
+export function sheetMode(width: number, height: number): SheetMode {
+  if (height <= SHEET_MAX_HEIGHT && width > height) return "landscape";
+  if (width <= PHONE_MAX) return "portrait";
+  return "none";
+}
+
 const pad = (n: number) => n.toString().padStart(2, "0");
 
 function toValue(d: Date): string {
@@ -93,6 +117,9 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
     () => new Date(selected.getFullYear(), selected.getMonth(), 1),
   );
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  /** The panel itself, which is portalled out of the wrapper on a phone. */
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [sheet, setSheet] = useState<SheetMode>("none");
   const hourColRef = useRef<HTMLDivElement | null>(null);
   const minuteColRef = useRef<HTMLDivElement | null>(null);
   /**
@@ -105,6 +132,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
     const r = wrapRef.current?.getBoundingClientRect();
     if (!r) return;
     const { up, maxHeight: room } = choosePlacement(r.top, r.bottom, window.innerHeight);
+    setSheet(sheetMode(window.innerWidth, window.innerHeight));
     setDropUp(up);
     setMaxHeight(room);
   };
@@ -112,14 +140,16 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!wrapRef.current?.contains(t) && !popRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
     // Resizing the window while the panel is open changes how much room it
     // has, and this app is resized often. Without this the panel keeps the
-    // height it was given when it opened and clips again.
+    // height it was given when it opened and clips again. Turning a phone
+    // fires this too, which is what swaps the sheet between its two shapes.
     const onResize = () => place();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -138,7 +168,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
       const el = col?.querySelector<HTMLElement>(".on");
       if (el && col) col.scrollTop = el.offsetTop - col.clientHeight / 2 + el.clientHeight / 2;
     }
-  }, [open]);
+  }, [open, sheet]);
 
   const commit = (next: Date) => onChange(toValue(next));
 
@@ -234,6 +264,14 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
     minute: "2-digit",
   });
 
+  /*
+   * A sheet is portalled to the body. Left inside the modal it is positioned
+   * against the modal's glass, not the screen, because backdrop-filter makes
+   * an element the containing block of its fixed children.
+   */
+  const portal = (node: ReactElement) =>
+    sheet === "none" ? node : createPortal(node, document.body);
+
   return (
     <div className="gdt" ref={wrapRef}>
       <button
@@ -250,10 +288,22 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
         </svg>
       </button>
 
-      {open && (
+      {open && sheet !== "none" &&
+        createPortal(
+          <div className="gdt-scrim" onClick={() => setOpen(false)} />,
+          document.body,
+        )}
+      {open && portal(
         <div
-          className={`gdt-pop glass${dropUp ? " up" : ""}`}
-          style={maxHeight !== null ? { maxHeight } : undefined}
+          ref={popRef}
+          className={
+            sheet === "none"
+              ? `gdt-pop glass${dropUp ? " up" : ""}`
+              : `gdt-pop glass gdt-sheet ${sheet}`
+          }
+          style={sheet === "none" && maxHeight !== null ? { maxHeight } : undefined}
+          role="dialog"
+          aria-label="Pick a date and time"
         >
           <div className="gdt-cols">
             <div className="gdt-cal-side">
@@ -381,7 +431,7 @@ export default function GlassDateTime({ value, onChange, minDate }: GlassDateTim
               Done
             </span>
           </div>
-        </div>
+        </div>,
       )}
     </div>
   );
