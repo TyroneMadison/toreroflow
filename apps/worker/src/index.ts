@@ -1,27 +1,38 @@
+import { autoImportAll, runAutoImport, syncAllClipPerf, syncClipPerf } from "./clips/collab";
+import { driveAll } from "./drive";
+import { refreshAllTrends, refreshClientTrends, refreshJudgeTuning } from "./clips/smart";
 import path from "node:path";
 import fs from "node:fs/promises";
 import {
   carouselTargetSize,
   explainPublishFailure,
-  formatFromDuration,
+  defaultFormat,
+  instagramCopyKbps,
+  instagramLongformFit,
+  measuredDurationSec,
   QUOTA_DEFERRALS_MAX,
   quotaDeferralAt,
+  youtubeShortsPublishBlock,
 } from "@toreroflow/core";
 import {
   getPrisma,
   Prisma,
   persistProviderPosts,
   reschedule,
+  uploadPriority,
   scheduleCron,
   upsertExternalVideo,
   work,
 } from "@toreroflow/db";
-import { conformSlide, extractThumbnail, probe, type CropRect } from "@toreroflow/media";
+import { conformSlide, extractThumbnail, instagramCopy, probe, probeDuration, type CropRect } from "@toreroflow/media";
 import { env } from "./env";
-import { isolateVoice, processEditAsset, renderProject } from "./edit";
+import { isolateVoice, processEditAsset, reframeAsset, renderProject } from "./edit";
+import { runClipStage, type ClipQueueData } from "./clips/pipeline";
 import { runAnalysis } from "./analyze";
 import { extractKnowledgeFile } from "./knowledge";
 import { generateInsight } from "./insights";
+import { runSuperGenerate } from "./supergen";
+import { runIdeaGifs } from "./ideagifsJob";
 import { runResearch } from "./research";
 import { sweepPostedSources, sweepPostedThumbnails } from "./retention";
 import { syncAllBanks, syncBankConnection } from "./bank";
@@ -32,6 +43,8 @@ import { syncDmStats } from "./dmStats";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
+import { claimForPublish } from "./pauseGuard";
+import { markYoutubeShortsOverLimit } from "./shortsLimit";
 
 const prisma = getPrisma();
 
@@ -116,8 +129,8 @@ async function processAsset(assetId: string): Promise<void> {
   });
 
   try {
-    // 1. Probe. Duration also decides short vs long form for the client's
-    // quota, but never overrides a format the operator already set.
+    // 1. Probe. Shape and duration pick the starting format (short-form
+    // unless landscape and long), never overriding one already set.
     const meta = await probe(sourcePath);
     await prisma.mediaAsset.update({
       where: { id: asset.id },
@@ -126,7 +139,7 @@ async function processAsset(assetId: string): Promise<void> {
         width: meta.width,
         height: meta.height,
         ...(asset.format === null
-          ? { format: formatFromDuration(meta.durationSec) }
+          ? { format: defaultFormat(meta) }
           : {}),
       },
     });
@@ -164,7 +177,9 @@ async function processAsset(assetId: string): Promise<void> {
 /* ---- publish pipeline (spec Section 10) ---- */
 
 import {
+  botZernioKey,
   buildPostExtras,
+  combinePostParts,
   DryRunPublisher,
   YouTubeProvider,
   ZernioProvider,
@@ -176,6 +191,16 @@ const zernio =
     ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
     : null;
 const youtube = env.YOUTUBE_API_KEY ? new YouTubeProvider(env.YOUTUBE_API_KEY) : null;
+
+/**
+ * The client a post goes out through: the bot's own key (ZERNIO_API_KEY_POLLY
+ * for Polly's posts) when one is set, the agency key otherwise. Media uploads
+ * and status reads stay on the agency key, which sees every profile.
+ */
+function posterFor(bot: string | undefined): ZernioProvider | null {
+  const key = botZernioKey(bot, process.env);
+  return key ? new ZernioProvider(key) : zernio;
+}
 
 /**
  * Refresh lifetime YouTube catalogues for every connected channel.
@@ -224,14 +249,14 @@ async function refreshYouTubeCatalogues(): Promise<void> {
 const mediaUrlCache = new Map<string, string>();
 
 async function zernioMediaUrl(assetId: string, filePath: string): Promise<string> {
+  // assetId is a cache key: the Instagram copy passes its own.
   const cached = mediaUrlCache.get(assetId);
   if (cached) return cached;
-  const { uploadUrl, publicUrl } = await zernio!.presignMedia(
-    path.basename(filePath),
-    "video/mp4",
-  );
+  // A .mov is QuickTime; declared as mp4 the platform can refuse the bytes.
+  const contentType = /\.mov$/i.test(filePath) ? "video/quicktime" : "video/mp4";
+  const { uploadUrl, publicUrl } = await zernio!.presignMedia(path.basename(filePath), contentType);
   const body = await fs.readFile(filePath);
-  await zernio!.uploadMedia(uploadUrl, body, "video/mp4");
+  await zernio!.uploadMedia(uploadUrl, body, contentType);
   mediaUrlCache.set(assetId, publicUrl);
   return publicUrl;
 }
@@ -267,6 +292,43 @@ async function zernioImageUrl(coverKey: string): Promise<string> {
   return publicUrl;
 }
 
+/**
+ * The file a long-form Instagram reel publishes: the original when it fits,
+ * otherwise an Instagram copy (under 300MB, at most 1920 wide, or a centre
+ * 9:16 crop) made once beside the source and reused.
+ *
+ * Queued at schedule time on its own "igcopy" queue so publish finds it
+ * ready; made here inline when it is not, rather than failing the slot.
+ */
+async function instagramFile(
+  asset: {
+    id: string;
+    clientId: string;
+    storageKey: string;
+    durationSec: number | null;
+    width: number | null;
+    height: number | null;
+  },
+  crop916: boolean,
+): Promise<{ filePath: string; cacheKey: string }> {
+  const src = path.join(env.STORAGE_DIR, asset.storageKey);
+  const bytes = (await fs.stat(src)).size;
+  const fit = instagramLongformFit({ ...asset, bytes, crop916 });
+  if (!fit.needsCopy) return { filePath: src, cacheKey: asset.id };
+  const mode = crop916 && !fit.is916 ? "crop916" : "fit";
+  const out = path.join(env.STORAGE_DIR, asset.clientId, asset.id, `ig-${mode}.mp4`);
+  const exists = await fs.access(out).then(
+    () => true,
+    () => false,
+  );
+  if (!exists) {
+    const duration = asset.durationSec ?? (await probe(src)).durationSec;
+    await instagramCopy(src, out, { crop916: mode === "crop916", videoKbps: instagramCopyKbps(duration) });
+    console.log(`[worker] instagram copy ${mode} made for asset ${asset.id}`);
+  }
+  return { filePath: out, cacheKey: `${asset.id}:ig-${mode}` };
+}
+
 const PUBLISH_ATTEMPTS = 3;
 
 async function publishTarget(targetId: string, attemptsMade: number): Promise<void> {
@@ -281,13 +343,52 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   // Idempotency: reschedules replace the job; stale fires must not double post.
   if (target.status !== "scheduled") return;
   if (target.scheduledAt && target.scheduledAt.getTime() - Date.now() > 60_000) return;
+  // Paused brand: held as scheduled, untouched. Resuming re-queues it.
+  if (target.post.client.pausedAt) {
+    console.log(`[worker] target ${target.id} held: ${target.post.client.name} uploads are paused`);
+    return;
+  }
 
-  await prisma.postTarget.update({
-    where: { id: target.id },
-    data: { status: "publishing" },
-  });
+  /*
+   * Claimed only if still scheduled and the brand still not paused. A
+   * long-form "Both" post publishes its partner target in the same request,
+   * and the partner's own job must then find nothing to do rather than post
+   * the video a second time.
+   */
+  if (!(await claimForPublish(prisma, target.id))) return;
+
+  /** Partner targets published inside this target's request, if any. */
+  const partnerIds: string[] = [];
 
   try {
+    const assetForLimit = target.post.mediaAsset;
+    /*
+     * YouTube Shorts hard stop, before any upload or provider call.
+     *
+     * A scheduled Short over 3:00 is skipped and marked failed. It is not
+     * retried: the file will not get shorter between attempts. Long-form
+     * YouTube and every other platform pass through. Duration is ffprobe on
+     * the file when it is still on disk, otherwise the stored measurement.
+     */
+    if (assetForLimit && target.platform === "youtube") {
+      const probed =
+        assetForLimit.kind === "video" && !assetForLimit.sourceDeletedAt && assetForLimit.storageKey
+          ? await probeDuration(path.join(env.STORAGE_DIR, assetForLimit.storageKey))
+          : null;
+      const durationSec = measuredDurationSec(probed, assetForLimit.durationSec);
+      const shortsBlock = youtubeShortsPublishBlock({
+        platform: target.platform,
+        format: assetForLimit.format,
+        kind: assetForLimit.kind,
+        durationSec,
+      });
+      if (shortsBlock) {
+        await markYoutubeShortsOverLimit(prisma, { id: target.id, postId: target.postId });
+        console.log(`[worker] target ${target.id} skipped: ${shortsBlock} (${durationSec ?? "unknown"}s)`);
+        return;
+      }
+    }
+
     const caption = [
       target.caption ?? "",
       target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" "),
@@ -305,6 +406,10 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         tiktokTitle?: string;
         /** Set by the fallback after Instagram refused this as a reel. */
         instagramFeedPost?: boolean;
+        /** Long-form "Both": publish with the sibling targets in one provider post. */
+        combined?: boolean;
+        /** The named bot that scheduled it, for its own Zernio key. */
+        bot?: string;
       } | null) ?? {};
 
     let remotePostId: string;
@@ -366,42 +471,116 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
           )
         : undefined;
 
-      const mediaUrl = isCarousel
-        ? undefined
-        : await zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      /** The video a platform publishes: an Instagram copy for long-form reels when needed. */
+      const videoUrlFor = async (platform: string, opts: typeof targetOptions): Promise<string> => {
+        if (platform === "instagram" && opts.instagram?.longform) {
+          const f = await instagramFile(asset!, opts.instagram.crop916 === true);
+          return zernioMediaUrl(f.cacheKey, f.filePath);
+        }
+        return zernioMediaUrl(asset!.id, path.join(env.STORAGE_DIR, fileKey));
+      };
+      const mediaUrl = isCarousel ? undefined : await videoUrlFor(target.platform, targetOptions);
       const coverUrl = asset?.coverKey ? await zernioImageUrl(asset.coverKey) : null;
-      const extras = buildPostExtras({
-        platform: target.platform as Platform,
-        format: asset?.format ?? null,
-        durationSec: asset?.durationSec ?? null,
-        instagramFeedPost: targetOptions.instagramFeedPost === true,
-        coverUrl,
-        carousel: isCarousel,
-        caption,
-        instagram: targetOptions.instagram ?? null,
-        youtube: targetOptions.youtube ?? null,
-        tiktok: targetOptions.tiktok ?? null,
-        youtubeTitle: targetOptions.youtubeTitle ?? null,
-        tiktokTitle: targetOptions.tiktokTitle ?? null,
-      });
-      const result = await zernio.createPost({
-        // A TikTok photo post reads content as its title; the builder moves
-        // the caption into tiktokSettings.description and says so here.
-        content: extras.contentOverride ?? caption,
-        mediaUrl,
-        slideItems,
-        mediaThumbnail: extras.mediaThumbnail,
-        targets: [
-          {
-            platform: target.platform as Platform,
-            accountId: target.socialAccount.providerAccountId ?? "",
-            platformSpecificData: extras.platformSpecificData,
-          },
-        ],
-        tiktokSettings: extras.tiktokSettings,
-        publishNow: true,
-      });
-      remotePostId = result.remotePostId;
+      const extrasFor = (platform: string, opts: typeof targetOptions, words: string) =>
+        buildPostExtras({
+          platform: platform as Platform,
+          format: asset?.format ?? null,
+          durationSec: asset?.durationSec ?? null,
+          instagramFeedPost: opts.instagramFeedPost === true,
+          coverUrl,
+          coverOffsetMs: asset?.coverOffsetMs ?? null,
+          carousel: isCarousel,
+          caption: words,
+          instagram: opts.instagram ?? null,
+          youtube: opts.youtube ?? null,
+          tiktok: opts.tiktok ?? null,
+          youtubeTitle: opts.youtubeTitle ?? null,
+          tiktokTitle: opts.tiktokTitle ?? null,
+        });
+      const extras = extrasFor(target.platform, targetOptions, caption);
+
+      /*
+       * Long-form "Both": the sibling targets still waiting go out in this
+       * same provider post, YouTube and Instagram in one request, each with
+       * its own words and video. Each is claimed only if still scheduled, so
+       * a sibling already published (or retried alone after the Instagram
+       * fallback) is never sent twice.
+       */
+      let combinedId: string | null = null;
+      if (targetOptions.combined && mediaUrl) {
+        const siblings = await prisma.postTarget.findMany({
+          where: { postId: target.postId, id: { not: target.id }, status: "scheduled" },
+          include: { socialAccount: true },
+        });
+        for (const s of siblings) {
+          const opts = (s.options as typeof targetOptions | null) ?? {};
+          if (!opts.combined || s.socialAccount.tokensEncrypted !== "provider:zernio") continue;
+          if (s.scheduledAt && s.scheduledAt.getTime() - Date.now() > 60_000) continue;
+          const got = await prisma.postTarget.updateMany({
+            where: { id: s.id, status: "scheduled" },
+            data: { status: "publishing" },
+          });
+          if (got.count) partnerIds.push(s.id);
+        }
+        if (partnerIds.length) {
+          const parts = [
+            {
+              platform: target.platform as Platform,
+              accountId: target.socialAccount.providerAccountId ?? "",
+              caption,
+              mediaUrl,
+              extras,
+            },
+          ];
+          for (const s of siblings.filter((x) => partnerIds.includes(x.id))) {
+            const opts = (s.options as typeof targetOptions | null) ?? {};
+            const words = [s.caption ?? "", s.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")]
+              .filter(Boolean)
+              .join("\n\n");
+            parts.push({
+              platform: s.platform as Platform,
+              accountId: s.socialAccount.providerAccountId ?? "",
+              caption: words,
+              mediaUrl: await videoUrlFor(s.platform, opts),
+              extras: extrasFor(s.platform, opts, words),
+            });
+          }
+          const result = await posterFor(targetOptions.bot)!.createPost({ ...combinePostParts(parts), publishNow: true });
+          for (const r of result.platformResults ?? []) {
+            if (r.status === "failed") {
+              console.warn(`[worker] post ${target.postId} ${r.platform} failed inline: ${r.error}`);
+            }
+          }
+          await prisma.postTarget.updateMany({
+            where: { id: { in: partnerIds } },
+            data: { remotePostId: result.remotePostId, error: null },
+          });
+          combinedId = result.remotePostId;
+        }
+      }
+
+      if (combinedId) {
+        remotePostId = combinedId;
+      } else {
+        const result = await posterFor(targetOptions.bot)!.createPost({
+          // A TikTok photo post reads content as its title; the builder moves
+          // the caption into tiktokSettings.description and says so here.
+          content: extras.contentOverride ?? caption,
+          mediaUrl,
+          slideItems,
+          mediaThumbnail: extras.mediaThumbnail,
+          targets: [
+            {
+              platform: target.platform as Platform,
+              accountId: target.socialAccount.providerAccountId ?? "",
+              platformSpecificData: extras.platformSpecificData,
+            },
+          ],
+          tiktokSettings: extras.tiktokSettings,
+          publishNow: true,
+        });
+        remotePostId = result.remotePostId;
+      }
     } else if (env.PUBLISH_PROVIDER !== "dryrun") {
       /*
        * A configured provider this target cannot reach is a broken account,
@@ -440,6 +619,7 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         durationSec: asset?.durationSec ?? null,
         instagramFeedPost: targetOptions.instagramFeedPost === true,
         coverUrl: asset?.coverKey ? `/files/${asset.coverKey}` : null,
+        coverOffsetMs: asset?.coverOffsetMs ?? null,
         carousel: asset?.kind === "carousel" && drySlides.length > 0,
         caption,
         instagram: targetOptions.instagram ?? null,
@@ -550,6 +730,14 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
         error: message.slice(0, 500),
       },
     });
+    // Partners claimed for a combined post that never went out share its fate:
+    // back to scheduled for this job's retry to pick up, or failed with it.
+    if (partnerIds.length) {
+      await prisma.postTarget.updateMany({
+        where: { id: { in: partnerIds }, status: "publishing", remotePostId: null },
+        data: { status: finalAttempt ? "failed" : "scheduled", error: message.slice(0, 500) },
+      });
+    }
     if (finalAttempt) {
       await prisma.post.update({
         where: { id: target.postId },
@@ -848,6 +1036,15 @@ void work<{ assetId: string }>("media", { concurrency: 1 }, async ({ assetId }) 
   await processAsset(assetId);
 });
 
+// The Instagram copy of a long-form video, made at schedule time so the
+// publish slot finds it ready. Its own queue: a 15 minute encode must not
+// hold up new uploads on "media".
+void work<{ assetId: string; crop916?: boolean }>("igcopy", { concurrency: 1 }, async ({ assetId, crop916 }) => {
+  const asset = await prisma.mediaAsset.findUnique({ where: { id: assetId } });
+  if (!asset || asset.sourceDeletedAt) return;
+  await instagramFile(asset, crop916 === true);
+});
+
 // retryCount is what attemptsMade used to be: how many times this job has
 // already failed, 0 on the first run. publishTarget decides from it whether a
 // failure is the last one and the post is marked failed for good.
@@ -902,11 +1099,14 @@ void scheduleCron("bank", "0 3 * * *");
 void (async () => {
   try {
     const coming = await prisma.postTarget.findMany({
-      where: { status: "scheduled", scheduledAt: { gt: new Date() } },
-      select: { id: true, scheduledAt: true },
+      // Paused brands are re-queued by their resume instead.
+      where: { status: "scheduled", scheduledAt: { gt: new Date() }, post: { client: { pausedAt: null } } },
+      select: { id: true, scheduledAt: true, post: { select: { queuePriority: true, queuePosition: true } } },
     });
     for (const target of coming) {
-      await reschedule("publish", { targetId: target.id }, target.id, target.scheduledAt!);
+      // Same time, and the post's upload order (W3) so a re-created job keeps its rush.
+      const priority = uploadPriority(target.post.queuePriority, target.post.queuePosition);
+      await reschedule("publish", { targetId: target.id }, target.id, target.scheduledAt!, priority);
     }
     if (coming.length) console.log(`[worker] re-queued ${coming.length} scheduled posts`);
   } catch (err) {
@@ -940,22 +1140,62 @@ void work<{ clientId: string }>("insights", { concurrency: 1 }, async ({ clientI
   await generateInsight(clientId);
 });
 
-// One at a time, all three: each is ffmpeg or whisper on the same disk, and
-// two concurrent encodes finish later than two queued ones. The one queue
-// carries both jobs: asset processing (the default) and full renders.
-void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
-  "edit",
-  { concurrency: 1 },
-  async (data) => {
-    if (data.job === "render" && data.editProjectId) {
-      await renderProject(data.editProjectId);
-    } else if (data.job === "isolate" && data.editAssetId) {
-      await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
-    } else if (data.editAssetId) {
-      await processEditAsset(data.editAssetId);
-    }
-  },
-);
+void work<{ runId: string }>("supergen", { concurrency: 1 }, async ({ runId }) => {
+  await runSuperGenerate(runId);
+});
+
+void work<{ ideaId: string }>("ideagifs", { concurrency: 1 }, async ({ ideaId }) => {
+  await runIdeaGifs(ideaId);
+});
+
+// One at a time by default: each is ffmpeg or whisper on the same disk, and
+// two concurrent encodes on a small box finish later than two queued ones.
+// EDIT_CONCURRENCY raises it for batch renders on a machine with the cores.
+// The one queue carries asset processing (the default) and full renders.
+// work() runs a fetched batch one job at a time, so batchSize alone never
+// overlaps two encodes; N single-job pollers do, each failing on its own.
+for (let slot = 0; slot < env.EDIT_CONCURRENCY; slot++) {
+  void work<{ editAssetId?: string; editProjectId?: string; job?: string; mode?: string }>(
+    "edit",
+    { concurrency: 1 },
+    async (data) => {
+      if (data.job === "render" && data.editProjectId) {
+        await renderProject(data.editProjectId);
+      } else if (data.job === "reframe" && data.editAssetId) {
+        await reframeAsset(data.editAssetId);
+      } else if (data.job === "isolate" && data.editAssetId) {
+        await isolateVoice(data.editAssetId, data.mode === "instrumental" ? "instrumental" : "voice");
+      } else if (data.editAssetId) {
+        await processEditAsset(data.editAssetId);
+      }
+    },
+  );
+}
+
+// Studio clips: analyze, curate, score, refine, rescore. One at a time, for
+// the same reason as edit: whisper and ffmpeg share the machine.
+void work<ClipQueueData | { autoImport: string } | { clipPerf: string } | { smart: string }>("clips", { concurrency: 1 }, async (data) => {
+  if ("smart" in data) {
+    await refreshClientTrends(data.smart);
+    await refreshJudgeTuning(data.smart);
+  } else if ("autoImport" in data) await runAutoImport(data.autoImport, true);
+  else if ("clipPerf" in data) await syncClipPerf(data.clipPerf);
+  else await runClipStage(data);
+});
+
+/*
+ * Phase 8: own-channel YouTube auto-import every 30 minutes (a few quota
+ * units per playlist), clip performance every 3 hours.
+ */
+setInterval(() => void autoImportAll().catch((e: unknown) => console.error("[auto-import]", e)), 30 * 60_000).unref();
+setInterval(() => void syncAllClipPerf().catch((e: unknown) => console.error("[clip-perf]", e)), 3 * 3600_000).unref();
+// Phase 9: trend terms per client, daily (no web search; see smartAi.ts).
+setInterval(() => void refreshAllTrends().catch((e: unknown) => console.error("[trends]", e)), 24 * 3600_000).unref();
+// Drive trial reels: every linked folder every 5 minutes, first a minute after
+// boot. driveAll itself skips a tick while the last one is still running.
+const driveTick = () => void driveAll().catch((e: unknown) => console.error("[drive]", e instanceof Error ? e.message : e));
+setTimeout(driveTick, 60_000).unref();
+setInterval(driveTick, 5 * 60_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);
@@ -1060,5 +1300,5 @@ beat();
 setInterval(beat, HEARTBEAT_SECONDS * 1000).unref();
 
 console.log(
-  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
+  `[toreroflow-worker] queues: media, publish, analytics, insights, research, bank, edit, analyze, knowledge, supergen, clips (provider: ${zernio ? "zernio" : "dryrun"}, youtube: ${youtube ? "on" : "off"})`,
 );

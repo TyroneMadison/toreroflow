@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { MAX_VIDEO_UPLOAD_BYTES } from "./uploadLimits";
+const { MAX_BYTES } = await import("./routes/assets");
+const GiB = 1024 ** 3;
+assert.equal(MAX_VIDEO_UPLOAD_BYTES, 10 * GiB);
+assert.ok(MAX_VIDEO_UPLOAD_BYTES > 8.2e9, "an 8.2 GB source fits");
+assert.equal(MAX_BYTES.video, MAX_VIDEO_UPLOAD_BYTES);
+const caddy = fs.readFileSync(new URL("../../../infra/Caddyfile", import.meta.url), "utf8");
+const m = caddy.match(/max_size (\d+)GB/);
+assert.ok(m && Number(m[1]) * 1e9 > MAX_VIDEO_UPLOAD_BYTES, "Caddy lets a full-size upload reach the API");
+const clips = fs.readFileSync(new URL("./routes/clips.ts", import.meta.url), "utf8");
+assert.match(clips, /request\.file\(\{ limits: \{ fileSize: MAX_VIDEO_UPLOAD_BYTES \} \}\)/);
+assert.match(clips, /pipeline\(file\.file, createWriteStream/, "clip source streams to disk");
+console.log("uploadLimits ok");

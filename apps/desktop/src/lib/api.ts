@@ -1,4 +1,4 @@
-import type { AuthUser, LoginResponse, Platform } from "@toreroflow/core";
+import type { AuthUser, DriveSource, LoginResponse, Platform } from "@toreroflow/core";
 
 /** Base URL of the Toreroflow API (Fastify service). */
 export const API_URL: string =
@@ -290,6 +290,17 @@ export interface ClientSummary {
   billingMode: "calendar" | "on_fulfilment";
   createdAt: string;
   workflowCount: number;
+  /** Deep-link handle, e.g. "caleb" in /clients/caleb/ready. */
+  slug: string;
+  /** Posting SOP written by a human. Null means none added yet. */
+  sop: string | null;
+  sopUpdatedAt: string | null;
+  /** Trello label colors routed to this client; empty means the defaults. */
+  trelloLabels: string[];
+  /** Text added under every caption; null means none. */
+  captionBlock: string | null;
+  captionBlockOn: boolean;
+  captionKeywords: { keywords: string[]; line: string }[];
   /** Null when no account has reported a follower count yet. */
   totalFollowers: number | null;
   accounts: AccountInfo[];
@@ -695,6 +706,8 @@ export interface PostTargetInfo {
   mediaAssetId: string | null;
   /** A failure the operator cleared off the queue card. Still on the calendar. */
   queueDismissed: boolean;
+  /** An Instagram trial reel. Optional: servers before it never send one. */
+  trial?: boolean;
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */
@@ -952,3 +965,116 @@ export interface InboxMessage {
   createdAt: string | null;
   attachments: Array<{ type: string | null; url: string | null }>;
 }
+
+/** One card in the Trello "Ready for posting" list, routed to a client by label. */
+export interface ReadyCard {
+  id: string;
+  name: string;
+  url: string;
+  list: string;
+  labels: { name: string; color: string | null }[];
+  /** Null means held: no label, an unmapped color, or labels for two clients. */
+  clientId: string | null;
+  held: boolean;
+  coverColor?: string | null;
+  matchedBy?: "cover" | "label" | null;
+  heldReason: "unlabeled" | "unmapped" | "conflict" | null;
+  lastActivity: string;
+}
+
+export interface ReadyQueue {
+  /** False when Trello is not set up; `message` says what is missing. */
+  configured: boolean;
+  message: string | null;
+  clients: { id: string; name: string; slug: string; hasSop: boolean }[];
+  cards: ReadyCard[];
+}
+
+export interface LabelMap {
+  defaults: Record<string, string>;
+  entries: { color: string; clientId: string; clientName: string; clientSlug: string }[];
+  unlabeled: "held";
+}
+
+/* ---- Trello upload (Toreroflow -> Trello) ---- */
+export const TRELLO_MAX_BYTES = 250 * 1024 * 1024;
+export interface TrelloList { id: string; name: string }
+export interface TrelloCardRef { id: string; name: string; url: string }
+
+export const getTrelloLists = () => api.get<{ boardId: string; lists: TrelloList[] }>("/trello/lists");
+export const getTrelloCards = (listId: string, clientId: string) =>
+  api.get<{ cards: TrelloCardRef[] }>(`/trello/cards?listId=${encodeURIComponent(listId)}&clientId=${encodeURIComponent(clientId)}`);
+export const createTrelloCard = (body: { clientId: string; listId: string; name: string; desc?: string }) =>
+  api.post<TrelloCardRef>("/trello/cards", body);
+export const linkTrelloAttachment = (cardId: string, mediaId: string) =>
+  api.post<{ id: string; name: string; url: string }>(`/trello/cards/${cardId}/attachments/link`, { mediaId });
+/** Move a scheduled Ready card to "Approved by Client/ uploaded". Safe to retry. */
+export const markCardUploaded = (cardId: string, body: { clientId: string; mediaId?: string; note?: string }) =>
+  api.post<{ ok: true; alreadyMoved: boolean; url: string; list?: string }>(`/trello/cards/${cardId}/uploaded`, body);
+
+/** One file onto a Trello card, with upload progress (fetch has none, so XHR). */
+export function uploadTrelloAttachment(
+  cardId: string,
+  file: File,
+  onProgress: (pct: number) => void,
+): Promise<{ id: string; name: string; url: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/trello/cards/${cardId}/attachments`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
+    xhr.onerror = () => reject(new ApiError(0, { error: "network error" }));
+    xhr.onload = () => {
+      let data: unknown = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        /* non-JSON proxy error */
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as { id: string; name: string; url: string });
+      else reject(new ApiError(xhr.status, data));
+    };
+    const form = new FormData();
+    form.append("file", file, file.name);
+    xhr.send(form);
+  });
+}
+
+/* ---- Drive auto-post (Drive folder -> Instagram trial reels) ---- */
+export interface DriveImportRow {
+  id: string;
+  fileId: string;
+  name: string;
+  /** claimed | downloaded | dryrun | scheduled | held | skipped | failed */
+  status: string;
+  reason: string | null;
+  assetId: string | null;
+  postId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface DriveSourceView {
+  settings: DriveSource;
+  /** False when the server has no Google API key, so the folder cannot be read. */
+  keyReady: boolean;
+  imports: DriveImportRow[];
+  /** Connected through the publishing provider, so a trial reel can post there. */
+  instagramAccounts: { id: string; handle: string }[];
+  /**
+   * Videos, one per Drive file however many accounts are ticked. today: taken
+   * today toward the daily limit, in the current mode, including ones still
+   * being worked on. posted: sent to trial reels so far. dryRuns: dry runs so
+   * far. Missing from older servers.
+   */
+  counts?: { today: number; posted: number; dryRuns: number };
+}
+export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountIds" | "graduation" | "mode" | "on" | "dailyLimit">;
+export type DriveFolderCheck = { ok: true; videos: number; sample: string[] } | { ok: false; reason: string };
+
+export const getDriveSource = (clientId: string) => api.get<DriveSourceView>(`/clients/${clientId}/drive-source`);
+export const saveDriveSource = (clientId: string, body: DriveSourceSave) =>
+  api.put<DriveSourceView>(`/clients/${clientId}/drive-source`, body);
+/** Lists the folder once. Sends the pasted link when there is one, else the saved folder is checked. */
+export const checkDriveFolder = (clientId: string, link: string) =>
+  api.post<DriveFolderCheck>(`/clients/${clientId}/drive-source/check`, link ? { link } : {});

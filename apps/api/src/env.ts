@@ -67,6 +67,13 @@ export interface Env {
   API_PORT: number;
   /** Empty string means the AI suggestions endpoint returns 503 with guidance. */
   ANTHROPIC_API_KEY: string;
+  /** Trello API key and token for reading the editor pipeline board. Empty
+   *  means the Ready queue answers with a not-configured message. */
+  TRELLO_KEY: string;
+  TRELLO_TOKEN: string;
+  /** Board id; empty means look it up by TRELLO_BOARD_NAME. */
+  TRELLO_BOARD_ID: string;
+  TRELLO_BOARD_NAME: string;
   SUGGESTIONS_MODEL: string;
   /** dryrun until a real provider (Ayrshare/Blotato/Zernio/Postiz) is chosen in M1. */
   PUBLISH_PROVIDER: string;
@@ -88,6 +95,12 @@ export interface Env {
    */
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  /**
+   * Refresh token for the Toreronee@gmail.com account (Gmail API, send scope),
+   * using the Google OAuth client above. Empty means the monthly report job
+   * cannot send and only builds previews.
+   */
+  GMAIL_REFRESH_TOKEN: string;
   /**
    * The public origin OAuth redirects come back to, e.g.
    * https://api.torerone.com. Must match what is registered in each platform's
@@ -135,10 +148,36 @@ export interface Env {
    * In production this is required, checked above.
    */
   ALLOWED_ORIGINS: string[];
+  /**
+   * Cloudflare Turnstile for the public request form. Both empty (the
+   * default) means the captcha is off; with the secret set, every submission
+   * must carry a token Cloudflare accepts. The site key is handed to the form.
+   */
+  TURNSTILE_SECRET_KEY: string;
+  TURNSTILE_SITE_KEY: string;
   /** True when this process is answering to the internet. */
   IS_PRODUCTION: boolean;
   /** The commit this server is running, for the deploy card. Empty off a server. */
   GIT_COMMIT: string;
+  /** Sunra multimodal API key. Empty keeps the observed model list and generate answers 503. */
+  SUNRA_API_KEY: string;
+  /** Empty means https://api.sunra.ai. */
+  SUNRA_API_BASE: string;
+  /** Optional free stock b-roll search; empty hides the Stock button. */
+  PEXELS_API_KEY: string;
+  /** Phase 8: Pexels API root (overridable for the local stub in e2e). */
+  PEXELS_API_BASE: string;
+  /**
+   * Phase 8: Drive API v3 key for listing publicly shared folders. Falls
+   * back to YOUTUBE_API_KEY (same Google project); empty means folder
+   * listing is off and single shared files still import keylessly.
+   */
+  GOOGLE_DRIVE_API_KEY: string;
+  /** Phase 8: Drive roots (overridable for the local stub in e2e). */
+  DRIVE_API_BASE: string;
+  DRIVE_DOWNLOAD_BASE: string;
+  /** The business's own day, for the Drive daily limit. The worker reads the same setting. */
+  BUSINESS_TIMEZONE: string;
 }
 
 export const env: Env = {
@@ -146,12 +185,23 @@ export const env: Env = {
   JWT_SECRET: process.env.JWT_SECRET ?? DEFAULT_JWT_SECRET,
   API_PORT: Number.parseInt(process.env.API_PORT ?? "", 10) || 4700,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+  PEXELS_API_KEY: process.env.PEXELS_API_KEY ?? "",
+  PEXELS_API_BASE: process.env.PEXELS_API_BASE || "https://api.pexels.com",
+  GOOGLE_DRIVE_API_KEY: process.env.GOOGLE_DRIVE_API_KEY || process.env.YOUTUBE_API_KEY || "",
+  DRIVE_API_BASE: process.env.DRIVE_API_BASE || "https://www.googleapis.com/drive/v3",
+  DRIVE_DOWNLOAD_BASE: process.env.DRIVE_DOWNLOAD_BASE || "https://drive.usercontent.google.com",
+  BUSINESS_TIMEZONE: process.env.BUSINESS_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  TRELLO_KEY: process.env.TRELLO_KEY ?? "",
+  TRELLO_TOKEN: process.env.TRELLO_TOKEN ?? "",
+  TRELLO_BOARD_ID: process.env.TRELLO_BOARD_ID ?? "",
+  TRELLO_BOARD_NAME: process.env.TRELLO_BOARD_NAME ?? "Torone Editor Pipeline",
   SUGGESTIONS_MODEL: process.env.SUGGESTIONS_MODEL ?? "claude-opus-4-8",
   PUBLISH_PROVIDER: process.env.PUBLISH_PROVIDER ?? "dryrun",
   PUBLISH_PROVIDER_API_KEY: process.env.PUBLISH_PROVIDER_API_KEY ?? "",
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ?? "",
   OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
@@ -163,6 +213,10 @@ export const env: Env = {
     .split(",")
     .map((o) => o.trim().replace(/\/+$/, ""))
     .filter(Boolean),
+  TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY ?? "",
+  TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   IS_PRODUCTION: isProduction,
   GIT_COMMIT: process.env.GIT_COMMIT ?? "",
+  SUNRA_API_KEY: process.env.SUNRA_API_KEY ?? "",
+  SUNRA_API_BASE: process.env.SUNRA_API_BASE ?? "",
 };

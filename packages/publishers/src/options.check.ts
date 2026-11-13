@@ -288,7 +288,7 @@ console.log("options builder: all checks passed");
   assert.deepEqual(vid.tiktokSettings, { video_cover_image_url: "https://x/cover.jpg" });
 }
 
-/* ---- reel or feed post, decided by length ---- */
+/* ---- always a reel; length decides only the declaration ---- */
 
 /*
  * The 106 second video that could not be published for three days. Declaring
@@ -337,7 +337,24 @@ const at = (d: number) =>
   buildPostExtras({ platform: "instagram", format: "short_form", coverUrl: null, durationSec: d })
     .platformSpecificData?.contentType;
 assert.equal(at(180), "reels", "three minutes is still tried as a reel");
-assert.equal(at(180.5), undefined, "past three minutes the Reels tab is not on offer at all");
+assert.equal(at(180.5), undefined, "past three minutes the reel goes undeclared, as long-form does");
+
+/*
+ * A long reel, not a feed video. The provider makes every single video a
+ * reel (there is no feed-video road), so a 10 minute video keeps the reel
+ * options: trials and catalog audio ride it like any reel.
+ */
+const igTenMin = buildPostExtras({
+  platform: "instagram",
+  format: "short_form",
+  coverUrl: null,
+  durationSec: 600,
+  instagram: { trial: true, audioId: "abc" },
+});
+assert.deepEqual(igTenMin.platformSpecificData, {
+  trialParams: { graduationStrategy: "MANUAL" },
+  audioConfiguration: { audioId: "abc" },
+});
 
 // No duration at all behaves as it always did, so nothing already scheduled
 // changes shape when this ships.
@@ -437,8 +454,8 @@ assert.deepEqual(
   "volumes clamp to 0-100",
 );
 
-// Too long to be a reel: the feed post carries no audio.
-assert.equal(
+// A long video is still a reel, so it keeps its track.
+assert.deepEqual(
   buildPostExtras({
     platform: "instagram",
     format: "short_form",
@@ -446,8 +463,8 @@ assert.equal(
     durationSec: 400,
     instagram: { audioId: "abc" },
   }).platformSpecificData?.audioConfiguration,
-  undefined,
-  "a feed post refuses catalog audio",
+  { audioId: "abc" },
+  "a long reel keeps catalog audio",
 );
 
 // The same, via the fallback flag rather than the duration.
@@ -488,3 +505,81 @@ assert.equal(
 );
 
 console.log("options builder: instagram catalog audio checks passed");
+
+/*
+ * Long-form Instagram reels: no contentType, a picked frame goes as
+ * thumbOffset (it stays right on a 9:16 copy), an uploaded image as
+ * instagramThumbnail, and the reel options still apply past three minutes.
+ */
+{
+  const frame = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.jpg",
+    coverOffsetMs: 4200,
+    instagram: {
+      longform: true,
+      trial: true,
+      collaborators: ["dudthecarguy"],
+      locationId: "105890561436614",
+      userTags: ["@friend", " "],
+      audioName: "Dud Rents original audio",
+      shareToFeed: true,
+      crop916: true,
+    },
+  });
+  assert.deepEqual(frame.platformSpecificData, {
+    thumbOffset: 4200,
+    trialParams: { graduationStrategy: "MANUAL" },
+    collaborators: ["dudthecarguy"],
+    audioName: "Dud Rents original audio",
+    shareToFeed: true,
+    locationId: "105890561436614",
+    userTags: [{ username: "friend" }],
+  });
+
+  // Uploaded image: coverOffsetMs is null, so the image is the cover.
+  const image = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.png",
+    coverOffsetMs: null,
+    instagram: { longform: true },
+  });
+  assert.deepEqual(image.platformSpecificData, { instagramThumbnail: "https://cdn.example/cover.png" });
+
+  // Instagram's own frame beats the shared cover, image or frame.
+  const override = buildPostExtras({
+    platform: "instagram",
+    format: "long_form",
+    durationSec: 768,
+    coverUrl: "https://cdn.example/cover.png",
+    coverOffsetMs: null,
+    instagram: { longform: true, thumbOffsetMs: 9000 },
+  });
+  assert.deepEqual(override.platformSpecificData, { thumbOffset: 9000 });
+
+  // Short-form keeps sending the frame image, exactly as before.
+  const short = buildPostExtras({
+    platform: "instagram",
+    format: "short_form",
+    durationSec: 30,
+    coverUrl: "https://cdn.example/cover.jpg",
+    coverOffsetMs: 4200,
+  });
+  assert.deepEqual(short.platformSpecificData, {
+    contentType: "reels",
+    instagramThumbnail: "https://cdn.example/cover.jpg",
+  });
+
+  // YouTube long-form still gets the same cover as its thumbnail.
+  assert.equal(
+    buildPostExtras({ platform: "youtube", format: "long_form", coverUrl: "https://cdn.example/cover.jpg", coverOffsetMs: 4200 })
+      .mediaThumbnail,
+    "https://cdn.example/cover.jpg",
+  );
+}
+
+console.log("options builder: instagram long-form checks passed");

@@ -27,6 +27,10 @@ export default function IconDefs() {
       <symbol id="i-chart" viewBox="0 0 24 24">
         <path d="M18 20V10M12 20V4M6 20v-6" />
       </symbol>
+      <symbol id="i-report" viewBox="0 0 24 24">
+        <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+        <path d="M14 3v6h6M8 17v-3M12 17v-6M16 17v-2" />
+      </symbol>
       <symbol id="i-users" viewBox="0 0 24 24">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
         <circle cx="9" cy="7" r="4" />

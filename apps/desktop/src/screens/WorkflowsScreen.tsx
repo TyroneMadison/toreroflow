@@ -6,6 +6,7 @@ import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from 
 import { useAppState } from "../state/AppState";
 import DmCampaigns from "../components/DmCampaigns";
 import DmInbox from "../components/DmInbox";
+import DriveAutoPost from "../components/DriveAutoPost";
 import { Empty, ErrorState, Loading } from "../components/states";
 
 export default function WorkflowsScreen() {
@@ -21,14 +22,17 @@ export default function WorkflowsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Keyed on the id, so a client-list refresh (Sync accounts in Drive auto-post)
+  // does not blank and reload the rules below.
+  const clientId = selectedClient?.id;
   const load = useCallback(async () => {
-    if (!selectedClient) {
+    if (!clientId) {
       setWorkflows([]);
       return;
     }
-    const list = await api.get<WorkflowInfo[]>(`/clients/${selectedClient.id}/workflows`);
+    const list = await api.get<WorkflowInfo[]>(`/clients/${clientId}/workflows`);
     setWorkflows(list);
-  }, [selectedClient]);
+  }, [clientId]);
 
   // Reloads after an edit throw into that edit's own catch; only this first
   // load feeds the screen's error state.
@@ -93,13 +97,14 @@ export default function WorkflowsScreen() {
         <div className="h">
           <h2>Workflows</h2>
           <p>
-            Fan-out rules for reposting one upload across platforms. Saved here, but
-            nothing runs them yet, so a video only ever goes to the platforms you tick
-            when you schedule it.
+            Automations for this brand. Drive auto-post runs on its own. The fan-out rules
+            below are saved but nothing runs them yet, so a scheduled video only goes to the
+            platforms you tick.
           </p>
         </div>
       </div>
       <div className="stage">
+        {selectedClient && <DriveAutoPost client={selectedClient} />}
         {!selectedClient ? (
           <Empty
             screen="workflows"
@@ -156,7 +161,22 @@ export default function WorkflowsScreen() {
                   {PLATFORMS.filter((p) => p !== source).map((p) => {
                     const on = destinations.includes(p);
                     return (
-                      <div key={p} className={`pt${on ? " on" : ""}`} onClick={() => toggleDestination(p)}>
+                      <div
+                        key={p}
+                        className={`pt${on ? " on" : ""}`}
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={`Auto-publish to ${PLATFORM_LABELS[p]}`}
+                        tabIndex={0}
+                        data-testid={`workflow-dest-${p}`}
+                        onClick={() => toggleDestination(p)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            toggleDestination(p);
+                          }
+                        }}
+                      >
                         <Pf p={PF_ID[p]} />
                         <div className="info">
                           <b>{SURFACE_LABEL[p]}</b>
@@ -173,6 +193,7 @@ export default function WorkflowsScreen() {
                 <div className="schedrow">
                   <button
                     className="btn"
+                    data-testid="workflow-create"
                     style={{ marginLeft: "auto" }}
                     disabled={busy || !name.trim() || destinations.length === 0}
                     onClick={() => void create()}
@@ -203,7 +224,7 @@ export default function WorkflowsScreen() {
                   </div>
                 ) : (
                   workflows.map((w) => (
-                    <div className="best" key={w.id} style={{ alignItems: "center" }}>
+                    <div className="best" key={w.id} style={{ alignItems: "center" }} data-testid={`workflow-${w.id}`}>
                       <div className="l" style={{ flexWrap: "wrap" }}>
                         <Pf p={PF_ID[w.sourcePlatform]} size="sm" />
                         <span style={{ color: "var(--txt-3)" }}>→</span>
@@ -217,15 +238,29 @@ export default function WorkflowsScreen() {
                           className={`switch${w.enabled ? " on" : ""}`}
                           style={{ cursor: "pointer" }}
                           title={w.enabled ? "Enabled - click to pause" : "Paused - click to enable"}
+                          role="switch"
+                          aria-checked={w.enabled}
+                          aria-label={`${w.name} enabled`}
+                          tabIndex={0}
+                          data-testid={`workflow-toggle-${w.id}`}
                           onClick={() => void toggleEnabled(w)}
+                          onKeyDown={(e) => {
+                            if (e.key === " " || e.key === "Enter") {
+                              e.preventDefault();
+                              void toggleEnabled(w);
+                            }
+                          }}
                         />
-                        <span
+                        <button
+                          type="button"
                           className="link"
-                          style={{ color: "var(--red)" }}
+                          style={{ color: "var(--red)", background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}
+                          aria-label={`Delete workflow ${w.name}`}
+                          data-testid={`workflow-delete-${w.id}`}
                           onClick={() => void remove(w)}
                         >
                           Delete
-                        </span>
+                        </button>
                       </div>
                     </div>
                   ))

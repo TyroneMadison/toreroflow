@@ -18,6 +18,14 @@ interface CoverModalProps {
   asset: MediaAssetInfo;
   onClose: () => void;
   onChanged: () => void;
+  /**
+   * Pick-only: hand the chosen frame back instead of saving it as the shared
+   * cover. Used for one platform's own frame (Instagram's override on a
+   * long-form "Both" post); upload and reset are hidden.
+   */
+  onPick?: (offsetMs: number) => void;
+  initialMs?: number | null;
+  title?: string;
 }
 
 /**
@@ -26,13 +34,14 @@ interface CoverModalProps {
  * instead. The app's own thumbnails switch to the choice, so the card
  * always shows exactly what will post.
  */
-export default function CoverModal({ asset, onClose, onChanged }: CoverModalProps) {
+export default function CoverModal({ asset, onClose, onChanged, onPick, initialMs, title }: CoverModalProps) {
   const toast = useToast();
   const video = useRef<HTMLVideoElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [positionSec, setPositionSec] = useState(() => {
     const fallback = Math.min(1, Math.max(asset.durationSec ?? 1, 0.1));
-    return asset.coverOffsetMs != null ? asset.coverOffsetMs / 1000 : fallback;
+    const ms = initialMs ?? asset.coverOffsetMs;
+    return ms != null ? ms / 1000 : fallback;
   });
   const [busy, setBusy] = useState<"frame" | "upload" | "clear" | null>(null);
   const src = fileUrl(asset.videoUrl);
@@ -54,6 +63,11 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
   };
 
   const useFrame = async () => {
+    if (onPick) {
+      onPick(Math.round(positionSec * 1000));
+      onClose();
+      return;
+    }
     setBusy("frame");
     try {
       await api.patch(`/media/${asset.id}/cover`, { offsetMs: Math.round(positionSec * 1000) });
@@ -93,17 +107,17 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
   };
 
   return (
-    <Modal maxWidth={560} onClose={onClose}>
+    <Modal maxWidth={560} onClose={onClose} label={title ?? "Edit cover"}>
       <div className="modal-head">
         <div>
-          <h3>Edit cover</h3>
+          <h3>{title ?? "Edit cover"}</h3>
           <p>{videoLabel(asset)}</p>
         </div>
-        <div className="modal-x" onClick={onClose}>
+        <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
           <svg>
             <use href="#i-x" />
           </svg>
-        </div>
+        </button>
       </div>
       <div className="modal-body">
         <div className="coverstage">
@@ -148,8 +162,9 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
           onChange={(e) => seek(Number(e.target.value))}
         />
         <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
-          Used on Instagram, TikTok, and YouTube long form. YouTube Shorts pick
-          their own thumbnail, that is YouTube's rule, not ours.
+          {onPick
+            ? "Only this platform uses this frame. The shared cover stays as it is."
+            : "Used on Instagram, TikTok, and YouTube long form, including long-form posts to YouTube and Instagram together. YouTube Shorts pick their own thumbnail, that is YouTube's rule, not ours."}
         </p>
         <input
           ref={fileInput}
@@ -164,16 +179,20 @@ export default function CoverModal({ asset, onClose, onChanged }: CoverModalProp
         />
       </div>
       <div className="modal-foot">
-        <button className="btn ghost" disabled={busy !== null} onClick={() => void clear()}>
-          {busy === "clear" ? "Removing…" : "Use auto thumbnail"}
-        </button>
-        <button
-          className="btn ghost"
-          disabled={busy !== null}
-          onClick={() => fileInput.current?.click()}
-        >
-          {busy === "upload" ? "Uploading…" : "Upload an image"}
-        </button>
+        {!onPick && (
+          <>
+            <button className="btn ghost" disabled={busy !== null} onClick={() => void clear()}>
+              {busy === "clear" ? "Removing…" : "Use auto thumbnail"}
+            </button>
+            <button
+              className="btn ghost"
+              disabled={busy !== null}
+              onClick={() => fileInput.current?.click()}
+            >
+              {busy === "upload" ? "Uploading…" : "Upload an image"}
+            </button>
+          </>
+        )}
         <button className="btn" disabled={busy !== null || !src} onClick={() => void useFrame()}>
           {busy === "frame" ? "Saving…" : "Use this frame"}
         </button>

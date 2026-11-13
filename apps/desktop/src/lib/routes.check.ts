@@ -4,7 +4,7 @@
  * deep link.
  */
 import { SECTIONS } from "./nav";
-import { canonicalUrl, parseUrl, pathFor, PATHS, SETTINGS_SECTIONS, scrubToken } from "./routes";
+import { canonicalUrl, clientPath, parseUrl, pathFor, PATHS, publicRoute, SETTINGS_SECTIONS, scrubToken } from "./routes";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   const a = JSON.stringify(actual);
@@ -14,7 +14,7 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 // Every screen has a unique path that parses back to it.
 const screens = SECTIONS.flatMap((s) => s.pages.map((p) => p.id));
-eq(new Set(screens.map((s) => PATHS[s])).size, 11, "eleven screens, eleven paths");
+eq(new Set(screens.map((s) => PATHS[s])).size, 24, "twenty-four screens, twenty-four paths");
 for (const s of screens) eq(parseUrl(pathFor(s)).screen, s, `${PATHS[s]} round-trips to ${s}`);
 for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));
@@ -31,6 +31,18 @@ eq(canonicalUrl("/nope?client=a"), "/dashboard?client=a", "the rewrite keeps the
 eq(canonicalUrl("/create/upload?range=90"), "/create/upload?range=90", "a known path is left alone");
 eq(canonicalUrl("/settings/nope"), "/settings", "an unknown Settings section opens Settings");
 
+// The client's no-login pages stay where they are.
+eq(publicRoute("/a/ck1x2.Ab_c-9"), { kind: "approval", token: "ck1x2.Ab_c-9" }, "an approval link is a public page");
+eq(publicRoute("/r/ck9z.Ab_c-9?x=1"), { kind: "request", token: "ck9z.Ab_c-9" }, "a signed request form is a public page");
+eq(publicRoute("/request/caleb_1"), null, "the old per-brand form path is gone");
+eq(publicRoute("/a/"), null, "no token, no page");
+eq(publicRoute("/create/approvals"), null, "the operator screen is not public");
+eq(publicRoute("/v/ck7.Ab_c-9"), { kind: "review", token: "ck7.Ab_c-9" }, "a review link is a public page");
+eq(publicRoute("/v/"), null, "a review link needs its token");
+eq(canonicalUrl("/v/ck7.sig"), "/v/ck7.sig", "a review link is never rewritten");
+eq(canonicalUrl("/a/ck1x2.sig"), "/a/ck1x2.sig", "an approval link is never rewritten to the dashboard");
+eq(canonicalUrl("/r/ck9z.sig"), "/r/ck9z.sig", "a request form is never rewritten");
+
 // Query.
 const q = parseUrl("/dashboard?client=c_123&range=90");
 eq([q.clientId, q.range], ["c_123", 90], "client and range parse");
@@ -45,4 +57,27 @@ eq(parseUrl(t!.url).screen, "upload", "the scrubbed URL still opens Upload");
 eq(scrubToken("https://app.torerone.com/x#a=1&token=zz")?.token, "zz", "token after another fragment param");
 eq(scrubToken("https://app.torerone.com/dashboard"), null, "no fragment, no token");
 
+// Client deep links for the Ready queue and the schedule page.
+const cr = parseUrl("/clients/caleb/ready");
+eq([cr.screen, cr.slug, cr.cardId], ["ready", "caleb", null], "/clients/caleb/ready opens Caleb's queue");
+const cs = parseUrl("/clients/dudley/schedule/64ab12?step=caption");
+eq([cs.screen, cs.slug, cs.cardId, cs.step], ["schedule", "dudley", "64ab12", "caption"], "schedule deep link parses");
+eq(canonicalUrl("/clients/caleb/ready/"), "/clients/caleb/ready", "client path survives canonicalising");
+eq(canonicalUrl("/clients/jacoby/schedule/x1?step=sop"), "/clients/jacoby/schedule/x1?step=sop", "schedule path and step survive");
+eq(canonicalUrl("/create/schedule"), "/create/ready", "a schedule page without a card falls back to the queue");
+eq(clientPath("caleb"), "/clients/caleb/ready", "clientPath builds the queue link");
+eq(clientPath("caleb", "c9"), "/clients/caleb/schedule/c9", "clientPath builds the schedule link");
+eq(clientPath(null), "/create/ready", "no client is the all-clients queue");
+eq(parseUrl("/clients/a b/ready").screen, "dashboard", "an unsafe slug is not a route");
+eq(parseUrl("/create/upload?schedule=m1&step=details").scheduleId, "m1", "an open schedule flow is in the URL");
+eq(parseUrl("/create/upload?schedule=m1&dest=both").dest, "both", "a long-form destination is in the URL");
+eq(parseUrl("/create/edit?area=ideas").area, "ideas", "Studio's open area is in the URL");
+eq([parseUrl("/create/new").screen, parseUrl("/create/new").draft], ["fanout", "new"], "a fix link for an unsaved draft opens Fan-out");
+eq(parseUrl("/create/d_1").draft, "d_1", "a fix link for a saved draft names it");
+eq(parseUrl("/create/upload").draft, null, "a known create path is not a draft");
+eq(canonicalUrl("/create/new?client=c_1"), "/create/new?client=c_1", "a fix link is not rewritten");
+
 console.log("routes: all checks passed");
+
+// The comments inbox has its own address.
+eq(parseUrl("/comments").screen, "comments", "/comments opens the comments inbox");

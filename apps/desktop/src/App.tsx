@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import IconDefs from "./components/IconDefs";
+import GlassFilter from "./components/GlassFilter";
 import Dock from "./components/Dock";
+import MobileNav from "./components/MobileNav";
 import PageHeader from "./components/PageHeader";
 import DashboardScreen from "./screens/DashboardScreen";
 import UploadSchedule from "./screens/UploadSchedule";
@@ -11,9 +13,24 @@ import ReportsScreen from "./screens/ReportsScreen";
 import AccountOverviewScreen from "./screens/AccountOverviewScreen";
 import FinancialsScreen from "./screens/FinancialsScreen";
 import CarouselsScreen from "./screens/CarouselsScreen";
+import CommentsScreen from "./screens/CommentsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
+import { FanoutScreen, PreflightScreen, QueueScreen, RollupScreen, TemplatesScreen } from "./screens/WorkflowScreens";
 import SettingsScreen from "./screens/SettingsScreen";
+import ReadyQueueScreen from "./screens/ReadyQueueScreen";
+import ScheduleScreen from "./screens/ScheduleScreen";
 import AuthScreen from "./screens/AuthScreen";
+import PublicReviewPage from "./screens/PublicReviewPage";
+import {
+  ApprovalsScreen,
+  FailedPostBanner,
+  FailedPostsScreen,
+  InsightsScreen,
+  MonthlyReportScreen,
+  PublicApprovalPage,
+  PublicRequestPage,
+  RequestsScreen,
+} from "./screens/IdeaScreens";
 import ConnectClientModal from "./modals/ConnectClientModal";
 import ClientInsightsModal from "./modals/ClientInsightsModal";
 import PreviewModal from "./modals/PreviewModal";
@@ -24,7 +41,7 @@ import UpdateBanner from "./components/UpdateBanner";
 import { useApiStatus } from "./components/ApiStatus";
 import { api, getActivity, subscribeActivity, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { buildAgentState, publishAgentState } from "./lib/agentState";
-import { navigate, pathFor, useRoute } from "./lib/routes";
+import { linkProps, navigate, pathFor, publicRoute, useRoute } from "./lib/routes";
 import { applyTheme, loadTheme, type Theme } from "./lib/theme";
 
 // The screen list lives in lib/nav.ts beside the section map; re-exported
@@ -131,6 +148,17 @@ function Shell() {
   );
   const closeModal = useCallback(() => setModal(null), []);
 
+  // The client's no-login pages: no shell, no sign-in.
+  const pub = publicRoute(window.location.pathname);
+  if (pub)
+    return pub.kind === "approval" ? (
+      <PublicApprovalPage token={pub.token} />
+    ) : pub.kind === "review" ? (
+      <PublicReviewPage token={pub.token} />
+    ) : (
+      <PublicRequestPage token={pub.token} />
+    );
+
   if (!authReady) {
     return <AgentStateSync apiUp={apiStatus.online} />;
   }
@@ -164,12 +192,34 @@ function Shell() {
           alertCount={visibleAlerts.length}
           alertIsError={visibleAlerts.some((a) => a.severity === "error")}
         />
+        <MobileNav
+          activeScreen={activeScreen}
+          api={apiStatus}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenConnect={openConnect}
+          alertCount={visibleAlerts.length}
+          alertIsError={visibleAlerts.some((a) => a.severity === "error")}
+        />
         <main className="main">
           {/* The Dashboard draws its own header with its controls; the screens
               not yet restyled get the shared one above their old topbar. */}
           {activeScreen !== "dashboard" && (
-            <PageHeader screen={activeScreen} />
+            <PageHeader
+              screen={activeScreen}
+              controls={
+                activeScreen === "analytics" && (
+                  <a className="tf-btn" {...linkProps("reports")} data-testid="analytics.open-reports">
+                    <svg aria-hidden="true" style={{ width: 16, height: 16, stroke: "currentColor", fill: "none", strokeWidth: 1.8 }}>
+                      <use href="#i-report" />
+                    </svg>
+                    Reports
+                  </a>
+                )
+              }
+            />
           )}
+          {activeScreen !== "failed" && <FailedPostBanner />}
           {activeScreen === "dashboard" && (
             <DashboardScreen key="dashboard" onOpenInsights={openInsights} onOpenConnect={openConnect} />
           )}
@@ -214,9 +264,24 @@ function Shell() {
               onUploadImages={() => navigate("upload")}
             />
           )}
+          {activeScreen === "comments" && (
+            <CommentsScreen key={`comments-${selectedClientId ?? "none"}`} />
+          )}
           {activeScreen === "workflows" && (
             <WorkflowsScreen key={`workflows-${selectedClientId ?? "none"}`} />
           )}
+          {activeScreen === "fanout" && <FanoutScreen key={`fanout-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "preflight" && <PreflightScreen key="preflight" />}
+          {activeScreen === "queue" && <QueueScreen key="queue" />}
+          {activeScreen === "rollup" && <RollupScreen key={`rollup-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "templates" && <TemplatesScreen key="templates" />}
+          {activeScreen === "ready" && <ReadyQueueScreen key="ready" />}
+          {activeScreen === "schedule" && <ScheduleScreen key="schedule" />}
+          {activeScreen === "approvals" && <ApprovalsScreen key={`approvals-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "requests" && <RequestsScreen key={`requests-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "failed" && <FailedPostsScreen key="failed" />}
+          {activeScreen === "insights" && <InsightsScreen key={`insights-${selectedClientId ?? "none"}`} />}
+          {activeScreen === "monthly" && <MonthlyReportScreen key={`monthly-${selectedClientId ?? "none"}`} />}
           {activeScreen === "settings" && (
             <SettingsScreen key="settings" onOpenConnect={openConnect} />
           )}
@@ -243,6 +308,7 @@ export default function App() {
         <div className="tf-bg" aria-hidden="true" />
         <div className="tf-vig" aria-hidden="true" />
         <IconDefs />
+        <GlassFilter />
         <Shell />
       </AppStateProvider>
     </ToastProvider>

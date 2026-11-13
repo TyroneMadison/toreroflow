@@ -32,7 +32,7 @@ export default function PageHeader({
           link: linkProps("settings", s.id),
           testid: `settings.section.${s.id}`,
         }))
-      : section.pages.map((p) => ({
+      : section.pages.filter((p) => !p.hidden || p.id === screen).map((p) => ({
           key: p.id,
           label: p.label,
           on: p.id === screen,

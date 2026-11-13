@@ -72,27 +72,17 @@ export function isHorizontal(asset: Pick<MediaAssetInfo, "width" | "height" | "f
 }
 
 /**
- * Whether this video belongs to the long-form YouTube wizard.
+ * Whether this video opens the long-form wizard rather than the short-form
+ * scheduler.
  *
- * Shape used to be the whole rule: anything wider than it was tall went to the
- * wizard, because horizontal meant a YouTube upload and nothing else would take
- * the frame. Instagram and TikTok both accept 16:9 now, so a 1920x1080 cut is an
- * ordinary short-form post that happens to be landscape, and sending it to a
- * one-platform wizard is the wrong door for it.
- *
- * So the operator's own Short/Long switch decides, and shape only narrows it.
- * The switch already existed, already sat on every card, and already meant
- * roughly this; it just spent its meaning on quota counting alone.
- *
- * Vertical never reaches the wizard whatever the switch says. A vertical
- * long-form video is a YouTube upload the ordinary scheduler handles, and the
- * five phases exist for the 16:9 upload that needs chapters, an end screen and
- * a self-certification.
+ * The operator's "This is a short-form / long-form video" toggle decides, and
+ * nothing else does: shape used to gate it (vertical never reached the
+ * wizard), but Instagram takes a 15 minute vertical reel now, so a vertical
+ * long-form video needs the wizard as much as a 16:9 one. Unset counts as
+ * short-form, the default for every upload until someone flips it.
  */
-export function usesLongFormWizard(
-  asset: Pick<MediaAssetInfo, "width" | "height" | "format" | "kind">,
-): boolean {
-  return isHorizontal(asset) && asset.format === "long_form";
+export function usesLongFormWizard(asset: Pick<MediaAssetInfo, "format" | "kind">): boolean {
+  return asset.kind !== "carousel" && asset.format === "long_form";
 }
 
 /**

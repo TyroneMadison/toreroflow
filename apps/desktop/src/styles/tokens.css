@@ -15,6 +15,12 @@
   --c-bad:#F0506E;
   --c-info:#4C9DFF;
   --c-warn:#E0A458;
+  /* Paused: held posts of a paused brand. Clear of the coral accent. */
+  --c-paused:#F59E0B;
+  --c-paused-ink:#F59E0B;
+  /* Instagram trial reels on the calendar. Teal, clear of every status colour. */
+  --c-trial:#2DD4BF;
+  --c-trial-ink:#2DD4BF;
 
   --text:#fff;
   --text-2:rgba(255,255,255,.72);
@@ -56,6 +62,11 @@
 }
 
 [data-theme="light"]{
+  /* Darker on light glass: 3:1 for the bar and dot, 4.5:1 for text. */
+  --c-paused:#C26A04;
+  --c-paused-ink:#9A4A06;
+  --c-trial:#0F8A7E;
+  --c-trial-ink:#0A5F57;
   --text:rgba(24,22,40,.94);
   --text-2:rgba(24,22,40,.70);
   --text-3:rgba(24,22,40,.54);

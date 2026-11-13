@@ -11,8 +11,12 @@ import {
   DEFAULT_CLIP_FX,
   edlFromDoc,
   emptyDoc,
+  reanchorDoc,
   locate,
   splitAt,
+  ASPECTS,
+  setAspect,
+  type Aspect,
   type AudioItem,
   type EditDoc,
 } from "@toreroflow/core";
@@ -25,6 +29,10 @@ import AutoCutStep from "./steps/AutoCutStep";
 import EditStep from "./steps/EditStep";
 import CaptionStep from "./steps/CaptionStep";
 import ExportStep from "./steps/ExportStep";
+import { BrandKitProvider, useBrandKit } from "./brandKit";
+import VersionsPanel from "./VersionsPanel";
+import RecipesPanel from "./clips/RecipesPanel";
+import CollabPanel, { useCommentsLoader } from "./CollabPanel";
 import "./StudioEditor.css";
 
 /* ---- API shapes ---- */
@@ -48,6 +56,12 @@ export interface EditAssetInfo {
   sourceUrl: string | null;
   proxyUrl: string | null;
   stripUrl: string | null;
+  /** Waveform peaks JSON (number[], 50/s, 0..100), when the worker made one. */
+  peaksUrl?: string | null;
+  /** Spoken language whisper used or detected. */
+  language?: string | null;
+  /** Why a ready clip has no words, e.g. the transcription timed out. */
+  error?: string | null;
 }
 
 export interface EditProjectInfo {
@@ -180,10 +194,40 @@ function LoadedEditor({
 }) {
   const [project, setProject] = useState(initial);
   const [assets, setAssets] = useState(initial.assets);
-  const { doc, update, undo, redo, canUndo, canRedo, saveState } = useEditDoc(
+  const kit = useBrandKit(initial.clientId);
+  const {
+    doc,
+    update: rawUpdate,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    saveState,
+  } = useEditDoc(
     initial.id,
     initial.doc ??
       emptyDoc(initial.assets.filter((a) => a.kind === "clip").map((a) => a.id)),
+  );
+
+  // Phase 5: word-anchored zooms and b-roll follow their word through any
+  // later cut, inside the same undo step as the edit that moved them.
+  const anchorInputs = useMemo(() => {
+    const durations: Record<string, number> = {};
+    const words: Record<string, { start: number; end: number; word: string }[]> = {};
+    for (const a of assets) {
+      if (a.kind !== "clip") continue;
+      if (a.durationSec) durations[a.id] = a.durationSec;
+      if (a.words?.length) words[a.id] = a.words;
+    }
+    return { durations, words };
+  }, [assets]);
+  const update = useCallback(
+    (fn: (d: EditDoc) => EditDoc) =>
+      rawUpdate((d) => {
+        const next = fn(d);
+        return next === d ? d : reanchorDoc(next, anchorInputs.durations, anchorInputs.words);
+      }),
+    [rawUpdate, anchorInputs],
   );
 
   const [step, setStep] = useState(1);
@@ -195,7 +239,9 @@ function LoadedEditor({
     loadOverrides,
   );
   const [showKeys, setShowKeys] = useState(false);
+  const [panel, setPanel] = useState<"versions" | "recipes" | "review" | null>(null);
   const [copying, setCopying] = useState(false);
+  useCommentsLoader(project.id);
   const [copyError, setCopyError] = useState<string | null>(null);
 
   /*
@@ -505,6 +551,7 @@ function LoadedEditor({
 
   return (
     <EditorContext.Provider value={ctx}>
+      <BrandKitProvider value={kit}>
       <div className="stu">
         <div className="stu-top">
           <button className="iconbtn" title="Back to projects" onClick={onClose}>
@@ -562,6 +609,27 @@ function LoadedEditor({
             <span className={`mini stu-savestate${saveState === "saved" ? " ok" : ""}`}>
               {saveState === "saving" ? "Saving..." : "Saved"}
             </span>
+            <select
+              className="btn ghost stu-aspect"
+              title="Output aspect; layouts reframe to it"
+              value={doc.output.aspect}
+              onChange={(e) => update((d) => setAspect(d, e.target.value as Aspect))}
+            >
+              {ASPECTS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+            <button className="btn ghost" title="Comments, a client review link, and Premiere / Final Cut export" onClick={() => setPanel("review")}>
+              Review
+            </button>
+            <button className="btn ghost" title="Saved versions of this edit" onClick={() => setPanel("versions")}>
+              Versions
+            </button>
+            <button className="btn ghost" title="Apply a saved recipe to this clip" onClick={() => setPanel("recipes")}>
+              Recipe
+            </button>
             <button
               className="btn ghost"
               title="Keyboard shortcuts, and where to change them"
@@ -587,6 +655,26 @@ function LoadedEditor({
           )}
         </div>
       </div>
+      {panel === "versions" && <VersionsPanel onClose={() => setPanel(null)} />}
+      {panel === "review" && <CollabPanel onClose={() => setPanel(null)} />}
+      {panel === "recipes" && (
+        <RecipesPanel
+          clientId={project.clientId}
+          onClose={() => setPanel(null)}
+          onApply={async (recipeId) => {
+            try {
+              const r = await api.post<{ doc: EditDoc; change: { cuts: number; hook: string | null } }>(
+                `/recipes/${recipeId}/apply/${project.id}`,
+                { doc },
+              );
+              update(() => r.doc);
+              setPanel(null);
+            } catch (e) {
+              setCopyError(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
+      )}
       {showKeys && (
         <KeymapModal
           overrides={keyOverrides}
@@ -594,6 +682,7 @@ function LoadedEditor({
           onClose={() => setShowKeys(false)}
         />
       )}
+      </BrandKitProvider>
     </EditorContext.Provider>
   );
 }

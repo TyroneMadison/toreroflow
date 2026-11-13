@@ -6,6 +6,10 @@ const BRAND_COLORS = ["#FF7A66", "#6fb0ff", "#F2BE6E", "#B794FF", "#4ADE9A", "#F
 export const brandColor = (index: number): string =>
   BRAND_COLORS[index % BRAND_COLORS.length]!;
 
+/** One or two letters for a round avatar: "Northwind Studio" -> "NS", "Acme" -> "A". */
+export const initials = (name: string): string =>
+  name.trim().split(/\s+/).slice(0, 2).map((w) => [...w][0] ?? "").join("").toUpperCase() || "?";
+
 /**
  * Best real profile picture for a client: Instagram's avatar first (usually
  * the brand's face), then any other connected account's, else null.

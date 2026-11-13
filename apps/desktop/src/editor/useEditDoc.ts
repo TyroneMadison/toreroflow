@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EditDoc } from "@toreroflow/core";
+import { migrateDoc, type EditDoc } from "@toreroflow/core";
 import { api } from "../lib/api";
 
 export type SaveState = "saving" | "saved";
@@ -14,7 +14,8 @@ const RETRY_MS = 3000;
  * ever receives the whole thing.
  */
 export function useEditDoc(projectId: string, initial: EditDoc) {
-  const [doc, setDoc] = useState<EditDoc>(initial);
+  // Saved v1 docs open as v2; the first save writes v2 back.
+  const [doc, setDoc] = useState<EditDoc>(() => migrateDoc(initial));
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const docRef = useRef(doc);
   const undoStack = useRef<EditDoc[]>([]);

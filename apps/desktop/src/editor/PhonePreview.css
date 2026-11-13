@@ -46,3 +46,9 @@
 .pv-scrub-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--grad);box-shadow:0 2px 8px rgba(255,111,97,.5)}
 
 .pv-time{align-self:flex-start;margin-top:4px}
+
+/* Layouts draw the main video into one canvas per output panel. */
+.pv-layout{position:absolute;inset:0;z-index:1}
+.pv-panel{position:absolute;left:0;width:100%;display:block}
+.pv-panel.drag{cursor:grab;touch-action:none}
+.pv-panel.drag:active{cursor:grabbing}

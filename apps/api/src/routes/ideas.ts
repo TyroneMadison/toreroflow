@@ -5,10 +5,30 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { toPlainText } from "@toreroflow/core";
-import { getPrisma, groundingFor as grounding, enqueue } from "@toreroflow/db";
+import {
+  cleanCreatorLinks,
+  parseCreatorLink,
+  toPlainText,
+  CREATOR_LINK_CAP,
+  topicKeywords,
+  VIDEO_FORMATS,
+  FUNNEL_STAGES,
+  DIFFICULTIES,
+  DIFFICULTY_RUBRIC,
+  NEEDS_RULES,
+  funnelPromptGuide,
+  reconcileFunnel,
+  cleanNeeds,
+  needsLoad,
+  checkDifficulty,
+  enforceMix,
+  SUPERGEN_CAP_MAX,
+  SUPERGEN_CAP_MIN,
+} from "@toreroflow/core";
+import { getPrisma, groundingFor as grounding, enqueue, Prisma } from "@toreroflow/db";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { inspirationFor, mineHooksBounded } from "../hooks/mine";
 
 /**
  * The ideas list, the niche profile, the files side of the knowledge base, and
@@ -32,12 +52,21 @@ const ideaCreateSchema = z.object({
   formatName: z.string().max(120).optional(),
   niche: z.string().max(200).optional(),
   source: z.enum(["brainstorm", "analysis", "overview", "custom"]).optional(),
+  scriptText: z.string().max(4000).optional(),
+  creator: z.string().max(120).optional(),
+  funnelStage: z.enum(["top", "middle", "bottom"]).optional(),
+  whyItWorks: z.string().max(400).optional(),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  remixedFromId: z.string().max(40).optional(),
+  needs: z.array(z.object({ type: z.enum(["prop", "location", "people"]), label: z.string().min(1).max(40) })).max(4).optional(),
+  shots: z.array(z.record(z.string(), z.string().max(120))).max(8).optional(),
 });
 
 const ideaPatchSchema = z.object({
   status: z.enum(IDEA_STATUSES).optional(),
   text: z.string().min(1).max(500).optional(),
   hook: z.string().max(500).optional(),
+  completed: z.boolean().optional(),
 });
 
 const nicheProfileSchema = z.object({
@@ -50,12 +79,15 @@ const nicheProfileSchema = z.object({
 });
 
 const generateIdeasSchema = z.object({
-  categories: z.array(z.string().min(1).max(40)).max(8).default([]),
+  categories: z.array(z.string().min(1).max(40)).max(20).default([]),
   /** The format to write more hooks for, by name. Absent means a fresh set. */
   formatId: z.string().max(120).optional(),
   /** Hooks the operator can already see, so the next batch is not the same four. */
   exclude: z.array(z.string().max(200)).max(40).default([]),
   more: z.boolean().optional(),
+  /** Brainstorm context typed in the Ideas section. Absent for every other button. */
+  niche: z.string().max(200).optional(),
+  inspirations: z.array(z.string().max(300)).max(12).default([]),
 });
 
 const brainstormSchema = z.object({
@@ -231,11 +263,11 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           detail: parsed.error.issues[0]?.message ?? "An idea is a line of text, up to 500 characters.",
         });
       }
-      return reply.status(201).send(
-        await prisma.contentIdea.create({
-          data: { clientId: client.id, ...parsed.data },
-        }),
-      );
+      const created = await prisma.contentIdea.create({
+        data: { clientId: client.id, ...parsed.data },
+      });
+      if (created.scriptText) await enqueue("ideagifs", { ideaId: created.id }, { key: `gifs-${created.id}` });
+      return reply.status(201).send(created);
     },
   );
 
@@ -253,6 +285,17 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       });
     }
     return prisma.contentIdea.update({ where: { id: existing.id }, data: parsed.data });
+  });
+
+  app.post<{ Params: { id: string } }>("/ideas/:id/gifs", async (request, reply) => {
+    const idea = await prisma.contentIdea.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      select: { id: true },
+    });
+    if (!idea) return reply.status(404).send({ error: "idea not found" });
+    await prisma.contentIdea.update({ where: { id: idea.id }, data: { gifs: Prisma.DbNull } });
+    await enqueue("ideagifs", { ideaId: idea.id }, { key: `gifs-${idea.id}-${Date.now()}` });
+    return { ok: true };
   });
 
   app.delete<{ Params: { id: string } }>("/ideas/:id", async (request, reply) => {
@@ -385,6 +428,155 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /* ---- save vs skip feedback (quiet preference profile) ---- */
+
+  const feedbackSchema = z.object({
+    runId: z.string().max(64).default(""),
+    events: z.array(z.object({
+      text: z.string().min(1).max(500),
+      format: z.string().max(60).optional(),
+      funnelStage: z.string().max(10).optional(),
+      hookStyle: z.string().max(120).optional(),
+      creator: z.string().max(120).optional(),
+      saved: z.boolean(),
+    })).max(40),
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/idea-feedback", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const parsed = feedbackSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: "feedback not recorded" });
+    const { runId, events } = parsed.data;
+    for (const e of events) {
+      const textKey = e.text.trim().toLowerCase().slice(0, 300);
+      const data = {
+        format: e.format ?? null, funnelStage: e.funnelStage ?? null, hookStyle: e.hookStyle ?? null,
+        creator: e.creator ?? null, keywords: topicKeywords(e.text),
+      };
+      await prisma.ideaFeedback.upsert({
+        where: { clientId_runId_textKey: { clientId: client.id, runId, textKey } },
+        create: { clientId: client.id, runId, textKey, saved: e.saved, ...data },
+        // A save always wins over an earlier skip; a skip never undoes a save.
+        update: e.saved ? { saved: true } : {},
+      });
+    }
+    return { ok: true, recorded: events.length };
+  });
+
+  /* ---- creator links and Super generate ---- */
+
+  const creatorsSchema = z.object({
+    creators: z.array(z.string().max(300)).max(CREATOR_LINK_CAP * 2).optional(),
+    capCents: z.number().int().min(SUPERGEN_CAP_MIN).max(SUPERGEN_CAP_MAX).optional(),
+  });
+
+  const readiness = () => ({
+    youtubeReady: Boolean(env.YOUTUBE_API_KEY),
+    modelReady: Boolean(env.ANTHROPIC_API_KEY),
+  });
+
+  app.get<{ Params: { clientId: string } }>("/clients/:clientId/idea-creators", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.clientId, agencyId: request.user.agencyId, deletedAt: null },
+      select: { ideaCreators: true, superGenCapCents: true },
+    });
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    return { creators: client.ideaCreators, capCents: client.superGenCapCents, ...readiness() };
+  });
+
+  app.put<{ Params: { clientId: string } }>("/clients/:clientId/idea-creators", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const parsed = creatorsSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "those creators could not be saved",
+        detail: parsed.error.issues[0]?.message ?? "Up to 15 channel links, and a cap between $0.10 and $50.",
+      });
+    }
+    const updated = await prisma.client.update({
+      where: { id: client.id },
+      data: {
+        ...(parsed.data.creators ? { ideaCreators: cleanCreatorLinks(parsed.data.creators) } : {}),
+        ...(parsed.data.capCents !== undefined ? { superGenCapCents: parsed.data.capCents } : {}),
+      },
+      select: { ideaCreators: true, superGenCapCents: true },
+    });
+    return { creators: updated.ideaCreators, capCents: updated.superGenCapCents, ...readiness() };
+  });
+
+  const runView = (r: {
+    id: string; status: string; creators: unknown; ideas: unknown; capCents: number;
+    spentCents: number; error: string | null; createdAt: Date; completedAt: Date | null;
+  }) => ({ ...r });
+
+  app.get<{ Params: { clientId: string } }>("/clients/:clientId/super-generate", async (request, reply) => {
+    const client = await ownedClient(request.params.clientId, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    const run = await prisma.superGenerateRun.findFirst({
+      where: { clientId: client.id },
+      orderBy: { createdAt: "desc" },
+    });
+    return { run: run ? runView(run) : null, ...readiness() };
+  });
+
+  app.post<{ Params: { clientId: string } }>("/clients/:clientId/super-generate", async (request, reply) => {
+    const client = await prisma.client.findFirst({
+      where: { id: request.params.clientId, agencyId: request.user.agencyId, deletedAt: null },
+      select: { id: true, ideaCreators: true, superGenCapCents: true },
+    });
+    if (!client) return reply.status(404).send({ error: "brand not found" });
+    if (!env.YOUTUBE_API_KEY) {
+      return reply.status(503).send({
+        code: "no_youtube_key",
+        error: "Super generate needs a YouTube API key",
+        detail: "Add YOUTUBE_API_KEY to infra/.env on the server and restart the API and worker.",
+      });
+    }
+    if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
+    const only = typeof (request.body as { creator?: unknown } | null)?.creator === "string"
+      ? String((request.body as { creator: string }).creator)
+      : null;
+    const all = cleanCreatorLinks(client.ideaCreators);
+    const onlyKey = only ? (parseCreatorLink(only)?.url ?? only.trim().toLowerCase()) : null;
+    const links = onlyKey ? all.filter((u) => (parseCreatorLink(u)?.url ?? u.trim().toLowerCase()) === onlyKey) : all;
+    if (onlyKey && links.length === 0) {
+      return reply.status(400).send({ error: "that creator is not in your list", detail: "Add the link first, then generate." });
+    }
+    if (links.length === 0) {
+      return reply.status(400).send({ error: "add a creator first", detail: "Paste at least one YouTube channel link." });
+    }
+    const busy = await prisma.superGenerateRun.findFirst({
+      where: { clientId: client.id, status: "running", createdAt: { gt: new Date(Date.now() - 30 * 60 * 1000) } },
+    });
+    if (busy) return { run: runView(busy), ...readiness() };
+    // On-demand hook mining, bounded so Super generate is never held up long.
+    await mineHooksBounded(client.id, request.log);
+    const creators = links.map((url) => {
+      const l = parseCreatorLink(url);
+      return { url, handle: l?.handle ?? url, platform: l?.platform ?? "other", status: "queued", videos: 0, note: "" };
+    });
+    const run = await prisma.superGenerateRun.create({
+      data: { clientId: client.id, creators, capCents: client.superGenCapCents },
+    });
+    await enqueue("supergen", { runId: run.id }, { key: run.id });
+    return { run: runView(run), ...readiness() };
+  });
+
+  app.post<{ Params: { id: string } }>("/super-generate/:id/cancel", async (request, reply) => {
+    const run = await prisma.superGenerateRun.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!run) return reply.status(404).send({ error: "run not found" });
+    if (run.status !== "running") return { run: runView(run) };
+    const updated = await prisma.superGenerateRun.update({
+      where: { id: run.id },
+      data: { status: "cancelled", completedAt: new Date() },
+    });
+    return { run: runView(updated) };
+  });
+
   /* ---- formats and hooks ---- */
 
   /**
@@ -411,7 +603,16 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
       }
       if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
 
-      const { categories, formatId, exclude, more } = parsed.data;
+      const { categories, formatId, exclude, more, niche, inspirations } = parsed.data;
+      // A fresh press (Brainstorm, Find formats, Pick for me) mines hooks first,
+      // bounded; "more hooks" for one card does not.
+      if (!formatId) await mineHooksBounded(client.id, request.log);
+      const library = await inspirationFor(client.id).catch(() => "");
+      const context =
+        (niche?.trim() ? `Niche the operator typed for this brainstorm: ${niche.trim()}.\n` : "") +
+        (inspirations.length
+          ? `Creators that inspire this brand (borrow the shape and energy of their formats, never their words): ${inspirations.join(", ")}.\n`
+          : "");
       const job = formatId
         ? `Write 4 more hooks for the format called "${formatId}". Return that one ` +
           `format only, keeping its name, with 4 hooks the operator has not seen.` +
@@ -457,7 +658,7 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
           messages: [
             {
               role: "user",
-              content: `Brand: ${client.name}\n${styles}\n${job}\n\n${await grounding(prisma, client.id)}`,
+              content: `Brand: ${client.name}\n${context}${styles}\n${job}\n\n${library ? `${library}\n\n` : ""}${await grounding(prisma, client.id)}`,
             },
           ],
         });
@@ -593,6 +794,113 @@ export async function ideasRoutes(app: FastifyInstance): Promise<void> {
         error: "could not write the script",
         detail: err instanceof Error ? err.message : String(err),
       });
+    }
+  });
+
+  /* ---- remix a saved idea ---- */
+
+  const REMIX_SCHEMA = {
+    type: "object",
+    additionalProperties: false,
+    required: ["variants"],
+    properties: {
+      variants: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["text", "label", "format", "funnelStage", "whyItWorks", "difficulty", "actors", "locations", "needs", "script", "shots"],
+          properties: {
+            text: { type: "string" },
+            label: { type: "string" },
+            format: { type: "string", enum: [...VIDEO_FORMATS] },
+            funnelStage: { type: "string", enum: [...FUNNEL_STAGES] },
+            whyItWorks: { type: "string" },
+            difficulty: { type: "string", enum: [...DIFFICULTIES] },
+            actors: { type: "integer" },
+            locations: { type: "integer" },
+            needs: { type: "array", items: { type: "object", additionalProperties: false, required: ["type", "label"], properties: { type: { type: "string", enum: ["prop", "location", "people"] }, label: { type: "string" } } } },
+            script: { type: "string" },
+            shots: { type: "array", items: { type: "object", additionalProperties: false, required: ["title", "framing", "angle", "move", "pose", "time", "sign"], properties: {
+              title: { type: "string" },
+              framing: { type: "string", enum: ["close-up", "medium", "wide", "over-the-shoulder"] },
+              angle: { type: "string", enum: ["eye", "low", "high"] },
+              move: { type: "string", enum: ["push", "pull", "pan", "tilt", "static"] },
+              pose: { type: "string", enum: ["talk", "point", "measure", "hold", "walk"] },
+              time: { type: "string" },
+              sign: { type: "string" },
+            } } },
+          },
+        },
+      },
+    },
+  } as const;
+
+  /**
+   * Three fresh takes on one saved idea: same core topic, a new hook and/or a
+   * new format each. Nothing is saved here; the screen saves the ones the
+   * operator picks as new ideas linked by remixedFromId.
+   */
+  app.post<{ Params: { id: string } }>("/ideas/:id/remix", async (request, reply) => {
+    const idea = await prisma.contentIdea.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+      include: { client: { select: { name: true } } },
+    });
+    if (!idea) return reply.status(404).send({ error: "idea not found" });
+    if (!env.ANTHROPIC_API_KEY) return reply.status(503).send(NO_KEY);
+    try {
+      const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: env.SUGGESTIONS_MODEL,
+        max_tokens: 5000,
+        output_config: { effort: "low", format: { type: "json_schema", schema: REMIX_SCHEMA } },
+        system:
+          "You remix one short form video idea for a brand. Write 4 variants that keep the same core " +
+          "idea and topic but each changes the hook, the format, or both, and no two variants alike. " +
+          "text is the new opening line, spoken, six to fifteen words, never the same as the original. " +
+          "label is the hook style, two to four words, different for every variant. format is exactly one " +
+          "of the listed formats; funnelStage is top, middle or bottom, and the format must suit the stage:\n" +
+          funnelPromptGuide() + "\n" +
+          "whyItWorks is one specific sentence, under 25 words, on the psychology or trend behind it. " +
+          DIFFICULTY_RUBRIC + " " + NEEDS_RULES + " " +
+          "script is 40 to 90 words as four lines starting HOOK:, SETUP:, PAYOFF:, CTA:. shots is exactly 3 " +
+          "shots: title under 8 words, time like 0:00-0:03, sign is short on-screen text or empty. " +
+          "No hashtags, no emoji, never an em dash, en dash or arrow. Do not invent prices or facts.",
+        messages: [{
+          role: "user",
+          content:
+            `Brand: ${idea.client.name}\nOriginal idea: ${idea.hook || idea.text}\n` +
+            (idea.formatName ? `Original format: ${idea.formatName}\n` : "") +
+            (idea.scriptText ? `Original script:\n${idea.scriptText}\n` : "") +
+            `\n${await grounding(prisma, idea.clientId)}`,
+        }],
+      } as Anthropic.MessageCreateParamsNonStreaming);
+      if (response.stop_reason === "refusal") return reply.status(502).send(REFUSED);
+      const raw = JSON.parse(textOf(response) || "{}") as { variants?: Array<Record<string, unknown>> };
+      const cleaned = (raw.variants ?? []).map((v) => {
+        const shots = (Array.isArray(v.shots) ? v.shots : []).slice(0, 5) as Array<Record<string, string>>;
+        const fit = reconcileFunnel(v.format, v.funnelStage);
+        const needs = cleanNeeds(v.needs, shots.map((s) => String(s.title ?? "")));
+        const load = needsLoad(needs);
+        return {
+          text: toPlainText(String(v.text ?? "")).slice(0, 500),
+          label: toPlainText(String(v.label ?? "")).slice(0, 60),
+          format: fit.format,
+          funnelStage: fit.funnelStage,
+          whyItWorks: toPlainText(String(v.whyItWorks ?? "")).slice(0, 400),
+          difficulty: checkDifficulty(v.difficulty, fit.format, shots.length, Math.max(Number(v.actors) || 1, load.actors), Math.max(Number(v.locations) || 1, load.locations), load.props),
+          needs,
+          script: toPlainText(String(v.script ?? "")).slice(0, 4000),
+          shots,
+          creator: idea.creator ?? undefined,
+        };
+      }).filter((v) => v.text);
+      const variants = enforceMix(cleaned, 3, [idea.hook || idea.text]).slice(0, 3);
+      if (variants.length === 0) return reply.status(502).send({ error: "could not remix this idea", detail: "Try again." });
+      return { clientId: idea.clientId, originalId: idea.id, variants };
+    } catch (err) {
+      request.log.error({ err }, "could not remix the idea");
+      return reply.status(502).send({ error: "could not remix this idea", detail: err instanceof Error ? err.message : String(err) });
     }
   });
 

@@ -5,21 +5,30 @@ import { pipeline } from "node:stream/promises";
 import { fileLink } from "../files/link";
 import {
   captionFor,
+  composeCaption,
   carouselVerdict,
+  checkCaption,
   decodeEscapes,
-  INSTAGRAM_FEED_MAX_SECONDS,
+  instagramVideoError,
   INSTAGRAM_STORY_MAX_SECONDS,
+  instagramLongformFit,
+  measuredDurationSec,
   schedulePostSchema,
   scheduleTimeError,
   uploadSizeError,
+  youtubeShortsBlockMessage,
+  youtubeShortsPublishBlock,
   youtubeTitleFor,
   type Platform,
 } from "@toreroflow/core";
+import { probeDuration } from "@toreroflow/media";
 import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
-import { enrichFieldsFrom } from "@toreroflow/publishers";
+import { enrichFieldsFrom, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { actingUserId } from "../auth/actingUser";
+import { sopReminder } from "../posts/sopReminder";
+import { requeueFailedTarget } from "../posts/requeue";
 
 /**
  * The name an operator typed for a video, or "" when they have not.
@@ -40,8 +49,42 @@ export function draftName(draft: unknown): string {
 
 export async function postRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
+  const zernio =
+    env.PUBLISH_PROVIDER === "zernio" && env.PUBLISH_PROVIDER_API_KEY
+      ? new ZernioProvider(env.PUBLISH_PROVIDER_API_KEY)
+      : null;
 
   app.addHook("onRequest", requireAuth);
+
+  /**
+   * Whether this video fits a long-form Instagram reel, with the file size
+   * the screen cannot see and, given an Instagram account, how much of its
+   * 24 hour publishing allowance is left. The same check the schedule route
+   * refuses on, so the warning and the refusal agree.
+   */
+  app.get<{ Params: { id: string }; Querystring: { accountId?: string; crop916?: string } }>(
+    "/media/:id/instagram-fit",
+    async (request, reply) => {
+      const asset = await prisma.mediaAsset.findFirst({
+        where: { id: request.params.id, client: { agencyId: request.user.agencyId, deletedAt: null } },
+        include: { client: { include: { socialAccounts: { where: { deletedAt: null } } } } },
+      });
+      if (!asset) return reply.status(404).send({ error: "asset not found" });
+      const bytes = await fs
+        .stat(nodePath.join(env.STORAGE_DIR, asset.storageKey))
+        .then((st) => st.size, () => null);
+      const fit = instagramLongformFit({ ...asset, bytes, crop916: request.query.crop916 === "1" });
+      const account = asset.client.socialAccounts.find(
+        (a) => a.id === request.query.accountId && a.platform === "instagram",
+      );
+      let limit: { used: number; total: number } | null = null;
+      if (zernio && account?.providerAccountId && account.tokensEncrypted === "provider:zernio") {
+        // Informational: a provider hiccup must not hide the fit check.
+        limit = await zernio.instagramPublishingLimit(account.providerAccountId).catch(() => null);
+      }
+      return { bytes, ...fit, limit };
+    },
+  );
 
   /** Schedule a processed video to one or more connected platforms. */
   app.post<{ Params: { id: string } }>("/media/:id/schedule", async (request, reply) => {
@@ -59,6 +102,9 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     if (asset.status !== "ready") {
       return reply.status(409).send({ error: "asset is still processing" });
     }
+    // The client's SOP is a gentle reminder, never a block: scheduling goes
+    // ahead, and the response nudges when the caller did not confirm it.
+    const reminder = sopReminder(asset.client, body.sopAcknowledged);
 
     const scheduledAt = new Date(body.scheduledAt);
     /*
@@ -117,6 +163,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * three platforms and quietly dropping the fourth is the shape of failure
      * this is here to remove, not one to introduce somewhere new.
      */
+    let sourceBytes: number | null = null;
     if (asset.kind === "video" && !asset.sourceDeletedAt) {
       let bytes: number | null = null;
       try {
@@ -130,11 +177,30 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       }
       if (bytes !== null) {
         for (const { platform } of accounts) {
-          const tooLarge = uploadSizeError(platform, bytes);
+          // A long-form reel gets an Instagram copy made under the cap instead.
+          if (platform === "instagram" && body.instagram?.longform) continue;
+          const tooLarge =
+            platform === "instagram" ? instagramVideoError(null, bytes) : uploadSizeError(platform, bytes);
           if (tooLarge) return reply.status(400).send({ error: tooLarge });
         }
       }
+      sourceBytes = bytes;
     }
+
+    /*
+     * Long-form Instagram: up to 15 minutes, any size (a copy is made), and
+     * the same check the screen showed, so its refusal and ours agree.
+     */
+    const igLongform =
+      Boolean(body.instagram?.longform) && accounts.some(({ platform }) => platform === "instagram");
+    const igFit = igLongform
+      ? instagramLongformFit({ ...asset, bytes: sourceBytes, crop916: body.instagram?.crop916 })
+      : null;
+    if (igFit?.blocks.length) {
+      return reply.status(400).send({ error: "does not fit Instagram", detail: igFit.blocks.join(" ") });
+    }
+    // YouTube and Instagram long-form together go out as one provider post.
+    const combined = igLongform && accounts.some(({ platform }) => platform === "youtube");
 
     // Older rows carry {hook, caption} or a `title` that used to mean both
     // the YouTube title and everyone's caption. Fold them onto `name`, which
@@ -164,6 +230,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     // receives, which is what this field has always meant. It does not touch
     // YouTube's title: that is a separate field with its own input.
     const captionOverride = body.caption ? decodeEscapes(body.caption) : "";
+    // The client's caption block (and keyword line) goes under every caption
+    // and description, here, so the app and bots get it alike. YouTube's
+    // title is left alone.
+    const withBlock = (caption: string): string =>
+      caption
+        ? composeCaption(
+            { caption, title: draft.name, cardName: body.cardName, useBlock: body.captionBlock },
+            asset.client,
+          )
+        : caption;
     const hashtags = (body.hashtags ?? stored.hashtags ?? []).map(decodeEscapes);
     // Collaborators arrive as typed usernames; strip the @ some people type.
     const igOptions = body.instagram
@@ -178,7 +254,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     const ytOptions = body.youtube;
     // The wizard's own editor wins over draft-derived copy where it spoke.
     const youtubeBody =
-      ytOptions?.description || captionOverride || captionFor("youtube", draft);
+      withBlock(ytOptions?.description || captionOverride || captionFor("youtube", draft));
 
     /*
      * A YouTube upload never leaves here with an empty description.
@@ -250,26 +326,44 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
      * story flag, alongside the reel.
      */
     const igAccount = accounts.find((a) => a.platform === "instagram");
-    const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount);
+    const wantsStory = Boolean(igOptions?.alsoStory) && Boolean(igAccount) && !igLongform;
 
     /*
-     * Only a genuinely absurd video is refused now.
-     *
-     * Over 90 seconds it stops being a reel and goes as a feed post, which
-     * Instagram takes up to an hour of; buildPostExtras makes that call from
-     * the duration. The reel limit is a placement limit, not a publishing one,
-     * and treating it as the latter is what left a client's video unposted for
-     * three days.
+     * Instagram takes a single video as a reel and nothing else, up to 15
+     * minutes. There is no feed-video road for anything longer (the provider
+     * makes every single video a reel), so a longer one is refused here, in
+     * words, rather than failing at publish hours later.
      */
-    if (
-      igAccount &&
-      asset.durationSec != null &&
-      asset.durationSec > INSTAGRAM_FEED_MAX_SECONDS
-    ) {
-      return reply.status(400).send({
-        error: "too long for Instagram",
-        detail: `Instagram stops at ${Math.round(INSTAGRAM_FEED_MAX_SECONDS / 60)} minutes and this video is ${Math.round(asset.durationSec / 60)}. Trim it, or untick Instagram.`,
+    const igTooLong = igAccount && !igLongform && asset.kind === "video" ? instagramVideoError(asset.durationSec) : null;
+    if (igTooLong) {
+      return reply.status(400).send({ error: "too long for Instagram", detail: igTooLong });
+    }
+
+    /*
+     * YouTube Shorts stop at 3:00. The schedule screen disables the Shorts
+     * switch for a longer video; this is the same refusal for a request that
+     * skipped the screen. A long-form YouTube upload is a different post and
+     * is not checked here. The length is the file's, from ffprobe, with the
+     * stored measurement only when the file cannot be read.
+     */
+    if (asset.kind === "video" && accounts.some(({ platform }) => platform === "youtube")) {
+      const probed =
+        asset.sourceDeletedAt || !asset.storageKey
+          ? null
+          : await probeDuration(nodePath.join(env.STORAGE_DIR, asset.storageKey));
+      const durationSec = measuredDurationSec(probed, asset.durationSec);
+      const shortsBlock = youtubeShortsPublishBlock({
+        platform: "youtube",
+        format: asset.format,
+        kind: asset.kind,
+        durationSec,
       });
+      if (shortsBlock) {
+        return reply.status(400).send({
+          error: shortsBlock,
+          detail: durationSec != null ? youtubeShortsBlockMessage(durationSec) : shortsBlock,
+        });
+      }
     }
 
     if (wantsStory && asset.durationSec != null && asset.durationSec > INSTAGRAM_STORY_MAX_SECONDS) {
@@ -281,13 +375,37 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    /*
+     * Caption limits, on the words that actually post: the caption with the
+     * client's block under it and the hashtags after it, the way the worker
+     * joins them. The screens block the same thing live; this is the refusal
+     * for anything that skipped them, a bot included.
+     */
+    const tagLine = hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ");
+    const photo = asset.kind === "carousel";
+    for (const { platform } of accounts) {
+      if (platform !== "instagram" && platform !== "tiktok") continue;
+      const words = [withBlock(captionOverride || captionFor(platform, draft)), tagLine].filter(Boolean).join("\n\n");
+      const problems = checkCaption(platform, words, { photo }).problems;
+      if (problems.length) {
+        return reply.status(400).send({ error: `caption too long for ${platform}`, detail: problems.join(" ") });
+      }
+    }
+
     const createdById = await actingUserId(request);
     if (!createdById) return reply.status(401).send({ error: "unknown user" });
+    // A named bot's posts go out under its own Zernio key when one is set.
+    const viaBot = request.user.role === "bot" && request.user.bot ? { bot: request.user.bot } : {};
+
+    const idea = body.ideaId
+      ? await prisma.contentIdea.findFirst({ where: { id: body.ideaId, clientId: asset.clientId }, select: { id: true } })
+      : null;
 
     const post = await prisma.post.create({
       data: {
         clientId: asset.clientId,
         mediaAssetId: asset.id,
+        ideaId: idea?.id ?? null,
         createdById,
         status: "scheduled",
         targets: {
@@ -297,27 +415,34 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             caption:
               platform === "youtube"
                 ? youtubeBody
-                : captionOverride || captionFor(platform, draft),
+                : withBlock(captionOverride || captionFor(platform, draft)),
             hashtags,
             scheduledAt,
             status: "scheduled",
             options:
               platform === "instagram" && igOptions
-                ? { instagram: igOptions }
+                ? { instagram: igOptions, ...(combined ? { combined: true } : {}), ...viaBot }
                 : platform === "youtube"
                   ? {
                       youtubeTitle: ytOptions?.title || youtubeTitleFor(draft),
                       ...(ytOptions ? { youtube: ytOptions } : {}),
+                      ...(combined ? { combined: true } : {}),
+                      ...viaBot,
                     }
                   : platform === "tiktok" && asset.kind === "carousel"
                     ? {
                         // A TikTok photo post has a title of its own (90
                         // chars, hashtags stripped by the platform) separate
                         // from the caption. The video's name is that title.
-                        tiktokTitle: draft.name || null,
+                        tiktokTitle: draft.name ? draft.name.slice(0, 90) : null,
                         ...(body.tiktok ? { tiktok: body.tiktok } : {}),
+                        ...viaBot,
                       }
-                    : undefined,
+                    : platform === "tiktok" && body.tiktok
+                      ? { tiktok: body.tiktok, ...viaBot }
+                      : Object.keys(viaBot).length
+                        ? viaBot
+                        : undefined,
           })),
         },
       },
@@ -338,7 +463,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             hashtags: [],
             scheduledAt,
             status: "scheduled",
-            options: { instagram: { story: true } },
+            options: { instagram: { story: true }, ...viaBot },
           },
         })
       : null;
@@ -359,9 +484,20 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       );
     }
 
+    // Make the Instagram copy now, hours ahead of the slot, not at publish.
+    if (igFit?.needsCopy) {
+      await enqueue(
+        "igcopy",
+        { assetId: asset.id, crop916: body.instagram?.crop916 === true },
+        { key: `igcopy:${asset.id}:${body.instagram?.crop916 ? "crop916" : "fit"}`, retryLimit: 2 },
+      );
+    }
+
     return reply.status(201).send({
       id: post.id,
       scheduledAt,
+      ...(igFit ? { instagram: { needsCopy: igFit.needsCopy, warnings: igFit.warnings } } : {}),
+      ...(reminder ? { sopReminder: reminder } : {}),
       targets: post.targets.map((t) => ({
         id: t.id,
         platform: t.platform,
@@ -387,7 +523,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const to = request.query.to ? new Date(request.query.to) : undefined;
       const targets = await prisma.postTarget.findMany({
         where: {
-          post: { clientId: client.id, deletedAt: null },
+          // Saved drafts (S5) are not on the calendar until scheduled.
+          post: { clientId: client.id, deletedAt: null, status: { not: "draft" } },
           ...(from || to
             ? { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
             : {}),
@@ -472,6 +609,19 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
           t.platform === "youtube"
             ? (((t.options as Record<string, unknown> | null) ?? {}).youtubeTitle as string | undefined) ?? null
             : null,
+        // An Instagram trial reel (non-followers first). The calendar paints these teal.
+        // Only what the publisher really sends as a trial: never a carousel, a
+        // story, or a reel retried plain (instagramFeedPost), which went to every follower.
+        trial: (() => {
+          const o = (t.options as { instagram?: { trial?: unknown; story?: unknown }; instagramFeedPost?: unknown } | null) ?? {};
+          return (
+            t.platform === "instagram" &&
+            o.instagram?.trial === true &&
+            o.instagram.story !== true &&
+            o.instagramFeedPost !== true &&
+            t.post.mediaAsset?.kind !== "carousel"
+          );
+        })(),
         // Cleared from the queue card by the operator; still on the calendar.
         queueDismissed: Boolean(
           ((t.options as Record<string, unknown> | null) ?? {}).queueDismissedAt,
@@ -883,41 +1033,7 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: "the inbox route is TikTok only" });
       }
 
-      // A dismissed failure that is retried and fails again is news again,
-      // so the dismissal does not survive the retry.
-      const { queueDismissedAt: _dismissed, ...options } =
-        (target.options as Record<string, unknown> | null) ?? {};
-      const nextOptions = draft
-        ? {
-            ...options,
-            tiktok: { ...((options.tiktok as Record<string, unknown>) ?? {}), draft: true },
-          }
-        : options;
-
-      const when = new Date();
-      await prisma.postTarget.update({
-        where: { id: target.id },
-        data: {
-          status: "scheduled",
-          // Cleared so a second failure shows its own reason rather than the
-          // last one, which is what makes "it failed the same way" readable.
-          error: null,
-          scheduledAt: when,
-          options: nextOptions as never,
-        },
-      });
-
-      /*
-       * The post itself was marked failed when its last target gave up. Lift
-       * that only while something is in flight again; the remaining targets
-       * keep their own statuses and the next failure re-marks it.
-       */
-      await prisma.post.update({
-        where: { id: target.post.id },
-        data: { status: "scheduled" },
-      });
-
-      await reschedule("publish", { targetId: target.id }, target.id, when);
+      const when = await requeueFailedTarget({ id: target.id, postId: target.post.id, options: target.options }, draft);
       return { id: target.id, scheduledAt: when.toISOString(), tiktokDraft: draft };
     },
   );

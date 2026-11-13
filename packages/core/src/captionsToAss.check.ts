@@ -160,3 +160,81 @@ eq(offAss.includes("Style: C"), false, "no caption style when disabled");
 eq(offAss.includes("Dialogue:"), false, "no caption events when disabled");
 
 console.log("captionsToAss.check: all assertions passed");
+
+// Word-timed karaoke: real word starts set each \k, so the highlight lands
+// on the word as it is spoken instead of an even split.
+{
+  const timed = assFromDoc({
+    chunks: [
+      {
+        start: 10,
+        end: 12,
+        text: "one two three",
+        times: [
+          { start: 10, end: 10.2 },
+          { start: 10.25, end: 11.5 },
+          { start: 11.6, end: 12 },
+        ],
+      },
+    ],
+    texts: [],
+    captions: { ...emptyDoc([]).captions, style: { ...emptyDoc([]).captions.style, accentColor: "#FF0000", animation: "karaoke" } },
+  });
+  const line = timed.split("\n").find((l) => l.startsWith("Dialogue"))!;
+  eq(line.includes("{\\k25}ONE") || line.includes("{\\k25}one"), true, "first word holds until the second is spoken (25 cs)");
+  eq(/\{\\k135\}two/i.test(line), true, "second word 135 cs, matching its real start gap");
+  eq(/\{\\k40\}three/i.test(line), true, "last word runs to chunk end, sum stays 200");
+  // Word count mismatch (override) falls back to the even split.
+  const fallback = assFromDoc({
+    chunks: [{ start: 0, end: 1, text: "a b", times: [{ start: 0, end: 1 }] }],
+    texts: [],
+    captions: { ...emptyDoc([]).captions, style: { ...emptyDoc([]).captions.style, accentColor: "#FF0000", animation: "karaoke" } },
+  });
+  eq(/\{\\k50\}a \{\\k50\}b/i.test(fallback), true, "mismatched times fall back to an even split");
+}
+console.log("captionsToAss.check: word-timed karaoke passed");
+
+// ---- Phase 5: keyword highlights + emojis ----
+{
+  const capH = { ...emptyDoc(["a"]).captions, enabled: true, style: { ...emptyDoc(["a"]).captions.style, animation: "none" } };
+  const ass = assFromDoc({
+    chunks: [{ start: 0, end: 1, text: "my cousin calls", marks: [0, 1, 2], emojis: ["📞"] }],
+    texts: [],
+    captions: capH,
+  });
+  const line = ass.split("\n").find((l) => l.startsWith("Dialogue"))!;
+  if (!line.includes("{\\c&H") || !line.includes("}cousin{")) throw new Error("level 1 keyword colored: " + line);
+  if (!line.includes(hexToAss("#FFD84D"))) throw new Error("level 2 strong color: " + line);
+  if (!line.includes("{\\fnNoto Emoji}📞")) throw new Error("emoji tail in emoji font: " + line);
+  const plain = assFromDoc({ chunks: [{ start: 0, end: 1, text: "a b", marks: [0, 0] }], texts: [], captions: capH });
+  if (plain.includes("\\c&H")) throw new Error("no marks, no color tags");
+}
+console.log("captionsToAss phase 5 checks passed");
+
+// A box's color has to be in OutlineColour: libass paints BorderStyle 3 boxes there.
+{
+  const boxed: TextItem = {
+    ...textItem,
+    style: { ...textItem.style, background: { on: true, shape: "square", opacity: 100, size: 50, color: "#FFFFFF" } },
+  };
+  const ass = assFromDoc({ chunks: [], texts: [boxed], captions: doc.captions });
+  const st = ass.split("\n").find((l) => l.startsWith("Style:") && l.includes(",3,"));
+  if (!st || st.split(",")[5] !== hexToAss("#FFFFFF")) throw new Error("box color in OutlineColour: " + st);
+  console.log("captionsToAss box color check passed");
+}
+
+// Phase 7: a rounded box is a vector drawing on layer 0; the text style has no square box.
+{
+  const rounded: TextItem = {
+    ...textItem,
+    style: { ...textItem.style, background: { on: true, shape: "rounded", opacity: 100, size: 50, color: "#FF6B5B" } },
+  };
+  const ass = assFromDoc({ chunks: [], texts: [rounded], captions: doc.captions });
+  const ev = ass.split("\n").filter((l) => l.startsWith("Dialogue"));
+  const box = ev.find((l) => l.includes("\\p1"));
+  if (!box || !box.startsWith("Dialogue: 0,") || !box.includes(",B,") || !box.includes("\\1c&H5B6BFF&") || !/m \d+ 0 l/.test(box)) throw new Error("rounded box drawing: " + box);
+  if (ass.split("\n").some((l) => l.startsWith("Style: T") && l.split(",")[15] === "3")) throw new Error("rounded text style has no square box");
+  const emo = assFromDoc({ chunks: [{ start: 0, end: 1, text: "a", emojis: ["📞"] }], texts: [], captions: doc.captions, colorEmoji: true });
+  if (emo.includes("Noto Emoji")) throw new Error("colour emoji drops the mono tail");
+  console.log("captionsToAss rounded box checks passed");
+}

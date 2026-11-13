@@ -7,18 +7,19 @@
 
 {$API_DOMAIN} {
 	# A video upload is the largest thing that crosses this proxy, and the API
-	# already caps a file at 4GB. Caddy's own default would refuse it long
+	# caps a video at 10 GiB (apps/api/src/uploadLimits.ts); 11GB here is just
+	# above that, so the API answers the 413. Caddy's own default would refuse it long
 	# before the API had an opinion.
 	request_body {
-		max_size 4GB
+		max_size 11GB
 	}
 
 	# Uploads and PDF renders both outlast a default timeout. Generous rather
 	# than unlimited, so a genuinely stuck request still lets go.
 	reverse_proxy api:4700 {
 		transport http {
-			read_timeout 30m
-			write_timeout 30m
+			read_timeout 3h
+			write_timeout 3h
 		}
 	}
 

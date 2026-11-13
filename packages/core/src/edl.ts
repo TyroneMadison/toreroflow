@@ -8,6 +8,8 @@ import type { Word } from "./autoCut";
 
 export interface EdlSegment {
   assetId: string;
+  /** The v2 main-track clip this piece came from (keys doc.layout). */
+  clipId?: string;
   srcIn: number;
   srcOut: number;
 }
@@ -16,24 +18,33 @@ export interface EdlSegment {
 const MIN_SEGMENT_SEC = 0.05;
 
 /**
- * Walks doc.clips in order. For each asset, the full [0, duration] minus its
- * normalized cuts, in source order. Clips with no known duration are skipped.
+ * Walks doc.clips in order (play order, which may differ from source order).
+ * Each clip segment [srcIn, min(srcOut, duration)] minus its asset's
+ * normalized cuts, in source order inside the segment. Cuts stay keyed by
+ * asset in source time, so word edits survive re-segmenting. Clips with no
+ * known duration are skipped.
  */
 export function edlFromDoc(doc: EditDoc, durations: Record<string, number>): EdlSegment[] {
   const out: EdlSegment[] = [];
-  for (const { assetId } of doc.clips) {
+  for (const clip of doc.clips) {
+    const { assetId } = clip;
     const duration = durations[assetId];
     if (!(duration > 0)) continue;
+    const lo = Math.max(0, clip.srcIn ?? 0);
+    const hi = Math.min(duration, clip.srcOut ?? duration);
+    if (!(hi > lo)) continue;
     const cuts = normalizeCuts(doc.cuts[assetId] ?? [], duration);
-    let cursor = 0;
+    let cursor = lo;
     for (const c of cuts) {
+      if (c.end <= lo) continue;
+      if (c.start >= hi) break;
       if (c.start - cursor >= MIN_SEGMENT_SEC) {
-        out.push({ assetId, srcIn: cursor, srcOut: c.start });
+        out.push({ assetId, clipId: clip.id, srcIn: cursor, srcOut: c.start });
       }
-      cursor = c.end;
+      cursor = Math.max(cursor, c.end);
     }
-    if (duration - cursor >= MIN_SEGMENT_SEC) {
-      out.push({ assetId, srcIn: cursor, srcOut: duration });
+    if (hi - cursor >= MIN_SEGMENT_SEC) {
+      out.push({ assetId, clipId: clip.id, srcIn: cursor, srcOut: hi });
     }
   }
   return out;
@@ -50,13 +61,14 @@ export function outputDuration(edl: EdlSegment[]): number {
 export function locate(
   edl: EdlSegment[],
   outputTime: number,
-): { segIndex: number; assetId: string; srcTime: number } | null {
+): { segIndex: number; assetId: string; clipId?: string; srcTime: number } | null {
   if (outputTime < 0) return null;
   let acc = 0;
   for (let i = 0; i < edl.length; i++) {
     const len = edl[i].srcOut - edl[i].srcIn;
     if (outputTime < acc + len) {
-      return { segIndex: i, assetId: edl[i].assetId, srcTime: edl[i].srcIn + (outputTime - acc) };
+      const hit = { segIndex: i, assetId: edl[i].assetId, srcTime: edl[i].srcIn + (outputTime - acc) };
+      return edl[i].clipId === undefined ? hit : { ...hit, clipId: edl[i].clipId };
     }
     acc += len;
   }
@@ -89,10 +101,20 @@ export function outputWords(edl: EdlSegment[], wordsByAsset: Record<string, Word
 }
 
 /** Output time for a source time on an asset, null when it falls inside a cut. */
-export function toOutputTime(edl: EdlSegment[], assetId: string, srcTime: number): number | null {
+export function toOutputTime(
+  edl: EdlSegment[],
+  assetId: string,
+  srcTime: number,
+  clipId?: string,
+): number | null {
   let acc = 0;
   for (const seg of edl) {
-    if (seg.assetId === assetId && srcTime >= seg.srcIn && srcTime < seg.srcOut) {
+    if (
+      seg.assetId === assetId &&
+      (clipId === undefined || seg.clipId === clipId) &&
+      srcTime >= seg.srcIn &&
+      srcTime < seg.srcOut
+    ) {
       return acc + (srcTime - seg.srcIn);
     }
     acc += seg.srcOut - seg.srcIn;

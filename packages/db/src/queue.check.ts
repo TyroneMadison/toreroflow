@@ -15,6 +15,23 @@ import { PgBoss } from "pg-boss";
  * Postgres running still passes the suite.
  */
 
+/* Upload order (W3), no database needed: rush beats every normal job, a
+ * lower position goes first within a tier, and an unpositioned normal job is
+ * pg-boss's default 0 so everything queued before W3 keeps its order. */
+const { uploadPriority } = await import("./queue");
+const order = [
+  ["rush", 0],
+  ["rush", 5],
+  ["rush", null],
+  ["normal", 0],
+  ["normal", 7],
+  ["normal", null],
+] as const;
+const ranks = order.map(([p, pos]) => uploadPriority(p, pos));
+assert.deepEqual([...ranks].sort((a, b) => b - a), ranks, "rush, then position, then unpositioned");
+assert.equal(uploadPriority("normal", null), 0);
+assert.ok(uploadPriority("rush", 5_000_000) > uploadPriority("normal", 0), "a huge rush position is still rush");
+
 const url = process.env.DATABASE_URL;
 if (!url) {
   console.log("queue.check.ts: skipped, no DATABASE_URL");
@@ -88,6 +105,20 @@ try {
   for (let i = 0; i < 30 && sawArray === null; i++) await sleep(500);
   assert.equal(sawArray, true, "a work handler is given an array of jobs, never one job");
   assert.deepEqual(payload, { hello: "world" }, "and the payload survives the round trip");
+
+  /* 5. Priority decides which due job is fetched first, and changing it
+   *    leaves the payload and the scheduled time alone. */
+  await boss.createQueue("prio", { policy: "short" });
+  const at = new Date(Date.now() - 1000);
+  await boss.send("prio", { n: "normal" }, { singletonKey: "a", startAfter: at, priority: 0 });
+  await boss.send("prio", { n: "rush" }, { singletonKey: "b", startAfter: at, priority: 0 });
+  await boss.update("prio", undefined, { singletonKey: "b", priority: 2_000_000 });
+  const [firstDue] = await boss.fetch<{ n: string }>("prio");
+  assert.deepEqual(firstDue?.data, { n: "rush" }, "the higher priority job is fetched first, payload intact");
+  await boss.update("prio", undefined, { singletonKey: "a", priority: 1_000_000 });
+  const [normalJob] = await boss.findJobs("prio", { key: "a" });
+  assert.equal(new Date(normalJob!.startAfter).getTime(), at.getTime(), "a priority change keeps the scheduled time");
+  assert.deepEqual(normalJob!.data, { n: "normal" });
 
   console.log("queue.check.ts: ok");
 } finally {

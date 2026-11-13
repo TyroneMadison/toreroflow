@@ -74,6 +74,16 @@ enum JobStatus {
   failed
 }
 
+enum QueuePriority {
+  rush
+  normal
+}
+
+enum TemplateScope {
+  client
+  brand
+}
+
 model Agency {
   id               String   @id @default(cuid())
   name             String
@@ -110,6 +120,9 @@ model Agency {
   invoices        Invoice[]
   financialMonths FinancialMonth[]
   bankConnections BankConnection[]
+  bots            BotIdentity[]
+  settings        AppSetting[]
+  libraryAssets   LibraryAsset[]
 }
 
 /**
@@ -169,93 +182,151 @@ model User {
 }
 
 model Client {
-  id                   String         @id @default(cuid())
-  agencyId             String
-  name                 String
-  avatarSeed           String?
-  plan                 String?
+  id                    String         @id @default(cuid())
+  agencyId              String
+  name                  String
+  avatarSeed            String?
+  plan                  String?
   /// Publishing provider workspace id (Zernio profile _id) backing this client.
-  providerProfileId    String?
+  providerProfileId     String?
   /// Short-form videos owed this pay period; null means not tracked.
-  quotaShort           Int?
+  quotaShort            Int?
   /// Long-form videos owed this pay period; null means not tracked.
-  quotaLong            Int?
+  quotaLong             Int?
   /// Carousels owed this pay period; null means not tracked. A carousel is
   /// counted by kind rather than by duration, since it has none.
-  quotaCarousel        Int?
+  quotaCarousel         Int?
   /// Start of the current pay period. Uploads after this count toward quota.
-  quotaResetAt         DateTime?
+  quotaResetAt          DateTime?
   /// Manual corrections applied on top of the counted uploads, per format.
-  adjustShort          Int            @default(0)
-  adjustLong           Int            @default(0)
-  adjustCarousel       Int            @default(0)
+  adjustShort           Int            @default(0)
+  adjustLong            Int            @default(0)
+  adjustCarousel        Int            @default(0)
   /// Who to actually contact at this client, kept here rather than in a head.
   /// Separate from `name`, which is the brand: the brand is "CACV Motors" and
   /// the person answering the phone is someone else.
-  contactName          String?
-  contactEmail         String?
-  contactPhone         String?
+  contactName           String?
+  contactEmail          String?
+  contactPhone          String?
   /// Permanent path of this client's shareable web report, e.g.
   /// "northstar-end-of-month-report". Assigned once and never regenerated on
   /// rename, because the link may already be sitting in a client's inbox.
-  reportSlug           String?        @unique
+  reportSlug            String?        @unique
+  /// Phase 7 censor word list (a trailing * matches any word starting so).
+  /// The editor snapshots it into doc.censor.words when censor is switched on.
+  censorWords           String[]       @default([])
+  /// Phase 9: { terms: TrendTerm[], at } rebuilt daily from niche, keywords
+  /// and top posts (no web search, see smartAi.ts).
+  trends                Json?
+  /// Phase 9: JudgeTuning from likes, dislikes and post performance.
+  judgeTuning           Json?
+  /// Phase 8: AutoImportSettings from @toreroflow/core (own YouTube channel).
+  autoImport            Json?
+  /// Drive source settings, read with readDriveSource from @toreroflow/core.
+  driveSource           Json?
+  driveImports          DriveImport[]
+  /// Uploads paused since this moment; null means publishing normally. The
+  /// worker holds every scheduled post of a paused brand, and resuming moves
+  /// them with planResume from @toreroflow/core.
+  pausedAt              DateTime?
   /// Absolute URL of the last published report page; null until first publish.
-  reportUrl            String?
+  reportUrl             String?
   /// When that page was last pushed. Also the flag month-end republishing
   /// reads: a client that has never been published is never published for them.
-  reportPublishedAt    DateTime?
+  reportPublishedAt     DateTime?
   /// Reporting month the published page currently leads with ("2026-06").
-  reportPublishedMonth String?
+  reportPublishedMonth  String?
   /// Identifies this brand in their own welcome link, so a reply that comes
   /// back through a form on the website can be matched to them. Minted once
   /// and kept, because the link may already be in a client's phone.
-  onboardingToken      String?        @unique
+  onboardingToken       String?        @unique
   /// When their welcome reply was applied. Null means it has not arrived.
-  onboardedAt          DateTime?
+  onboardedAt           DateTime?
   /// Ids of welcome replies already applied to this client, so the same one is
   /// never applied twice. Without this every check would re-apply every reply,
   /// and since an answer wins, a detail corrected by hand would be silently
   /// reverted to what the client typed weeks earlier.
-  welcomeRepliesApplied String[]      @default([])
+  welcomeRepliesApplied String[]       @default([])
   /// Handles the client gave for themselves, keyed by platform. Not connected
   /// accounts: a typed handle cannot post anything, and a connected account
   /// only ever comes back from the provider. This is what they say their
   /// accounts are, which is how a platform nobody had yet becomes known.
-  handles              Json?
+  handles               Json?
   /// Current retainer. A default for seeding a month, not a historical record:
   /// history lives in RevenueEntry, so raising this leaves past months alone.
-  monthlyPriceCents    Int?
+  monthlyPriceCents     Int?
   /// calendar: paid monthly regardless of delivery.
   /// on_fulfilment: the next payment is not due until the last block ships.
-  billingMode          String         @default("calendar")
+  billingMode           String         @default("calendar")
   /// The brand's niche profile for the Ideas area: who they are, who they
   /// serve, what they sound like. One editable blob rather than columns,
   /// because the useful facts about a niche do not fit a schema.
-  nicheProfile         Json?
-  revenueEntries       RevenueEntry[]
-  invoices             Invoice[]
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  deletedAt            DateTime?
+  nicheProfile          Json?
+  /// URL-safe handle for deep links such as /clients/caleb/ready. Null falls
+  /// back to the slugified name, so existing clients need no backfill.
+  slug                  String?
+  /// The client's posting SOP, written by a human. Null means none added yet;
+  /// the app shows an empty state and never fills one in.
+  sop                   String?
+  sopUpdatedAt          DateTime?
+  /// Trello label colors (e.g. "red", "black_dark") that route a card on the
+  /// editor pipeline board to this client. Empty means the built-in defaults.
+  trelloLabels          String[]       @default([])
+  /// Text added directly under every caption for this client, on every
+  /// platform. Line breaks are kept exactly. Null means none.
+  captionBlock          String?
+  /// Whether the caption block is added by default. A post can still skip it.
+  captionBlockOn        Boolean        @default(true)
+  /// Keyword lines: [{ keywords: string[], line: string }]. The first entry
+  /// whose keyword appears in the title, card or caption adds its line.
+  captionKeywords       Json           @default("[]")
+  /// Up to 15 creator channel links the Ideas area studies (Super generate
+  /// and Brainstorm). Order is the order typed.
+  ideaCreators          String[]       @default([])
+  /// Most a single Super generate run may spend on the model, in US cents.
+  superGenCapCents      Int            @default(200)
+  revenueEntries        RevenueEntry[]
+  invoices              Invoice[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
 
-  agency         Agency          @relation(fields: [agencyId], references: [id])
-  socialAccounts SocialAccount[]
-  mediaAssets    MediaAsset[]
-  posts          Post[]
-  scheduleSlots  ScheduleSlot[]
-  workflows      Workflow[]
-  reports        ClientReport[]
-  alerts         SystemAlert[]
-  insight        ClientInsight?
-  inspirations   InspirationAccount[]
-  researchRuns   ResearchRun[]
-  knowledgeNotes KnowledgeNote[]
-  carouselDrafts CarouselDraft[]
-  editProjects    EditProject[]
-  videoAnalyses   VideoAnalysis[]
-  contentIdeas    ContentIdea[]
-  knowledgeFiles  KnowledgeFile[]
-  brainstormChats BrainstormChat[]
+  agency           Agency               @relation(fields: [agencyId], references: [id])
+  socialAccounts   SocialAccount[]
+  mediaAssets      MediaAsset[]
+  posts            Post[]
+  scheduleSlots    ScheduleSlot[]
+  workflows        Workflow[]
+  reports          ClientReport[]
+  alerts           SystemAlert[]
+  insight          ClientInsight?
+  inspirations     InspirationAccount[]
+  researchRuns     ResearchRun[]
+  knowledgeNotes   KnowledgeNote[]
+  carouselDrafts   CarouselDraft[]
+  clipJobs         ClipJob[]
+  editProjects     EditProject[]
+  recipes          Recipe[]
+  clipCollections  ClipCollection[]
+  clipActivity     ClipActivity[]
+  youtubeImports   YouTubeImport[]
+  captionTemplates CaptionTemplate[]
+  videoAnalyses    VideoAnalysis[]
+  contentIdeas     ContentIdea[]
+  hooks            Hook[]
+  hookSeen         HookSeenVideo[]
+  knowledgeFiles   KnowledgeFile[]
+  brainstormChats  BrainstormChat[]
+  superGenRuns     SuperGenerateRun[]
+  templates        Template[]
+  monthlyReports   MonthlyReportRun[]
+  contentRequests  ContentRequest[]
+  requestFormLinks RequestFormLink[]
+  libraryAssets    LibraryAsset[]
+  brandKit         BrandKit?
+  sunraQuotes      SunraQuote[]
+  repurposeJobs    RepurposeJob[]
+  xPostedDays      XPostedDay[]
 
   @@index([agencyId])
 }
@@ -301,10 +372,10 @@ model SocialAccount {
   updatedAt         DateTime            @updatedAt
   deletedAt         DateTime?
 
-  client          Client           @relation(fields: [clientId], references: [id])
-  postTargets     PostTarget[]
-  metricSnapshots MetricSnapshot[]
-  externalVideos  ExternalVideo[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  postTargets        PostTarget[]
+  metricSnapshots    MetricSnapshot[]
+  externalVideos     ExternalVideo[]
   platformConnection PlatformConnection?
 
   @@index([clientId, platform])
@@ -353,37 +424,37 @@ model PlatformConnection {
 }
 
 model MediaAsset {
-  id           String           @id @default(cuid())
-  clientId     String
+  id              String           @id @default(cuid())
+  clientId        String
   /// video | carousel. A carousel is several images posted as one Instagram
   /// post; it rides this table so it reaches the calendar, the queue and the
   /// scheduler without any of them learning a second kind of thing.
-  kind         String           @default("video")
+  kind            String           @default("video")
   /// Ordered storage keys of a carousel's images. Null for a video. The order
   /// is the order Instagram shows them in, and the first one decides the
   /// aspect ratio of the whole post.
-  slideKeys    Json?
-  storageKey   String
-  originalName String
-  durationSec  Float?
-  width        Int?
-  height       Int?
-  status       MediaAssetStatus @default(uploaded)
+  slideKeys       Json?
+  storageKey      String
+  originalName    String
+  durationSec     Float?
+  width           Int?
+  height          Int?
+  status          MediaAssetStatus @default(uploaded)
   /// Timestamped transcript from the captions service: [{ start, end, text }]
-  transcript   Json?
+  transcript      Json?
   /// AI-drafted post copy: { title, description, hashtags[] } (operator-editable)
-  draftCopy    Json?
+  draftCopy       Json?
   /// Short-form or long-form, for quota purposes. Filled from duration
   /// during processing when still unset; the operator can override it.
-  format       VideoFormat?
+  format          VideoFormat?
   /// A re-edit of an earlier upload: excluded from the client's video quota.
-  isRevision   Boolean          @default(false)
+  isRevision      Boolean          @default(false)
   /// The upload this one revises, when known.
-  revisionOfId String?
+  revisionOfId    String?
   /// Millisecond offset of the operator-chosen cover frame, when frame-picked.
-  coverOffsetMs Int?
+  coverOffsetMs   Int?
   /// Storage key of the chosen cover image (frame-extracted or uploaded).
-  coverKey      String?
+  coverKey        String?
   /// When the original video file was removed after the post went live.
   ///
   /// The row, the thumbnail and the cover all stay: only the source goes, and
@@ -401,15 +472,16 @@ model MediaAsset {
   /// video, and the video is already gone, so nothing anywhere can rebuild it.
   /// Set so the app hands the webview nothing instead of a link to a file that
   /// is no longer there.
-  thumbDeletedAt DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  thumbDeletedAt  DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
-  client     Client       @relation(fields: [clientId], references: [id])
-  renders    Render[]
-  posts      Post[]
-  revisionOf MediaAsset?  @relation("AssetRevisions", fields: [revisionOfId], references: [id])
-  revisions  MediaAsset[] @relation("AssetRevisions")
+  client        Client         @relation(fields: [clientId], references: [id])
+  renders       Render[]
+  posts         Post[]
+  revisionOf    MediaAsset?    @relation("AssetRevisions", fields: [revisionOfId], references: [id])
+  revisions     MediaAsset[]   @relation("AssetRevisions")
+  approvalLinks ApprovalLink[]
 
   @@index([clientId, status])
 }
@@ -431,40 +503,57 @@ model Render {
 }
 
 model Post {
-  id           String     @id @default(cuid())
-  clientId     String
-  mediaAssetId String?
-  createdById  String
-  status       PostStatus @default(draft)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
+  id            String        @id @default(cuid())
+  clientId      String
+  mediaAssetId  String?
+  createdById   String
+  status        PostStatus    @default(draft)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  /// The saved idea this post was made from, when it was made from one.
+  /// Lets the hook library read the idea's own hook for a post that performed.
+  ideaId        String?
+  /// Upload queue (W3): rush uploads before normal; position orders within.
+  /// Upload order only, the scheduled times never change.
+  queuePriority QueuePriority @default(normal)
+  queuePosition Int?
 
-  client     Client       @relation(fields: [clientId], references: [id])
-  mediaAsset MediaAsset?  @relation(fields: [mediaAssetId], references: [id])
-  createdBy  User         @relation(fields: [createdById], references: [id])
-  targets    PostTarget[]
+  client             Client              @relation(fields: [clientId], references: [id])
+  mediaAsset         MediaAsset?         @relation(fields: [mediaAssetId], references: [id])
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  idea               ContentIdea?        @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  targets            PostTarget[]
+  preflightOverrides PreflightOverride[]
 
   @@index([clientId, status])
+  @@index([ideaId])
 }
 
 model PostTarget {
-  id              String           @id @default(cuid())
-  postId          String
-  socialAccountId String
-  platform        Platform
-  caption         String?
-  hashtags        String[]         @default([])
+  id                 String           @id @default(cuid())
+  postId             String
+  socialAccountId    String
+  platform           Platform
+  caption            String?
+  hashtags           String[]         @default([])
   /// Per-platform publish options: { instagram: {...} } or { youtubeTitle }.
-  options         Json?
-  scheduledAt     DateTime?
-  status          PostTargetStatus @default(scheduled)
-  remotePostId    String?
-  remoteUrl       String?
-  error           String?
-  publishedAt     DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  options            Json?
+  /// Fan-out (W1): fields this target overrides from the draft
+  /// ({ caption, title, cover, cutId, postAt }). Present key = overridden;
+  /// reset deletes the key.
+  overrides          Json             @default("{}")
+  scheduledAt        DateTime?
+  status             PostTargetStatus @default(scheduled)
+  remotePostId       String?
+  remoteUrl          String?
+  error              String?
+  publishedAt        DateTime?
+  /// Failed posts screen: the operator removed the failure notice. The post
+  /// itself is untouched; a retry clears this.
+  failureDismissedAt DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   post          Post          @relation(fields: [postId], references: [id])
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id])
@@ -542,34 +631,34 @@ model ClientReport {
  * truth. View counts here are authoritative and refreshed on each sync.
  */
 model ExternalVideo {
-  id              String   @id @default(cuid())
-  socialAccountId String
-  platform        Platform
+  id               String    @id @default(cuid())
+  socialAccountId  String
+  platform         Platform
   /// The platform's own video id (e.g. a YouTube videoId).
-  platformVideoId String
+  platformVideoId  String
   /// What the provider says the post is: video | image | carousel. Decides
   /// whether a post counts in the carousel section rather than the video
   /// boards. Named ExternalVideo for historical reasons; it holds every kind
   /// of post now.
-  mediaType       String   @default("video")
-  title           String
-  thumbnailUrl    String?
-  url             String?
-  publishedAt     DateTime
-  views           Int      @default(0)
-  likes           Int      @default(0)
-  comments        Int      @default(0)
-  shares          Int      @default(0)
+  mediaType        String    @default("video")
+  title            String
+  thumbnailUrl     String?
+  url              String?
+  publishedAt      DateTime
+  views            Int       @default(0)
+  likes            Int       @default(0)
+  comments         Int       @default(0)
+  shares           Int       @default(0)
   /// Instagram and TikTok only. Every other platform reports 0 because it has
   /// no such button, which is why the screen shows saves per platform rather
   /// than as one total.
-  saves           Int      @default(0)
-  reach           Int      @default(0)
+  saves            Int       @default(0)
+  reach            Int       @default(0)
   /// Followers gained from this video. The provider carries the field but has
   /// only ever sent 0, on every post of every platform, so nothing displays it
   /// until a non-zero value turns up. Stored from now so the history exists
   /// the day it starts working.
-  follows         Int      @default(0)
+  follows          Int       @default(0)
   /// Distinct from views and reach. Facebook only in practice: Meta deprecated
   /// it for Instagram media created after 2 July 2024 and the value now
   /// mirrors views there. Nullable because most rows will never have one.
@@ -610,17 +699,17 @@ model ExternalVideo {
   /// Written by applyPlatformMetrics from the fields it actually set, so a
   /// metric the platform did not return for a given video does not claim to be
   /// measured for it.
-  directMetrics    String[] @default([])
+  directMetrics    String[]  @default([])
   /// When the provider last refreshed these numbers, so a report can say how
   /// fresh it is.
   metricsUpdatedAt DateTime?
   /// Which source produced this row: zernio or youtube today. Phases 2 and 3
   /// add instagram, tiktok and facebook without another migration.
-  source           String   @default("zernio")
-  durationSec     Float?
-  fetchedAt       DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source           String    @default("zernio")
+  durationSec      Float?
+  fetchedAt        DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   socialAccount SocialAccount         @relation(fields: [socialAccountId], references: [id])
   metrics       ExternalVideoMetric[]
@@ -634,25 +723,25 @@ model ExternalVideo {
 /// purpose: it is the rolling history future views-over-time charts and
 /// the site view counter draw from, accumulating from ship day.
 model ExternalVideoMetric {
-  id              String   @id @default(cuid())
-  externalVideoId String
+  id               String    @id @default(cuid())
+  externalVideoId  String
   /// UTC calendar date of the capture; one row per video per day.
-  capturedOn      DateTime @db.Date
-  views           Int      @default(0)
-  likes           Int      @default(0)
-  comments        Int      @default(0)
-  shares          Int      @default(0)
-  saves           Int      @default(0)
-  reach           Int      @default(0)
-  follows         Int      @default(0)
+  capturedOn       DateTime  @db.Date
+  views            Int       @default(0)
+  likes            Int       @default(0)
+  comments         Int       @default(0)
+  shares           Int       @default(0)
+  saves            Int       @default(0)
+  reach            Int       @default(0)
+  follows          Int       @default(0)
   impressions      Int?
   clicks           Int?
   avgWatchSec      Float?
   totalWatchSec    Float?
   engagementRate   Float?
   metricsUpdatedAt DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   externalVideo ExternalVideo @relation(fields: [externalVideoId], references: [id], onDelete: Cascade)
 
@@ -708,30 +797,30 @@ model Job {
 
 /// What one client owes for one month.
 model RevenueEntry {
-  id          String    @id @default(cuid())
-  agencyId    String
+  id              String    @id @default(cuid())
+  agencyId        String
   /// Null for money that is not a client's bill: a paycheck transfer, a
   /// refund, any other source. Those rows carry `label` instead, are never
   /// seeded or reconciled, and count into every total the same way.
-  clientId    String?
+  clientId        String?
   /// What a client-less row is: "Paycheck transfer", "Equipment refund".
-  label       String?
+  label           String?
   /// "2026-06"
-  month       String
-  amountCents Int
+  month           String
+  amountCents     Int
   /// Set means paid. The only stored state: pending and due are derived, since
   /// a stored "not due" goes stale the moment a video is delivered.
-  receivedAt  DateTime?
+  receivedAt      DateTime?
   /// Set once the operator types an amount over the top for this month. Until
   /// then the row tracks the client's standing price, so correcting the price
   /// in Settings fixes the open month instead of leaving a stale copy behind.
-  priceOverridden Boolean @default(false)
-  note        String?
-  color       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  priceOverridden Boolean   @default(false)
+  note            String?
+  color           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  agency Agency @relation(fields: [agencyId], references: [id])
+  agency Agency  @relation(fields: [agencyId], references: [id])
   client Client? @relation(fields: [clientId], references: [id])
 
   @@unique([clientId, month])
@@ -966,32 +1055,32 @@ model BankConnection {
 
 /// One account inside a linked bank.
 model BankAccount {
-  id              String  @id @default(cuid())
-  connectionId    String
+  id                String   @id @default(cuid())
+  connectionId      String
   /// The provider's id for this account. Unique WITHIN a connection only: the
   /// SimpleFIN spec says an account id "uniquely identifies the account within
   /// the Connection", and the bridge's own demo feed returns ids as generic as
   /// "Demo Checking". Global uniqueness would let one bank's account claim
   /// another's row.
   providerAccountId String
-  name            String
-  officialName    String?
+  name              String
+  officialName      String?
   /// Last four digits, for telling two accounts apart on screen.
-  mask            String?
+  mask              String?
   /// Integer cents, like every other figure in this app. Null when the
   /// provider has no figure, which is not the same as zero.
-  currentCents    Int?
-  availableCents  Int?
-  currency        String  @default("USD")
+  currentCents      Int?
+  availableCents    Int?
+  currency          String   @default("USD")
   /// Whether this account counts towards money in and money out.
   ///
   /// Starts true: the provider reports no account type, so there is nothing to
   /// decide from, and a default that is visibly too generous beats one that
   /// silently drops the account the business actually runs on. The operator
   /// unticks the rest.
-  includeInCashFlow Boolean @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  includeInCashFlow Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   connection   BankConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   transactions BankTransaction[]
@@ -1002,8 +1091,8 @@ model BankAccount {
 
 /// One transaction on a linked account.
 model BankTransaction {
-  id                 String  @id @default(cuid())
-  accountId          String
+  id                    String   @id @default(cuid())
+  accountId             String
   /// The provider's id for this transaction. Unique WITHIN an account only.
   /// The SimpleFIN spec is explicit: "An organization may reuse transaction ids
   /// for different accounts, but may never reuse a transaction id within an
@@ -1016,18 +1105,18 @@ model BankTransaction {
   /// the classic off-by-one where a transaction slides into the previous month
   /// depending on the reader's timezone, and month totals are the whole point
   /// of this feature. ISO strings also sort and range-query correctly.
-  date               String
-  name               String
-  merchantName       String?
+  date                  String
+  name                  String
+  merchantName          String?
   /// Integer cents in OUR convention: positive means money arrived.
   ///
   /// Converted in exactly one place, packages/core/src/banking.ts, so a future
   /// provider that signs the other way round is one line rather than a hunt.
-  amountCents        Int
+  amountCents           Int
   /// Pending rows can change amount or vanish, so totals exclude them.
-  pending            Boolean @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  pending               Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -1055,23 +1144,31 @@ model KnowledgeNote {
 /// One Studio project: its sources, its edit document, and where the render
 /// landed. Past renders never mutate; Save Copy forks the row.
 model EditProject {
-  id          String  @id @default(cuid())
-  clientId    String
-  name        String  @default("Untitled project")
+  id            String   @id @default(cuid())
+  clientId      String
+  name          String   @default("Untitled project")
   /// draft | rendering | rendered | failed
-  status      String  @default("draft")
+  status        String   @default("draft")
   /// The whole edit document as one versioned JSON blob (v:1), autosaved.
-  doc         Json?
+  doc           Json?
   /// Storage key of the finished render.
-  renderedKey String?
+  renderedKey   String?
   /// Render progress percent, parsed from ffmpeg while rendering.
-  renderPct   Int?
-  renderError String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  renderPct     Int?
+  renderError   String?
+  /// Phase 6: {send, title, description, hashtags} handled by the worker
+  /// once a render lands (batch "Render + send to Uploads").
+  afterRender   Json?
+  /// The MediaAsset a render was sent to, so batch status can say "Sent".
+  uploadAssetId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  client Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  assets EditAsset[]
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assets      EditAsset[]
+  versions    EditVersion[]
+  comments    EditComment[]
+  reviewLinks ReviewLink[]
 
   @@index([clientId])
 }
@@ -1079,7 +1176,7 @@ model EditProject {
 /// A source file owned by one project: not a MediaAsset, so the publish
 /// pipeline's quota counts and retention sweeps never see it.
 model EditAsset {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   projectId    String
   /// clip | audio | graphic
   kind         String
@@ -1092,15 +1189,45 @@ model EditAsset {
   durationSec  Float?
   width        Int?
   height       Int?
-  /// Word-level transcript for clips: [{ start, end, word }]
+  /// Word-level transcript for clips: [{ start, end, word, kind? }]
   words        Json?
+  /// Sources over 15 min keep their words in a storage file instead of the
+  /// row (an hour of words is megabytes of JSON on every asset read).
+  wordsKey     String?
+  /// Spoken language whisper used or detected (ISO code).
+  language     String?
+  /// Phase 9: whisper's detection probability (null when set up front).
+  languageProb Float?
+  /// Phase 9: "set" | "detected" | "fallback" (weak detection -> hint/en).
+  languageSource String?
+  /// Waveform peaks file (JSON number[], 50 per second, 0..100).
+  peaksKey     String?
+  /// Why words are missing on a ready asset, e.g. a transcription timeout.
+  error        String?
   /// uploaded | processing | ready | failed
   status       String   @default("uploaded")
   createdAt    DateTime @default(now())
 
-  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  clipJobs ClipJob[]
 
   @@index([projectId])
+}
+
+/// A caption style a client saved in the Studio editor, shared by everyone
+/// on that client. Replaces the per-browser localStorage list.
+model CaptionTemplate {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  /// CaptionStyle JSON, validated by the API before it lands here.
+  style     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }
 
 /// One run of the AI content analyzer over one video. This is AI analysis of
@@ -1128,26 +1255,114 @@ model VideoAnalysis {
   @@index([clientId])
 }
 
+/// A code-drawn idea GIF, cached by content hash.
+model IdeaGif {
+  key       String   @id
+  bytes     Bytes
+  createdAt DateTime @default(now())
+}
+
 /// One idea in a brand's ideas list, from first thought to posted video.
+enum FunnelStage {
+  top
+  middle
+  bottom
+}
+
 model ContentIdea {
-  id         String   @id @default(cuid())
-  clientId   String
-  niche      String   @default("")
-  formatName String?
-  text       String
-  hook       String?
+  id            String       @id @default(cuid())
+  clientId      String
+  niche         String       @default("")
+  formatName    String?
+  text          String
+  hook          String?
   /// Generated script or storyboard, once the operator asks for one.
-  script     Json?
+  script        Json?
+  /// The short spoken script that came with a generated idea (Super generate).
+  scriptText    String?
+  /// Handle of the creator the idea was drawn from, e.g. "@carguy".
+  creator       String?
+  /// Ticked off as done on the Saved ideas card.
+  completed     Boolean      @default(false)
+  /// Shot list: [{ title, framing, angle, move, pose, time, sign }].
+  shots         Json?
+  /// Funnel stage the generator assigned: top | middle | bottom (null for older ideas).
+  funnelStage   FunnelStage?
+  /// One sentence on the psychology or trend behind a generated idea.
+  whyItWorks    String?
+  /// easy | medium | hard to film, from the rubric plus the core sanity check.
+  difficulty    String?
+  /// What the shoot needs: [{ type: prop | location | people, label }], max 4.
+  needs         Json?
+  /// The saved idea this one was remixed from (the original is never changed).
+  remixedFromId String?
+  /// Drawn GIFs: [{ kind: hook | shot, key, caption }] (bytes in IdeaGif).
+  gifs          Json?
   /// idea | scripting | ready | posted | analyzed
-  status     String   @default("idea")
+  status        String       @default("idea")
   /// brainstorm | analysis | overview | custom
-  source     String   @default("custom")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  source        String       @default("custom")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  posts  Post[]
+
+  @@index([clientId])
+}
+
+/// Where a library hook came from: our own posts, the web, or a followed creator.
+enum HookSource {
+  OWN
+  WEB
+  CREATOR
+}
+
+/// One opening line in a brand's hook library (v0.3.34). Mined on demand only,
+/// when the operator presses Brainstorm, Generate or Super generate.
+model Hook {
+  id            String       @id @default(cuid())
+  clientId      String
+  /// The hook as it was found.
+  text          String
+  /// Rewritten into this brand's niche, keeping the sentence shape. Creator and web hooks.
+  reworded      String?
+  sourceType    HookSource
+  sourceUrl     String?
+  /// "@handle" for creator hooks.
+  sourceAccount String?
+  sourceVideoId String?
+  /// One of VIDEO_FORMATS.
+  format        String
+  funnelStage   FunnelStage?
+  /// How well it fits the brand's niche, 0 to 1.
+  nicheScore    Float        @default(0)
+  /// { views, likes, comments, shares, saves, er, lift } where known.
+  stats         Json?
+  /// sha1 of the normalised text, for the dedupe key.
+  textHash      String
+  usedCount     Int          @default(0)
+  createdAt     DateTime     @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  @@index([clientId])
+  @@unique([clientId, sourceType, textHash])
+  @@index([clientId, createdAt])
+}
+
+/// A video (or web day) the hook miner has already looked at, so it is never paid for twice.
+model HookSeenVideo {
+  id       String   @id @default(cuid())
+  clientId String
+  /// youtube | instagram | tiktok | own | web
+  platform String
+  /// The platform video id, or a url, or a day key for web runs.
+  videoId  String
+  seenAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, platform, videoId])
 }
 
 /// A file dropped into a brand's knowledge base. Its contents are extracted
@@ -1166,14 +1381,14 @@ model WorkerHeartbeat {
 
 /// One brainstorm thread, kept so closing the window does not lose it.
 model BrainstormChat {
-  id       String @id @default(cuid())
-  clientId String
+  id        String   @id @default(cuid())
+  clientId  String
   /// The first thing the operator asked, trimmed. What the list shows.
-  title    String
+  title     String
   /// The whole thread as [{ role, content }]. One blob rather than a row per
   /// message: it is only ever read and written whole, the same way
   /// EditProject.doc is, and a thread is small.
-  messages Json
+  messages  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1216,4 +1431,578 @@ model CarouselDraft {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+}
+
+/// One Super generate run: study each creator, then write ideas from it.
+/// Progress lives in `creators` so the screen can show one row per creator.
+model SuperGenerateRun {
+  id          String    @id @default(cuid())
+  clientId    String
+  /// running | ready | failed | cancelled
+  status      String    @default("running")
+  /// [{ url, handle, platform, status, videos, note, summary }]
+  creators    Json      @default("[]")
+  /// [{ text, label, script, creator }]
+  ideas       Json      @default("[]")
+  capCents    Int
+  spentCents  Int       @default(0)
+  error       String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// What one creator does that works, cached by channel link so a second run
+/// (for any brand) reuses it instead of re-reading 100 videos.
+model CreatorPlaybook {
+  id        String   @id @default(cuid())
+  /// Normalised channel link, e.g. "youtube.com/@carguy".
+  url       String   @unique
+  platform  String
+  handle    String
+  videos    Int      @default(0)
+  /// { summary, hook, framing, structure, script }
+  playbook  Json
+  updatedAt DateTime @updatedAt
+}
+
+/// Save vs skip per generated idea, for the quiet preference profile (v0.3.33).
+model IdeaFeedback {
+  id          String   @id @default(cuid())
+  clientId    String
+  runId       String   @default("")
+  textKey     String
+  format      String?
+  funnelStage String?
+  hookStyle   String?
+  creator     String?
+  keywords    String[] @default([])
+  saved       Boolean
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, runId, textKey])
+  @@index([clientId, createdAt])
+}
+
+/// Preflight override (W2): who posted past a blocking issue, why, and when.
+/// actorKind is "operator" or "bot"; actorId is the user id or the bot name.
+model PreflightOverride {
+  id        String   @id @default(cuid())
+  postId    String
+  reason    String
+  actorKind String
+  actorId   String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+/// Posting template (W5). The operator and Polly (full access) write; other bots read and apply at most, per scope.
+model Template {
+  id             String        @id @default(cuid())
+  clientId       String
+  scope          TemplateScope @default(brand)
+  name           String
+  platforms      Platform[]    @default([])
+  captionPattern String        @default("")
+  hashtags       String[]      @default([])
+  coverStyle     String        @default("")
+  /// "HH:mm" in ET.
+  postTimes      String[]      @default([])
+  cadence        String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// A named bot token identity. fullAccess grants the operator's access
+/// (read, write, edit, publish); off by default, every other bot keeps the
+/// route whitelist. No row: Polly defaults to full access (botAccess.ts).
+model BotIdentity {
+  id         String   @id @default(cuid())
+  agencyId   String
+  name       String
+  fullAccess Boolean  @default(false)
+  scopes     String[] @default([])
+  createdAt  DateTime @default(now())
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, name])
+}
+
+/// Agency-wide settings for the ideas set, one JSON value per key
+/// (e.g. "report_job", "trello_intake"). Each value is parsed with its
+/// contract schema on read, so a bad row falls back to the default.
+model AppSetting {
+  id        String   @id @default(cuid())
+  agencyId  String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, key])
+}
+
+/// One monthly client report per brand per month: what was built, who it
+/// went to, and whether it was sent. The unique key is what stops a second
+/// run on the 1st (a restart, two servers) from emailing a client twice.
+model MonthlyReportRun {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// "2026-10", the month the report covers.
+  month      String
+  data       Json
+  recipients String[]  @default([])
+  /// "preview" (kill switch off, nothing sent), "sent", "skipped" (no email
+  /// on the profile) or "failed".
+  status     String
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, month])
+}
+
+/// A client content request from the public form, and the Trello card it
+/// became on the editor pipeline's "To edit" list. status: "pending" until
+/// Trello answers, then "created" or "failed" (the operator can retry).
+model ContentRequest {
+  id            String   @id @default(cuid())
+  clientId      String
+  what          String
+  dueDate       String?
+  footageUrl    String?
+  notes         String?
+  /// The form link it came in through. Null for requests from before links.
+  linkId        String?
+  /// Optional reference file, type checked by its bytes (png, jpg, webp, pdf).
+  attachmentKey String?
+  status        String   @default("pending")
+  trelloCardId  String?
+  trelloUrl     String?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A file in the asset library (logos, videos, templates, audio, images).
+/// clientId null means shared across every brand; set means only that brand
+/// sees it. A brand kit logo is one of these, type "logo".
+model LibraryAsset {
+  id         String   @id @default(cuid())
+  agencyId   String
+  clientId   String?
+  /// logo | video | template | audio | image
+  type       String
+  name       String
+  storageKey String
+  mimeType   String?
+  sizeBytes  Int?
+  createdAt  DateTime @default(now())
+
+  agency Agency  @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, clientId, type])
+}
+
+/// Per-brand kit: Google Fonts families, colors, logo, caption voice notes.
+model BrandKit {
+  clientId    String   @id
+  /// [{ family: "Inter", weights: [400, 700] }]
+  fonts       Json     @default("[]")
+  /// "#RRGGBB"
+  colors      String[] @default([])
+  logoAssetId String?
+  voiceNotes  String   @default("")
+  updatedAt   DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+/// A Sunra carousel price quote, and its generation once approved.
+/// status: quoted, generating, done, failed. Nothing is spent until a person
+/// (or Polly) approves this exact quote before it expires, and a quote is
+/// used at most once.
+model SunraQuote {
+  id         String    @id @default(cuid())
+  clientId   String
+  /// instagram | tiktok
+  platform   String
+  slides     Int
+  prompt     String
+  /// Sunra image model id, one of GET /carousels/sunra/models
+  model      String    @default("nano-banana-2")
+  /// Sunra credits approved for this carousel: slides x credits per image.
+  credits    Int
+  expiresAt  DateTime
+  status     String    @default("quoted")
+  approvedBy String?
+  approvedAt DateTime?
+  /// Storage keys of the generated slides, in order.
+  resultKeys String[]  @default([])
+  error      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A client approval link for one video version (a MediaAsset). The token is
+/// never stored: it is the id plus an HMAC over the id and expiry, so a
+/// leaked database row cannot be turned into a working link. Revoke sets
+/// revokedAt. status: pending, approved, changes_requested.
+model ApprovalLink {
+  id           String    @id @default(cuid())
+  mediaAssetId String
+  createdById  String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  status       String    @default("pending")
+  decidedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  mediaAsset MediaAsset        @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  comments   ApprovalComment[]
+
+  @@index([mediaAssetId])
+}
+
+/// A client comment on a version through an approval link, pinned to a
+/// moment in the video when atMs is set.
+model ApprovalComment {
+  id        String   @id @default(cuid())
+  linkId    String
+  atMs      Int?
+  body      String
+  createdAt DateTime @default(now())
+
+  link ApprovalLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, createdAt])
+}
+
+/// Repurpose job (Create > Studio > Edit): one long video in, a step by step
+/// pipeline out. A stub for now: the steps are tracked and resumable, nothing
+/// runs them yet and no outside provider is called.
+/// step: transcribe, find_moments, cut, captions, thumbnails, review, done.
+/// state: queued, running, failed, done.
+model RepurposeJob {
+  id            String   @id @default(cuid())
+  clientId      String
+  sourceVideoId String
+  step          String   @default("transcribe")
+  state         String   @default("queued")
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// A brand's public request form link. The token is "<id>.<HMAC of the id>"
+/// (JWT_SECRET), never stored. Rotating revokes this row and makes a new one;
+/// a revoked link answers 410 for good.
+model RequestFormLink {
+  id          String    @id @default(cuid())
+  clientId    String
+  createdById String
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// Fixed-window hit counters for the public routes, shared by every API
+/// process. key is "<scope>|<subject>|<window start ms>"; rows past
+/// expiresAt are swept now and then.
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// Who did what to a request form: submissions, rejections, rate limits,
+/// captcha failures, and link create, rotate, revoke. Kept after a brand is
+/// deleted, so no relation.
+model RequestFormAudit {
+  id        String   @id @default(cuid())
+  clientId  String?
+  linkId    String?
+  /// submitted | rejected | rate_limited | captcha_failed | bad_token | link_created | link_rotated | link_revoked
+  action    String
+  /// operator user id, "bot:<name>", or "public"
+  actor     String
+  ip        String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([createdAt])
+}
+
+/// One long source being cut into scored short clips (Studio > Clips). The
+/// source is an EditAsset in a holder EditProject (status "clipsource"), so
+/// transcription, words files and reframe reuse the editor's pipeline.
+model ClipJob {
+  id            String   @id @default(cuid())
+  clientId      String
+  sourceAssetId String
+  /// queued | transcribing | analyzing | curating | scoring | ready | failed
+  status        String   @default("queued")
+  /// Human line for the progress screen, e.g. "judge batch 3/7".
+  stage         String?
+  pct           Int      @default(0)
+  error         String?
+  /// { length, genre, prompt, keywords[], aspect, range:[s,e], language, provider, log[] }
+  options       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  source     EditAsset       @relation(fields: [sourceAssetId], references: [id], onDelete: Cascade)
+  candidates ClipCandidate[]
+
+  @@index([clientId])
+}
+
+/// One scored clip of a ClipJob: source ranges in play order plus scores.
+model ClipCandidate {
+  id            String    @id @default(cuid())
+  jobId         String
+  rank          Int       @default(0)
+  /// [[start, end], ...] seconds in the source, in play order.
+  ranges        Json
+  duration      Float
+  /// The length bucket it was curated for, e.g. "15-60".
+  lengthTarget  String
+  title         String
+  why           String?
+  description   String?
+  hashtags      String[]  @default([])
+  /// The clip's words in play order, for transcript search.
+  text          String?
+  hook          Int       @default(0)
+  flow          Int       @default(0)
+  value         Int       @default(0)
+  trend         Int       @default(0)
+  relevance     Int?
+  sponsorship   Int?
+  /// Phase 9: 0-10 from scene cuts and sampled face frames.
+  visual        Int?
+  raw           Int       @default(0)
+  /// Shown 0-99 score (rank curve within the job).
+  score         Int       @default(0)
+  /// { hook, flow, value, trend, relevance? } judge comments.
+  comments      Json?
+  /// up | down
+  feedback      String?
+  /// "curate" | "refine": refine rows survive a curate rerun.
+  origin        String    @default("curate")
+  /// The EditProject "Open in editor" made, reused on a second open.
+  editProjectId String?
+  /// Phase 8: starred in Collections.
+  favorite      Boolean   @default(false)
+  /// Phase 8: ClipPerformance from @toreroflow/core, pulled from post metrics.
+  perf          Json?
+  perfAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  job         ClipJob              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  collections ClipCollectionItem[]
+
+  @@index([jobId])
+}
+
+/// Phase 6: a client's saved edit style (captions, framing, AI passes),
+/// applied when a clip opens. At most one isDefault per client (API-enforced).
+model Recipe {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  isDefault Boolean  @default(false)
+  /// RecipeSettings from @toreroflow/core.
+  settings  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+/// Phase 6: a saved snapshot of an EditProject doc. Capped at 50 per project.
+model EditVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  label     String
+  /// true for the snapshot taken automatically before each render.
+  auto      Boolean  @default(false)
+  doc       Json
+  createdAt DateTime @default(now())
+
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+/// Phase 8: a timestamped note on an edit, from the team or a client
+/// through a review link. Replies hang off a root; only roots carry atSec.
+model EditComment {
+  id         String    @id @default(cuid())
+  projectId  String
+  parentId   String?
+  /// Output time in seconds (roots only).
+  atSec      Float?
+  body       String
+  authorName String
+  /// team | client
+  authorKind String    @default("team")
+  userId     String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  project EditProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent  EditComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies EditComment[] @relation("CommentReplies")
+
+  @@index([projectId, createdAt])
+}
+
+/// Phase 8: signed read-only review link for an edit project. The token is
+/// "<id>.<HMAC>", never stored, like ApprovalLink.
+model ReviewLink {
+  id          String    @id @default(cuid())
+  projectId   String
+  createdById String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  project EditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+/// Phase 8: a named folder of clips per client.
+model ClipCollection {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  client Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items  ClipCollectionItem[]
+
+  @@unique([clientId, name])
+}
+
+model ClipCollectionItem {
+  collectionId String
+  candidateId  String
+  addedAt      DateTime @default(now())
+
+  collection ClipCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  candidate  ClipCandidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, candidateId])
+}
+
+/// Phase 8: who did what to which clip (team activity feed).
+model ClipActivity {
+  id          String   @id @default(cuid())
+  clientId    String
+  actor       String
+  /// favorited, collected, opened, rendered, sent, commented, review_link, imported, ...
+  action      String
+  candidateId String?
+  jobId       String?
+  projectId   String?
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, createdAt])
+}
+
+/// Phase 8: one video seen on the client's own YouTube channel by auto-import.
+model YouTubeImport {
+  id          String    @id @default(cuid())
+  clientId    String
+  videoId     String
+  title       String
+  publishedAt DateTime?
+  /// imported | skipped | failed
+  status      String
+  reason      String?
+  clipJobId   String?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, videoId])
+}
+
+/// One file seen in a client's linked Drive folder. The row is written BEFORE
+/// the download, so each file is ingested exactly once.
+model DriveImport {
+  id        String   @id @default(cuid())
+  clientId  String
+  fileId    String
+  name      String
+  /// claimed | downloaded | dryrun | scheduled | held | skipped | failed
+  status    String
+  reason    String?
+  assetId   String?
+  postId    String?
+  /// Dry-run payload or other structured detail (never secrets).
+  detail    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, fileId])
+  @@index([clientId, createdAt])
+}
+
+/// A day the operator ticked "posted to X" on the calendar, by hand. A row
+/// means checked; unchecking deletes it. Nothing is posted or read from X.
+model XPostedDay {
+  clientId  String
+  /// Local calendar day as YYYY-MM-DD, the same day the grid shows.
+  date      String
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, date])
 }

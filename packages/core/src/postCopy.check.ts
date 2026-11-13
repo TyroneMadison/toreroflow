@@ -2,7 +2,7 @@
 // published, so a wrong pick here posts the wrong words to a client's
 // audience, silently and irreversibly.
 import assert from "node:assert/strict";
-import { captionFor, youtubeTitleFor } from "./postCopy";
+import { buildCaptionUserMessage, captionFor, readCaptionReply, youtubeTitleFor } from "./postCopy";
 
 const full = {
   name: "ZR1X first drive",
@@ -70,5 +70,20 @@ for (const draft of [
 
 /* Values are trimmed on the way out. */
 assert.equal(captionFor("instagram", { description: "  spaced  " }), "spaced");
+
+/* The caption writer's message and reply, shared by the upload card and Drive. */
+assert.equal(buildCaptionUserMessage("CACV Motors", "hello"), "Brand: CACV Motors\nWhat is said in the video:\nhello");
+assert.equal(
+  buildCaptionUserMessage("b", "x".repeat(7000)),
+  `Brand: b\nWhat is said in the video:\n${"x".repeat(6000)}`,
+  "transcript capped at 6000 characters",
+);
+assert.deepEqual(
+  readCaptionReply(JSON.stringify({ description: "d", title: "t", hashtags: ["a", 2, "b", "c", "d", "e", "f", "g", "h", "i"] })),
+  { description: "d", title: "t", hashtags: ["a", "b", "c", "d", "e", "f", "g", "h"] },
+  "non-strings dropped, at most 8 hashtags",
+);
+assert.deepEqual(readCaptionReply("{}"), { description: "", title: "", hashtags: [] }, "missing fields read empty");
+assert.throws(() => readCaptionReply("not json"), "a reply that is not JSON throws, as the route always has");
 
 console.log("post copy: all checks passed");

@@ -5,8 +5,10 @@
  *
  * Documented libass approximations (the phone preview is the operator's
  * truth, ASS gets as close as libass allows):
- * - Background boxes (BorderStyle 3) are always square. "rounded" corners are
- *   a libass limitation, and a box replaces the letter outline and shadow.
+ * - Caption background boxes (BorderStyle 3) are square, and a box replaces
+ *   the letter outline and shadow. Text items (hook, lower thirds) with a
+ *   "rounded" box get a vector-drawn rounded rectangle behind them instead,
+ *   sized from estimateTextWidth (an average advance, not real metrics).
  * - Glow, lineSpaceX/lineSpaceY, and outline distance have no ASS equivalent
  *   and are dropped.
  * - Left/right alignment anchors the text edge at the position point instead
@@ -26,6 +28,7 @@ import {
   type TextStyle,
 } from "./editDoc";
 import type { CaptionChunk } from "./captionChunks";
+import { roundedBoxSize, roundedRectPath } from "./polish";
 
 /** "#RRGGBB" plus an alpha byte (0 solid, 255 clear) to ASS &HAABBGGRR&. */
 export function hexToAss(hex: string, alpha = 0): string {
@@ -84,7 +87,11 @@ function styleLine(name: string, s: TextStyle, secondary: string): string {
     String(s.size),
     hexToAss(s.color),
     secondary,
-    hexToAss(s.outline.on ? s.outline.color : "#000000"),
+    // libass paints a BorderStyle 3 box in OutlineColour (BackColour is
+    // only its shadow), so a box's color has to ride here too.
+    bg.on
+      ? hexToAss(bg.color, alphaByte(bg.opacity))
+      : hexToAss(s.outline.on ? s.outline.color : "#000000"),
     bg.on
       ? hexToAss(bg.color, alphaByte(bg.opacity))
       : s.shadow.on
@@ -115,30 +122,80 @@ function dialogue(layer: number, start: number, end: number, style: string, text
   return `Dialogue: ${layer},${assTime(start)},${assTime(end)},${style},,0,0,0,,${text}`;
 }
 
-/** {\kNN} per word. The centisecond values always sum to the duration. */
-function karaokeText(text: string, durSec: number): string {
+/**
+ * {\kNN} per word. The centisecond values always sum to the duration. With
+ * real word times, each word's highlight starts when that word is spoken:
+ * boundaries come from word starts relative to the chunk start, rounded once,
+ * so rounding never accumulates drift. Without times (or when an override
+ * changed the word count) the duration splits evenly, as before.
+ */
+function karaokeText(
+  text: string,
+  durSec: number,
+  times?: { start: number; end: number }[],
+  chunkStart = 0,
+): string {
   const lines = text.split("\n");
   const words = lines.flatMap((l) => l.split(" ").filter(Boolean));
   if (words.length === 0) return "";
   const total = Math.max(1, Math.round(durSec * 100));
-  const base = Math.floor(total / words.length);
-  let used = 0;
+  let ks: number[];
+  if (times && times.length === words.length) {
+    const bounds = times.map((t, i) =>
+      i === 0 ? 0 : Math.min(total, Math.max(0, Math.round((t.start - chunkStart) * 100))),
+    );
+    bounds.push(total);
+    for (let i = 1; i < bounds.length; i++) bounds[i] = Math.max(bounds[i], bounds[i - 1]);
+    ks = words.map((_, i) => bounds[i + 1] - bounds[i]);
+  } else {
+    const base = Math.floor(total / words.length);
+    ks = words.map((_, i) => (i === words.length - 1 ? total - base * (words.length - 1) : base));
+  }
   let n = 0;
-  const nextK = () => {
-    n += 1;
-    const k = n === words.length ? total - used : base;
-    used += k;
-    return k;
-  };
   return lines
     .map((l) =>
       l
         .split(" ")
         .filter(Boolean)
-        .map((w) => `{\\k${nextK()}}${braces(w)}`)
+        .map((w) => `{\\k${ks[n++]}}${braces(w)}`)
         .join(" "),
     )
     .join("\\N");
+}
+
+/** Level 2 keyword color; kept here so core has no cycle with aiPasses. */
+const STRONG = "#FFD84D";
+
+/**
+ * Plain caption text with keyword colors: level 1 in the accent, level 2 in
+ * a fixed strong yellow, each reset to the base color after the word.
+ * Marks only apply while they still line up with the words.
+ */
+function markedText(text: string, marks: (0 | 1 | 2)[] | undefined, base: string, accent: string): string {
+  const lines = text.split("\n");
+  const count = lines.reduce((s, l) => s + l.split(" ").filter(Boolean).length, 0);
+  if (!marks || marks.length !== count || !marks.some((m) => m > 0)) return escapeText(text);
+  let n = 0;
+  return lines
+    .map((l) =>
+      l
+        .split(" ")
+        .filter(Boolean)
+        .map((w) => {
+          const m = marks[n++];
+          if (!m) return braces(w);
+          const c = m === 2 ? STRONG : accent;
+          return `{\\c${hexToAss(c)}}${braces(w)}{\\c${hexToAss(base)}}`;
+        })
+        .join(" "),
+    )
+    .join("\\N");
+}
+
+/** Emoji tail in the bundled monochrome emoji font. */
+function emojiTail(emojis: string[] | undefined, font: string): string {
+  if (!emojis || emojis.length === 0) return "";
+  return ` {\\fnNoto Emoji}${emojis.join(" ")}{\\fn${firstFamily(font)}}`;
 }
 
 const POP_IN = "\\t(0,140,\\fscx108\\fscy108)\\t(140,240,\\fscx100\\fscy100)";
@@ -214,6 +271,24 @@ function textEvents(item: TextItem, style: string, w: number, h: number): string
   return [dialogue(1, start, end, style, lead + escapeText(text))];
 }
 
+/** A rounded rectangle drawing behind a text item, same position and timing. */
+function roundedBoxEvent(item: TextItem, w: number, h: number): string {
+  const { px, py } = posOf(item.x, item.y, w, h);
+  const D = Math.round(item.dur * 1000);
+  const text = applyCase(item.content, item.style.case);
+  const box = roundedBoxSize(text, item.style);
+  const bg = item.style.background;
+  let tags = "\\an5\\bord0\\shad0";
+  if (item.animIn === "slideup") tags += `\\move(${px},${py + 60},${px},${py},0,200)`;
+  else if (item.animOut === "slideup") tags += `\\move(${px},${py},${px},${py - 60},${Math.max(0, D - 200)},${D})`;
+  else tags += `\\pos(${px},${py})`;
+  const fadIn = item.animIn === "fade" ? 160 : 0;
+  const fadOut = item.animOut === "fade" ? 160 : 0;
+  if (fadIn || fadOut) tags += `\\fad(${fadIn},${fadOut})`;
+  tags += `\\1c&H${hexToAss(bg.color).slice(4)}\\1a&H${alphaByte(bg.opacity).toString(16).padStart(2, "0").toUpperCase()}&\\p1`;
+  return dialogue(0, item.at, item.at + item.dur, "B", `{${tags}}${roundedRectPath(box.w, box.h, box.r)}{\\p0}`);
+}
+
 /**
  * The whole ASS file: Script Info, one Style per distinct look (C for
  * captions, T1..Tn for text items), and every Dialogue event. Chunks and
@@ -225,6 +300,8 @@ export function assFromDoc(input: {
   chunks: CaptionChunk[];
   texts: TextItem[];
   captions: CaptionSettings;
+  /** Phase 7: emojis are composited as colour images, so no mono tail. */
+  colorEmoji?: boolean;
   playResX?: number;
   playResY?: number;
 }): string {
@@ -265,19 +342,37 @@ export function assFromDoc(input: {
         });
         return;
       }
-      const body = karaoke ? karaokeText(text, chunk.end - chunk.start) : escapeText(text);
+      // Keyword colors only without karaoke: karaoke already owns the color
+      // channel. A break override drops marks since its words changed.
+      const marks = overrides.has(i) ? undefined : chunk.marks;
+      const body =
+        (karaoke
+          ? karaokeText(text, chunk.end - chunk.start, chunk.times, chunk.start)
+          : markedText(text, marks, cap.style.color, cap.style.accentColor)) +
+        (input.colorEmoji ? "" : emojiTail(chunk.emojis, cap.style.font));
       events.push(dialogue(0, chunk.start, chunk.end, "C", posTag + body));
     });
   }
 
   const styleNames = new Map<string, string>();
   for (const item of input.texts) {
-    const key = JSON.stringify(item.style);
+    // A rounded box is drawn as its own shape, so the text style itself
+    // carries no BorderStyle 3 box (which would paint square corners).
+    const rounded = item.style.background.on && item.style.background.shape === "rounded";
+    const st = rounded ? { ...item.style, background: { ...item.style.background, on: false } } : item.style;
+    const key = JSON.stringify(st);
     let name = styleNames.get(key);
     if (!name) {
       name = `T${styleNames.size + 1}`;
       styleNames.set(key, name);
-      styleLines.push(styleLine(name, item.style, hexToAss(item.style.color)));
+      styleLines.push(styleLine(name, st, hexToAss(st.color)));
+    }
+    if (rounded) {
+      if (!styleNames.has("__box")) {
+        styleNames.set("__box", "B");
+        styleLines.push(styleLine("B", { ...st, outline: { ...st.outline, on: false }, shadow: { ...st.shadow, on: false } }, hexToAss("#000000")));
+      }
+      events.push(roundedBoxEvent(item, w, h));
     }
     events.push(...textEvents(item, name, w, h));
   }

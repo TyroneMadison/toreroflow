@@ -1,16 +1,32 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import {
+  annotateWords,
+  autoReframe,
+  type FaceTrack,
   assFromDoc,
+  attachMarks,
+  captionEmojiOverlays,
+  censorSpans,
+  maskText,
+  stickerOverlays,
+  outputWordRefs,
+  textsWithHook,
+  wordMarks,
   BITRATE_PRESETS,
-  chunksFor,
+  chunksWithTimes,
   editedWords,
   edlFromDoc,
   outputWords,
   type EditDoc,
+  type EditDocV1,
+  migrateDoc,
+  outputSize,
   type Word,
+  LANG_MIN_PROB,
+  languageHint,
 } from "@toreroflow/core";
-import { getPrisma, Prisma } from "@toreroflow/db";
+import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import {
   buildRenderPlan,
   conformProxy,
@@ -18,11 +34,28 @@ import {
   isBrowserReady,
   probe,
   renderEdit,
+  sceneCuts,
+  waveformPeaks,
 } from "@toreroflow/media";
 import { env } from "./env";
-import { transcribe } from "./transcribe";
+import { transcribeStrict } from "./transcribe";
 
 const prisma = getPrisma();
+
+/** Past this, words live in storage/<clientId>/edit/<projectId>/<assetId>-words.json. */
+const WORDS_FILE_THRESHOLD_SEC = 15 * 60;
+
+/** An asset's words from whichever place holds them. */
+export async function assetWords(a: { words: unknown; wordsKey: string | null }): Promise<Word[]> {
+  if (a.wordsKey) {
+    try {
+      return JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, a.wordsKey), "utf8")) as Word[];
+    } catch {
+      return [];
+    }
+  }
+  return (a.words as Word[] | null) ?? [];
+}
 
 /**
  * Make one editor source usable: clips get something the preview can play, a
@@ -34,6 +67,31 @@ const prisma = getPrisma();
  * already is, which for phone and CapCut exports is almost always. Only
  * footage a webview cannot decode gets a converted copy.
  */
+/** The language set up front, or null when whisper should detect it. */
+export function forcedLanguage(a: { language: string | null; languageSource: string | null; status: string }): string | null {
+  if (!a.language) return null;
+  if (a.languageSource === "set") return a.language;
+  // ponytail: rows from before Phase 9 carry no source; a language on a row
+  // nothing has processed yet can only have come from the job's option.
+  return a.languageSource == null && a.status === "uploaded" ? a.language : null;
+}
+
+/** The client's usual language from its trusted transcripts ("en" when none). */
+export async function clientLanguageHint(clientId: string, exceptId?: string): Promise<string> {
+  const rows = await prisma.editAsset.findMany({
+    where: {
+      project: { clientId },
+      id: exceptId ? { not: exceptId } : undefined,
+      language: { not: null },
+      OR: [{ languageSource: "set" }, { languageSource: "detected", languageProb: { gte: LANG_MIN_PROB } }],
+    },
+    select: { language: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  return languageHint(rows.map((r) => r.language));
+}
+
 export async function processEditAsset(editAssetId: string): Promise<void> {
   const asset = await prisma.editAsset.findUnique({
     where: { id: editAssetId },
@@ -90,28 +148,69 @@ export async function processEditAsset(editAssetId: string): Promise<void> {
         asset.storageKey
       : `${dir}/${asset.id}-proxy.mp4`;
 
-    const [, , transcript] = await Promise.all([
+    const peaksKey = `${dir}/${asset.id}-peaks.json`;
+    // A language set up front (a clip job's option) skips whisper's guess.
+    // A language whisper guessed earlier is not "set": a re-process guesses
+    // again, and a weak guess falls back to the client's usual language.
+    const forced = forcedLanguage(asset);
+    const hint = forced ? null : await clientLanguageHint(asset.project.clientId, asset.id);
+    const runTranscribe = () =>
+      transcribeStrict(sourcePath, { durationSec: meta.durationSec, language: forced, hint }).then(
+        (t) => ({ ok: true as const, t }),
+        (e: Error) => ({ ok: false as const, reason: e.message }),
+      );
+    // ponytail: long sources transcribe alone first. On the e2e box a 20 min
+    // talk transcribed beside the proxy and filmstrip encodes came back with
+    // its first minutes missing and the language guessed wrong (ko, zh, nl);
+    // the same audio alone came back whole, every time. Root cause not found
+    // in whisper; this keeps the CPU to it. Phase 9: short clips too. A 75 s
+    // talk transcribed beside its encodes came back as 31 words (172 alone),
+    // and that thin audio is what whisper misread as "ar". Serial costs a few
+    // seconds on a short clip.
+    const serial = true;
+    const early = serial ? await runTranscribe() : null;
+    const [, , transcript, peaks] = await Promise.all([
       proxyKey === asset.storageKey
         ? Promise.resolve()
         : conformProxy(sourcePath, path.join(env.STORAGE_DIR, proxyKey)),
       filmstrip(sourcePath, path.join(env.STORAGE_DIR, stripKey)),
       // Word Editor and auto-cut both work on the flat word list; segment
-      // boundaries carry nothing the editor needs.
-      transcribe(sourcePath),
+      // boundaries carry nothing the editor needs. A failed transcription no
+      // longer fails silently: the clip stays usable (proxy, filmstrip) and
+      // the reason lands in EditAsset.error for the editor to show.
+      early ? Promise.resolve(early) : runTranscribe(),
+      // Waveform lane; a decode hiccup costs the lane, never the clip.
+      waveformPeaks(sourcePath).catch(() => null),
     ]);
-    const words = (transcript?.segments ?? []).flatMap((s) => s.words ?? []);
+    const words: Word[] = transcript.ok
+      ? annotateWords(transcript.t.segments.flatMap((s) => s.words ?? []))
+      : [];
+    if (peaks) await fs.writeFile(path.join(env.STORAGE_DIR, peaksKey), JSON.stringify(peaks));
+
+    // Long sources keep their words in a file: an hour is megabytes of JSON
+    // that every project load would otherwise drag out of Postgres.
+    const longSource = (meta.durationSec ?? 0) > WORDS_FILE_THRESHOLD_SEC;
+    const wordsKey = longSource ? `${dir}/${asset.id}-words.json` : null;
+    if (wordsKey) await fs.writeFile(path.join(env.STORAGE_DIR, wordsKey), JSON.stringify(words));
 
     await prisma.editAsset.update({
       where: { id: asset.id },
       data: {
         proxyKey,
         stripKey,
-        words: words as unknown as Prisma.InputJsonValue,
+        words: wordsKey ? Prisma.DbNull : (words as unknown as Prisma.InputJsonValue),
+        wordsKey,
+        language: transcript.ok ? (transcript.t.language ?? null) : forced,
+        languageProb: transcript.ok ? (transcript.t.languageProbability ?? null) : null,
+        languageSource: transcript.ok ? (transcript.t.languageSource ?? null) : forced ? "set" : null,
+        peaksKey: peaks ? peaksKey : null,
+        error: transcript.ok ? null : transcript.reason.slice(0, 500),
         status: "ready",
       },
     });
     console.log(
-      `[worker] edit asset ${asset.id} ready (${asset.project.clientId}, ${words.length} words)`,
+      `[worker] edit asset ${asset.id} ready (${asset.project.clientId}, ${words.length} words` +
+        (transcript.ok ? ")" : `, transcription failed: ${transcript.reason})`),
     );
   } catch (error) {
     console.error(`[worker] edit asset ${editAssetId} failed:`, error);
@@ -214,11 +313,13 @@ export async function renderProject(editProjectId: string): Promise<void> {
   };
 
   try {
-    const doc = project.doc as unknown as EditDoc | null;
-    if (!doc || doc.v !== 1) {
+    const raw = project.doc as unknown as EditDoc | EditDocV1 | null;
+    if (!raw || (raw.v !== 1 && raw.v !== 2)) {
       await fail("this project has no edit document yet");
       return;
     }
+    // Old v1 docs render through the same migration the editor loads with.
+    const doc = migrateDoc(raw);
 
     const clips = project.assets.filter((a) => a.kind === "clip");
     const durations: Record<string, number> = {};
@@ -237,11 +338,28 @@ export async function renderProject(editProjectId: string): Promise<void> {
     // chunk index, so the indices here must be the raw chunk order.
     const wordsByAsset: Record<string, Word[]> = {};
     for (const a of clips) {
-      const words = (a.words as unknown as Word[] | null) ?? [];
+      const words = await assetWords(a);
       wordsByAsset[a.id] = editedWords(words, doc.wordEdits[a.id] ?? {});
     }
     const outWords = outputWords(edl, wordsByAsset);
-    const chunks = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    // Same chunks as chunksFor, plus each word's time for karaoke \k.
+    // Phase 5 keyword levels and emojis ride on the chunks, packed alike.
+    const marked = attachMarks(
+      chunksWithTimes(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines),
+      wordMarks(outputWordRefs(edl, wordsByAsset), doc),
+      doc.captions.style.wordsPerLine * doc.captions.style.lines,
+    );
+    // Phase 7 censor: listed words dashed in captions (word count unchanged,
+    // so karaoke times still line up) and their spans muted or bleeped.
+    // ponytail: manual break overrides keep their typed text unmasked.
+    const censorList = doc.censor?.words ?? [];
+    const chunks =
+      doc.censor?.mask && censorList.length
+        ? marked.map((c) => ({ ...c, text: maskText(c.text, censorList) }))
+        : marked;
+    const spans = doc.censor && doc.censor.audio !== "off" ? censorSpans(outWords, censorList) : [];
+    // The hook headline renders through the text-overlay path.
+    const texts = textsWithHook(doc);
 
     // The output name: render-<n> past every render file already in the
     // project dir, so a re-render never overwrites what the operator may
@@ -261,22 +379,24 @@ export async function renderProject(editProjectId: string): Promise<void> {
     // and no texts there is nothing to burn, so the subtitles filter is
     // skipped entirely.
     let assPath: string | null = null;
-    if (doc.captions.enabled || doc.texts.length > 0) {
+    if (doc.captions.enabled || texts.length > 0) {
       assPath = path.join(projectDir, `render-${n}.ass`);
       await fs.writeFile(
         assPath,
         assFromDoc({
           chunks: doc.captions.enabled ? chunks : [],
-          texts: doc.texts,
+          texts,
           captions: doc.captions,
+          // Emojis render as Twemoji PNG overlays below, not libass glyphs.
+          colorEmoji: true,
         }),
         "utf8",
       );
     }
 
     const { resolution, fps } = doc.export;
-    // 9:16 vertical: the resolution number is the width.
-    const height = Math.round((resolution * 16) / 9);
+    // The resolution number is the short edge; 9:16 at 1080 is 1080x1920 as before.
+    const { width, height } = outputSize(doc.output.aspect, resolution);
     const preset = BITRATE_PRESETS[resolution];
     const baseK = typeof doc.export.bitrate === "number" ? doc.export.bitrate : preset[doc.export.bitrate];
     // 60fps carries twice the frames; presets scale up, a custom number is
@@ -284,24 +404,63 @@ export async function renderProject(editProjectId: string): Promise<void> {
     const videoBitrateK =
       fps === 60 && typeof doc.export.bitrate !== "number" ? Math.round(baseK * 1.5) : baseK;
 
+    // Audio streams are probed here, not stored: a silent main clip needs
+    // generated silence and b-roll sound only mixes in when it exists, and
+    // a probe costs milliseconds against a render that takes minutes.
+    const live = project.assets.filter((a) => a.storageKey !== "pending");
+    const hasAudio = new Map<string, boolean>();
+    await Promise.all(
+      live
+        .filter((a) => a.kind === "clip")
+        .map(async (a) => {
+          const m = await probe(path.join(env.STORAGE_DIR, a.storageKey)).catch(() => null);
+          if (m) hasAudio.set(a.id, m.audioCodec !== "");
+        }),
+    );
+    // Face tracks (written by auto reframe) aim face zooms at the real face.
+    const faceTracks: Record<string, FaceTrack> = {};
+    for (const a of clips) {
+      if (a.storageKey === "pending") continue;
+      // doc.faces holds the key auto reframe wrote (clip projects point at
+      // the source project's file); else the conventional sibling path.
+      const key = doc.faces?.[a.id] ?? `${path.posix.dirname(a.storageKey)}/${a.id}-faces.json`;
+      const raw = await fs.readFile(path.join(env.STORAGE_DIR, key), "utf8").catch(() => null);
+      if (!raw) continue;
+      try {
+        faceTracks[a.id] = JSON.parse(raw) as FaceTrack;
+      } catch {
+        // A broken track only costs the anchor; the zoom keeps the fixed point.
+      }
+    }
+    const emojiOverlays = [
+      ...captionEmojiOverlays(chunks, doc.captions, width, height),
+      ...stickerOverlays(doc.overlays?.stickers, width, height),
+    ];
+    // Fonts: the bundled set plus the client's uploads, linked into one dir
+    // per render so libass sees both.
+    const fontsDir = await renderFontsDir(projectDir, n, project.clientId);
     const plan = buildRenderPlan({
       doc,
       edl,
-      assets: project.assets
-        .filter((a) => a.storageKey !== "pending")
-        .map((a) => ({
-          id: a.id,
-          kind: a.kind,
-          path: path.join(env.STORAGE_DIR, a.storageKey),
-          durationSec: a.durationSec ?? 0,
-          width: a.width ?? 0,
-          height: a.height ?? 0,
-        })),
+      assets: live.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        path: path.join(env.STORAGE_DIR, a.storageKey),
+        durationSec: a.durationSec ?? 0,
+        width: a.width ?? 0,
+        height: a.height ?? 0,
+        hasAudio: hasAudio.get(a.id),
+      })),
       assPath,
       // Resolved the way the insights template is: relative to the repo root,
       // which the Dockerfile also registers with fontconfig.
-      fontsDir: path.join(env.REPO_ROOT, "assets", "fonts"),
-      out: { path: outPath, width: resolution, height, fps, format: ext, videoBitrateK },
+      fontsDir,
+      out: { path: outPath, width, height, fps, format: ext, videoBitrateK },
+      faceTracks,
+      emoji: emojiOverlays.length
+        ? { dir: path.join(env.REPO_ROOT, "assets", "emoji"), overlays: emojiOverlays }
+        : undefined,
+      censorSpans: spans,
     });
 
     // Whole percents only, written when the number actually moves; the last
@@ -325,10 +484,129 @@ export async function renderProject(editProjectId: string): Promise<void> {
       where: { id: editProjectId },
       data: { status: "rendered", renderedKey, renderPct: 100, renderError: null },
     });
+    await sendAfterRender(editProjectId);
     console.log(
       `[worker] render ${n} ready for project ${project.id} (${Math.round(plan.totalOutSec)}s to ${renderedKey})`,
     );
   } catch (error) {
     await fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * The fonts dir for one render: bundled fonts alone when the client has no
+ * uploads, else a temp dir of copies of both (copies, not symlinks, so it
+ * works the same on Windows dev boxes).
+ */
+async function renderFontsDir(projectDir: string, n: number, clientId: string): Promise<string> {
+  const bundled = path.join(env.REPO_ROOT, "assets", "fonts");
+  const clientFonts = path.join(env.STORAGE_DIR, clientId, "fonts");
+  const uploads = (await fs.readdir(clientFonts).catch(() => [] as string[])).filter((f) => /\.(ttf|otf)$/i.test(f));
+  if (uploads.length === 0) return bundled;
+  const dir = path.join(projectDir, `render-${n}-fonts`);
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(dir, { recursive: true });
+  for (const f of await fs.readdir(bundled)) await fs.copyFile(path.join(bundled, f), path.join(dir, f)).catch(() => {});
+  for (const f of uploads) await fs.copyFile(path.join(clientFonts, f), path.join(dir, f));
+  return dir;
+}
+
+/**
+ * Phase 6 "Render + send to Uploads": once a batch render lands, the file
+ * goes to Uploads like the editor's Send button, with the clip's curated
+ * title, description and hashtags as the drafted copy. Nothing posts.
+ * A failed send keeps the render and says why in renderError.
+ */
+async function sendAfterRender(editProjectId: string): Promise<void> {
+  const prisma = getPrisma();
+  const p = await prisma.editProject.findUnique({ where: { id: editProjectId } });
+  const after = p?.afterRender as { send?: boolean; title?: string; description?: string; hashtags?: string[] } | null;
+  if (!p || !p.renderedKey || !after?.send || p.uploadAssetId) return;
+  const ext = path.extname(p.renderedKey) || ".mp4";
+  const base = (p.doc as { export?: { name?: string } } | null)?.export?.name?.trim() || p.name;
+  const asset = await prisma.mediaAsset.create({
+    data: {
+      clientId: p.clientId,
+      originalName: `${base}${ext}`,
+      storageKey: "pending",
+      status: "uploaded",
+      draftCopy: {
+        name: after.title ?? p.name,
+        description: after.description ?? "",
+        hashtags: Array.isArray(after.hashtags) ? after.hashtags : [],
+      },
+    },
+  });
+  const storageKey = `${p.clientId}/${asset.id}/source${ext}`;
+  try {
+    await fs.mkdir(path.join(env.STORAGE_DIR, p.clientId, asset.id), { recursive: true });
+    await fs.copyFile(path.join(env.STORAGE_DIR, p.renderedKey), path.join(env.STORAGE_DIR, storageKey));
+  } catch (error) {
+    await prisma.mediaAsset.delete({ where: { id: asset.id } });
+    await prisma.editProject.updateMany({
+      where: { id: editProjectId },
+      data: { renderError: `rendered, but sending to Uploads failed: ${error instanceof Error ? error.message : String(error)}` },
+    });
+    return;
+  }
+  await prisma.mediaAsset.update({ where: { id: asset.id }, data: { storageKey } });
+  await enqueue("media", { assetId: asset.id });
+  await prisma.editProject.updateMany({ where: { id: editProjectId }, data: { uploadAssetId: asset.id } });
+  console.log(`[worker] sent render of ${editProjectId} to Uploads as ${asset.id}`);
+}
+
+/** Where the API and desktop read an auto reframe's progress and result. */
+export function reframeStatusPath(storageKey: string, assetId: string): string {
+  return path.join(env.STORAGE_DIR, path.posix.dirname(storageKey), `${assetId}-reframe.json`);
+}
+
+/**
+ * Auto reframe: scene cuts (ffmpeg) + face samples (captions /faces, local
+ * YuNet, no paid API) -> autoReframe -> shots in a status file.
+ *
+ * ponytail: the result goes to a file the desktop polls and applies as an
+ * undoable doc edit, rather than into EditProject.doc. The desktop autosaves
+ * the whole doc, so a worker write there would be silently overwritten by
+ * the next keystroke. Same file shape as a failure, so one reader handles both.
+ */
+export async function reframeAsset(editAssetId: string): Promise<void> {
+  const asset = await prisma.editAsset.findUnique({
+    where: { id: editAssetId },
+    include: { project: true },
+  });
+  if (!asset || asset.kind !== "clip") return;
+  const statusPath = reframeStatusPath(asset.storageKey, asset.id);
+  const write = (body: object) =>
+    fs.writeFile(statusPath, JSON.stringify({ ...body, at: new Date().toISOString() }));
+
+  try {
+    await write({ status: "running" });
+    const source = path.join(env.STORAGE_DIR, asset.storageKey);
+    const facesKey = `${path.posix.dirname(asset.storageKey)}/${asset.id}-faces.json`;
+    const [cuts, res] = await Promise.all([
+      sceneCuts(source),
+      fetch(`${env.CAPTIONS_URL}/faces`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: source, out: path.join(env.STORAGE_DIR, facesKey) }),
+        signal: AbortSignal.timeout(290_000),
+      }),
+    ]);
+    if (!res.ok) {
+      throw new Error(`captions /faces: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    }
+    const track = JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, facesKey), "utf8")) as FaceTrack;
+    const raw = asset.project.doc as unknown as EditDoc | EditDocV1 | null;
+    // No doc yet means nothing picked an aspect: 9:16 is the editor default.
+    const aspect = raw && (raw.v === 1 || raw.v === 2) ? migrateDoc(raw).output.aspect : "9:16";
+    const { width, height } = outputSize(aspect, 1080);
+    const duration = asset.durationSec ?? (await probe(source)).durationSec;
+    const shots = autoReframe(track, cuts, duration, { W: width, H: height });
+    await write({ status: "ready", shots, facesKey, aspect });
+    console.log(`[worker] reframed ${asset.id}: ${shots.length} shots, ${cuts.length} cuts`);
+  } catch (error) {
+    console.error(`[worker] reframe failed for ${editAssetId}:`, error);
+    await write({ status: "failed", error: error instanceof Error ? error.message : String(error) }).catch(() => {});
+    throw error;
   }
 }

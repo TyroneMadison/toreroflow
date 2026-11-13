@@ -41,6 +41,15 @@ import {
   assert.equal(f.outlook, "now");
 }
 
+// The Shorts hard stop is permanent. The raw reason is what the queue prints.
+{
+  const f = explainPublishFailure("Over 3:00, Shorts limit");
+  assert.equal(f.outlook, "never");
+  assert.equal(f.summary, "Over 3:00, Shorts limit");
+  assert.equal(f.summary.includes("\u2014"), false);
+  assert.equal(f.advice.includes("\u2014"), false);
+}
+
 // Content refusals: retrying is guaranteed to fail again, so no button.
 for (const raw of [
   "Video is too long for this format",

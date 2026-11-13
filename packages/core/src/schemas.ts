@@ -60,6 +60,21 @@ export const instagramOptionsSchema = z.object({
   aiLabel: z.boolean().optional(),
   /** Also put this video on the account's story, as a second post. */
   alsoStory: z.boolean().optional(),
+  /*
+   * Long-form: a reel up to 15 minutes from the long-form screen. Allows a
+   * file over the provider's 300MB cap, because the worker makes an
+   * Instagram copy (see igLongform.ts), and sends the cover as a frame
+   * offset when one was picked.
+   */
+  longform: z.boolean().optional(),
+  /** Make the Instagram copy a centre 9:16 crop. Long-form only. */
+  crop916: z.boolean().optional(),
+  /** Instagram's own cover frame, overriding the shared cover. Long-form only. */
+  thumbOffsetMs: z.number().int().min(0).max(15 * 60 * 1000).optional(),
+  /** A Facebook Page id with location data, which is what Instagram's location takes. */
+  locationId: z.string().regex(/^\d{1,30}$/, "location must be a numeric Facebook place id").optional(),
+  /** People tagged in the reel, by username. Reels take usernames only. */
+  userTags: z.array(z.string().max(80)).max(20).optional(),
 });
 
 /** Instagram refuses stories longer than this. */
@@ -97,13 +112,15 @@ export const INSTAGRAM_REEL_MAX_SECONDS = 180;
 export const INSTAGRAM_REEL_ATTEMPT_CEILING = 180;
 
 /**
- * The longest video Instagram will take at all, as a feed post.
+ * The longest video Instagram will take through the provider: 15 minutes.
  *
- * Sixty minutes per the provider's own limits, which is far past anything this
- * agency posts; it exists so a genuinely absurd file is refused with a sentence
- * rather than dying inside the provider.
+ * There is no longer-video road. Zernio publishes a single video as a reel,
+ * always ("A single video never publishes as a feed video: it becomes a
+ * Reel", docs.zernio.com/platforms/instagram/posts), and caps reels at 15
+ * minutes and 300MB. This used to be an hour on the belief that a long video
+ * went out as a feed post; it never did.
  */
-export const INSTAGRAM_FEED_MAX_SECONDS = 60 * 60;
+export const INSTAGRAM_VIDEO_MAX_SECONDS = 15 * 60;
 
 /**
  * The largest file the publishing provider will take, per platform.
@@ -135,6 +152,29 @@ export const PLATFORM_MAX_UPLOAD_BYTES: Partial<Record<Platform, number>> = {
  * The message names the measured size and the limit, because "too large" alone
  * does not tell an operator whether to trim two seconds or re-export.
  */
+/** What an operator reads when a video breaks either Instagram limit. */
+export const INSTAGRAM_VIDEO_LIMIT_MESSAGE = "Instagram videos can be up to 15 minutes and 300 MB.";
+
+/**
+ * Why this video cannot go to Instagram, or null if it can.
+ *
+ * One sentence for both limits, then the measurement that broke it, so the
+ * schedule screen and the API refuse in the same words. Unknown values pass:
+ * an unmeasured video is not refused on a guess.
+ */
+export function instagramVideoError(durationSec: number | null | undefined, bytes?: number | null): string | null {
+  const max = PLATFORM_MAX_UPLOAD_BYTES.instagram!;
+  if (durationSec != null && durationSec > INSTAGRAM_VIDEO_MAX_SECONDS) {
+    // Rounded up, so 900.4 seconds reads 15:01 rather than a limit it broke.
+    const t = Math.ceil(durationSec);
+    return `${INSTAGRAM_VIDEO_LIMIT_MESSAGE} This one is ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}. Trim it, or untick Instagram.`;
+  }
+  if (bytes != null && bytes > max) {
+    return `${INSTAGRAM_VIDEO_LIMIT_MESSAGE} This one is ${Math.round(bytes / (1024 * 1024))} MB. Re-export it at a lower bitrate, or untick Instagram.`;
+  }
+  return null;
+}
+
 export function uploadSizeError(platform: Platform, bytes: number): string | null {
   const max = PLATFORM_MAX_UPLOAD_BYTES[platform];
   if (max === undefined || bytes <= max) return null;
@@ -145,6 +185,14 @@ export function uploadSizeError(platform: Platform, bytes: number): string | nul
   );
 }
 
+/** TikTok's privacy levels, as its creator info API names them. */
+export const TIKTOK_PRIVACY_LEVELS = [
+  "PUBLIC_TO_EVERYONE",
+  "MUTUAL_FOLLOW_FRIENDS",
+  "FOLLOWER_OF_CREATOR",
+  "SELF_ONLY",
+] as const;
+
 export const tiktokOptionsSchema = z.object({
   /**
    * Let TikTok attach a recommended track to a photo carousel. TikTok picks
@@ -154,6 +202,16 @@ export const tiktokOptionsSchema = z.object({
   autoAddMusic: z.boolean().optional(),
   /** Deliver to the creator's TikTok inbox instead of publishing. */
   draft: z.boolean().optional(),
+  /**
+   * Who sees it. TikTok's values; the account's creator info decides which
+   * it allows, and Business-app accounts publish videos public only.
+   */
+  privacyLevel: z.enum(TIKTOK_PRIVACY_LEVELS).optional(),
+  allowComment: z.boolean().optional(),
+  /** Video posts only. */
+  allowDuet: z.boolean().optional(),
+  /** Video posts only. */
+  allowStitch: z.boolean().optional(),
 });
 
 export const youtubeOptionsSchema = z.object({
@@ -258,10 +316,21 @@ export const schedulePostSchema = z.object({
     .optional(),
   scheduledAt: z.string().datetime({ offset: true }),
   caption: z.string().max(4000).optional(),
+  /** False skips the client's caption block (and keyword line) for this post. */
+  captionBlock: z.boolean().optional(),
+  /** The Trello card title, when known, so keyword lines can match it. */
+  cardName: z.string().max(500).optional(),
   hashtags: z.array(z.string().max(60)).max(20).optional(),
   instagram: instagramOptionsSchema.optional(),
   youtube: youtubeOptionsSchema.optional(),
   tiktok: tiktokOptionsSchema.optional(),
+  /**
+   * The scheduler (person or bot) confirms it checked the client's SOP.
+   * Optional: without it the schedule still goes through, with a reminder.
+   */
+  sopAcknowledged: z.boolean().optional(),
+  /** The saved idea this post was made from, if any. Ignored when it is not this client's. */
+  ideaId: z.string().max(40).optional(),
 });
 export type SchedulePostInput = z.infer<typeof schedulePostSchema>;
 

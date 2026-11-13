@@ -26,3 +26,26 @@ be regenerated if the embedded copies ever need replacing:
 ```bash
 node -e "const fs=require('fs');const b=n=>fs.readFileSync('assets/fonts/'+n).toString('base64');console.log(b('anton-latin.woff2').length)"
 ```
+
+## Caption rendering (libass)
+
+libass cannot read woff2, so the Studio Edit renderer's `fontsdir` needs TTFs.
+These are the same families, full character set, from `github.com/google/fonts`
+(OFL 1.1, same licence as above):
+
+| File | Family |
+|---|---|
+| `Anton-Regular.ttf` | Anton |
+| `Montserrat-Regular.ttf`, `-Bold`, `-ExtraBold`, `-Black` | Montserrat, static instances of the variable font (fontTools `instancer`, wght 400/700/800/900) |
+
+Static instances rather than the variable file because libass picks weights
+by named face, and a variable TTF only exposes its default instance. Liberation
+Sans/Serif come from the OS (`fonts-liberation` in the Docker image).
+
+## Caption emojis
+
+`NotoEmoji-Regular.ttf` is Noto Emoji (monochrome, variable weight) from
+`github.com/google/fonts/ofl/notoemoji`, SIL Open Font License 1.1,
+copyright Google LLC. libass has no color emoji support, so burned-in
+caption emojis use this outline font by name (`\fnNoto Emoji`) through the
+same fontsdir as the other caption fonts.

@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
 import { Chip, SliderRow, SubPills } from "./index";
+import LayoutPanel from "./LayoutPanel";
 
 const DEFAULT_FX: ClipFx = DEFAULT_CLIP_FX;
 
@@ -30,7 +31,7 @@ const COLOR_CARDS: Array<{ key: keyof ColorAdjust; title: string; lab: string }>
 export default function ClipPanel({ assetId }: { assetId: string }) {
   const { doc, update, assets, outputTime, runAction, project, refreshAssets } = useEditor();
   const toast = useToast();
-  const [tab, setTab] = useState<"quick" | "adjust" | "color">("quick");
+  const [tab, setTab] = useState<"quick" | "adjust" | "color" | "layout">("quick");
   const [isolating, setIsolating] = useState<"voice" | "instrumental" | null>(null);
 
   const isolate = async (mode: "voice" | "instrumental") => {
@@ -81,10 +82,13 @@ export default function ClipPanel({ assetId }: { assetId: string }) {
           { id: "quick", label: "Quick actions" },
           { id: "adjust", label: "Clip adjustments" },
           { id: "color", label: "Color" },
+          { id: "layout", label: "Layout" },
         ]}
         value={tab}
         onChange={setTab}
       />
+
+      {tab === "layout" && <LayoutPanel assetId={assetId} />}
 
       {tab === "quick" && (
         <div className="pnl-cards">

@@ -124,41 +124,21 @@ assert.equal(ratioLabel(1234, 567), "1234x567", "the unnamed fall back to pixels
 console.log("youtube.check: all checks passed");
 
 /*
- * Which door a video opens.
- *
- * Horizontal alone used to send a video to the YouTube wizard. Instagram and
- * TikTok take 16:9 now, so a landscape short-form cut has to reach the ordinary
- * scheduler or it can only ever go to one platform.
+ * Which door a video opens: the short/long toggle alone, whatever the shape.
  */
 {
   const landscape = { width: 1920, height: 1080, kind: "video" } as const;
   const vertical = { width: 1080, height: 1920, kind: "video" } as const;
+  const unmeasured = { width: null, height: null, kind: "video" } as const;
 
-  assert.equal(
-    usesLongFormWizard({ ...landscape, format: "short_form" }),
-    false,
-    "a 1920x1080 short-form cut goes to the scheduler, not the wizard",
-  );
-  assert.equal(
-    usesLongFormWizard({ ...landscape, format: "long_form" }),
-    true,
-    "a landscape long-form video still opens the wizard",
-  );
-
-  /* Vertical never reaches the wizard, whatever the switch says. */
-  assert.equal(usesLongFormWizard({ ...vertical, format: "long_form" }), false, "vertical stays out");
-  assert.equal(usesLongFormWizard({ ...vertical, format: "short_form" }), false, "vertical stays out");
+  for (const [name, a] of [["landscape", landscape], ["vertical", vertical], ["unmeasured", unmeasured]] as const) {
+    assert.equal(usesLongFormWizard({ ...a, format: "long_form" }), true, `${name} long-form opens the wizard`);
+    assert.equal(usesLongFormWizard({ ...a, format: "short_form" }), false, `${name} short-form goes to the scheduler`);
+    assert.equal(usesLongFormWizard({ ...a, format: null }), false, `${name} unset defaults to short-form`);
+  }
+  assert.equal(usesLongFormWizard({ kind: "carousel", format: "long_form" }), false, "a carousel never opens it");
 
   /* Shape itself is unchanged: it still describes the frame, not the door. */
   assert.equal(isHorizontal({ ...landscape, format: "short_form" }), true, "1920x1080 is horizontal");
   assert.equal(isHorizontal({ ...vertical, format: "long_form" }), false, "1080x1920 is not");
-
-  /*
-   * Assets probed before dimensions were recorded have only the switch to go
-   * on, and it decides alone rather than defaulting a landscape video into a
-   * scheduler that may not suit it.
-   */
-  const unmeasured = { width: null, height: null, kind: "video" } as const;
-  assert.equal(usesLongFormWizard({ ...unmeasured, format: "long_form" }), true, "no dimensions: the switch decides");
-  assert.equal(usesLongFormWizard({ ...unmeasured, format: "short_form" }), false, "no dimensions: the switch decides");
 }

@@ -62,6 +62,22 @@ export async function probe(path: string): Promise<ProbeResult> {
 }
 
 /**
+ * Duration in seconds from ffprobe, or null when the file cannot be read.
+ *
+ * A missing or unreadable file is not a duration of zero. Callers that also
+ * have a stored measurement can fall back to it; inventing 0 would look like
+ * a clip that is allowed everywhere.
+ */
+export async function probeDuration(filePath: string): Promise<number | null> {
+  try {
+    const meta = await probe(filePath);
+    return Number.isFinite(meta.durationSec) && meta.durationSec > 0 ? meta.durationSec : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Whether a file can go straight into a `<video>` element as it is.
  *
  * The editor's preview needs something the webview can decode. Making that
@@ -226,4 +242,73 @@ export async function extractThumbnail(
     "-q:v", "3",
     output,
   ]);
+}
+
+/**
+ * The Instagram copy of a long-form video: H.264/AAC, at most 1080 wide (or
+ * 1080x1920 when cropped to a centre 9:16), at a bitrate that keeps it under
+ * the provider's 300MB. The original is untouched; YouTube gets that.
+ *
+ * Written to a temp name and renamed, so a half-finished encode is never
+ * mistaken for a finished copy.
+ */
+export async function instagramCopy(
+  input: string,
+  output: string,
+  opts: { crop916: boolean; videoKbps: number },
+): Promise<void> {
+  const vf = opts.crop916
+    ? "crop=trunc(ih*9/16/2)*2:ih,scale=1080:1920"
+    : // Fit inside 1920x1920 (Instagram's width cap), never upscale, even sizes.
+      "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
+  // Unique per run: the queued copy and a publish that cannot wait may race.
+  const tmp = `${output}.${process.pid}-${Date.now()}.part.mp4`;
+  await run(ffmpegBin(), [
+    "-y", "-i", input,
+    "-vf", vf,
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-b:v", `${opts.videoKbps}k`,
+    "-maxrate", `${opts.videoKbps}k`,
+    "-bufsize", `${opts.videoKbps * 2}k`,
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-movflags", "+faststart",
+    tmp,
+  ]);
+  await fs.rename(tmp, output);
+}
+
+/** pts_time values from ffmpeg showinfo lines, rounded to ms, ascending. */
+export function parseSceneCuts(stderr: string, minGap = 0.5): number[] {
+  const out: number[] = [];
+  for (const m of stderr.matchAll(/showinfo[^\n]*\bpts_time:\s*([0-9.]+)/g)) {
+    const t = Math.round(Number(m[1]) * 1000) / 1000;
+    // A flash or a fast pan scores as several cuts in a row; keep the first.
+    if (Number.isFinite(t) && t > 0 && (out.length === 0 || t - out[out.length - 1] >= minGap)) out.push(t);
+  }
+  return out;
+}
+
+/**
+ * Camera-cut times in seconds via ffmpeg's scene score, the shot boundaries
+ * auto reframe works between. Decoded small: the score barely changes with
+ * size and a 4K hour is otherwise minutes of decode.
+ */
+export function sceneCuts(input: string, threshold = 0.3): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      ffmpegBin(),
+      ["-nostdin", "-hide_banner", "-i", input, "-an", "-vf", `scale=320:-2,select='gt(scene,${threshold})',showinfo`, "-f", "null", "-"],
+      { windowsHide: true },
+    );
+    let err = "";
+    child.stderr.on("data", (d: Buffer) => (err += d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(parseSceneCuts(err));
+      else reject(new Error(`ffmpeg scene detection exited ${code}: ${err.slice(-800)}`));
+    });
+  });
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { addCut, fillerCuts, silenceCuts } from "@toreroflow/core";
+import { addCut, appendClip, fillerCuts, silenceCuts } from "@toreroflow/core";
 import { api, fileUrl } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import { useEditor } from "../StudioEditor";
@@ -48,7 +48,7 @@ export default function AutoCutStep() {
           `/edit-projects/${project.id}/assets?kind=clip`,
           form,
         );
-        update((d) => ({ ...d, clips: [...d.clips, { assetId: asset.id }] }));
+        update((d) => appendClip(d, asset.id));
         setUploads((u) => u.filter((r) => r.id !== next.rowId));
         await refreshAssets();
       } catch (err) {
@@ -237,7 +237,8 @@ export default function AutoCutStep() {
       const same =
         doc2.clips.length === ids.length &&
         doc2.clips.every((c, i) => c.assetId === ids[i]);
-      return same ? doc2 : { ...doc2, clips: ids.map((assetId) => ({ assetId })) };
+      // Reorder by asset; an asset split into several clips keeps their order.
+      return same ? doc2 : { ...doc2, clips: ids.flatMap((assetId) => doc2.clips.filter((c) => c.assetId === assetId)) };
     });
   };
 

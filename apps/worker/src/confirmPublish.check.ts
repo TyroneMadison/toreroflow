@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { entryFor, outcomeOf, type ProviderEntry } from "./confirmPublish";
+import { entryFor, isTrialReel, outcomeOf, type ProviderEntry } from "./confirmPublish";
 
 /**
  * Runnable check: `pnpm --filter @toreroflow/worker test`.
@@ -79,5 +79,15 @@ assert.equal(
 
 // A platform absent from the response entirely.
 assert.equal(entryFor(crossPost, "snapchat", null), undefined, "no entry means no entry");
+
+/* ---- a refused trial is never retried as a plain reel ---- */
+
+// The retry drops the trial, so retrying would post to every follower.
+assert.equal(isTrialReel({ instagram: { trial: true, graduationStrategy: "MANUAL" } }), true, "a trial reel is a trial");
+assert.equal(isTrialReel({ instagram: { trial: false } }), false, "trial off is a plain reel");
+assert.equal(isTrialReel({ instagram: { shareToFeed: true } }), false, "no trial key is a plain reel");
+assert.equal(isTrialReel({ instagram: { trial: "true" } }), false, "only a real true counts");
+assert.equal(isTrialReel(null), false, "no options is a plain reel");
+assert.equal(isTrialReel({ instagramFeedPost: true }), false, "a feed retry carries no trial");
 
 console.log("confirmPublish.check.ts: ok");

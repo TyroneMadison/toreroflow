@@ -10,12 +10,15 @@ import {
   outputDuration,
   sentencesFromWords,
   toOutputTime,
+  migrateDoc,
   type EditDoc,
+  type EditDocV1,
 } from "@toreroflow/core";
 import { getPrisma, Prisma, enqueue } from "@toreroflow/db";
 import { env } from "../env";
 import { fileLink, fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
+import { saveVersion } from "./editShared";
 
 /**
  * Studio projects and the source files they own.
@@ -40,16 +43,38 @@ const patchSchema = z.object({
  * An asset row as the desktop sees it: raw storage keys swapped for signed
  * URLs the webview can actually load. Keys never leave the server.
  */
-function assetView<
-  T extends { storageKey: string; proxyKey: string | null; stripKey: string | null },
+export function assetView<
+  T extends {
+    storageKey: string;
+    proxyKey: string | null;
+    stripKey: string | null;
+    wordsKey?: string | null;
+    peaksKey?: string | null;
+  },
 >(a: T) {
-  const { storageKey, proxyKey, stripKey, ...rest } = a;
+  const { storageKey, proxyKey, stripKey, wordsKey: _w, peaksKey, ...rest } = a;
   return {
     ...rest,
     sourceUrl: storageKey !== "pending" ? fileLinkVersioned(storageKey, null) : null,
     proxyUrl: proxyKey ? fileLinkVersioned(proxyKey, null) : null,
     stripUrl: stripKey ? fileLinkVersioned(stripKey, null) : null,
+    peaksUrl: peaksKey ? fileLinkVersioned(peaksKey, null) : null,
   };
+}
+
+/**
+ * Words for an asset whether they sit in the row or, for sources over 15
+ * minutes, in the storage file the worker wrote. The desktop keeps reading
+ * asset.words either way; only Postgres stops carrying the megabytes.
+ */
+async function loadWords<T extends { words: unknown; wordsKey?: string | null }>(a: T): Promise<T> {
+  if (!a.wordsKey) return a;
+  try {
+    const words = JSON.parse(await fs.readFile(path.join(env.STORAGE_DIR, a.wordsKey), "utf8"));
+    return { ...a, words };
+  } catch {
+    return { ...a, words: [] };
+  }
 }
 
 const ASSET_KINDS = ["clip", "audio", "graphic"] as const;
@@ -123,7 +148,8 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       const client = await ownedClient(request.params.clientId, request.user.agencyId);
       if (!client) return reply.status(404).send({ error: "brand not found" });
       const projects = await prisma.editProject.findMany({
-        where: { clientId: client.id },
+        // Clip-job holders (Studio > Clips sources) are not projects anyone edits.
+        where: { clientId: client.id, status: { not: "clipsource" } },
         orderBy: { updatedAt: "desc" },
         take: 50,
         include: { assets: { select: { kind: true, durationSec: true } } },
@@ -162,6 +188,74 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /* ---- caption templates: a client's saved caption styles ---- */
+
+  // The style's shape is the desktop's CaptionStyle contract; the server
+  // only insists on an object of bounded size, as it does for the doc.
+  const templateSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    style: z.record(z.unknown()).refine((v) => JSON.stringify(v).length <= 8000, "style is too large"),
+  });
+
+  app.get<{ Params: { clientId: string } }>(
+    "/clients/:clientId/caption-templates",
+    async (request, reply) => {
+      const client = await ownedClient(request.params.clientId, request.user.agencyId);
+      if (!client) return reply.status(404).send({ error: "brand not found" });
+      return prisma.captionTemplate.findMany({
+        where: { clientId: client.id },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      });
+    },
+  );
+
+  app.post<{ Params: { clientId: string } }>(
+    "/clients/:clientId/caption-templates",
+    async (request, reply) => {
+      const client = await ownedClient(request.params.clientId, request.user.agencyId);
+      if (!client) return reply.status(404).send({ error: "brand not found" });
+      const parsed = templateSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: "invalid template", detail: parsed.error.issues[0]?.message });
+      }
+      const row = await prisma.captionTemplate.create({
+        data: {
+          clientId: client.id,
+          name: parsed.data.name,
+          style: parsed.data.style as Prisma.InputJsonValue,
+        },
+      });
+      return reply.status(201).send(row);
+    },
+  );
+
+  app.patch<{ Params: { id: string } }>("/caption-templates/:id", async (request, reply) => {
+    const parsed = templateSchema.partial().safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "invalid template", detail: parsed.error.issues[0]?.message });
+    }
+    const found = await prisma.captionTemplate.findFirst({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!found) return reply.status(404).send({ error: "template not found" });
+    return prisma.captionTemplate.update({
+      where: { id: found.id },
+      data: {
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.style !== undefined ? { style: parsed.data.style as Prisma.InputJsonValue } : {}),
+      },
+    });
+  });
+
+  app.delete<{ Params: { id: string } }>("/caption-templates/:id", async (request, reply) => {
+    const { count } = await prisma.captionTemplate.deleteMany({
+      where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
+    });
+    if (!count) return reply.status(404).send({ error: "template not found" });
+    return reply.status(204).send();
+  });
+
   app.get<{ Params: { id: string } }>("/edit-projects/:id", async (request, reply) => {
     const project = await prisma.editProject.findFirst({
       where: { id: request.params.id, client: { agencyId: request.user.agencyId } },
@@ -174,7 +268,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       renderedUrl: project.renderedKey
         ? fileLinkVersioned(project.renderedKey, project.updatedAt.getTime())
         : null,
-      assets: project.assets.map(assetView),
+      assets: (await Promise.all(project.assets.map(loadWords))).map(assetView),
     };
   });
 
@@ -235,6 +329,10 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
           width: a.width,
           height: a.height,
           words: a.words === null ? Prisma.DbNull : (a.words as Prisma.InputJsonValue),
+          wordsKey: a.wordsKey,
+          language: a.language,
+          peaksKey: a.peaksKey,
+          error: a.error,
           status: a.status,
         })),
       });
@@ -282,12 +380,16 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const { name, resolution, fps, format, bitrateK } = parsed.data;
+    // Phase 6: every export snapshots the edit it rendered.
+    await saveVersion(project.id, project.doc, `Export ${name}`.slice(0, 120), true);
     await prisma.editProject.update({
       where: { id: project.id },
       data: {
         status: "rendering",
         renderPct: 0,
         renderError: null,
+        // A manual export never auto-sends; only a batch sets this.
+        afterRender: Prisma.DbNull,
         doc: {
           ...(project.doc as Record<string, unknown>),
           // A concrete kbps number, so the worker never re-derives presets.
@@ -341,6 +443,53 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       }
       await enqueue("edit", { editAssetId: asset.id, job: "isolate", mode });
       return reply.status(202).send({ ok: true });
+    },
+  );
+
+  /**
+   * Auto reframe (Phase 3). Queued on the edit queue; the worker writes
+   * <assetId>-reframe.json next to the source, which GET reads back. Faces
+   * run locally in the captions service (YuNet), so this costs no AI spend.
+   */
+  app.post<{ Params: { id: string }; Body: { assetId?: string } }>(
+    "/edit-projects/:id/reframe",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      const asset = await prisma.editAsset.findFirst({
+        where: { id: request.body?.assetId ?? "", projectId: project.id, kind: "clip", status: "ready" },
+      });
+      if (!asset) {
+        return reply.status(404).send({ error: "no such clip", detail: "Auto reframe runs on a ready clip in this project." });
+      }
+      if ((asset.durationSec ?? 0) > 1800) {
+        return reply.status(400).send({
+          error: "too long to reframe",
+          detail: "Auto reframe handles clips up to 30 minutes. Trim the source first.",
+        });
+      }
+      const statusPath = path.join(env.STORAGE_DIR, path.posix.dirname(asset.storageKey), `${asset.id}-reframe.json`);
+      await fs.writeFile(statusPath, JSON.stringify({ status: "queued", at: new Date().toISOString() }));
+      await enqueue("edit", { editAssetId: asset.id, job: "reframe" });
+      return reply.status(202).send({ ok: true });
+    },
+  );
+
+  app.get<{ Params: { id: string }; Querystring: { assetId?: string } }>(
+    "/edit-projects/:id/reframe",
+    async (request, reply) => {
+      const project = await ownedProject(request.params.id, request.user.agencyId);
+      if (!project) return reply.status(404).send({ error: "project not found" });
+      const asset = await prisma.editAsset.findFirst({
+        where: { id: request.query.assetId ?? "", projectId: project.id, kind: "clip" },
+      });
+      if (!asset) return reply.status(404).send({ error: "no such clip", detail: "That clip is not in this project." });
+      const statusPath = path.join(env.STORAGE_DIR, path.posix.dirname(asset.storageKey), `${asset.id}-reframe.json`);
+      try {
+        return JSON.parse(await fs.readFile(statusPath, "utf8"));
+      } catch {
+        return { status: "none" };
+      }
     },
   );
 
@@ -449,7 +598,7 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
       include: { assets: true },
     });
     if (!project) return reply.status(404).send({ error: "project not found" });
-    const doc = project.doc as unknown as EditDoc | null;
+    const doc = project.doc ? migrateDoc(project.doc as unknown as EditDoc | EditDocV1) : null;
     if (!doc) {
       return reply.status(400).send({
         error: "nothing to shorten",
@@ -476,8 +625,9 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     // edits are applied by index so the model reads what the captions say.
     const lines: string[] = [];
     const spans: { assetId: string; start: number; end: number }[] = [];
-    for (const { assetId } of doc.clips) {
-      const asset = clips.find((a) => a.id === assetId);
+    for (const assetId of [...new Set(doc.clips.map((c) => c.assetId))]) {
+      const found = clips.find((a) => a.id === assetId);
+      const asset = found ? await loadWords(found) : undefined;
       const raw = Array.isArray(asset?.words)
         ? (asset.words as { start: number; end: number; word: string }[])
         : [];
@@ -631,8 +781,14 @@ export async function editorRoutes(app: FastifyInstance): Promise<void> {
     // Individual files, not the project directory: sibling assets live there.
     // A Save Copy sharing this key loses the file too; acceptable until the
     // render-milestone sweep owns reference counting.
+    // ponytail: clip candidates opened in the editor share the clip job's
+    // source files, so a key another asset still points at stays on disk.
     for (const key of [asset.storageKey, asset.proxyKey, asset.stripKey]) {
       if (key && key !== "pending") {
+        const shared = await prisma.editAsset.count({
+          where: { OR: [{ storageKey: key }, { proxyKey: key }, { stripKey: key }] },
+        });
+        if (shared) continue;
         await fs.rm(path.join(env.STORAGE_DIR, key), { force: true });
       }
     }

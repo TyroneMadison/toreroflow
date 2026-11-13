@@ -11,11 +11,31 @@ import {
   ZOOM,
   captionKaraoke,
   chunksFor,
+  aspectRatio,
+  cropPx,
   editedWords,
   edlFromDoc,
+  layoutAt,
   locate,
+  outputSize,
+  panelsFor,
+  setShotAdjust,
   outputDuration,
   outputWords,
+  outputWordRefs,
+  wordMarks,
+  textsWithHook,
+  curveScale,
+  HIGHLIGHT_STRONG,
+  SAFE_ZONES,
+  captionEmojiOverlays,
+  censorSpans,
+  maskText,
+  stickerOverlays,
+  transitionAt,
+  transitionCss,
+  transitionJoins,
+  type EmojiOverlay,
   type ColorAdjust,
   type TextStyle,
   type Word,
@@ -23,6 +43,14 @@ import {
 import { fileUrl } from "../lib/api";
 import { useEditor, type EditAssetInfo } from "./StudioEditor";
 import "./PhonePreview.css";
+
+/** Twemoji PNGs, the same files the render overlays. */
+const EMOJI_URLS = import.meta.glob("../../../../assets/emoji/*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+const emojiUrl = (file: string): string | undefined => EMOJI_URLS[`../../../../assets/emoji/${file}`];
 
 /** Stage width in px; must match .pv-screen in PhonePreview.css. */
 const STAGE_W = 300;
@@ -134,7 +162,7 @@ function overlayCss(x: number, y: number, s: TextStyle): CSSProperties {
 }
 
 export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
-  const { doc, assets, outputTime, playing, setPlaying, undo, redo, canUndo, canRedo, seek } =
+  const { doc, assets, outputTime, playing, setPlaying, undo, redo, canUndo, canRedo, seek, update } =
     useEditor();
 
   const [safe, setSafe] = useState(false);
@@ -288,7 +316,10 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     const seg = edl[segRef.current];
     const vol = seg ? (doc.clipFx[seg.assetId]?.volume ?? 100) : 100;
     v.volume = Math.max(0, Math.min(1, vol / 100));
-    v.muted = false;
+    // Phase 7 censor: muted inside listed-word spans (the render bleeps or
+    // mutes; ponytail: the preview only mutes).
+    const t = outputTime;
+    v.muted = censorNow.some((sp) => t >= sp.start && t < sp.end);
   }, [doc, edl, outputTime]);
 
   // Overlay media (b-roll video, audio items) mount only inside their window
@@ -332,9 +363,24 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     return m;
   }, [assets, doc.wordEdits]);
   const outWords = useMemo(() => outputWords(edl, wordsByAsset), [edl, wordsByAsset]);
+  // Phase 5 keyword levels and emojis, parallel to outWords (same filter).
+  const outMarks = useMemo(
+    () => wordMarks(outputWordRefs(edl, wordsByAsset), doc),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [edl, wordsByAsset, doc.captions.highlight],
+  );
+  const censorList = doc.censor?.words ?? [];
+  const maskOn = !!doc.censor?.mask && censorList.length > 0;
+  const censorNow = useMemo(
+    () => (doc.censor && doc.censor.audio !== "off" ? censorSpans(outWords, censorList) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [outWords, doc.censor?.audio, censorList.join("|")],
+  );
   const chunks = useMemo(() => {
     if (!doc.captions.enabled) return [];
-    const list = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    const raw = chunksFor(outWords, doc.captions.style.wordsPerLine, doc.captions.style.lines);
+    // Masked like the worker does, before break overrides.
+    const list = maskOn ? raw.map((c) => ({ ...c, text: maskText(c.text, censorList) })) : raw;
     for (const b of doc.captions.breaks) {
       const c = list[b.chunkIndex];
       if (c) list[b.chunkIndex] = { ...c, text: b.text };
@@ -346,6 +392,8 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     doc.captions.style.lines,
     doc.captions.breaks,
     outWords,
+    maskOn,
+    censorList.join("|"),
   ]);
 
   const chunkIndex = chunks.findIndex((c) => c.start <= clampT && clampT < c.end);
@@ -361,15 +409,55 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
     captionKaraoke(doc.captions) &&
     !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex);
   const perChunk = doc.captions.style.wordsPerLine * doc.captions.style.lines;
+  const chunkMarks =
+    caption && !doc.captions.breaks.some((b) => b.chunkIndex === chunkIndex)
+      ? outMarks.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk)
+      : [];
+  const marked = !karaoke && chunkMarks.some((m) => m.level > 0);
   const captionWords =
-    caption && karaoke ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk) : null;
+    caption && (karaoke || marked)
+      ? outWords.slice(chunkIndex * perChunk, chunkIndex * perChunk + perChunk)
+      : null;
+  const captionEmojiList = chunkMarks.map((m) => m.emoji).filter((e): e is string => !!e);
+  // Same colors as the export: karaoke owns color when on, else keyword levels.
+  const wordColor = (w: { start: number; end: number }, i: number): string | undefined => {
+    if (karaoke) return w.start <= clampT && clampT < w.end ? doc.captions.style.accentColor : undefined;
+    const lvl = chunkMarks[i]?.level ?? 0;
+    return lvl === 2 ? HIGHLIGHT_STRONG : lvl === 1 ? doc.captions.style.accentColor : undefined;
+  };
 
-  const visibleTexts = doc.texts.filter((t) => clampT >= t.at && clampT < t.at + t.dur);
+  // Colour emoji as the render places them: a PNG row above the caption,
+  // plus stickers, positioned in output pixels.
+  const outPx = outputSize(doc.output.aspect, 1080);
+  const emojiNow: EmojiOverlay[] = [
+    ...(caption && captionEmojiList.length
+      ? captionEmojiOverlays([{ ...caption, emojis: captionEmojiList }], doc.captions, outPx.width, outPx.height)
+      : []),
+    ...stickerOverlays(doc.overlays?.stickers, outPx.width, outPx.height).filter(
+      (e) => clampT >= e.start && clampT < e.end,
+    ),
+  ];
+  const trNow = transitionAt(transitionJoins(doc.transitions, edl), clampT);
+  const trCss = trNow ? transitionCss(trNow.join.preset, trNow.p) : null;
+  const progress = doc.overlays?.progress;
+
+  // The hook headline rides the text-overlay path, as in the export.
+  const visibleTexts = textsWithHook(doc).filter((t) => clampT >= t.at && clampT < t.at + t.dur);
 
   /** Scale from active zoom items at this output time; the last one wins. */
+  let zoomFace = false;
   const zoomAt = (t: number): number => {
     let scale = 1;
     for (const z of doc.zooms) {
+      if (z.curve && z.curve.length > 1) {
+        // Phase 5 curve zooms: the render's piecewise curve, from z.at.
+        const c = curveScale(z.curve, t - z.at);
+        if (c !== 1) {
+          scale = c;
+          zoomFace = z.anchor === "face";
+        }
+        continue;
+      }
       let i = -1;
       for (let k = edl.length - 1; k >= 0; k--) {
         if (z.at >= (segStarts[k] ?? 0)) {
@@ -406,6 +494,119 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
       (fx?.zoom ?? 1) * zoomAt(clampT)
     })`,
     filter: colorFilter(doc.color, fx?.color),
+    // Face-anchored zooms grow toward where a reframed face sits (render FACE_Y).
+    // ponytail: the render aims at the tracked face; the preview keeps the fixed point.
+    ...(zoomFace ? { transformOrigin: "50% 38%" } : {}),
+  };
+  // Phase 7 transition preview, approximated over black (ponytail: the
+  // render blends with the outgoing clip's frozen last frame).
+  if (trCss) {
+    if (trCss.opacity !== undefined) wrapStyle.opacity = trCss.opacity;
+    if (trCss.transform) wrapStyle.transform = `${trCss.transform} ${wrapStyle.transform}`;
+    if (trCss.filter) wrapStyle.filter = `${wrapStyle.filter ?? ""} ${trCss.filter}`.trim();
+  }
+
+  /* ---- layouts: fill / fit / split / screenshare ---- */
+
+  // The render's output size for this aspect; layout math runs in output
+  // pixels so the preview crops exactly what ffmpeg will.
+  const outSz = outputSize(doc.output.aspect, 1080);
+  const stageH = Math.round(STAGE_W / aspectRatio(doc.output.aspect));
+  const curAsset = loc ? byId[loc.assetId] : undefined;
+  const srcW = curAsset?.width ?? 0;
+  const srcH = curAsset?.height ?? 0;
+  const lay = loc
+    ? layoutAt(doc, loc.clipId ?? loc.assetId, loc.assetId, loc.srcTime, srcW, srcH, outSz.width, outSz.height)
+    : null;
+  const layoutOn = !!lay && lay.kind !== "legacy";
+  const panels = layoutOn ? panelsFor(lay!.kind as never, outSz.width, outSz.height) : [];
+  // A crop being dragged, shown live and committed as one undo step on release.
+  const [dragCrop, setDragCrop] = useState<{ k: number; x: number; y: number; px: number; py: number } | null>(null);
+  const crops = (lay?.crops ?? []).map((r, k) =>
+    dragCrop && dragCrop.k === k ? { ...r, x: dragCrop.x, y: dragCrop.y } : r,
+  );
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const layKey = layoutOn ? `${lay!.kind}|${lay!.fitBg}|${lay!.bgColor ?? ""}|${JSON.stringify(crops)}` : "";
+  useEffect(() => {
+    if (!layoutOn || !lay) return;
+    let raf = 0;
+    const draw = () => {
+      const v = videoRef.current;
+      if (v && v.videoWidth > 0) {
+        const vw = v.videoWidth;
+        const vh = v.videoHeight;
+        if (lay.kind === "fit") {
+          const c = canvasRefs.current[0];
+          const g = c?.getContext("2d");
+          if (c && g) {
+            const cw = c.width;
+            const ch = c.height;
+            g.filter = "none";
+            g.fillStyle = lay.fitBg === "color" && lay.bgColor ? lay.bgColor : "#000";
+            g.fillRect(0, 0, cw, ch);
+            if (lay.fitBg === "blur") {
+              const s = Math.max(cw / vw, ch / vh);
+              g.filter = "blur(12px)";
+              g.drawImage(v, (cw - vw * s) / 2, (ch - vh * s) / 2, vw * s, vh * s);
+              g.filter = "none";
+            }
+            const s = Math.min(cw / vw, ch / vh);
+            g.drawImage(v, (cw - vw * s) / 2, (ch - vh * s) / 2, vw * s, vh * s);
+          }
+        } else {
+          crops.forEach((r, k) => {
+            const c = canvasRefs.current[k];
+            const g = c?.getContext("2d");
+            if (!c || !g) return;
+            const px = cropPx(r, vw, vh);
+            g.drawImage(v, px.x, px.y, px.w, px.h, 0, 0, c.width, c.height);
+          });
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layKey]);
+
+  // Drag a crop: the picture follows the pointer, so the window moves the
+  // opposite way. Writes a manual override for the current shot's span,
+  // clipped to this clip, which then wins over auto reframe.
+  const onCropDown = (k: number) => (e: ReactPointerEvent) => {
+    if (!lay || lay.kind === "fit" || !crops[k]) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDragCrop({ k, x: crops[k].x, y: crops[k].y, px: e.clientX, py: e.clientY });
+  };
+  const onCropMove = (e: ReactPointerEvent) => {
+    if (!dragCrop || !lay) return;
+    const base = lay.crops[dragCrop.k];
+    const p = panels[dragCrop.k];
+    const boxW = STAGE_W;
+    const boxH = (p.h / outSz.height) * stageH;
+    const x = base.x - ((e.clientX - dragCrop.px) / boxW) * base.w;
+    const y = base.y - ((e.clientY - dragCrop.py) / boxH) * base.h;
+    const hw = base.w / 2;
+    const hh = base.h / 2;
+    setDragCrop({
+      ...dragCrop,
+      x: Math.max(-0.5 + hw, Math.min(0.5 - hw, x)),
+      y: Math.max(-0.5 + hh, Math.min(0.5 - hh, y)),
+      px: dragCrop.px,
+      py: dragCrop.py,
+    });
+  };
+  const onCropUp = () => {
+    if (!dragCrop || !lay || !loc) return;
+    const seg = edl[loc.segIndex];
+    const clip = doc.clips.find((c) => c.id === (loc.clipId ?? loc.assetId));
+    const start = Math.max(lay.start, clip?.srcIn ?? 0, 0);
+    const end = Math.min(lay.end, clip?.srcOut ?? seg.srcOut, durations[loc.assetId] ?? seg.srcOut);
+    const next = lay.crops.map((r, k) => (k === dragCrop.k ? { ...r, x: dragCrop.x, y: dragCrop.y } : r));
+    setDragCrop(null);
+    if (end > start) {
+      update((d) => setShotAdjust(d, loc.assetId, { start, end, layout: lay.kind as never, crops: next }));
+    }
   };
 
   /* ---- scrubber ---- */
@@ -423,10 +624,30 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
   return (
     <div className="pv">
       <div className="pv-frame glass-sm">
-        <div className="pv-screen">
-          <div className="pv-videowrap" style={wrapStyle}>
+        <div className="pv-screen" style={{ height: stageH }}>
+          <div className="pv-videowrap" style={layoutOn ? { ...wrapStyle, visibility: "hidden" } : wrapStyle}>
             <video ref={videoRef} playsInline onLoadedMetadata={onLoadedMetadata} />
           </div>
+          {layoutOn && (
+            <div className="pv-layout" style={{ filter: wrapStyle.filter }}>
+              {(lay!.kind === "fit" ? [panels[0]] : panels).map((p, k) => (
+                <canvas
+                  key={`${lay!.kind}${k}`}
+                  ref={(el) => {
+                    canvasRefs.current[k] = el;
+                  }}
+                  className={`pv-panel${lay!.kind !== "fit" ? " drag" : ""}`}
+                  width={Math.round((p.w / outSz.width) * STAGE_W * 2)}
+                  height={Math.round((p.h / outSz.height) * stageH * 2)}
+                  style={{ top: `${(p.y / outSz.height) * 100}%`, height: `${(p.h / outSz.height) * 100}%` }}
+                  title={lay!.kind !== "fit" ? "Drag to reframe this shot" : undefined}
+                  onPointerDown={onCropDown(k)}
+                  onPointerMove={onCropMove}
+                  onPointerUp={onCropUp}
+                />
+              ))}
+            </div>
+          )}
           <div className="pv-media">
             {doc.broll
               .filter((b) => clampT >= b.at && clampT < b.at + b.dur)
@@ -495,20 +716,61 @@ export default function PhonePreview({ seekN, seekTo, onClock }: Props) {
                   ? captionWords.map((w, i) => (
                       <span
                         key={i}
-                        style={
-                          w.start <= clampT && clampT < w.end
-                            ? { color: doc.captions.style.accentColor }
-                            : undefined
-                        }
+                        style={wordColor(w, i) ? { color: wordColor(w, i) } : undefined}
                       >
                         {(i === 0 ? "" : i % doc.captions.style.wordsPerLine === 0 ? "\n" : " ") +
-                          w.word}
+                          (maskOn ? maskText(w.word, censorList) : w.word)}
                       </span>
                     ))
                   : caption.text}
+
               </div>
             )}
           </div>
+          <div className="pv-overlays">
+            {emojiNow.map((e, k) => {
+              const src = emojiUrl(e.file);
+              return src ? (
+                <img
+                  key={`${e.file}${k}`}
+                  className="pv-emoji-img"
+                  src={src}
+                  alt=""
+                  style={{
+                    position: "absolute",
+                    left: `${(e.x / outPx.width) * 100}%`,
+                    top: `${(e.y / outPx.height) * 100}%`,
+                    width: `${(e.size / outPx.width) * 100}%`,
+                  }}
+                />
+              ) : null;
+            })}
+          </div>
+          {trCss?.dip && (
+            <div
+              style={{ position: "absolute", inset: 0, background: trCss.dip.color, opacity: trCss.dip.opacity, zIndex: 3 }}
+            />
+          )}
+          {progress?.on && total > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                [progress.position === "top" ? "top" : "bottom"]: 0,
+                height: Math.max(2, (progress.height / 1920) * stageH),
+                width: `${(clampT / total) * 100}%`,
+                background: progress.color,
+                zIndex: 3,
+              }}
+            />
+          )}
+          {doc.safeZone && SAFE_ZONES[doc.safeZone] && (
+            <div className="pv-safe">
+              {SAFE_ZONES[doc.safeZone].covered.map((r, k) => (
+                <div key={k} style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }} />
+              ))}
+            </div>
+          )}
           {safe && (
             <div className="pv-safe">
               <div className="pv-safe-top">

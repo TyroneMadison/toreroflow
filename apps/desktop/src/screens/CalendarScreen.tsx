@@ -10,6 +10,9 @@ import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/p
 import { useAppState } from "../state/AppState";
 import PostDetailModal from "../modals/PostDetailModal";
 import { Empty, ErrorState, Loading } from "../components/states";
+import { useIsPhone } from "../lib/phone";
+import { navigate } from "../lib/routes";
+import { dayKey, isOwnBrand, xPostedLabel } from "../lib/xPosted";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -65,12 +68,55 @@ const mondayOf = (d: Date): Date => {
   return x;
 };
 
+/** Simple Icons' X mark. */
+const X_LOGO =
+  "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z";
+
+/** "Posted to X" tick beside a day's date. A record only: nothing is posted. */
+function XPostedCheck({ day, checked, onToggle }: { day: Date; checked: boolean; onToggle(): void }) {
+  return (
+    <label className={`xchk${checked ? " on" : ""}`} title={checked ? "Posted to X (click to clear)" : "Mark as posted to X"}>
+      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={xPostedLabel(day)} />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d={X_LOGO} />
+      </svg>
+    </label>
+  );
+}
+
+/**
+ * Pause uploads / Continue uploads for one brand. Shows pause while posting
+ * and play while paused; the two bars morph into the play triangle.
+ */
+function PauseToggle({ brand, paused, busy, onToggle }: { brand: string; paused: boolean; busy: boolean; onToggle(): void }) {
+  const label = paused ? `Continue uploads for ${brand}` : `Pause uploads for ${brand}`;
+  return (
+    <button
+      type="button"
+      className={`pausetgl${paused ? " on" : ""}`}
+      aria-pressed={paused}
+      aria-label={label}
+      title={paused ? `${brand} uploads are paused. Click to continue; held posts move forward.` : `Pause uploads for ${brand}. Scheduled posts are held, not deleted.`}
+      disabled={busy}
+      onClick={onToggle}
+      data-testid="calendar.pause"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path className="pz-l" />
+        <path className="pz-r" />
+      </svg>
+      <span>{paused ? "Paused" : "Uploads on"}</span>
+    </button>
+  );
+}
+
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const { selectedClient } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [view, setView] = useState<CalView>("week");
   const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [targets, setTargets] = useState<PostTargetInfo[]>([]);
@@ -143,7 +189,120 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     [selectedClient, view, anchor.getTime()],
   );
 
+  /*
+   * Tyrone's own brand only: which days he posted to X by hand. Loaded per
+   * range, toggled optimistically, put back if the save fails.
+   */
+  const ownBrand = isOwnBrand(selectedClient?.name);
+  const [xPosted, setXPosted] = useState<Set<string>>(new Set());
+  const fromKey = dayKey(rangeStart);
+  const toKey = dayKey(rangeEnd);
+  useEffect(() => {
+    setXPosted(new Set());
+    if (!selectedClient || !ownBrand) return;
+    let cancelled = false;
+    api
+      .get<{ dates: string[] }>(`/brands/${selectedClient.id}/x-posted?from=${fromKey}&to=${toKey}`)
+      .then((r) => {
+        if (!cancelled) setXPosted(new Set(r.dates));
+      })
+      .catch(() => {
+        // The ticks stay blank; the calendar itself is unaffected.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient, ownBrand, fromKey, toKey]);
+
+  const flip = (set: Set<string>, key: string) => {
+    const next = new Set(set);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  };
+  const toggleX = async (day: Date) => {
+    if (!selectedClient) return;
+    const key = dayKey(day);
+    const posted = !xPosted.has(key);
+    setXPosted((s) => flip(s, key));
+    try {
+      await api.put(`/brands/${selectedClient.id}/x-posted/${key}`, { posted });
+    } catch (err) {
+      setXPosted((s) => flip(s, key));
+      toast.fail("Could not save the X tick", err);
+    }
+  };
+  const xCheck = (day: Date) =>
+    ownBrand ? <XPostedCheck day={day} checked={xPosted.has(dayKey(day))} onToggle={() => void toggleX(day)} /> : null;
+  /** The date, with the X tick beside it on the own brand only. */
+  const dnum = (day: Date) =>
+    ownBrand ? (
+      <div className="dnumrow">
+        <div className="dnum">{day.getDate()}</div>
+        {xCheck(day)}
+      </div>
+    ) : (
+      <div className="dnum">{day.getDate()}</div>
+    );
+
   const state = !selectedClient ? "empty" : loadError ? "error" : loaded ? "ready" : "loading";
+
+  /* Pause uploads: held on the server, the calendar just shows and flips it. */
+  const [pausedAt, setPausedAt] = useState<string | null>(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  useEffect(() => {
+    setPausedAt(null);
+    if (!selectedClient) return;
+    let cancelled = false;
+    api
+      .get<{ pausedAt: string | null }>(`/brands/${selectedClient.id}/pause`)
+      .then((r) => {
+        if (!cancelled) setPausedAt(r.pausedAt);
+      })
+      .catch(() => {
+        // Shown as posting; the worker still holds a paused brand either way.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClient]);
+  const paused = pausedAt !== null;
+  const togglePause = async () => {
+    if (!selectedClient) return;
+    setPauseBusy(true);
+    try {
+      if (paused) {
+        const r = await api.post<{ moved: number; held: number; from: string | null }>(`/brands/${selectedClient.id}/resume`, {});
+        setPausedAt(null);
+        toast.success(
+          r.moved
+            ? `Uploads continue. Moved ${r.moved} ${r.moved === 1 ? "post" : "posts"}, the first now ${new Date(r.from!).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`
+            : "Uploads continue. Nothing needed to move.",
+        );
+      } else {
+        const r = await api.post<{ pausedAt: string; held?: number }>(`/brands/${selectedClient.id}/pause`, {});
+        setPausedAt(r.pausedAt);
+        toast.info(`Uploads paused for ${selectedClient.name}. ${r.held ?? 0} scheduled ${r.held === 1 ? "post is" : "posts are"} held.`);
+      }
+    } catch (err) {
+      toast.fail(paused ? "Could not continue uploads" : "Could not pause uploads", err);
+    } finally {
+      setPauseBusy(false);
+    }
+    void load();
+  };
+  /** A scheduled post of a paused brand: held, shown dimmed with a badge. */
+  const isHeld = (t: PostTargetInfo) => paused && t.status === "scheduled";
+  const heldBadge = <span className="heldbadge">Paused</span>;
+  const pauseToggle = selectedClient && (
+    <PauseToggle brand={selectedClient.name} paused={paused} busy={pauseBusy} onToggle={() => void togglePause()} />
+  );
+  const pauseBanner = paused && selectedClient && (
+    <div className="pausebar" role="status">
+      <b>Uploads paused</b> for {selectedClient.name} since{" "}
+      {new Date(pausedAt!).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.
+      Scheduled posts are held. Continue moves them forward so the first lands on the day you resume.
+    </div>
+  );
 
   useEffect(() => {
     void load({ announce: true });
@@ -247,10 +406,14 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   /** Plain words for the hover, since the dot and the padlock are shapes. */
   const evTitle = (t: PostTargetInfo): string => {
     const meta = POST_STATUS[t.status];
-    const kind = t.assetKind === "carousel" ? `carousel of ${t.slideCount || "several"} - ` : "";
+    const kind = t.trial
+      ? "Instagram trial reel - "
+      : t.assetKind === "carousel"
+        ? `carousel of ${t.slideCount || "several"} - `
+        : "";
     if (t.status === "failed") return `${kind}${t.assetName} - failed: ${t.error ?? "unknown error"}`;
-    if (meta.movable) return `${t.assetName} - click for details, drag to move`;
-    return `${t.assetName} - ${meta.label.toLowerCase()}, cannot be moved`;
+    if (meta.movable) return `${kind}${t.assetName} - click for details, drag to move`;
+    return `${kind}${t.assetName} - ${meta.label.toLowerCase()}, cannot be moved`;
   };
 
   const renderEvent = (t: PostTargetInfo) => {
@@ -260,9 +423,9 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     const label = POST_STATUS[t.status].label;
     return (
       <div
-        className={`ev st-${t.status}`}
+        className={`ev st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`}
         key={t.id}
-        title={evTitle(t)}
+        title={isHeld(t) ? `${evTitle(t)} (held: uploads paused)` : evTitle(t)}
         draggable={movable}
         onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
         onClick={() => setDetail(t)}
@@ -274,6 +437,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <span className="evwhen">{when ? `${when} · ${label}` : label}</span>
           <StatusIcon status={t.status} />
         </div>
+        {isHeld(t) && heldBadge}
+        {t.trial && <span className="trialtag">Trial reel</span>}
         <div className="t2">
           {t.assetKind === "carousel" && (
             <span className="qcarousel" title="A carousel of images">
@@ -304,6 +469,176 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         return d;
       })
     : [];
+
+  const detailModal = detail && (
+    <PostDetailModal
+      target={detail}
+      // Same local-day rule the grid uses to place cards, so the button's
+      // count is exactly the cards in that day's cell.
+      dayTargets={
+        detail.scheduledAt
+          ? targets.filter(
+              (t) =>
+                t.scheduledAt &&
+                new Date(t.scheduledAt).toDateString() ===
+                  new Date(detail.scheduledAt!).toDateString(),
+            )
+          : undefined
+      }
+      onClose={() => setDetail(null)}
+      onChanged={() => void load()}
+    />
+  );
+
+  /*
+   * Phones (Direction C): the week strip and the chosen day's agenda sit above
+   * the fold, the views are chips, and a failed post carries Retry (the detail
+   * sheet, where retry lives) and Reconnect (Settings, Connected Accounts)
+   * inline. Dragging has no phone equivalent; Reschedule is in the detail.
+   */
+  if (isPhone) {
+    const strip = view === "month" ? [] : DOW.map((_, i) => {
+      const d = mondayOf(anchor);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+    const dayEvents = eventsFor(anchor).sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+    const dayButton = (day: Date, key: string | number, label?: string) => {
+      const n = eventsFor(day).length;
+      const on = day.toDateString() === anchor.toDateString();
+      return (
+        <button
+          type="button"
+          key={key}
+          className={`mcal-day${on ? " on" : ""}${day.toDateString() === today ? " today" : ""}`}
+          aria-pressed={on}
+          aria-label={`${day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}, ${n} ${n === 1 ? "post" : "posts"}`}
+          onClick={() => setAnchor(startOfDay(day))}
+        >
+          {label && <small>{label}</small>}
+          <b>{day.getDate()}</b>
+          <span className="mcal-dots" aria-hidden="true">
+            {Array.from({ length: Math.min(n, 3) }, (_, k) => <i key={k} />)}
+          </span>
+        </button>
+      );
+    };
+    return (
+      <section className="screen active mcal" data-screen="calendar" data-state={state}>
+        <div className="mcal-head">
+          <div className="mcal-titles">
+            <div className="mcal-eyebrow">Calendar · {selectedClient?.name ?? "No brand"}</div>
+            <h2 className="mcal-title">
+              {view === "day"
+                ? anchor.toLocaleDateString([], { month: "long", day: "numeric" })
+                : `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
+            </h2>
+          </div>
+          <div className="mcal-nav">
+            {pauseToggle}
+            <button type="button" className="mcal-ib" aria-label="Previous" onClick={() => step(-1)}>
+              <svg aria-hidden="true" style={{ transform: "rotate(90deg)" }}><use href="#i-chev" /></svg>
+            </button>
+            <button type="button" className="mcal-ib" aria-label="Next" onClick={() => step(1)}>
+              <svg aria-hidden="true" style={{ transform: "rotate(-90deg)" }}><use href="#i-chev" /></svg>
+            </button>
+          </div>
+        </div>
+        <div className="mcal-views" role="tablist" aria-label="Calendar view">
+          {(["day", "week", "month"] as CalView[]).map((v) => (
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : undefined} onClick={() => setView(v)}>
+              {v[0]!.toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+          <button type="button" onClick={() => setAnchor(startOfDay(new Date()))}>Today</button>
+        </div>
+
+        {pauseBanner}
+        {state === "empty" && <Empty screen="calendar" title="No brand selected" hint="Pick a brand at the top to see its calendar." />}
+        {state === "loading" && <Loading screen="calendar" label="Loading the calendar" />}
+        {state === "error" && (
+          <ErrorState
+            screen="calendar"
+            message="Could not load the calendar. Check that the API is online, then try again."
+            onRetry={() => {
+              setLoadError(false);
+              void load({ announce: true });
+            }}
+          />
+        )}
+
+        {state === "ready" && (
+          <>
+            {view === "week" && (
+              <div className="mcal-strip">{strip.map((d, i) => dayButton(d, i, DOW[i]![0]))}</div>
+            )}
+            {view === "month" && (
+              <div className="mcal-month">
+                {DOW.map((d) => <span key={d} className="mcal-dow">{d[0]}</span>)}
+                {monthCells.map((d, i) => (d ? dayButton(d, i) : <span key={`b${i}`} />))}
+              </div>
+            )}
+            <div className="mcal-dayhead">
+              <h3>{anchor.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}</h3>
+              <span className="tf-lbl">{dayEvents.length} {dayEvents.length === 1 ? "post" : "posts"}</span>
+            </div>
+            {holidayRow(anchor)}
+            <div className="mcal-agenda card glass">
+              {dayEvents.length === 0 && (
+                <div className="mcal-none">
+                  Nothing on this day yet.
+                  <button type="button" className="btn ghost" onClick={onNewPost}>+ Add post</button>
+                </div>
+              )}
+              {dayEvents.map((t) => {
+                const [hm, ap] = (t.scheduledAt ? fmtTime(t.scheduledAt) : "").split(" ");
+                const reconnect = t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? "");
+                return (
+                  <div className={`mcal-item st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`} key={t.id}>
+                    <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
+                    <div className="mcal-body">
+                      <div className="mcal-name">
+                        <Pf p={PF_ID[t.platform]} size="sm" /> <span>{t.assetName}</span>
+                        {t.trial && <span className="trialtag">Trial reel</span>}
+                      </div>
+                      <div className={`mcal-st st-${t.status}`}>
+                        <StatusIcon status={t.status} />
+                        {POST_STATUS[t.status].label}
+                        {isHeld(t) && <> {heldBadge}</>}
+                        {t.status === "failed" && t.error ? ` · ${t.error}` : canMove(t.status) ? " · can move" : ""}
+                      </div>
+                      <div className="mcal-acts">
+                        {t.status === "failed" ? (
+                          <>
+                            <button type="button" className="btn" onClick={() => setDetail(t)}>Retry</button>
+                            {reconnect && (
+                              <button type="button" className="btn ghost" onClick={() => navigate("settings", "accounts")}>Reconnect</button>
+                            )}
+                          </>
+                        ) : (
+                          <button type="button" className="btn ghost" onClick={() => setDetail(t)}>
+                            {canMove(t.status) ? "Reschedule" : "Details"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="mb-actionbar">
+          <button type="button" className="tf-btn pri" onClick={onNewPost} data-testid="calendar.new-post">
+            <svg aria-hidden="true"><use href="#i-plus" /></svg>
+            New post
+          </button>
+        </div>
+        {detailModal}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active" data-screen="calendar" data-state={state}>
@@ -382,10 +717,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <span className="d" style={{ background: "var(--v)" }} />{" "}
             {selectedClient?.name ?? "No brand selected"}
           </div>
+          {pauseToggle}
           <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt-2)" }}>
             {rangeLabel}
           </div>
         </div>
+
+        {pauseBanner}
 
         {/* Always on, in every view: the key to the dots and the padlocks. */}
         <div className="callegend">
@@ -396,6 +734,15 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
               {POST_STATUS[s].label}<span className="lhint">, {POST_STATUS[s].hint}</span>
             </span>
           ))}
+          <span className="litem held">
+            <StatusDot status="scheduled" decorative />
+            <StatusIcon status="scheduled" />
+            Paused<span className="lhint">, held until uploads continue</span>
+          </span>
+          <span className="litem">
+            <span className="trialswatch" aria-hidden="true" />
+            Trial reel<span className="lhint">, Instagram trial reels, shown to non-followers first</span>
+          </span>
         </div>
 
         {state === "empty" && (
@@ -425,7 +772,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 <div className="col" key={i} {...dragProps(day)} style={dropStyle(day)}>
                   <div className={`colhead${day.toDateString() === today ? " today" : ""}`}>
                     <div className="dow">{DOW[i]}</div>
-                    <div className="dnum">{day.getDate()}</div>
+                    {dnum(day)}
                     {holidayRow(day)}
                   </div>
                   <div className="slotwrap">
@@ -447,7 +794,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <div className="col" {...dragProps(anchor)} style={dropStyle(anchor)}>
               <div className={`colhead${anchor.toDateString() === today ? " today" : ""}`}>
                 <div className="dow">{DOW[(anchor.getDay() + 6) % 7]}</div>
-                <div className="dnum">{anchor.getDate()}</div>
+                {dnum(anchor)}
                 {holidayRow(anchor)}
               </div>
               <div className="slotwrap" style={{ maxWidth: 460, margin: "0 auto", width: "100%" }}>
@@ -483,6 +830,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                     style={dropStyle(day)}
                   >
                     <div className="mnum">
+                      {xCheck(day)}
                       <span>{day.getDate()}</span>
                     </div>
                     {holidayRow(day, true)}
@@ -492,7 +840,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                         const movable = canMove(t.status);
                         return (
                           <div
-                            className={`mev st-${t.status}`}
+                            className={`mev st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`}
                             key={t.id}
                             title={evTitle(t)}
                             draggable={movable}
@@ -526,25 +874,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         </div>
       </div>
 
-      {detail && (
-        <PostDetailModal
-          target={detail}
-          // Same local-day rule the grid uses to place cards, so the button's
-          // count is exactly the cards in that day's cell.
-          dayTargets={
-            detail.scheduledAt
-              ? targets.filter(
-                  (t) =>
-                    t.scheduledAt &&
-                    new Date(t.scheduledAt).toDateString() ===
-                      new Date(detail.scheduledAt!).toDateString(),
-                )
-              : undefined
-          }
-          onClose={() => setDetail(null)}
-          onChanged={() => void load()}
-        />
-      )}
+      {detailModal}
     </section>
   );
 }

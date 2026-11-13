@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { MAX_VIDEO_UPLOAD_BYTES } from "./uploadLimits";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
@@ -13,12 +14,19 @@ import { clientRoutes } from "./routes/clients";
 import { agencyRoutes } from "./routes/agency";
 import { carouselRoutes } from "./routes/carousels";
 import { editorRoutes } from "./routes/editor";
+import { editorAiRoutes } from "./routes/editorAi";
+import { clipRoutes } from "./routes/clips";
+import { recipeRoutes } from "./routes/recipes";
+import { polishRoutes } from "./routes/polish";
 import { analysisRoutes } from "./routes/analysis";
 import { ideasRoutes } from "./routes/ideas";
+import { hooksRoutes } from "./routes/hooks";
+import ideaGifRoutes from "./routes/ideaGifs";
 import { onboardingRoutes } from "./routes/onboarding";
 import { bankRoutes } from "./routes/bank";
 import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
+import { commentRoutes } from "./routes/comments";
 import { dmCampaignRoutes } from "./routes/dmCampaigns";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
@@ -28,13 +36,34 @@ import { resultsRoutes } from "./routes/results";
 import { financialsRoutes } from "./routes/financials";
 import { deployRoutes } from "./routes/deploy";
 import { oauthRoutes } from "./routes/oauth";
+import { trelloRoutes } from "./routes/trello";
+import { preflightRoutes } from "./routes/preflight";
+import { queueRoutes } from "./routes/queue";
+import { rollupRoutes } from "./routes/rollup";
+import { templateRoutes } from "./routes/templates";
+import { draftRoutes } from "./routes/drafts";
+import { monthlyReportRoutes } from "./routes/monthlyReport";
+import { contentRequestRoutes, publicContentRequestRoutes } from "./routes/contentRequests";
+import { insightsRoutes } from "./routes/insights";
+import { brandKitRoutes } from "./routes/brandKit";
+import { setSunraCatalog, setSunraGenerator, sunraRoutes } from "./routes/sunra";
+import { sunraClient } from "./ideas/sunraClient";
+import { approvalLinkRoutes, publicApprovalRoutes } from "./routes/approvals";
+import { collabRoutes, publicReviewRoutes } from "./routes/collab";
+import { failedPostRoutes } from "./routes/failedPosts";
+import { assetRoutes } from "./routes/assets";
+import { repurposeRoutes } from "./routes/repurpose";
+import { xPostedRoutes } from "./routes/xPosted";
+import { pauseRoutes } from "./routes/pause";
+import { driveSourceRoutes } from "./routes/driveSource";
 
 // Typed JWT payload so app.jwt.sign(...) and request.user are strict.
 declare module "@fastify/jwt" {
   interface FastifyJWT {
     /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
-    payload: { sub: string; agencyId: string; role?: "bot" };
-    user: { sub: string; agencyId: string; role?: "bot" };
+    /** `bot` names a bot token (e.g. "polly"); its BotIdentity (auth/botAccess.ts) decides full access. */
+    payload: { sub: string; agencyId: string; role?: "bot"; bot?: string };
+    user: { sub: string; agencyId: string; role?: "bot"; bot?: string };
   }
 }
 
@@ -76,7 +105,7 @@ export async function buildServer(
   await app.register(multipart, {
     // Ten files, because that is how many images Instagram takes in one
     // carousel. Video upload still reads a single file and is unaffected.
-    limits: { fileSize: 4 * 1024 * 1024 * 1024, files: CAROUSEL_ABSOLUTE_MAX },
+    limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES, files: CAROUSEL_ABSOLUTE_MAX },
   });
   /*
    * Media for the desktop webview.
@@ -147,16 +176,25 @@ export async function buildServer(
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(clientRoutes);
+  await app.register(trelloRoutes);
   await app.register(agencyRoutes);
   await app.register(bankRoutes);
   await app.register(carouselRoutes);
   await app.register(editorRoutes);
+  await app.register(editorAiRoutes);
+  await app.register(clipRoutes);
+  await app.register(recipeRoutes);
+  await app.register(polishRoutes);
+  await app.register(collabRoutes);
   await app.register(analysisRoutes);
   await app.register(ideasRoutes);
+  await app.register(hooksRoutes);
+  await app.register(ideaGifRoutes);
   await app.register(onboardingRoutes);
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
   await app.register(dmCampaignRoutes);
+  await app.register(commentRoutes);
   await app.register(mediaRoutes);
   await app.register(postRoutes);
   await app.register(reportRoutes);
@@ -165,6 +203,31 @@ export async function buildServer(
   await app.register(financialsRoutes);
   await app.register(deployRoutes);
   await app.register(oauthRoutes);
+  await app.register(preflightRoutes);
+  await app.register(queueRoutes);
+  await app.register(rollupRoutes);
+  await app.register(templateRoutes);
+  await app.register(draftRoutes);
+  await app.register(monthlyReportRoutes);
+  await app.register(publicContentRequestRoutes);
+  await app.register(contentRequestRoutes);
+  await app.register(insightsRoutes);
+  await app.register(brandKitRoutes);
+  if (env.SUNRA_API_KEY) {
+    const sunra = sunraClient({ apiKey: env.SUNRA_API_KEY, base: env.SUNRA_API_BASE });
+    setSunraCatalog(sunra.catalog);
+    setSunraGenerator(sunra.generator);
+  }
+  await app.register(sunraRoutes);
+  await app.register(approvalLinkRoutes);
+  await app.register(publicApprovalRoutes);
+  await app.register(publicReviewRoutes);
+  await app.register(failedPostRoutes);
+  await app.register(assetRoutes);
+  await app.register(repurposeRoutes);
+  await app.register(xPostedRoutes);
+  await app.register(pauseRoutes);
+  await app.register(driveSourceRoutes);
 
   return app;
 }

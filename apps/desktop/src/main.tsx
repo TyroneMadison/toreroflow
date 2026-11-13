@@ -3,15 +3,24 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { normalizeUrl, scrubToken } from "./lib/routes";
 import { applyTheme, initAutomation, loadTheme } from "./lib/theme";
+import { applyGlassLevel, loadGlassLevel } from "./lib/glass";
+import { markShell } from "./lib/windowGlass";
 // Tokens first so styles.css can point its old variables at them; frame.css
 // last so the dock layout wins over the old sidebar one.
 import "./styles/tokens.css";
 import "./styles.css";
 import "./styles/frame.css";
+import "./styles/liquid.css";
+import "./styles/glass-pages.css";
+import "./styles/solid.css";
+// Phone widths only (lib/phone.ts); loaded last so it wins there and nowhere else.
+import "./styles/mobile.css";
 
 // Apply persisted theme before first paint to avoid a flash of the wrong theme.
 applyTheme(loadTheme());
 initAutomation();
+markShell();
+applyGlassLevel(loadGlassLevel());
 
 /*
  * Web-hosted sign-in for automations: #token=... in the URL becomes the
@@ -35,8 +44,17 @@ if (scrubbed) {
 // "/" and unknown paths become /dashboard, without a history entry.
 normalizeUrl();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// Dev-only placeholder demo of the Ideas area (src/demo). import.meta.env.DEV
+// is false in production builds, so this branch and its chunk are dropped.
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "coral") {
+  void import("./demo/coralDemo");
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).get("demo") === "ideas") {
+  // Dev-only stubbed API for the ideas screens (src/demo/ideasDemo.tsx).
+  void import("./demo/ideasDemo");
+} else {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}

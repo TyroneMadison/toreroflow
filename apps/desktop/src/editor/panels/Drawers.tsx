@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { EditDoc } from "@toreroflow/core";
+import { appendClip, type EditDoc } from "@toreroflow/core";
 import { api } from "../../lib/api";
 import { useEditor, type EditAssetInfo } from "../StudioEditor";
 import "./panels.css";
@@ -123,7 +123,7 @@ function DrawerBase({ tab, open, onClose, onTab }: DrawerProps & { tab: DrawerTa
   const addAtPlayhead = (asset: EditAssetInfo) => {
     const at = outputTime;
     update((d) => {
-      if (kind === "clip") return { ...d, clips: [...d.clips, { assetId: asset.id }] };
+      if (kind === "clip") return appendClip(d, asset.id);
       if (kind === "audio") {
         return {
           ...d,

@@ -31,8 +31,8 @@ function deepEq(actual: unknown, expected: unknown, message: string) {
 
 // emptyDoc shape
 const doc = emptyDoc(["a", "b"]);
-eq(doc.v, 1, "doc version is 1");
-deepEq(doc.clips, [{ assetId: "a" }, { assetId: "b" }], "clips keep the given order");
+eq(doc.v, 2, "doc version is 2");
+deepEq(doc.clips.map((c) => c.assetId), ["a", "b"], "clips keep the given order");
 deepEq(doc.cuts, {}, "no cuts yet");
 deepEq(doc.splits, {}, "no splits yet");
 deepEq(doc.wordEdits, {}, "no word edits yet");
