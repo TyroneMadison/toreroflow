@@ -553,7 +553,12 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     <PostDetailModal
       target={detail.focus}
       siblings={detail.group.targets}
-      knownTargets={targets}
+      // Only the loaded range: its days are complete, while a sibling past
+      // its edge arrives without the rest of its day.
+      knownTargets={targets.filter((t) => {
+        const at = t.scheduledAt ? new Date(t.scheduledAt).getTime() : NaN;
+        return at >= rangeStart.getTime() && at <= rangeEnd.getTime();
+      })}
       onClose={() => setDetail(null)}
       onChanged={() => void load()}
     />
@@ -571,10 +576,20 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       d.setDate(d.getDate() + i);
       return d;
     });
-    // Already earliest first.
-    const dayEvents = eventsFor(anchor);
+    /*
+     * The phone lists one day at a time, so it groups per day: a post whose
+     * platforms fall on two days is listed on each, at that day's earliest
+     * time, and never leaves a day it posts on reading "Nothing on this day".
+     */
+    const dayGroups = (day: Date) => {
+      const from = startOfDay(day);
+      const to = new Date(from);
+      to.setHours(23, 59, 59, 999);
+      return groupByPost(targets, { from, to });
+    };
+    const dayEvents = dayGroups(anchor);
     const dayButton = (day: Date, key: string | number, label?: string) => {
-      const n = eventsFor(day).length;
+      const n = dayGroups(day).length;
       const on = day.toDateString() === anchor.toDateString();
       return (
         <button

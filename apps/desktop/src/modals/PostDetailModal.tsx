@@ -20,8 +20,9 @@ interface PostDetailModalProps {
    */
   siblings?: PostTargetInfo[];
   /**
-   * Every post the opener has loaded. Turns on "use this caption on every
-   * post that day" for the open platform's day; absent, the button is absent.
+   * Every post the opener has loaded for whole days. Turns on "use this
+   * caption on every post that day" for the open platform's day, when that
+   * platform is among them; absent, the button is absent.
    */
   knownTargets?: PostTargetInfo[];
   onClose(): void;
@@ -165,7 +166,10 @@ export default function PostDetailModal({
    * number that will change (the server also skips Instagram stories, which
    * never show a caption, and says so in the result).
    */
-  const sameDay = (knownTargets ?? []).filter(
+  // The opener vouches for a whole day by including the open platform in
+  // knownTargets; for a day it never loaded, the count would be short.
+  const dayKnown = (knownTargets ?? []).some((t) => t.id === target.id);
+  const sameDay = (dayKnown ? knownTargets! : []).filter(
     (t) =>
       (t.status === "scheduled" || t.status === "failed") &&
       t.scheduledAt !== null &&

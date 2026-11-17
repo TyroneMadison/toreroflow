@@ -2163,7 +2163,7 @@
 .held .st-scheduled,.held.st-scheduled{--st:var(--paused)}
 .mcal-item.held .mcal-st.st-scheduled{color:var(--c-paused-ink)}
 /* Dimmed, but the status marks and the badge stay at full strength so the state reads at a glance. */
-.ev.held .t1>:not(.stdot):not(.sticon),.ev.held .t2,.ev.held .evthumb,.mev.held>:not(.stdot):not(.sticon),.mcal-item.held .mcal-time,.mcal-item.held .mcal-name,.mcal-item.held .mcal-acts{opacity:.5;filter:saturate(.35)}
+.ev.held .t1>:not(.stdot):not(.sticon),.ev.held .t2,.ev.held .evthumb,.mev.held>:not(.stdot):not(.sticon):not(.pfstrip),.mcal-item.held .mcal-time,.mcal-item.held .mcal-name>:not(.pfstrip),.mcal-item.held .mcal-acts{opacity:.5;filter:saturate(.35)}
 .heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:var(--paused);color:#000;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){.pausetgl,.pausetgl svg,.pausetgl .pz-l,.pausetgl .pz-r{transition:none}}
 
@@ -2181,11 +2181,16 @@
 /* A trial on one platform of a mixed post: the ring says which. Violet on a Drive card. */
 .pfmark.trial{box-shadow:0 0 0 1.5px var(--c-trial)}
 .pfmark.trial.st-failed{box-shadow:0 0 0 1.5px var(--red)}
-.ev.held .pfmark.st-scheduled .pf{opacity:.5;filter:saturate(.35)}
+/* Held dims only the waiting platforms, so a failed tile keeps its red. */
+.held .pfmark.st-scheduled .pf{opacity:.5;filter:saturate(.35)}
 .evtimes{margin-top:5px;font-size:10px;line-height:1.35;color:var(--txt-3)}
 .ev.held .evtimes{opacity:.5}
-/* The month row is one line: the tiles shrink and stay on it. */
-.mev .pfstrip{flex-wrap:nowrap;gap:2px;margin-top:0}
+/* The month row is one line while it fits. In a narrow window the time and
+   padlock wrap under the tiles instead of being cut; only a strip wider than
+   the whole cell clips. The padding keeps the corner marks inside the clip. */
+.mev{flex-wrap:wrap;row-gap:2px}
+.mev .pfstrip{flex-wrap:nowrap;gap:2px;margin-top:0;min-width:0;overflow:hidden;padding:0 2px 2px 0}
+.mev .evwhen{flex:0 0 auto}
 .mev .pfmark{border-radius:4px}
 .mev .pfmark::after{right:-2px;bottom:-2px;box-shadow:none}
 .mev .pfmark.st-posted::after,.mev .pfmark.st-failed::after{width:7px;height:7px;font-size:0}
