@@ -2166,3 +2166,43 @@
 .ev.held .t1>:not(.stdot):not(.sticon),.ev.held .t2,.ev.held .evthumb,.mev.held>:not(.stdot):not(.sticon),.mcal-item.held .mcal-time,.mcal-item.held .mcal-name,.mcal-item.held .mcal-acts{opacity:.5;filter:saturate(.35)}
 .heldbadge{display:inline-block;align-self:flex-start;margin:2px 0;padding:1px 6px;border-radius:999px;background:var(--paused);color:#000;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
 @media (prefers-reduced-motion:reduce){.pausetgl,.pausetgl svg,.pausetgl .pz-l,.pausetgl .pz-r{transition:none}}
+
+/* One calendar card per post: a tile per platform, each marked with where that
+   platform stands. The card's dot and padlock show the most urgent state, the
+   marks each platform's own. A failure keeps its red even when a sibling posted. */
+.pfstrip{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px}
+.pfmark{position:relative;display:inline-flex;flex:0 0 auto;border-radius:8px}
+.pfmark::after{content:"";position:absolute;right:-3px;bottom:-3px;display:grid;place-items:center;border-radius:50%;font-size:8px;font-weight:800;line-height:1;color:#000;background:var(--st);box-shadow:0 0 0 1.5px var(--bg-1)}
+.pfmark.st-posted::after{content:"\2713";width:11px;height:11px}
+.pfmark.st-failed::after{content:"!";width:11px;height:11px;color:#fff}
+.pfmark.st-publishing::after{width:7px;height:7px;animation:livepulse 2.1s ease-in-out infinite}
+.pfmark.st-failed{box-shadow:0 0 0 1.5px var(--red)}
+.pfmark.st-failed .pf,.pfmark.st-reminded .pf{opacity:.5;filter:grayscale(.8)}
+/* A trial on one platform of a mixed post: the ring says which. Violet on a Drive card. */
+.pfmark.trial{box-shadow:0 0 0 1.5px var(--c-trial)}
+.pfmark.trial.st-failed{box-shadow:0 0 0 1.5px var(--red)}
+.ev.held .pfmark.st-scheduled .pf{opacity:.5;filter:saturate(.35)}
+.evtimes{margin-top:5px;font-size:10px;line-height:1.35;color:var(--txt-3)}
+.ev.held .evtimes{opacity:.5}
+/* The month row is one line: the tiles shrink and stay on it. */
+.mev .pfstrip{flex-wrap:nowrap;gap:2px;margin-top:0}
+.mev .pfmark{border-radius:4px}
+.mev .pfmark::after{right:-2px;bottom:-2px;box-shadow:none}
+.mev .pfmark.st-posted::after,.mev .pfmark.st-failed::after{width:7px;height:7px;font-size:0}
+.mev .pfmark.st-publishing::after{width:5px;height:5px}
+.mcal-name .pfstrip{margin-top:0;flex:0 0 auto}
+.mcal-times{margin-top:4px;font-size:12px;color:var(--txt-3)}
+@media (prefers-reduced-motion:reduce){.pfmark::after{animation:none !important}}
+
+/* The details panel: one row per platform with its own status and time. */
+.pdpfs{display:flex;flex-direction:column;gap:8px}
+.pdpf{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:9px 11px;border-radius:13px;border:1px solid var(--brd-soft);background:var(--glass)}
+.pdpf.on{border-color:color-mix(in srgb,var(--v) 60%,transparent);box-shadow:inset 3px 0 0 var(--v)}
+.pdpf-pick{display:flex;align-items:center;gap:9px;flex:1 1 200px;min-width:0;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}
+button.pdpf-pick{cursor:pointer}
+button.pdpf-pick:focus-visible{outline:2px solid var(--v);outline-offset:3px;border-radius:8px}
+.pdpf-name{display:flex;flex-direction:column;min-width:0;font-size:13px;font-weight:600}
+.pdpf-name small{font-size:11px;font-weight:400;color:var(--txt-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdpf .pdstatus{align-self:center;margin-left:auto}
+.pdpf-when{flex:1 1 220px;min-width:0}
+.pdpf-fixed{font-size:12.5px;color:var(--txt-2)}

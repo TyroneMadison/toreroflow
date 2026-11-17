@@ -11,15 +11,24 @@ import { canMove, POST_STATUS } from "../lib/postStatus";
 import { explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
 
 interface PostDetailModalProps {
+  /** The platform the panel opens on: its caption, status and actions show first. */
   target: PostTargetInfo;
   /**
-   * Every post on the same calendar day, when the opener knows them. Turns on
-   * "use this caption on every post that day"; absent, the button is absent.
+   * Every platform of the same post, `target` included, when the opener knows
+   * them. Each gets a row with its own status and its own time. Absent, the
+   * panel is about `target` alone.
    */
-  dayTargets?: PostTargetInfo[];
+  siblings?: PostTargetInfo[];
+  /**
+   * Every post the opener has loaded. Turns on "use this caption on every
+   * post that day" for the open platform's day; absent, the button is absent.
+   */
+  knownTargets?: PostTargetInfo[];
   onClose(): void;
   onChanged(): void;
 }
+
+type AbTest = NonNullable<NonNullable<PostTargetInfo["youtube"]>["abTest"]>;
 
 /** Local datetime value ("YYYY-MM-DDTHH:mm") for the picker. */
 function localValue(iso: string | null): string {
@@ -28,39 +37,70 @@ function localValue(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Wider than moving: a failed post cannot move, but its words can change
+// before a retry.
+const captionEditableFor = (t: PostTargetInfo) => t.status === "scheduled" || t.status === "failed";
+const ytTitleEditableFor = (t: PostTargetInfo) => t.platform === "youtube" && captionEditableFor(t);
+
 /**
- * Quick look at one scheduled post from the calendar, with its day and time
- * editable in place. Published and in-flight posts are read-only.
+ * One post from the calendar: every platform it goes to, each with its own
+ * status and its own day and time, editable while that platform is still
+ * scheduled. The caption, title and actions below follow the platform picked
+ * in the list. Published and in-flight platforms are read-only.
  */
 export default function PostDetailModal({
-  target,
-  dayTargets,
+  target: opened,
+  siblings,
+  knownTargets,
   onClose,
   onChanged,
 }: PostDetailModalProps) {
   const toast = useToast();
+  const platforms = siblings?.length ? siblings : [opened];
+  const multi = platforms.length > 1;
+  const [activeId, setActiveId] = useState(opened.id);
+  /** The platform picked in the list. Everything below the list is about it. */
+  const target = platforms.find((t) => t.id === activeId) ?? opened;
   const editable = canMove(target.status);
-  // Wider than `editable`: a failed post cannot move, but its words can
-  // change before a retry.
-  const captionEditable = target.status === "scheduled" || target.status === "failed";
-  const [caption, setCaption] = useState(target.caption ?? "");
-  const captionDirty = caption.trim() !== (target.caption ?? "").trim();
+
+  /*
+   * Edits are kept per platform, so picking another platform in the list
+   * never throws away words or a time typed a moment before, and Save sends
+   * every platform's changes at once.
+   */
+  const [captions, setCaptions] = useState<Record<string, string>>({});
+  const [ytTitles, setYtTitles] = useState<Record<string, string>>({});
+  const [whens, setWhens] = useState<Record<string, string>>({});
+  const captionOf = (t: PostTargetInfo) => captions[t.id] ?? t.caption ?? "";
+  const ytTitleOf = (t: PostTargetInfo) => ytTitles[t.id] ?? t.youtubeTitle ?? "";
+  const whenOf = (t: PostTargetInfo) => whens[t.id] ?? localValue(t.scheduledAt);
+  const captionDirtyFor = (t: PostTargetInfo) => captionEditableFor(t) && captionOf(t).trim() !== (t.caption ?? "").trim();
+  const ytTitleDirtyFor = (t: PostTargetInfo) => ytTitleEditableFor(t) && ytTitleOf(t).trim() !== (t.youtubeTitle ?? "").trim();
+  const ytTitleErrorFor = (t: PostTargetInfo) =>
+    ytTitleDirtyFor(t) && !ytTitleOf(t).trim()
+      ? "YouTube needs a title."
+      : ytTitleOf(t).trim().length > 100
+        ? "YouTube titles stop at 100 characters."
+        : null;
+  const whenDirtyFor = (t: PostTargetInfo) => canMove(t.status) && whenOf(t) !== localValue(t.scheduledAt);
+  // Same staleness as the schedule modal: this one can sit open for a while
+  // with a card's existing time already behind, so moving it has to be judged
+  // against now rather than against what it was.
+  const whenErrorFor = (t: PostTargetInfo) => (canMove(t.status) ? scheduleTimeError(new Date(whenOf(t))) : null);
+
+  const captionEditable = captionEditableFor(target);
+  const caption = captionOf(target);
+  const setCaption = (v: string) => setCaptions((m) => ({ ...m, [target.id]: v }));
   // The name is the app's own label for the video, never published, so it
   // stays editable after posting. Blank is not a name: it would fall back to
   // the file name, which is what renaming exists to replace.
-  const [name, setName] = useState(target.assetName);
-  const nameDirty = target.mediaAssetId !== null && name.trim() !== target.assetName.trim();
+  const [name, setName] = useState(opened.assetName);
+  const nameDirty = opened.mediaAssetId !== null && name.trim() !== opened.assetName.trim();
   const nameError = nameDirty && !name.trim() ? "The video needs a name." : null;
-  const ytTitleEditable = target.platform === "youtube" && captionEditable;
-  const [ytTitle, setYtTitle] = useState(target.youtubeTitle ?? "");
-  const ytTitleDirty = ytTitleEditable && ytTitle.trim() !== (target.youtubeTitle ?? "").trim();
-  const ytTitleError =
-    ytTitleDirty && !ytTitle.trim()
-      ? "YouTube needs a title."
-      : ytTitle.trim().length > 100
-        ? "YouTube titles stop at 100 characters."
-        : null;
-  const [when, setWhen] = useState(() => localValue(target.scheduledAt));
+  const ytTitleEditable = ytTitleEditableFor(target);
+  const ytTitle = ytTitleOf(target);
+  const setYtTitle = (v: string) => setYtTitles((m) => ({ ...m, [target.id]: v }));
+  const ytTitleError = ytTitleErrorFor(target);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -87,7 +127,8 @@ export default function PostDetailModal({
   }, [loadAsset]);
   const videoSrc = asset?.kind === "video" ? fileUrl(asset.videoUrl) : null;
   // A cover change only matters before it posts; after, the platform has its own.
-  const canCover = videoSrc !== null && captionEditable;
+  // Every platform of the video uses the cover, so it stays open while any of them has not gone out.
+  const canCover = videoSrc !== null && platforms.some(captionEditableFor);
 
   const [writing, setWriting] = useState(false);
   /**
@@ -124,8 +165,13 @@ export default function PostDetailModal({
    * number that will change (the server also skips Instagram stories, which
    * never show a caption, and says so in the result).
    */
-  const sameDay = (dayTargets ?? []).filter(
-    (t) => t.status === "scheduled" || t.status === "failed",
+  const sameDay = (knownTargets ?? []).filter(
+    (t) =>
+      (t.status === "scheduled" || t.status === "failed") &&
+      t.scheduledAt !== null &&
+      target.scheduledAt !== null &&
+      // Same local-day rule the calendar uses to place cards.
+      new Date(t.scheduledAt).toDateString() === new Date(target.scheduledAt).toDateString(),
   );
   const dayLabel = target.scheduledAt
     ? new Date(target.scheduledAt).toLocaleDateString([], {
@@ -144,8 +190,24 @@ export default function PostDetailModal({
   const [abKeys, setAbKeys] = useState<{ a: string | null; b: string | null }>({ a: null, b: null });
   const [abBusy, setAbBusy] = useState<"a" | "b" | "start" | "cancel" | null>(null);
   const [abPeriod, setAbPeriod] = useState<3 | 5 | 7>(5);
-  const [abTest, setAbTest] = useState(target.youtube?.abTest ?? null);
+  // Per platform, like the edits: a post can go to two YouTube channels.
+  const [abTests, setAbTests] = useState<Record<string, AbTest | null>>({});
+  const abTest = target.id in abTests ? (abTests[target.id] ?? null) : (target.youtube?.abTest ?? null);
+  const setAbTest = (next: (t: AbTest | null) => AbTest | null) =>
+    setAbTests((m) => ({
+      ...m,
+      [target.id]: next(target.id in m ? (m[target.id] ?? null) : (target.youtube?.abTest ?? null)),
+    }));
   const canAbTest = target.platform === "youtube" && target.status === "posted";
+
+  /** Picks a platform in the list. Half-finished actions belong to the old one, so they reset. */
+  const select = (id: string) => {
+    setActiveId(id);
+    setConfirmDelete(false);
+    setConfirmDay(false);
+    setRetried(false);
+    setAbKeys({ a: null, b: null });
+  };
 
   const pickVariant = async (slot: "a" | "b", file: File) => {
     setAbBusy(slot);
@@ -167,7 +229,7 @@ export default function PostDetailModal({
         `/posts/targets/${target.id}/ab-test`,
         { periodDays: abPeriod, aKey: abKeys.a, bKey: abKeys.b },
       );
-      setAbTest(r.abTest);
+      setAbTest(() => r.abTest);
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not start the test");
@@ -215,41 +277,49 @@ export default function PostDetailModal({
       : null;
   const canRetry = failure !== null && failure.outlook !== "never" && !retried;
 
-  const original = localValue(target.scheduledAt);
-  const dirty = when !== original;
-  // Same staleness as the schedule modal: this one can sit open for a while
-  // with a card's existing time already behind, so moving it has to be judged
-  // against now rather than against what it was.
-  const whenError = editable ? scheduleTimeError(new Date(when)) : null;
   // The loaded asset's thumbnail follows a cover change; the summary's does not.
   const thumb = fileUrl(asset?.thumbUrl ?? target.thumbUrl);
 
-  /** Every text edit, in one place so Save and Retry send the same things. */
-  const saveCopy = async () => {
+  const movedTimes = platforms.filter(whenDirtyFor);
+  // A stale time only blocks saving that time; a caption-only edit on a post
+  // whose slot is about to fire must still go through.
+  const timeError = movedTimes.map(whenErrorFor).find(Boolean) ?? null;
+  const copyError = nameError ?? platforms.map(ytTitleErrorFor).find(Boolean) ?? null;
+  const anyDirty =
+    nameDirty || movedTimes.length > 0 || platforms.some((t) => captionDirtyFor(t) || ytTitleDirtyFor(t));
+  const anyEditable =
+    platforms.some((t) => canMove(t.status) || captionEditableFor(t)) || opened.mediaAssetId !== null;
+
+  /**
+   * Every edit on every platform, in one place so Save, Retry and the
+   * day-wide caption all send the same things. Each platform's time goes
+   * through its own reschedule, which refuses anything already posted,
+   * publishing or locked.
+   */
+  const saveAll = async () => {
     // Retry reaches here too, and the draft route would accept a blank name.
-    if (copyError) throw new Error(copyError);
-    if (nameDirty) await api.patch(`/media/${target.mediaAssetId}/draft`, { name: name.trim() });
-    if (ytTitleDirty) await api.patch(`/posts/targets/${target.id}/youtube-title`, { title: ytTitle });
-    if (captionDirty) await api.patch(`/posts/targets/${target.id}/caption`, { caption });
+    if (copyError ?? timeError) throw new Error((copyError ?? timeError)!);
+    if (nameDirty) await api.patch(`/media/${opened.mediaAssetId}/draft`, { name: name.trim() });
+    for (const t of platforms) {
+      if (ytTitleDirtyFor(t)) await api.patch(`/posts/targets/${t.id}/youtube-title`, { title: ytTitleOf(t) });
+      if (captionDirtyFor(t)) await api.patch(`/posts/targets/${t.id}/caption`, { caption: captionOf(t) });
+    }
+    for (const t of movedTimes) {
+      await api.patch(`/posts/targets/${t.id}/reschedule`, { scheduledAt: new Date(whenOf(t)).toISOString() });
+    }
   };
-  const anyDirty = dirty || captionDirty || nameDirty || ytTitleDirty;
-  const anyEditable = editable || captionEditable || target.mediaAssetId !== null;
-  const copyError = nameError ?? ytTitleError;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await saveCopy();
-      if (dirty) {
-        await api.patch(`/posts/targets/${target.id}/reschedule`, {
-          scheduledAt: new Date(when).toISOString(),
-        });
-      }
+      await saveAll();
       onChanged();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not save");
+      // Whatever landed before the failure shows behind the panel.
+      onChanged();
     } finally {
       setBusy(false);
     }
@@ -267,12 +337,7 @@ export default function PostDetailModal({
     setBusy(true);
     setError(null);
     try {
-      await saveCopy();
-      if (dirty) {
-        await api.patch(`/posts/targets/${target.id}/reschedule`, {
-          scheduledAt: new Date(when).toISOString(),
-        });
-      }
+      await saveAll();
       const r = await api.post<{ updated: number; skipped: number }>(
         "/posts/targets/bulk-caption",
         { targetIds: sameDay.map((t) => t.id), caption },
@@ -302,8 +367,9 @@ export default function PostDetailModal({
     setError(null);
     try {
       // Retrying with new words is the point of editing a failed post, so
-      // the edits go first rather than waiting on a separate Save.
-      await saveCopy();
+      // the edits go first rather than waiting on a separate Save. Every
+      // platform's, so a time changed on a sibling is not lost when this closes.
+      await saveAll();
       await api.post(`/posts/targets/${target.id}/retry`, draft ? { tiktokDraft: true } : {});
       setRetried(true);
       onChanged();
@@ -333,12 +399,14 @@ export default function PostDetailModal({
 
   return (
     <>
-    <Modal maxWidth={520} onClose={onClose}>
+    <Modal maxWidth={multi ? 600 : 520} onClose={onClose}>
       <div className="modal-head">
         <div>
           <h3>{target.assetName}</h3>
           <p>
-            {PLATFORM_LABELS[target.platform]} · {POST_STATUS[target.status].label}
+            {multi
+              ? [...new Set(platforms.map((t) => PLATFORM_LABELS[t.platform]))].join(", ")
+              : `${PLATFORM_LABELS[target.platform]} · ${POST_STATUS[target.status].label}`}
           </p>
         </div>
         <div className="modal-x" onClick={onClose}>
@@ -415,6 +483,70 @@ export default function PostDetailModal({
             ) : null}
           </div>
         </div>
+
+        {/*
+          One row per platform: which one, where it stands, and its own day
+          and time. Only a scheduled platform can move; the server refuses
+          the rest the same way. With several, a row is also the switch for
+          the caption and actions below.
+        */}
+        <label className="flabel" style={{ marginTop: 16 }}>
+          {multi ? "Platforms" : editable ? "Day and time" : "Scheduled for"}
+        </label>
+        <div className="pdpfs">
+          {platforms.map((t) => {
+            const on = multi && t.id === target.id;
+            const whenError = whenErrorFor(t);
+            const head = (
+              <>
+                <Pf p={PF_ID[t.platform]} size="sm" />
+                <span className="pdpf-name">
+                  {PLATFORM_LABELS[t.platform]}
+                  {t.accountHandle && <small>@{t.accountHandle.replace(/^@/, "")}</small>}
+                </span>
+                <span className={`pdstatus ${t.status}`}>{POST_STATUS[t.status].label}</span>
+              </>
+            );
+            return (
+              <div key={t.id} className={`pdpf${on ? " on" : ""}`}>
+                {multi ? (
+                  <button
+                    type="button"
+                    className="pdpf-pick"
+                    aria-pressed={on}
+                    title={`Show the ${PLATFORM_LABELS[t.platform]} caption and status`}
+                    onClick={() => select(t.id)}
+                  >
+                    {head}
+                  </button>
+                ) : (
+                  <div className="pdpf-pick">{head}</div>
+                )}
+                <div className="pdpf-when">
+                  {canMove(t.status) ? (
+                    <GlassDateTime
+                      value={whenOf(t)}
+                      onChange={(v) => setWhens((m) => ({ ...m, [t.id]: v }))}
+                      minDate={new Date()}
+                    />
+                  ) : (
+                    <div className="pdpf-fixed">
+                      {t.scheduledAt
+                        ? new Date(t.scheduledAt).toLocaleString([], { dateStyle: "full", timeStyle: "short" })
+                        : "not scheduled"}
+                    </div>
+                  )}
+                  {whenError && <div className="autherr">{whenError}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {platforms.some((t) => !canMove(t.status)) && (
+          <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
+            Only scheduled posts can be moved.
+          </p>
+        )}
 
         {target.youtube && (target.youtube.studioTasks.length > 0 || target.youtube.enrich) && (
           <div className="pdtasks">
@@ -621,7 +753,7 @@ export default function PostDetailModal({
               <button
                 className={`btn ghost${confirmDay ? " danger" : ""}`}
                 style={{ fontSize: 11.5, marginTop: 8, ...(confirmDay ? { color: "var(--red)" } : {}) }}
-                disabled={busy || copyError !== null || (dirty && whenError !== null)}
+                disabled={busy || copyError !== null || timeError !== null}
                 title={`Replaces the caption on every scheduled post on ${dayLabel}, on every platform, with this one.`}
                 onClick={() => {
                   if (confirmDay) void applyToDay();
@@ -648,30 +780,6 @@ export default function PostDetailModal({
           )
         )}
 
-        <label className="flabel" style={{ marginTop: 16 }}>
-          {editable ? "Day and time" : "Scheduled for"}
-        </label>
-        {editable ? (
-          <>
-            <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
-            {whenError && <div className="autherr">{whenError}</div>}
-          </>
-        ) : (
-          <div className="pdcaption">
-            {target.scheduledAt
-              ? new Date(target.scheduledAt).toLocaleString([], {
-                  dateStyle: "full",
-                  timeStyle: "short",
-                })
-              : "not scheduled"}
-          </div>
-        )}
-        {!editable && (
-          <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
-            Only scheduled posts can be moved.
-          </p>
-        )}
-
         {error && <div className="autherr">{error}</div>}
       </div>
 
@@ -696,7 +804,9 @@ export default function PostDetailModal({
               ? "Removing…"
               : confirmDelete
                 ? "Remove for sure?"
-                : "Remove from schedule"}
+                : multi
+                  ? `Remove ${PLATFORM_LABELS[target.platform]}`
+                  : "Remove from schedule"}
           </button>
         )}
         <button className="btn ghost" onClick={onClose}>
@@ -725,8 +835,8 @@ export default function PostDetailModal({
             className="btn"
             // A stale time only blocks saving the time; a caption-only edit
             // on a post whose slot is about to fire must still go through.
-            disabled={!anyDirty || busy || copyError !== null || (dirty && whenError !== null)}
-            title={copyError ?? (dirty && whenError ? whenError : undefined)}
+            disabled={!anyDirty || busy || copyError !== null || timeError !== null}
+            title={copyError ?? timeError ?? undefined}
             onClick={() => void save()}
           >
             <svg>

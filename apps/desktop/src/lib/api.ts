@@ -672,6 +672,8 @@ export interface PostTargetInfo {
   id: string;
   postId: string;
   platform: Platform;
+  /** The account it posts to, telling two on one platform apart. Optional: older servers never send it. */
+  accountHandle?: string | null;
   status: "scheduled" | "publishing" | "posted" | "failed" | "reminded";
   scheduledAt: string | null;
   publishedAt: string | null;

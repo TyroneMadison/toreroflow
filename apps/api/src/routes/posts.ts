@@ -22,13 +22,13 @@ import {
   type Platform,
 } from "@toreroflow/core";
 import { probeDuration } from "@toreroflow/media";
-import { getPrisma, cancelByKey, enqueue, reschedule } from "@toreroflow/db";
+import { getPrisma, cancelByKey, enqueue } from "@toreroflow/db";
 import { enrichFieldsFrom, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 import { actingUserId } from "../auth/actingUser";
 import { sopReminder } from "../posts/sopReminder";
-import { requeueFailedTarget } from "../posts/requeue";
+import { publishQueue, requeueFailedTarget } from "../posts/requeue";
 
 /**
  * The name an operator typed for a video, or "" when they have not.
@@ -523,14 +523,26 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
       const to = request.query.to ? new Date(request.query.to) : undefined;
       const targets = await prisma.postTarget.findMany({
         where: {
-          // Saved drafts (S5) are not on the calendar until scheduled.
-          post: { clientId: client.id, deletedAt: null, status: { not: "draft" } },
-          ...(from || to
-            ? { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
-            : {}),
+          post: {
+            clientId: client.id,
+            deletedAt: null,
+            // Saved drafts (S5) are not on the calendar until scheduled.
+            status: { not: "draft" },
+            /*
+             * A window picks posts, not targets: every platform of a post with
+             * any platform inside it comes back, so the calendar's one card per
+             * post keeps all its icons when one platform sits past the edge.
+             */
+            ...(from || to
+              ? { targets: { some: { scheduledAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } } }
+              : {}),
+          },
         },
         orderBy: { scheduledAt: "asc" },
-        include: { post: { include: { mediaAsset: true } } },
+        include: {
+          post: { include: { mediaAsset: true } },
+          socialAccount: { select: { handle: true } },
+        },
       });
       // Posts the Drive auto-post made (Workflows). Only its import rows point at a
       // post, so this marks every one, including those from before the flag existed.
@@ -546,6 +558,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         id: t.id,
         postId: t.postId,
         platform: t.platform,
+        // Tells two accounts on one platform apart, e.g. a Drive post to several Instagrams.
+        accountHandle: t.socialAccount?.handle ?? null,
         status: t.status,
         scheduledAt: t.scheduledAt,
         publishedAt: t.publishedAt,
@@ -668,7 +682,11 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  /** Drag-to-reschedule: move one target and replace its delayed job. */
+  /**
+   * Move one platform of a post and replace its delayed job. The calendar's
+   * details panel moves each platform on its own through this, and dragging a
+   * card calls it once for every platform that can still move.
+   */
   app.patch<{ Params: { id: string } }>(
     "/posts/targets/:id/reschedule",
     async (request, reply) => {
@@ -689,18 +707,21 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         },
       });
       if (!target) return reply.status(404).send({ error: "target not found" });
-      if (target.status !== "scheduled") {
-        return reply.status(409).send({ error: "only scheduled posts can move" });
-      }
+      const locked = () =>
+        reply.status(409).send({ error: "only scheduled posts can move", detail: "Only scheduled posts can move. This one is already publishing, posted or locked." });
+      if (target.status !== "scheduled") return locked();
 
-      const updated = await prisma.postTarget.update({
-        where: { id: target.id },
+      // The status is part of the write, so a post that starts publishing
+      // between the read above and this line is refused, not moved mid-flight.
+      const { count } = await prisma.postTarget.updateMany({
+        where: { id: target.id, status: "scheduled" },
         data: { scheduledAt: when },
       });
+      if (count === 0) return locked();
       // One statement, so unlike the old remove-then-add there is no instant
       // where this post is queued nowhere.
-      await reschedule("publish", { targetId: target.id }, target.id, when);
-      return { id: updated.id, scheduledAt: updated.scheduledAt };
+      await publishQueue.reschedule("publish", { targetId: target.id }, target.id, when);
+      return { id: target.id, scheduledAt: when };
     },
   );
 

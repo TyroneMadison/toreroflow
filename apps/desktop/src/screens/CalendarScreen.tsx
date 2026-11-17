@@ -5,8 +5,17 @@ import { useToast } from "../components/Toasts";
 import { api, fileUrl, type ClientPost, type PostTargetInfo } from "../lib/api";
 import { scheduleTimeError } from "@toreroflow/core";
 import { holidayFor } from "../lib/holidays";
-import { PF_ID } from "../lib/platforms";
-import { canMove, POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
+import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
+import { POST_STATUS, type PostStatus, type StatusMeta } from "../lib/postStatus";
+import {
+  dragMoves,
+  groupByPost,
+  groupMovable,
+  groupStatus,
+  otherTimes,
+  targetTime,
+  type PostGroup,
+} from "../lib/postGroups";
 import { useAppState } from "../state/AppState";
 import PostDetailModal from "../modals/PostDetailModal";
 import { Empty, ErrorState, Loading } from "../components/states";
@@ -53,6 +62,36 @@ function StatusIcon({ status }: { status: PostStatus }) {
     <svg className={`sticon st-${status}`} aria-hidden="true">
       <use href={ICON_HREF[POST_STATUS[status].icon]} />
     </svg>
+  );
+}
+
+const platformName = (t: PostTargetInfo) =>
+  `${PLATFORM_LABELS[t.platform]}${t.accountHandle ? ` @${t.accountHandle.replace(/^@/, "")}` : ""}`;
+
+/** "TikTok and Instagram", for toasts. */
+const platformList = (ts: PostTargetInfo[]) => {
+  const names = [...new Set(ts.map((t) => PLATFORM_LABELS[t.platform]))];
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+};
+
+/**
+ * One tile per platform the post goes to, each marked with where that
+ * platform stands: a check once posted, red when it failed, a pulse while it
+ * goes out. Colour is never the only carrier: each tile names its platform,
+ * status and time to screen readers and on hover.
+ */
+function PlatformIcons({ group }: { group: PostGroup }) {
+  return (
+    <span className="pfstrip">
+      {group.targets.map((t) => {
+        const words = `${platformName(t)}: ${POST_STATUS[t.status].label}, ${targetTime(t, group.lead)}${t.trial ? ", trial reel" : ""}`;
+        return (
+          <span key={t.id} className={`pfmark st-${t.status}${t.trial ? " trial" : ""}`} role="img" aria-label={words} title={words}>
+            <Pf p={PF_ID[t.platform]} size="sm" />
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -290,8 +329,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     }
     void load();
   };
-  /** A scheduled post of a paused brand: held, shown dimmed with a badge. */
-  const isHeld = (t: PostTargetInfo) => paused && t.status === "scheduled";
+  /** A post of a paused brand with a platform still waiting: held, shown dimmed with a badge. */
+  const isHeld = (g: PostGroup) => paused && g.targets.some((t) => t.status === "scheduled");
   const heldBadge = <span className="heldbadge">Paused</span>;
   const pauseToggle = selectedClient && (
     <PauseToggle brand={selectedClient.name} paused={paused} busy={pauseBusy} onToggle={() => void togglePause()} />
@@ -320,13 +359,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     });
   };
 
+  /** One card per post, each at its earliest time in the visible range. */
+  const groups = groupByPost(targets, { from: rangeStart, to: rangeEnd });
   const eventsFor = (day: Date) =>
-    targets.filter(
-      (t) => t.scheduledAt && new Date(t.scheduledAt).toDateString() === day.toDateString(),
-    );
+    groups.filter((g) => new Date(g.lead.scheduledAt!).toDateString() === day.toDateString());
 
-  const scheduledCount = targets.filter(
-    (t) => t.status === "scheduled" || t.status === "publishing",
+  const scheduledCount = groups.filter((g) =>
+    g.targets.some((t) => t.status === "scheduled" || t.status === "publishing"),
   ).length;
 
   const rangeLabel =
@@ -352,39 +391,56 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   };
 
   const [dropKey, setDropKey] = useState<string | null>(null);
-  const [detail, setDetail] = useState<PostTargetInfo | null>(null);
+  /** The open details panel: the post, and the platform it opens on. */
+  const [detail, setDetail] = useState<{ group: PostGroup; focus: PostTargetInfo } | null>(null);
+  /** Opens a card's panel on the given platform, else its first failure, else its first time. */
+  const openCard = (g: PostGroup, focus?: PostTargetInfo) =>
+    setDetail({ group: g, focus: focus ?? g.targets.find((t) => t.status === "failed") ?? g.lead });
 
-  /** Drop handler: move the dragged target to `day`, keeping its time. */
+  /**
+   * Drop handler: move every platform of the dragged post that can still move
+   * by the same number of days, each keeping its own time.
+   */
   const dropOn = async (e: RDragEvent, day: Date) => {
     e.preventDefault();
     setDropKey(null);
-    const id = e.dataTransfer.getData("text/target");
-    const target = targets.find((t) => t.id === id);
-    if (!target?.scheduledAt) return;
-    const oldWhen = new Date(target.scheduledAt);
-    const when = new Date(day);
-    when.setHours(oldWhen.getHours(), oldWhen.getMinutes(), 0, 0);
+    const group = groups.find((g) => g.postId === e.dataTransfer.getData("text/post"));
+    if (!group) return;
     // Dropping back onto the same day would be a pointless round trip.
-    if (when.getTime() === oldWhen.getTime()) return;
+    const moves = dragMoves(group, day);
+    if (moves.length === 0) return;
     /*
      * Dragging is the third door into a scheduled time and the only one with
      * no picker in front of it, so the same rule is applied here rather than
-     * left to the server's refusal. The card snaps back either way; saying why
+     * left to the server's refusal, and to every platform before any moves,
+     * so a drop never half lands. The card snaps back either way; saying why
      * is the difference between a rule and a glitch.
      */
-    const whenError = scheduleTimeError(when);
+    const whenError = moves.map((m) => scheduleTimeError(m.when)).find(Boolean);
     if (whenError) {
       toast.error(whenError);
       return;
     }
-    try {
-      await api.patch(`/posts/targets/${id}/reschedule`, {
-        scheduledAt: when.toISOString(),
-      });
-    } catch (err) {
+    const refused: PostTargetInfo[] = [];
+    let lastError: unknown = null;
+    for (const m of moves) {
+      try {
+        await api.patch(`/posts/targets/${m.target.id}/reschedule`, { scheduledAt: m.when.toISOString() });
+      } catch (err) {
+        refused.push(m.target);
+        lastError = err;
+      }
+    }
+    if (refused.length) {
       // The reload snaps the card back to its old day, which on its own is
       // indistinguishable from the drop never registering.
-      toast.fail("Could not reschedule the post", err);
+      toast.fail(`Could not move ${platformList(refused)}`, lastError);
+    } else {
+      // Posted, failed and in-flight platforms stay, and the card may stay with them.
+      const stayed = group.targets.filter((t) => !moves.some((m) => m.target.id === t.id));
+      if (stayed.length) {
+        toast.info(`Moved ${platformList(moves.map((m) => m.target))}. ${platformList(stayed)} stayed put: only scheduled posts can move.`);
+      }
     }
     void load();
   };
@@ -403,56 +459,72 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       ? { outline: "1.5px dashed rgba(255,111,97,.7)", outlineOffset: -2, borderRadius: 12 }
       : undefined;
 
-  /** Drive auto-post wins over a plain trial reel: the trial look, in violet. */
-  const kindCls = (t: PostTargetInfo) => (t.drive ? " trial drive" : t.trial ? " trial" : "");
-  const kindTag = (t: PostTargetInfo) =>
-    t.drive || t.trial ? <span className="trialtag">{t.drive ? "Drive" : "Trial reel"}</span> : null;
+  /*
+   * Drive auto-post wins over a plain trial reel: the trial look, in violet.
+   * Drive is a whole post. The trial look needs every platform to be a trial,
+   * so a reel that is a trial only on Instagram does not dress its TikTok as
+   * one; the Instagram tile carries the teal ring instead.
+   */
+  const kindCls = (g: PostGroup) =>
+    g.targets.some((t) => t.drive) ? " trial drive" : g.targets.every((t) => t.trial) ? " trial" : "";
+  const kindTag = (g: PostGroup) => {
+    const drive = g.targets.some((t) => t.drive);
+    return drive || g.targets.some((t) => t.trial) ? <span className="trialtag">{drive ? "Drive" : "Trial reel"}</span> : null;
+  };
+  const carouselMark = (g: PostGroup) =>
+    g.lead.assetKind === "carousel" && (
+      <span className="qcarousel" title="A carousel of images">
+        ▤ {g.lead.slideCount || ""}
+      </span>
+    );
 
-  /** Plain words for the hover, since the dot and the padlock are shapes. */
-  const evTitle = (t: PostTargetInfo): string => {
-    const meta = POST_STATUS[t.status];
-    const kind = t.drive
-      ? `Drive auto-post${t.trial ? ", Instagram trial reel" : ""} - `
-      : t.trial
-      ? "Instagram trial reel - "
-      : t.assetKind === "carousel"
-        ? `carousel of ${t.slideCount || "several"} - `
-        : "";
-    if (t.status === "failed") return `${kind}${t.assetName} - failed: ${t.error ?? "unknown error"}`;
-    if (meta.movable) return `${kind}${t.assetName} - click for details, drag to move`;
-    return `${kind}${t.assetName} - ${meta.label.toLowerCase()}, cannot be moved`;
+  /** Plain words for the hover, since the dot, the tiles and the padlock are shapes. One line per platform. */
+  const evTitle = (g: PostGroup): string => {
+    const t = g.lead;
+    const kind = g.targets.some((x) => x.drive)
+      ? "Drive auto-post - "
+      : g.targets.every((x) => x.trial)
+        ? "Instagram trial reel - "
+        : t.assetKind === "carousel"
+          ? `carousel of ${t.slideCount || "several"} - `
+          : "";
+    const lines = g.targets.map(
+      (x) =>
+        `${platformName(x)}: ${POST_STATUS[x.status].label.toLowerCase()}, ${targetTime(x, t)}` +
+        (x.trial ? ", trial reel" : "") +
+        (x.status === "failed" ? `, ${x.error ?? "unknown error"}` : ""),
+    );
+    const how = groupMovable(g) ? "Click for details, drag to move" : "Click for details. Nothing here can be moved.";
+    return [`${kind}${t.assetName}`, ...lines, ...(isHeld(g) ? ["Held: uploads paused"] : []), how].join("\n");
   };
 
-  const renderEvent = (t: PostTargetInfo) => {
-    const thumb = fileUrl(t.thumbUrl);
-    const movable = canMove(t.status);
-    const when = t.scheduledAt ? fmtTime(t.scheduledAt) : "";
-    const label = POST_STATUS[t.status].label;
+  const renderEvent = (g: PostGroup) => {
+    const thumb = fileUrl(g.lead.thumbUrl);
+    const status = groupStatus(g);
+    const movable = groupMovable(g);
+    const others = otherTimes(g);
     return (
       <div
-        className={`ev st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`}
-        key={t.id}
-        title={isHeld(t) ? `${evTitle(t)} (held: uploads paused)` : evTitle(t)}
+        className={`ev st-${status}${isHeld(g) ? " held" : ""}${kindCls(g)}`}
+        key={g.postId}
+        title={evTitle(g)}
         draggable={movable}
-        onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
-        onClick={() => setDetail(t)}
+        onDragStart={(e) => e.dataTransfer.setData("text/post", g.postId)}
+        onClick={() => openCard(g)}
         style={{ cursor: movable ? "grab" : "pointer" }}
       >
         <div className="t1">
-          <StatusDot status={t.status} />
-          <Pf p={PF_ID[t.platform]} size="sm" />
-          <span className="evwhen">{when ? `${when} · ${label}` : label}</span>
-          <StatusIcon status={t.status} />
+          <StatusDot status={status} />
+          <span className="evwhen">{`${fmtTime(g.lead.scheduledAt!)} · ${POST_STATUS[status].label}`}</span>
+          <StatusIcon status={status} />
         </div>
-        {isHeld(t) && heldBadge}
-        {kindTag(t)}
+        <PlatformIcons group={g} />
+        {others.length > 0 && <div className="evtimes">{others.join(" · ")}</div>}
+        {isHeld(g) && heldBadge}
+        {kindTag(g)}
         <div className="t2">
-          {t.assetKind === "carousel" && (
-            <span className="qcarousel" title="A carousel of images">
-              ▤ {t.slideCount || ""}
-            </span>
-          )}
-          {t.assetName}
+          {carouselMark(g)}
+          {g.lead.assetName}
         </div>
         {thumb && <div className="evthumb" style={{ background: `url(${thumb}) center/cover` }} />}
       </div>
@@ -479,19 +551,9 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
 
   const detailModal = detail && (
     <PostDetailModal
-      target={detail}
-      // Same local-day rule the grid uses to place cards, so the button's
-      // count is exactly the cards in that day's cell.
-      dayTargets={
-        detail.scheduledAt
-          ? targets.filter(
-              (t) =>
-                t.scheduledAt &&
-                new Date(t.scheduledAt).toDateString() ===
-                  new Date(detail.scheduledAt!).toDateString(),
-            )
-          : undefined
-      }
+      target={detail.focus}
+      siblings={detail.group.targets}
+      knownTargets={targets}
       onClose={() => setDetail(null)}
       onChanged={() => void load()}
     />
@@ -509,7 +571,8 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       d.setDate(d.getDate() + i);
       return d;
     });
-    const dayEvents = eventsFor(anchor).sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+    // Already earliest first.
+    const dayEvents = eventsFor(anchor);
     const dayButton = (day: Date, key: string | number, label?: string) => {
       const n = eventsFor(day).length;
       const on = day.toDateString() === anchor.toDateString();
@@ -597,34 +660,48 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                   <button type="button" className="btn ghost" onClick={onNewPost}>+ Add post</button>
                 </div>
               )}
-              {dayEvents.map((t) => {
-                const [hm, ap] = (t.scheduledAt ? fmtTime(t.scheduledAt) : "").split(" ");
-                const reconnect = t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? "");
+              {dayEvents.map((g) => {
+                const [hm, ap] = fmtTime(g.lead.scheduledAt!).split(" ");
+                const status = groupStatus(g);
+                const failed = g.targets.find((t) => t.status === "failed");
+                const reconnect = g.targets.some(
+                  (t) => t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? ""),
+                );
+                const others = otherTimes(g);
                 return (
-                  <div className={`mcal-item st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`} key={t.id}>
+                  <div className={`mcal-item st-${status}${isHeld(g) ? " held" : ""}${kindCls(g)}`} key={g.postId}>
                     <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
                     <div className="mcal-body">
                       <div className="mcal-name">
-                        <Pf p={PF_ID[t.platform]} size="sm" /> <span>{t.assetName}</span>
-                        {kindTag(t)}
+                        <PlatformIcons group={g} />{" "}
+                        <span>
+                          {carouselMark(g)}
+                          {g.lead.assetName}
+                        </span>
+                        {kindTag(g)}
                       </div>
-                      <div className={`mcal-st st-${t.status}`}>
-                        <StatusIcon status={t.status} />
-                        {POST_STATUS[t.status].label}
-                        {isHeld(t) && <> {heldBadge}</>}
-                        {t.status === "failed" && t.error ? ` · ${t.error}` : canMove(t.status) ? " · can move" : ""}
+                      <div className={`mcal-st st-${status}`}>
+                        <StatusIcon status={status} />
+                        {POST_STATUS[status].label}
+                        {isHeld(g) && <> {heldBadge}</>}
+                        {failed?.error
+                          ? ` · ${g.targets.length > 1 ? `${PLATFORM_LABELS[failed.platform]}: ` : ""}${failed.error}`
+                          : groupMovable(g)
+                            ? " · can move"
+                            : ""}
                       </div>
+                      {others.length > 0 && <div className="mcal-times">{others.join(" · ")}</div>}
                       <div className="mcal-acts">
-                        {t.status === "failed" ? (
+                        {failed ? (
                           <>
-                            <button type="button" className="btn" onClick={() => setDetail(t)}>Retry</button>
+                            <button type="button" className="btn" onClick={() => openCard(g, failed)}>Retry</button>
                             {reconnect && (
                               <button type="button" className="btn ghost" onClick={() => navigate("settings", "accounts")}>Reconnect</button>
                             )}
                           </>
                         ) : (
-                          <button type="button" className="btn ghost" onClick={() => setDetail(t)}>
-                            {canMove(t.status) ? "Reschedule" : "Details"}
+                          <button type="button" className="btn ghost" onClick={() => openCard(g)}>
+                            {groupMovable(g) ? "Reschedule" : "Details"}
                           </button>
                         )}
                       </div>
@@ -747,6 +824,12 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             Paused<span className="lhint">, held until uploads continue</span>
           </span>
           <span className="litem">
+            <span className="pfmark st-posted" aria-hidden="true">
+              <Pf p="ig" size="sm" />
+            </span>
+            Platform tiles<span className="lhint">, a check once that platform posted, red if it failed</span>
+          </span>
+          <span className="litem">
             <span className="trialswatch" aria-hidden="true" />
             Trial reel<span className="lhint">, Instagram trial reels, shown to non-followers first</span>
           </span>
@@ -847,24 +930,23 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                     {holidayRow(day, true)}
                     {eventsFor(day)
                       .slice(0, 3)
-                      .map((t) => {
-                        const movable = canMove(t.status);
+                      .map((g) => {
+                        const movable = groupMovable(g);
+                        const status = groupStatus(g);
                         return (
                           <div
-                            className={`mev st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`}
-                            key={t.id}
-                            title={evTitle(t)}
+                            className={`mev st-${status}${isHeld(g) ? " held" : ""}${kindCls(g)}`}
+                            key={g.postId}
+                            title={evTitle(g)}
                             draggable={movable}
                             style={{ cursor: movable ? "grab" : "pointer" }}
-                            onDragStart={(e) => e.dataTransfer.setData("text/target", t.id)}
-                            onClick={() => setDetail(t)}
+                            onDragStart={(e) => e.dataTransfer.setData("text/post", g.postId)}
+                            onClick={() => openCard(g)}
                           >
-                            <StatusDot status={t.status} />
-                            <Pf p={PF_ID[t.platform]} size="sm" />
-                            <span className="evwhen">
-                              {t.scheduledAt ? fmtTime(t.scheduledAt) : ""}
-                            </span>
-                            <StatusIcon status={t.status} />
+                            <StatusDot status={status} />
+                            <PlatformIcons group={g} />
+                            <span className="evwhen">{fmtTime(g.lead.scheduledAt!)}</span>
+                            <StatusIcon status={status} />
                           </div>
                         );
                       })}
@@ -879,9 +961,10 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         )}
 
         <div className="note">
-          The dot and the padlock show where a post stands; click one for details, and drag a
-          scheduled post to another day. Anything already posted or going out now is locked.
-          Holidays appear as reminders across all views.
+          One card per post, with a tile for each platform it goes to: a check once that platform
+          has posted, red if it failed. Click a card to see and change each platform's own time,
+          or drag it to move all its scheduled platforms to another day. Anything already posted
+          or going out now is locked. Holidays appear as reminders across all views.
         </div>
       </div>
 
