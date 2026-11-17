@@ -20,6 +20,8 @@ export const ALERT_KINDS = {
   reportPublish: "report_publish",
   /** One client's month-end PDF could not be built. */
   reportBuild: "report_build",
+  /** One client's Drive auto-post check failed. Raised and cleared by the worker. */
+  driveCheck: "drive_check",
 } as const;
 
 export type AlertKind = (typeof ALERT_KINDS)[keyof typeof ALERT_KINDS];

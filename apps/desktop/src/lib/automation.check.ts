@@ -3,7 +3,7 @@
  * The query param a bot passes, and the html attributes it ends up as.
  */
 import { automationAttributes, automationParam } from "./theme";
-import { SECTIONS, pageOf, sectionHome, sectionOf } from "./nav";
+import { dockSection, SECTIONS, pageOf, sectionHome, sectionOf } from "./nav";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   const a = JSON.stringify(actual);
@@ -44,5 +44,11 @@ eq(
 );
 eq([sectionOf("fanout").id, sectionOf("queue").id, sectionOf("rollup").id, sectionOf("templates").id], ["create", "create", "reports", "overview"], "the workflow pages sit where the mockups put them");
 eq([sectionOf("approvals").id, sectionOf("requests").id, sectionOf("failed").id, sectionOf("insights").id, sectionOf("monthly").id], ["create", "create", "overview", "reports", "reports"], "the ideas pages sit in their sections");
+
+eq(
+  [dockSection("analytics"), dockSection("reports"), dockSection("comments"), dockSection("calendar"), dockSection("dashboard")],
+  ["measure", "reports", "reports", "create", "overview"],
+  "the Measure tab lights on Analytics, where it goes; Reports on its own pages",
+);
 
 console.log("automation: all checks passed");

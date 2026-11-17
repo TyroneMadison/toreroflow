@@ -403,10 +403,17 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       ? { outline: "1.5px dashed rgba(255,111,97,.7)", outlineOffset: -2, borderRadius: 12 }
       : undefined;
 
+  /** Drive auto-post wins over a plain trial reel: the trial look, in violet. */
+  const kindCls = (t: PostTargetInfo) => (t.drive ? " trial drive" : t.trial ? " trial" : "");
+  const kindTag = (t: PostTargetInfo) =>
+    t.drive || t.trial ? <span className="trialtag">{t.drive ? "Drive" : "Trial reel"}</span> : null;
+
   /** Plain words for the hover, since the dot and the padlock are shapes. */
   const evTitle = (t: PostTargetInfo): string => {
     const meta = POST_STATUS[t.status];
-    const kind = t.trial
+    const kind = t.drive
+      ? `Drive auto-post${t.trial ? ", Instagram trial reel" : ""} - `
+      : t.trial
       ? "Instagram trial reel - "
       : t.assetKind === "carousel"
         ? `carousel of ${t.slideCount || "several"} - `
@@ -423,7 +430,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     const label = POST_STATUS[t.status].label;
     return (
       <div
-        className={`ev st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`}
+        className={`ev st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`}
         key={t.id}
         title={isHeld(t) ? `${evTitle(t)} (held: uploads paused)` : evTitle(t)}
         draggable={movable}
@@ -438,7 +445,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
           <StatusIcon status={t.status} />
         </div>
         {isHeld(t) && heldBadge}
-        {t.trial && <span className="trialtag">Trial reel</span>}
+        {kindTag(t)}
         <div className="t2">
           {t.assetKind === "carousel" && (
             <span className="qcarousel" title="A carousel of images">
@@ -594,12 +601,12 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 const [hm, ap] = (t.scheduledAt ? fmtTime(t.scheduledAt) : "").split(" ");
                 const reconnect = t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? "");
                 return (
-                  <div className={`mcal-item st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`} key={t.id}>
+                  <div className={`mcal-item st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`} key={t.id}>
                     <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
                     <div className="mcal-body">
                       <div className="mcal-name">
                         <Pf p={PF_ID[t.platform]} size="sm" /> <span>{t.assetName}</span>
-                        {t.trial && <span className="trialtag">Trial reel</span>}
+                        {kindTag(t)}
                       </div>
                       <div className={`mcal-st st-${t.status}`}>
                         <StatusIcon status={t.status} />
@@ -743,6 +750,10 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <span className="trialswatch" aria-hidden="true" />
             Trial reel<span className="lhint">, Instagram trial reels, shown to non-followers first</span>
           </span>
+          <span className="litem drive">
+            <span className="trialswatch" aria-hidden="true" />
+            Drive auto-post<span className="lhint">, trial reels from the brand's Drive folder (Workflows), changeable until they go out</span>
+          </span>
         </div>
 
         {state === "empty" && (
@@ -840,7 +851,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                         const movable = canMove(t.status);
                         return (
                           <div
-                            className={`mev st-${t.status}${isHeld(t) ? " held" : ""}${t.trial ? " trial" : ""}`}
+                            className={`mev st-${t.status}${isHeld(t) ? " held" : ""}${kindCls(t)}`}
                             key={t.id}
                             title={evTitle(t)}
                             draggable={movable}

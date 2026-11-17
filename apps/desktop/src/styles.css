@@ -2158,6 +2158,8 @@
 .trialtag{display:inline-block;margin-top:5px;padding:1px 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c-trial) 55%,transparent);color:var(--c-trial-ink);font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
 .mcal-name .trialtag{margin-top:0;flex:0 0 auto}
 .trialswatch{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--c-trial);flex:0 0 auto}
+/* Drive auto-post: the trial look in violet, so the workflow's posts stand apart from trials scheduled by hand. */
+.drive{--c-trial:var(--c-drive);--c-trial-ink:var(--c-drive-ink)}
 .held .st-scheduled,.held.st-scheduled{--st:var(--paused)}
 .mcal-item.held .mcal-st.st-scheduled{color:var(--c-paused-ink)}
 /* Dimmed, but the status marks and the badge stay at full strength so the state reads at a glance. */

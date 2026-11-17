@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SECTIONS, sectionHome, sectionOf, type ScreenId } from "../lib/nav";
+import { dockSection, SECTIONS, sectionHome, type ScreenId } from "../lib/nav";
 import { linkProps } from "../lib/routes";
 import type { Theme } from "../lib/theme";
 import { useAppState } from "../state/AppState";
@@ -38,7 +38,7 @@ export default function Dock({
   const { clients, selectedClient, selectClient } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const active = sectionOf(activeScreen).id;
+  const active = dockSection(activeScreen);
   const selectedIndex = clients.findIndex((c) => c.id === selectedClient?.id);
 
   useEffect(() => {

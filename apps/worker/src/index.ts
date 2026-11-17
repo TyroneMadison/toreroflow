@@ -7,6 +7,7 @@ import {
   carouselTargetSize,
   explainPublishFailure,
   defaultFormat,
+  DRIVE_CHECK_MINUTES,
   instagramCopyKbps,
   instagramLongformFit,
   measuredDurationSec,
@@ -1195,7 +1196,7 @@ setInterval(() => void refreshAllTrends().catch((e: unknown) => console.error("[
 // boot. driveAll itself skips a tick while the last one is still running.
 const driveTick = () => void driveAll().catch((e: unknown) => console.error("[drive]", e instanceof Error ? e.message : e));
 setTimeout(driveTick, 60_000).unref();
-setInterval(driveTick, 5 * 60_000).unref();
+setInterval(driveTick, DRIVE_CHECK_MINUTES * 60_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);

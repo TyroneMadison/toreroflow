@@ -88,6 +88,36 @@ async function rejects(p: Promise<unknown>, status: number, message: string) {
     e instanceof DriveError && e.status === 0 && !e.message.includes(KEY));
 }
 
+/* ---- a key problem never reads as a sharing problem ---- */
+{
+  const err = (reason: string, at: "details" | "errors" = "details") =>
+    at === "details" ? { error: { details: [{ reason }] } } : { error: { errors: [{ reason }] } };
+  const cases: Array<[number, unknown, RegExp, boolean, number?]> = [
+    [400, err("API_KEY_INVALID"), /not valid/, true],
+    [403, err("ACCESS_DENIED"), /not allowed to use Google Drive/, true],
+    [403, err("SERVICE_DISABLED"), /not allowed to use Google Drive/, true],
+    [403, err("API_KEY_SERVICE_BLOCKED"), /not allowed to use Google Drive/, true],
+    [403, err("CONSUMER_SUSPENDED"), /not allowed to use Google Drive/, true],
+    [403, err("BILLING_DISABLED"), /not allowed to use Google Drive/, true],
+    [403, err("accessNotConfigured", "errors"), /not allowed to use Google Drive/, true],
+    [403, err("userRateLimitExceeded", "errors"), /rate limiting/, false, 429],
+    [403, {}, /Anyone with the link/, false],
+    [404, err("notFound", "errors"), /could not find/, false],
+  ];
+  for (const [status, body, re, keyProblem, as] of cases) {
+    const { fetch } = fakeFetch(() => json(body, status));
+    await assert.rejects(listFolderVideos(FOLDER, { apiKey: KEY, fetch }), (e: unknown) => {
+      assert.ok(e instanceof DriveError);
+      assert.match(e.message, re, `${status} ${JSON.stringify(body)}`);
+      assert.equal(e.keyProblem, keyProblem, `${status} ${JSON.stringify(body)} keyProblem`);
+      assert.equal(e.status, as ?? status);
+      return true;
+    });
+  }
+  await assert.rejects(listFolderVideos(FOLDER, { apiKey: "", fetch: fakeFetch(() => json({})).fetch }), (e: unknown) =>
+    e instanceof DriveError && e.keyProblem && e.status === 0);
+}
+
 /* ---- download: streamed, capped, cleaned up ---- */
 const dir = mkdtempSync(path.join(tmpdir(), "drive-check-"));
 try {

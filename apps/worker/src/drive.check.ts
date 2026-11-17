@@ -36,6 +36,7 @@ for (const status of [400, 403, 404, 413, 415]) {
   assert.equal(downloadRetries(new DriveError(status, "x")), false, `${status} is final for that file`);
 }
 assert.equal(downloadRetries(new Error("disk")), true, "a local failure is tried again");
+assert.equal(downloadRetries(new DriveError(403, "x", true)), true, "a key problem never fails the file");
 
 /* ---- which transcription failures are tried again ---- */
 

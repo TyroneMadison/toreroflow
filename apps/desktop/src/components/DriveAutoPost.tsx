@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { readDriveSource } from "@toreroflow/core";
+import { DRIVE_CHECK_MINUTES, DRIVE_DEFAULT_PER_DAY, driveRunState, readDriveSource } from "@toreroflow/core";
 import { useToast } from "./Toasts";
 import {
   api,
@@ -18,7 +18,7 @@ import { useAppState } from "../state/AppState";
 const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
   claimed: { label: "Claimed", tag: "due" },
   downloaded: { label: "Downloaded", tag: "due" },
-  dryrun: { label: "Dry run", tag: "ok" },
+  dryrun: { label: "Test only", tag: "ok" },
   scheduled: { label: "Scheduled", tag: "ok" },
   held: { label: "Held", tag: "warn" },
   skipped: { label: "Skipped", tag: "warn" },
@@ -29,7 +29,7 @@ const DRIVE_STATUS: Record<string, { label: string; tag: string }> = {
  * Drive auto-post: new videos in the client's shared Drive folder post to each
  * ticked Instagram account as trial reels, captioned by AI from the video.
  *
- * Saved behind a button rather than on blur, because switching it on in Live
+ * Saved behind a button rather than on blur, because saving a link starts
  * posts to a client's account.
  */
 export default function DriveAutoPost({ client }: { client: ClientSummary }) {
@@ -40,7 +40,9 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
     link: "",
     socialAccountIds: [],
     graduation: "MANUAL",
-    mode: "dryrun",
+    // There is no practice mode or on switch on this card: a saved link with an
+    // account ticked posts, and a cleared link stops. Both are set at Save.
+    mode: "live",
     on: false,
     dailyLimit: null,
   });
@@ -67,7 +69,7 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
       socialAccountIds:
         !s.socialAccountIds.length && ids.length === 1 ? [ids[0]!] : s.socialAccountIds.filter((id) => ids.includes(id)),
       graduation: s.graduation,
-      mode: s.mode,
+      mode: "live",
       on: s.on,
       dailyLimit: s.dailyLimit,
     });
@@ -76,6 +78,25 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
   useEffect(() => {
     getDriveSource(client.id).then(apply, (err) => toast.fail(`Could not load ${client.name}'s Drive auto-post`, err));
   }, [client.id, client.name, toast]);
+
+  /*
+   * The status, counts and recent videos stay current while this is open, so
+   * "is it running" is answered without a reload. The form and the account
+   * list are left alone: nothing typed is lost, and the igKey effect owns accounts.
+   */
+  useEffect(() => {
+    const t = setInterval(
+      () =>
+        getDriveSource(client.id).then(
+          (v) => setView((cur) => cur && { ...v, settings: readDriveSource(v.settings), instagramAccounts: cur.instagramAccounts }),
+          () => {
+            // A missed refresh just waits for the next one.
+          },
+        ),
+      30_000,
+    );
+    return () => clearInterval(t);
+  }, [client.id]);
 
   /*
    * A newly connected Instagram account (after Sync accounts) shows up to tick
@@ -151,13 +172,12 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
   const save = async () => {
     setBusy("save");
     try {
-      apply(await saveDriveSource(client.id, { ...form, link: form.link.trim() }));
+      const link = form.link.trim();
+      apply(await saveDriveSource(client.id, { ...form, link, mode: "live", on: link !== "" }));
       toast.success(
-        !form.on
-          ? "Drive auto-post saved. It is off."
-          : form.mode === "live"
-            ? `Drive auto-post is live for ${client.name}. New videos post as Instagram trial reels only.`
-            : `Drive auto-post is on for ${client.name} as a dry run. Nothing posts.`,
+        link
+          ? `Saved. ${client.name}'s folder posts as Instagram trial reels, oldest video first, starting within ${DRIVE_CHECK_MINUTES} minutes.`
+          : "Saved. With no folder link, nothing posts.",
       );
     } catch (err) {
       toast.fail(`Could not save ${client.name}'s Drive auto-post`, err);
@@ -178,14 +198,33 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
     }
   };
 
+  const run = view ? driveRunState(view.settings) : null;
+  const when = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
   return (
     <div className="card glass" style={{ marginBottom: 16 }} data-testid="drive-auto-post">
       <h3>Drive auto-post: Instagram trial reels only</h3>
+      {run && (
+        <p
+          data-testid="drive-auto-post.status"
+          className={run.tone === "off" ? "sub" : undefined}
+          style={{
+            fontSize: 12.5,
+            fontWeight: 600,
+            margin: "0 0 8px",
+            color: run.tone === "ok" ? "var(--green)" : run.tone === "bad" ? "var(--red)" : undefined,
+          }}
+        >
+          {run.text}
+        </p>
+      )}
       <p className="sub" style={{ fontSize: 11.5, margin: "0 0 8px" }}>
-        New videos added to a shared Drive folder post as <b>Instagram trial reels only</b>, to every Instagram account
-        ticked below at the same time, with a caption written by AI from the video. Nothing goes to TikTok, YouTube,
-        Facebook or this brand's other accounts, and nothing posts as a regular reel. Videos already in the folder when
-        you switch this on are left alone.
+        Paste a shared Drive folder link, tick the Instagram accounts, and Save. Every video in the folder posts as an{" "}
+        <b>Instagram trial reel only</b>, oldest first, a few each day, to every ticked account at the same time, with a
+        caption written by AI from the video. Videos added to the folder later join the end of the line. Each one shows
+        on the calendar in violet before it goes out, so you can move it or change its caption there. Nothing goes to
+        TikTok, YouTube, Facebook or this brand's other accounts, and nothing posts as a regular reel.
       </p>
       {!view ? (
         <p className="sub" style={{ fontSize: 11.5 }}>Loading...</p>
@@ -279,7 +318,7 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
             )}
           </div>
           <label className="cfield">
-            <span className="lab">Videos per day</span>
+            <span className="lab">Trial reels per day</span>
             <input
               className="field-in"
               type="number"
@@ -287,7 +326,7 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
               max={50}
               step={1}
               style={{ width: 120 }}
-              placeholder="No limit"
+              placeholder={String(DRIVE_DEFAULT_PER_DAY)}
               value={form.dailyLimit ?? ""}
               onChange={(e) => {
                 // Half-typed text like "1e" keeps the last good number rather than becoming no limit.
@@ -297,8 +336,8 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
               }}
             />
             <span className="sub" style={{ fontSize: 11 }}>
-              The most new videos that post as trial reels each day. Extra videos wait in the folder and post on the next
-              days. Leave empty for no limit.
+              How many videos from the folder go out each day, spread between 9 AM and 9 PM. Each one lands on the
+              calendar at least 2 hours ahead. Empty means {DRIVE_DEFAULT_PER_DAY} a day.
             </span>
           </label>
           <label className="cfield">
@@ -313,29 +352,6 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
               <option value="SS_PERFORMANCE">Based on performance</option>
             </select>
           </label>
-          <div className="cfield">
-            <span className="lab">Mode</span>
-            <div className="modepick">
-              <button className={form.mode === "dryrun" ? "on" : ""} onClick={() => setForm({ ...form, mode: "dryrun" })}>
-                Dry run
-              </button>
-              <button className={form.mode === "live" ? "on" : ""} onClick={() => setForm({ ...form, mode: "live" })}>
-                Live
-              </button>
-            </div>
-            <span className="sub" style={{ fontSize: 11 }}>
-              Dry run does everything except post. Live posts trial reels automatically.
-            </span>
-          </div>
-          <button
-            type="button"
-            className="btn ghost"
-            style={{ alignSelf: "flex-start", fontSize: 11.5 }}
-            onClick={() => setForm({ ...form, on: !form.on })}
-          >
-            <span className={`switch${form.on ? " on" : ""}`} style={{ marginRight: 8 }} />
-            {form.on ? "On" : "Off"}
-          </button>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button className="cbtn" disabled={busy !== null} onClick={() => void save()}>
               {busy === "save" ? "Saving..." : "Save"}
@@ -349,6 +365,10 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
               {busy === "check" ? "Checking..." : "Check folder"}
             </button>
           </div>
+          <span className="sub" style={{ fontSize: 11 }}>
+            To stop, clear the folder link and Save. Trial reels already on the calendar stay there; remove any you do
+            not want from the calendar.
+          </span>
           {check && (
             <p style={{ fontSize: 11.5, margin: 0, color: check.ok ? "var(--green)" : "var(--red)" }}>
               {!check.ok
@@ -360,10 +380,14 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
           )}
           {view.counts && (
             <span style={{ fontSize: 11.5 }}>
-              <b>Today:</b> {view.counts.today}
-              {view.settings.dailyLimit ? ` of ${view.settings.dailyLimit}` : ""}{" "}
-              {view.counts.today === 1 ? "video" : "videos"}
-              {view.settings.mode === "live" ? "" : " (dry run)"}
+              <b>Today:</b> {view.counts.today} of {view.settings.dailyLimit ?? DRIVE_DEFAULT_PER_DAY} trial reels
+              {view.counts.ahead != null && (
+                <>
+                  {" · "}
+                  <b>On the calendar to go out:</b> {view.counts.ahead}
+                  {view.counts.next && `, next ${when(view.counts.next)}`}
+                </>
+              )}
               {view.settings.waiting != null && (
                 <>
                   {" · "}
@@ -371,8 +395,7 @@ export default function DriveAutoPost({ client }: { client: ClientSummary }) {
                 </>
               )}
               {" · "}
-              <b>Videos sent as trial reels:</b> {view.counts.posted}
-              {view.counts.dryRuns > 0 && ` · Dry runs: ${view.counts.dryRuns}`}
+              <b>Scheduled as trial reels so far:</b> {view.counts.posted}
             </span>
           )}
           <span className="sub" style={{ fontSize: 11 }}>

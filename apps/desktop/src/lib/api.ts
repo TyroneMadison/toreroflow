@@ -708,6 +708,8 @@ export interface PostTargetInfo {
   queueDismissed: boolean;
   /** An Instagram trial reel. Optional: servers before it never send one. */
   trial?: boolean;
+  /** Made by the Drive auto-post in Workflows. Optional: older servers never send it. */
+  drive?: boolean;
   assetName: string;
   thumbUrl: string | null;
   /** video | carousel, so the queue and calendar can say which is which. */
@@ -1062,12 +1064,13 @@ export interface DriveSourceView {
   /** Connected through the publishing provider, so a trial reel can post there. */
   instagramAccounts: { id: string; handle: string }[];
   /**
-   * Videos, one per Drive file however many accounts are ticked. today: taken
-   * today toward the daily limit, in the current mode, including ones still
-   * being worked on. posted: sent to trial reels so far. dryRuns: dry runs so
-   * far. Missing from older servers.
+   * Videos, one per Drive file however many accounts are ticked. today: Live,
+   * trial reels set for today on the calendar; a dry run, what it took today.
+   * posted: scheduled as trial reels so far. dryRuns: dry runs so far. ahead:
+   * Live trial reels on the calendar still to go out, next: the soonest (ISO).
+   * Missing from older servers; ahead and next from servers before the calendar slots.
    */
-  counts?: { today: number; posted: number; dryRuns: number };
+  counts?: { today: number; posted: number; dryRuns: number; ahead?: number; next?: string | null };
 }
 export type DriveSourceSave = Pick<DriveSource, "link" | "socialAccountIds" | "graduation" | "mode" | "on" | "dailyLimit">;
 export type DriveFolderCheck = { ok: true; videos: number; sample: string[] } | { ok: false; reason: string };

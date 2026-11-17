@@ -6,7 +6,9 @@ import {
   driveAccountIds,
   driveUsedToday,
   isDriveId,
+  driveRunState,
   isDriveVideo,
+  nextDriveSlot,
   pickDriveFiles,
   readDailyLimit,
   readDriveSource,
@@ -48,7 +50,7 @@ assert.equal(readDriveSource({ waiting: -2 }).waiting, null, "a negative waiting
 const FOLDER = "1AbCdEfGhIjKlMnOpQ";
 assert.deepEqual(readDriveSource(null), {
   on: false, link: "", folderId: "", socialAccountIds: [], graduation: "MANUAL", mode: "dryrun",
-  linkedAt: null, dailyLimit: null, waiting: null, lastCheckAt: null, lastResult: null,
+  linkedAt: null, dailyLimit: null, waiting: null, lastCheckAt: null, lastResult: null, lastOk: null,
 }, "nothing stored reads as off, dry run, MANUAL, no limit");
 assert.deepEqual(readDriveSource("junk"), readDriveSource(null), "a non-object never throws");
 assert.deepEqual(readDriveSource([1]), readDriveSource(null), "an array is not settings");
@@ -114,10 +116,18 @@ const files = [
 ];
 const ids = (xs: DriveFile[]) => xs.map((x) => x.id.replace(/x+$/, ""));
 const picked = pickDriveFiles(files, { linkedAt: "2026-11-08T10:00:00Z", seenFileIds: ["seenxxxxxxxx"] });
-assert.deepEqual(ids(picked), ["a", "b", "c"], "new videos at or after linkedAt, oldest first, deduped");
+assert.deepEqual(
+  ids(picked),
+  ["old", "a", "b", "c", "nodate"],
+  "every video in the folder, the ones there before it was linked too, oldest first, deduped, undated last",
+);
 assert.equal("at" in picked[0]!, false, "no sort key leaks into the result");
 assert.deepEqual(pickDriveFiles(files, { linkedAt: null, seenFileIds: [] }), [], "not linked yet posts nothing");
-assert.deepEqual(ids(pickDriveFiles(files, { linkedAt: "2026-11-08T11:00:00Z", seenFileIds: new Set(["bxxxxxxxxxxx"]) })), ["seen", "c"], "a Set works as seen");
+assert.deepEqual(
+  ids(pickDriveFiles(files, { linkedAt: "2026-11-08T11:00:00Z", seenFileIds: new Set(["bxxxxxxxxxxx", "oldxxxxxxxxx"]) })),
+  ["a", "seen", "c", "nodate"],
+  "a Set works as seen",
+);
 
 /* ---- deciding ---- */
 
@@ -136,12 +146,12 @@ assert.deepEqual(
   "claimed the moment it was linked still posts",
 );
 
-// Switched off, then on again (or given a new folder): the clock restarts, and
-// a video downloaded before that is held, not posted on the first check.
-const earlier = decide({ asset: ready, caption, settings: { ...on, mode: "live" }, claimedAt: new Date("2026-11-08T09:59:59Z") });
-assert.equal(earlier.kind, "hold", "a video claimed before linkedAt never posts");
-assert.match(reasonOf(earlier), /downloaded before Drive auto-post was last switched on/);
-assert.equal(decide({ asset: ready, caption, settings: { ...on, linkedAt: null } }).kind, "hold", "no linkedAt never posts");
+// Stopped and started again: a video downloaded before still posts, oldest first.
+assert.equal(
+  decide({ asset: ready, caption, settings: { ...on, mode: "live" }, claimedAt: new Date("2026-11-08T09:59:59Z") }).kind,
+  "post",
+  "a video taken before the folder was last linked still posts",
+);
 assert.deepEqual(
   decide({ asset: ready, caption, settings: { ...on, on: false }, claimedAt: new Date(0) }),
   { kind: "wait" },
@@ -193,5 +203,71 @@ for (const none of [null, "", "  \n "]) {
 const tooLong = decide({ asset: ready, caption: "a".repeat(2201), settings: on });
 assert.equal(tooLong.kind, "hold", "a caption Instagram refuses is held");
 assert.match(reasonOf(tooLong), /2,201 characters/);
+
+/* ---- Live slots: spread across the business day, ahead of now ---- */
+{
+  const NYZ = "America/New_York";
+  const ny = (iso: string) => new Date(iso);
+  // 2026-11-17 is EST (UTC-5). perDay 3 gives 11:00, 15:00, 19:00 New York.
+  // Each time given is its own post unless written "postId@iso".
+  const slot = (now: string, perDay: number, taken: string[] = []) =>
+    nextDriveSlot({
+      now: ny(now),
+      timeZone: NYZ,
+      perDay,
+      taken: taken.map((t, i) => (t.includes("@") ? { postId: t.split("@")[0]!, at: ny(t.split("@")[1]!) } : { postId: `p${i}`, at: ny(t) })),
+    }).toISOString();
+  assert.equal(slot("2026-11-17T12:00:00Z", 3), "2026-11-17T16:00:00.000Z", "7 AM: the first slot, 11 AM, is over 2 hours out");
+  assert.equal(slot("2026-11-17T19:30:00Z", 3), "2026-11-18T00:00:00.000Z", "2:30 PM: 3 PM is under 2 hours out, so 7 PM");
+  assert.equal(slot("2026-11-17T12:00:00Z", 3, ["2026-11-17T16:00:00Z"]), "2026-11-17T20:00:00.000Z", "a held slot is skipped");
+  assert.equal(
+    slot("2026-11-17T12:00:00Z", 3, ["2026-11-17T16:00:00Z", "2026-11-17T20:00:00Z", "2026-11-17T14:07:00Z"]),
+    "2026-11-18T16:00:00.000Z",
+    "a full day (a dragged post counts too) rolls to the next day's first slot",
+  );
+  assert.equal(slot("2026-11-18T03:00:00Z", 1), "2026-11-18T20:00:00.000Z", "10 PM the night before: tomorrow's one slot, 3 PM");
+  // DST: 2026-03-08 springs forward; 11 AM EDT is 15:00 UTC.
+  assert.equal(slot("2026-03-08T08:00:00Z", 3), "2026-03-08T15:00:00.000Z", "the window follows the clock across DST");
+  assert.equal(slot("2026-11-17T12:00:00Z", 0), slot("2026-11-17T12:00:00Z", 1), "under one a day reads as one");
+  // Forward only: after the last video's time, even when an earlier slot is free (a raised limit, a removed post).
+  assert.equal(
+    nextDriveSlot({ now: ny("2026-11-17T12:00:00Z"), timeZone: NYZ, perDay: 3, taken: [], after: ny("2026-11-18T20:00:00Z") }).toISOString(),
+    "2026-11-19T00:00:00.000Z",
+    "the next video goes after the last one",
+  );
+  // One account's target dragged to another day: its time is still held, and the post counts on both days.
+  assert.equal(
+    slot("2026-11-17T12:00:00Z", 3, ["P@2026-11-18T16:00:00Z", "P@2026-11-17T16:00:00Z"]),
+    "2026-11-17T20:00:00.000Z",
+    "a target moved on its own still holds its time",
+  );
+  assert.equal(
+    slot("2026-11-17T12:00:00Z", 2, ["P@2026-11-17T16:00:00Z", "P@2026-11-17T18:00:00Z", "Q@2026-11-17T22:00:00Z"]),
+    "2026-11-18T17:00:00.000Z",
+    "two posts today (one with targets at two times) fills a 2-a-day day; tomorrow's first is noon",
+  );
+}
+
+/* ---- the status line ---- */
+{
+  const base = readDriveSource({ on: true, folderId: "1AbCdEfGhIjKlMnOpQ", mode: "live", linkedAt: "2026-11-17T08:00:00Z" });
+  const at = (iso: string) => Date.parse(iso);
+  assert.equal(driveRunState({ ...base, on: false }).tone, "off");
+  assert.match(driveRunState(base, at("2026-11-17T08:01:00Z")).text, /^Starting\./, "never checked yet");
+  const checked = { ...base, lastCheckAt: "2026-11-17T09:00:00Z", lastResult: "Nothing new.", lastOk: true };
+  assert.match(driveRunState(checked, at("2026-11-17T09:02:00Z")).text, /^Running\. Last checked 2 min ago, next check in about 3 min/);
+  assert.equal(driveRunState({ ...checked, lastOk: null }, at("2026-11-17T09:02:00Z")).tone, "ok", "an older worker reads as working");
+  assert.equal(driveRunState(checked, at("2026-11-17T10:00:00Z")).tone, "bad", "an hour without a check: the worker may be stopped");
+  const broken = { ...checked, lastOk: false, lastResult: "The key is bad." };
+  assert.match(driveRunState(broken, at("2026-11-17T09:02:00Z")).text, /^Not working\. Last checked 2 min ago: The key is bad\./);
+  for (const s of [base, checked, broken, { ...base, on: false }])
+    assert.equal(/dry run|live/i.test(driveRunState(s, at("2026-11-17T09:02:00Z")).text), false, "never says dry run or live");
+  assert.match(
+    driveRunState({ ...checked, lastCheckAt: "2026-11-17T07:00:00Z" }, at("2026-11-17T08:20:00Z")).text,
+    /^Starting/,
+    "a check from before it was relinked does not count",
+  );
+  assert.equal(driveRunState(base, at("2026-11-17T10:00:00Z")).tone, "bad", "saved two hours ago and never checked: the worker may be stopped");
+}
 
 console.log("drive: all checks passed");

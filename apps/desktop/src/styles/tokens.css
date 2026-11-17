@@ -21,6 +21,9 @@
   /* Instagram trial reels on the calendar. Teal, clear of every status colour. */
   --c-trial:#2DD4BF;
   --c-trial-ink:#2DD4BF;
+  /* Drive auto-post posts on the calendar. Violet, clear of teal and every status colour. */
+  --c-drive:#C084FC;
+  --c-drive-ink:#D8B4FE;
 
   --text:#fff;
   --text-2:rgba(255,255,255,.72);
@@ -67,6 +70,8 @@
   --c-paused-ink:#9A4A06;
   --c-trial:#0F8A7E;
   --c-trial-ink:#0A5F57;
+  --c-drive:#9333EA;
+  --c-drive-ink:#6B21A8;
   --text:rgba(24,22,40,.94);
   --text-2:rgba(24,22,40,.70);
   --text-3:rgba(24,22,40,.54);

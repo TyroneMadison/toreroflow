@@ -79,6 +79,12 @@ export function addLocalDays(at: Date, days: number, timeZone = DEFAULT_TIME_ZON
   return fromWall({ ...w, y: day.getUTCFullYear(), m: day.getUTCMonth() + 1, d: day.getUTCDate() }, timeZone);
 }
 
+/** The instant `minutes` past local midnight on `at`'s day in the zone. */
+export function atLocalMinutes(at: Date, minutes: number, timeZone = DEFAULT_TIME_ZONE): Date {
+  const w = wall(at, timeZone);
+  return fromWall({ ...w, h: Math.floor(minutes / 60), mi: minutes % 60, s: 0, ms: 0 }, timeZone);
+}
+
 export interface HeldPost {
   id: string;
   scheduledAt: Date;

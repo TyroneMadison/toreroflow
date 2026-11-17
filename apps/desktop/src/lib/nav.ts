@@ -115,6 +115,15 @@ export function sectionHome(s: SectionDef): ScreenId {
   return s.opens ?? s.pages[0]!.id;
 }
 
+/**
+ * The dock tab lit on a screen: the tab that opens it, else its section. So
+ * Analytics lights Measure (the tab that went there) while every other
+ * Reports page lights Reports; sectionOf alone never names Measure.
+ */
+export function dockSection(screen: ScreenId): SectionDef["id"] {
+  return SECTIONS.find((s) => sectionHome(s) === screen)?.id ?? sectionOf(screen).id;
+}
+
 export function pageOf(screen: ScreenId): PageDef {
   return sectionOf(screen).pages.find((p) => p.id === screen)!;
 }

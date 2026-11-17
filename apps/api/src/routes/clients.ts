@@ -13,6 +13,7 @@ import {
   platformSchema,
   PLATFORMS,
   type Platform,
+  driveAlertKey,
 } from "@toreroflow/core";
 import { z } from "zod";
 import { getPrisma, enqueue } from "@toreroflow/db";
@@ -298,6 +299,8 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
         where: { id: client.id },
         data: { deletedAt: now },
       }),
+      // The worker never checks a removed brand again, so its Drive alert would never clear.
+      prisma.systemAlert.deleteMany({ where: { agencyId: client.agencyId, key: driveAlertKey(client.id) } }),
     ]);
 
     // Offboarding takes their page off the public web with them. Their

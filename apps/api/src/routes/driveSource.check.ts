@@ -11,6 +11,7 @@ const { default: Fastify } = await import("fastify");
 const { default: jwt } = await import("@fastify/jwt");
 const { getPrisma } = await import("@toreroflow/db");
 const { driveSourceRoutes } = await import("./driveSource");
+const { addLocalDays, atLocalMinutes } = await import("@toreroflow/core");
 
 const FOLDER = "1AbCdEfGhIjKlMnOpQr";
 const OTHER = "1ZyXwVuTsRqPoNmLkJi";
@@ -57,12 +58,17 @@ stub("driveImport", {
     })),
 });
 stub("botIdentity", { findUnique: async () => null });
+let liveRows: Array<{ postId: string; at: Date; pending: boolean }> = [];
+stub("$queryRaw", async () => liveRows);
+const clearedAlerts: string[] = [];
+stub("systemAlert", { deleteMany: async ({ where }: any) => (clearedAlerts.push(where.key), { count: 0 }) });
 
 let driveStatus = 200;
+let driveBody = "{}";
 const fetched: Array<{ url: string; key: string | null }> = [];
 globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
   fetched.push({ url: String(url), key: new Headers(init?.headers).get("x-goog-api-key") });
-  if (driveStatus !== 200) return new Response("{}", { status: driveStatus });
+  if (driveStatus !== 200) return new Response(driveBody, { status: driveStatus });
   return Response.json({
     files: [
       { id: "f1aaaaaaaaaa", name: "a.mp4", mimeType: "video/mp4" },
@@ -96,7 +102,11 @@ assert.deepEqual(
 );
 assert.equal(first.imports.length, 3);
 assert.equal(first.imports[0].reason, "No speech.");
-assert.deepEqual(first.counts, { today: 1, posted: 1, dryRuns: 1 }, "today counts the dry run (dry run mode); totals by status");
+assert.deepEqual(
+  first.counts,
+  { today: 1, posted: 1, dryRuns: 1, ahead: 0, next: null },
+  "today counts the dry run (dry run mode); totals by status; nothing Live ahead",
+);
 assert.equal(first.settings.dailyLimit, null, "no daily limit by default");
 assert.equal(first.keyReady, true);
 
@@ -224,7 +234,7 @@ await save({ link: folderLink(OTHER), on: false });
 assert.equal(stored().waiting, null, "off counts nothing");
 clients[0]!.driveSource = { ...stored(), waiting: 4 };
 await save({ link: folderLink(OTHER) });
-assert.equal(stored().waiting, null, "switching back on drops what was waiting, as linkedAt restarts");
+assert.equal(stored().waiting, null, "starting again drops what was waiting");
 clients[0]!.driveSource = null;
 
 // Switching on starts the clock.
@@ -251,13 +261,43 @@ await save({ link: folderLink(OTHER) });
 assert.equal(stored().folderId, OTHER);
 assert.notEqual(stored().linkedAt, PAST, "new folder restarts linkedAt");
 
-// Off keeps it, back on restarts it.
+// Off keeps linkedAt; starting again restarts it and clears the old check, so the card says Starting.
 clients[0]!.driveSource = { ...stored(), linkedAt: PAST };
 await save({ link: folderLink(OTHER), on: false });
 assert.equal(stored().on, false);
 assert.equal(stored().linkedAt, PAST, "off keeps linkedAt");
+clients[0]!.driveSource = { ...stored(), lastCheckAt: PAST, lastResult: "Nothing new.", lastOk: false };
 await save({ link: folderLink(OTHER) });
-assert.notEqual(stored().linkedAt, PAST, "switching on restarts linkedAt");
+assert.notEqual(stored().linkedAt, PAST, "starting again restarts linkedAt");
+assert.equal(stored().lastCheckAt, null, "starting again clears the last check");
+assert.equal(stored().lastOk, null);
+// A save that changes nothing about the run keeps the check and clears no alert.
+clients[0]!.driveSource = { ...stored(), lastCheckAt: PAST, lastOk: true };
+const clearedBefore = clearedAlerts.length;
+await save({ link: folderLink(OTHER), dailyLimit: 4 });
+assert.equal(stored().lastCheckAt, PAST, "a limit change keeps the last check");
+assert.equal(clearedAlerts.length, clearedBefore, "and clears no alert");
+// Live counts: today's trial reels, what is still to go out, and the soonest of those.
+{
+  const tz = process.env.BUSINESS_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const todayAt = (minutes: number) => atLocalMinutes(new Date(), minutes, tz);
+  const inDays = (d: number) => addLocalDays(todayAt(12 * 60), d, tz);
+  liveRows = [
+    // A: two accounts, both today. B: one account today, the other dragged to tomorrow.
+    { postId: "A", at: todayAt(11 * 60), pending: false },
+    { postId: "A", at: todayAt(11 * 60 + 5), pending: false },
+    { postId: "B", at: todayAt(15 * 60), pending: false },
+    { postId: "B", at: inDays(1), pending: true },
+    { postId: "C", at: inDays(3), pending: true },
+    { postId: "D", at: inDays(-1), pending: false },
+  ];
+  clients[0]!.driveSource = { ...stored(), mode: "live" };
+  const c = (await req("GET", "/clients/c1/drive-source")).json().counts;
+  assert.equal(c.today, 2, "today counts each post once, whichever of its targets fall today");
+  assert.equal(c.ahead, 2, "each post with a target still to go out, once");
+  assert.equal(Date.parse(c.next), inDays(1).getTime(), "next is the soonest target still to go out");
+  liveRows = [];
+}
 // Off with nothing picked is allowed, so a disconnected account never blocks switching off.
 assert.equal((await save({ link: "", socialAccountIds: [], on: false })).statusCode, 200);
 assert.deepEqual(stored().socialAccountIds, []);
@@ -291,11 +331,19 @@ for (const status of [403, 404]) {
   const r = (await req("POST", "/clients/c1/drive-source/check", {})).json();
   assert.deepEqual(r, { ok: false, reason: "Drive would not show this folder. Set its sharing to Anyone with the link." }, `Drive ${status}`);
 }
+// The server's key is the problem, not the folder: said so, never "share the folder".
+driveStatus = 403;
+driveBody = JSON.stringify({ error: { message: "Permission denied on the service.", details: [{ reason: "ACCESS_DENIED" }] } });
+const keyBlocked = (await req("POST", "/clients/c1/drive-source/check", {})).json();
+assert.match(keyBlocked.reason, /not allowed to use Google Drive/, "a key problem is named as one");
+driveBody = "{}";
 driveStatus = 500;
 const down = (await req("POST", "/clients/c1/drive-source/check", {})).json();
 assert.equal(down.ok, false);
 assert.ok(down.reason && !/drive-check-key|https?:/.test(down.reason), "plain reason");
 driveStatus = 200;
+
+assert.ok(clearedAlerts.length > 0 && clearedAlerts.every((k) => k === "drive_check:c1"), "off or a restart clears this brand's Drive alert");
 
 await app.close();
 console.log("driveSource.check: all checks passed");

@@ -2,7 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { Prisma, getPrisma } from "@toreroflow/db";
 import {
+  businessDay,
   driveAccountIds,
+  driveAlertKey,
+  DRIVE_DEFAULT_PER_DAY,
   driveUsedToday,
   isDriveId,
   MAX_DRIVE_ACCOUNTS,
@@ -12,6 +15,7 @@ import {
   type DriveSource,
 } from "@toreroflow/core";
 import { DriveError, listFolderVideos } from "@toreroflow/publishers";
+import { clearAlert } from "../alerts/alerts";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
 
@@ -46,12 +50,12 @@ const saveBody = z.object({
   graduation: z.enum(["MANUAL", "SS_PERFORMANCE"]),
   mode: z.enum(["dryrun", "live"]),
   on: z.boolean(),
-  /** Null is no limit. Left out (apps from before the limit) keeps the saved one. */
+  /** Null is DRIVE_DEFAULT_PER_DAY. Left out (apps from before the limit) keeps the saved one. */
   dailyLimit: z
     .number()
-    .int("Videos per day must be a whole number.")
-    .min(1, "Videos per day must be at least 1, or empty for no limit.")
-    .max(MAX_DRIVE_DAILY, `Videos per day can be at most ${MAX_DRIVE_DAILY}.`)
+    .int("Trial reels per day must be a whole number.")
+    .min(1, `Trial reels per day must be at least 1, or empty for ${DRIVE_DEFAULT_PER_DAY} a day.`)
+    .max(MAX_DRIVE_DAILY, `Trial reels per day can be at most ${MAX_DRIVE_DAILY}.`)
     .nullable()
     .optional(),
 });
@@ -97,11 +101,29 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
       }),
       prisma.driveImport.groupBy({ by: ["status"], where: { clientId, status: { in: ["scheduled", "dryrun"] } }, _count: true }),
     ]);
+    // Every target of the Live Drive posts from two days back on, counted per post as the worker counts them.
+    const live = await prisma.$queryRaw<Array<{ postId: string; at: Date; pending: boolean }>>`
+      SELECT DISTINCT t."postId" AS "postId", t."scheduledAt" AS at,
+        (t."status" = 'scheduled' AND t."scheduledAt" > NOW()) AS pending
+      FROM "PostTarget" t JOIN "DriveImport" d ON d."postId" = t."postId"
+      WHERE d."clientId" = ${clientId} AND t."scheduledAt" >= ${new Date(Date.now() - 48 * 3600_000)}`;
+    const now = new Date();
+    const tz = env.BUSINESS_TIMEZONE;
+    const pendingRows = live.filter((r) => r.pending);
+    const pending = pendingRows.map((r) => r.at.getTime());
     const total = (status: string) => totals.find((t) => t.status === status)?._count ?? 0;
     const counts = {
-      today: driveUsedToday(recent, { now: new Date(), timeZone: env.BUSINESS_TIMEZONE, mode: settings.mode }),
+      // Live: trial reels set for today on the calendar. A dry run has no calendar, so what it took today.
+      today:
+        settings.mode === "live"
+          ? new Set(live.filter((r) => businessDay(r.at, tz) === businessDay(now, tz)).map((r) => r.postId)).size
+          : driveUsedToday(recent, { now, timeZone: tz, mode: settings.mode }),
       posted: total("scheduled"),
       dryRuns: total("dryrun"),
+      /** Live trial reels on the calendar still to go out. */
+      ahead: new Set(pendingRows.map((r) => r.postId)).size,
+      /** ISO, the soonest of them; null when none. */
+      next: pending.length ? new Date(Math.min(...pending)).toISOString() : null,
     };
     const legacy = legacyAccountId(settings.socialAccountIds, new Set(accounts.map((a) => a.id)));
     // socialAccountId is for apps still installed from before the list. Shown only, never stored.
@@ -166,8 +188,11 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
         );
     }
 
-    // Switching on or changing folder starts the clock: files already in the folder never post.
+    // Started, started again, or a new folder: linkedAt is now, so the card says Starting until
+    // a check runs. Nothing is lost by it: every video in the folder not posted yet still
+    // posts, oldest first, and ones already taken are never taken twice.
     const restart = (b.on && (!prev.on || !prev.linkedAt)) || folderId !== prev.folderId;
+    const fresh = restart;
     const next: DriveSource = {
       ...prev,
       ...b,
@@ -175,10 +200,15 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
       folderId,
       dailyLimit: dailyLimit === undefined ? prev.dailyLimit : dailyLimit,
       linkedAt: restart ? new Date().toISOString() : prev.linkedAt,
-      // A restart (new folder, or switched back on) drops what was waiting, and off counts nothing.
-      waiting: restart || !b.on ? null : prev.waiting,
+      // A new folder, or starting again, drops what was waiting, and stopped counts nothing.
+      waiting: fresh || !b.on ? null : prev.waiting,
+      lastCheckAt: fresh ? null : prev.lastCheckAt,
+      lastResult: fresh ? null : prev.lastResult,
+      lastOk: fresh ? null : prev.lastOk,
     };
     await prisma.client.update({ where: { id: client.id }, data: { driveSource: next as unknown as Prisma.InputJsonValue } });
+    // Stopped, or a new start, drops the old failure; the next check raises it again if it still applies.
+    if (!next.on || fresh) await clearAlert(prisma, request.user.agencyId, driveAlertKey(client.id));
     return view(client.id, next);
   });
 
@@ -196,7 +226,8 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, videos: files.length, sample: files.slice(0, 5).map((f) => f.name) };
     } catch (e) {
       if (!(e instanceof DriveError)) throw e;
-      return { ok: false, reason: e.status === 403 || e.status === 404 ? NOT_SHOWN : e.message };
+      // A problem with the server's key says so; only the folder's own refusals ask about sharing.
+      return { ok: false, reason: !e.keyProblem && (e.status === 403 || e.status === 404) ? NOT_SHOWN : e.message };
     }
   });
 }

@@ -8,8 +8,12 @@ import {
   composeCaption,
   decideDriveAction,
   decodeEscapes,
+  DRIVE_AHEAD_DAYS,
+  driveAlertKey,
+  drivePerDay,
   driveUsedToday,
   instagramVideoError,
+  nextDriveSlot,
   pickDriveFiles,
   PLATFORM_MAX_UPLOAD_BYTES,
   readCaptionReply,
@@ -90,7 +94,7 @@ export function trialReelPlan(input: {
  * not, or one bad file would block the folder, since the oldest goes first.
  */
 export const downloadRetries = (e: unknown) =>
-  !(e instanceof DriveError) || e.status === 0 || e.status === 429 || e.status >= 500;
+  !(e instanceof DriveError) || e.keyProblem || e.status === 0 || e.status === 429 || e.status >= 500;
 
 /**
  * Whether a transcription error is the service's passing trouble, tried again
@@ -159,6 +163,9 @@ const BY_HAND = {
 /** A caption problem that more checks will not fix, so the video is held instead of retried. */
 class Held extends Error {}
 
+/** A save landed mid-check: nothing was written, and the next check uses the new settings. Not a failure. */
+const MOVED = "moved";
+
 let running = false;
 
 /** Every linked folder, once. A tick that lands while one is running does nothing. */
@@ -180,18 +187,32 @@ export async function driveAll(): Promise<void> {
       },
     });
     for (const c of clients) {
-      if (!readDriveSource(c.driveSource).on) continue;
+      const s0 = readDriveSource(c.driveSource);
+      if (!s0.on) {
+        // Stopped: no failure to show. Also catches one a check still running at Save raised after it.
+        await prisma.systemAlert.deleteMany({ where: { agencyId: c.agencyId, key: driveAlertKey(c.id) } });
+        continue;
+      }
       const notes: string[] = [];
+      const errors: string[] = [];
       for (const pass of [ingestNext, advance]) {
         try {
           notes.push(await pass(c));
         } catch (e) {
           notes.push(plain(e));
+          errors.push(plain(e));
           console.error(`[drive] client ${c.id}: ${plain(e)}`);
         }
       }
+      // Stopped, restarted or given a new folder during this check: its result belongs to the old run.
+      const s1 = await settingsNow(c.id);
+      if (!s1.on || s1.linkedAt !== s0.linkedAt) continue;
       const lastResult = (notes.filter(Boolean).join(" ") || "Nothing to do.").slice(0, 500);
-      await patchSource(c.id, { lastCheckAt: new Date().toISOString(), lastResult });
+      await patchSource(c.id, { lastCheckAt: new Date().toISOString(), lastResult, lastOk: !errors.length });
+      // A single failed check shows on the card; the app-wide alert waits for a second in a row, so a blip never flaps it.
+      await driveAlert(c, errors.length && s0.lastOk === false ? errors.join(" ") : errors.length ? null : "").catch((e) =>
+        console.error(`[drive] alert for client ${c.id}: ${plain(e)}`),
+      );
     }
   } finally {
     running = false;
@@ -203,10 +224,55 @@ export async function driveAll(): Promise<void> {
  * stored settings in one statement, so an operator's save that lands
  * mid-check is never written back over.
  */
-async function patchSource(clientId: string, fields: Partial<Pick<DriveSource, "lastCheckAt" | "lastResult" | "waiting">>): Promise<void> {
+async function patchSource(
+  clientId: string,
+  fields: Partial<Pick<DriveSource, "lastCheckAt" | "lastResult" | "waiting" | "lastOk">>,
+): Promise<void> {
   const patch = JSON.stringify(fields);
   await prisma.$executeRaw`UPDATE "Client" SET "driveSource" = "driveSource" || ${patch}::jsonb
     WHERE "id" = ${clientId} AND jsonb_typeof("driveSource") = 'object'`;
+}
+
+/**
+ * The app-wide problem while a client's checks keep failing, gone after one
+ * that works. failure: "" worked, null leave it as it is. A repeat does not
+ * un-dismiss it, since this runs every few minutes: a dismissed one comes back
+ * only once it has worked and then broken again.
+ */
+async function driveAlert(c: DriveClient, failure: string | null): Promise<void> {
+  if (failure === null) return;
+  const key = driveAlertKey(c.id);
+  // Read now, not at the check's start: stopped during a long check means nothing to raise.
+  const s = await settingsNow(c.id);
+  if (!failure || !s.on) {
+    await prisma.systemAlert.deleteMany({ where: { agencyId: c.agencyId, key } });
+    return;
+  }
+  const severity = s.mode === "live" ? "error" : "warning";
+  const detail = failure.slice(0, 500);
+  await prisma.systemAlert.upsert({
+    where: { agencyId_key: { agencyId: c.agencyId, key } },
+    create: {
+      agencyId: c.agencyId,
+      key,
+      kind: "drive_check",
+      severity,
+      clientId: c.id,
+      message: "Drive auto-post is not working. Open Workflows to see why.",
+      detail,
+    },
+    update: { severity, detail, lastSeenAt: new Date(), count: { increment: 1 } },
+  });
+}
+
+/** Live Drive posts still to go out, plus videos on their way to becoming one. */
+async function driveAhead(clientId: string): Promise<number> {
+  const [row] = await prisma.$queryRaw<Array<{ n: bigint }>>`
+    SELECT COUNT(DISTINCT t."postId") AS n FROM "PostTarget" t
+    JOIN "DriveImport" d ON d."postId" = t."postId"
+    WHERE d."clientId" = ${clientId} AND t."status" = 'scheduled' AND t."scheduledAt" > NOW()`;
+  const inFlight = await prisma.driveImport.count({ where: { clientId, status: { in: ["claimed", "downloaded"] } } });
+  return Number(row?.n ?? 0) + inFlight;
 }
 
 /** A claim whose download never finished (the worker died mid-file) fails, and its empty upload goes. */
@@ -241,8 +307,17 @@ async function ingestNext(c: DriveClient): Promise<string> {
     return `${files.length} videos in the folder, nothing new.`;
   }
 
-  // The operator's daily limit: past it, new videos wait in the folder for tomorrow.
-  if (s.dailyLimit) {
+  // Live lays videos out on the calendar ahead, perDay a day. Past DRIVE_AHEAD_DAYS of
+  // them, new ones wait in the folder, so downloads never run far ahead of posting.
+  if (s.mode === "live") {
+    const ahead = await driveAhead(c.id);
+    const cap = drivePerDay(s) * DRIVE_AHEAD_DAYS;
+    if (ahead >= cap) {
+      await patchSource(c.id, { waiting: fresh.length });
+      return `${ahead} trial reels are scheduled ahead, ${DRIVE_AHEAD_DAYS} days of them. ${fresh.length} ${fresh.length === 1 ? "video waits" : "videos wait"} in the folder.`;
+    }
+  } else if (s.dailyLimit) {
+    // A dry run has no calendar: past the daily limit, new videos wait for tomorrow.
     const recent = await prisma.driveImport.findMany({
       // Two days back covers today in any timezone; the business day is decided in code.
       where: { clientId: c.id, createdAt: { gte: new Date(Date.now() - 48 * 3600_000) } },
@@ -262,7 +337,15 @@ async function ingestNext(c: DriveClient): Promise<string> {
   let row: DriveImport;
   try {
     row = await prisma.driveImport.create({
-      data: { clientId: c.id, fileId: file.id, name: file.name.slice(0, 300), status: tooLarge ? "skipped" : "claimed", reason: tooLarge },
+      data: {
+        clientId: c.id,
+        fileId: file.id,
+        name: file.name.slice(0, 300),
+        status: tooLarge ? "skipped" : "claimed",
+        reason: tooLarge,
+        // Which folder it came from, so a video taken just before a folder change never posts.
+        detail: { folderId: s.folderId },
+      },
     });
   } catch (e) {
     // Claimed already, by an earlier check or another process: the row is theirs.
@@ -320,13 +403,19 @@ async function advance(c: DriveClient): Promise<string> {
     try {
       const status = await advanceOne(c, row);
       tally.set(status, (tally.get(status) ?? 0) + 1);
+      // Oldest first, strictly: nothing newer is scheduled while an older one is still on its way.
+      // ponytail: a video stuck processing holds the line; it fails on its own if the media job fails.
+      if (status === "processing") break;
     } catch (e) {
-      // Left as downloaded, so the next check tries it again.
+      // Left as downloaded, so the next check tries it again, still ahead of the newer ones.
       errors.push(plain(e));
       console.error(`[drive] import ${row.id}: ${plain(e)}`);
+      break;
     }
   }
-  const line = [[...tally].map(([status, n]) => `${n} ${status}`).join(", "), ...errors].filter(Boolean).join(". ");
+  const line = [[...tally].map(([status, n]) => `${n} ${status}`).join(", "), ...new Set(errors)].filter(Boolean).join(". ");
+  // A video stuck on an error (no caption model, transcription down) is the check not working.
+  if (errors.length) throw new Error(`${line}.`);
   return line && `${line}.`;
 }
 
@@ -348,6 +437,13 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
   // It sits in Uploads while it waits here, so the operator may have scheduled it already.
   if (await prisma.post.count({ where: { mediaAssetId: asset.id, deletedAt: null } })) return settle(row.id, BY_HAND);
   const s = await settingsNow(c.id);
+  const from = (row.detail as { folderId?: unknown } | null)?.folderId;
+  if (typeof from === "string" && from && s.folderId && from !== s.folderId) {
+    return settle(row.id, {
+      kind: "skip",
+      reason: "This video came from a Drive folder this brand no longer uses, so it was not posted. It is still in Uploads.",
+    });
+  }
   const bytes = asset.sourceDeletedAt
     ? null
     : await fs.stat(path.join(env.STORAGE_DIR, asset.storageKey)).then((st) => st.size, () => null);
@@ -376,12 +472,12 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
   if (!eligible.length) {
     return settle(row.id, {
       kind: "hold",
-      reason: `No ticked Instagram account can post (${skipped.join("; ")}), so nothing was posted. Reconnect one or tick another in Settings, then schedule this video by hand from Uploads.`,
+      reason: `No ticked Instagram account can post (${skipped.join("; ")}), so nothing was posted. Reconnect one or tick another in Workflows, then schedule this video by hand from Uploads.`,
     });
   }
   // Posted to the rest, with the ones left out on the row for the operator.
   const partial = skipped.length
-    ? `Not posted to every ticked account: ${skipped.join("; ")}. Reconnect or untick ${skipped.length === 1 ? "it" : "them"} in Settings.`
+    ? `Not posted to every ticked account: ${skipped.join("; ")}. Reconnect or untick ${skipped.length === 1 ? "it" : "them"} in Workflows.`
     : null;
 
   let written: { description: string; hashtags: string[] } | null;
@@ -444,17 +540,37 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
   });
   if (!owner) throw new Error("this agency has no owner user to post as");
 
-  const scheduledAt = new Date();
   // One transaction, so a crash cannot leave a post whose row still reads downloaded and posts again.
-  const targets = await prisma.$transaction(async (tx) => {
+  const made = await prisma.$transaction(async (tx) => {
     // Locking the client row makes a settings save, and a hand schedule (its
-    // Post references this row), wait for this or land before it is read.
+    // Post references this row), wait for this or land before it is read. It
+    // also lets one check at a time pick this client's next slot.
     const [locked] = await tx.$queryRaw<Array<{ driveSource: Prisma.JsonValue }>>`
       SELECT "driveSource" FROM "Client" WHERE "id" = ${c.id} AND "deletedAt" IS NULL FOR UPDATE`;
-    if (settingsMoved(s, readDriveSource(locked?.driveSource))) {
-      throw new Error("the Drive settings were saved during this check, so it was not posted. The next check uses them");
-    }
+    // Nothing written yet; the next check decides on the new settings.
+    if (settingsMoved(s, readDriveSource(locked?.driveSource))) return MOVED;
     if (await tx.post.count({ where: { mediaAssetId: asset.id, deletedAt: null } })) return null;
+    // The next free slot on the calendar, so it can be moved or reworded there before it goes out.
+    // Every target's own time: one dragged on its own still holds its slot.
+    const taken = await tx.$queryRaw<Array<{ postId: string; at: Date }>>`
+      SELECT DISTINCT t."postId" AS "postId", t."scheduledAt" AS at FROM "PostTarget" t
+      JOIN "DriveImport" d ON d."postId" = t."postId"
+      WHERE d."clientId" = ${c.id} AND t."scheduledAt" >= ${new Date(Date.now() - 24 * 3_600_000)}`;
+    // The newest Drive post's time: this video, newer in the folder, goes after it.
+    const [last] = await tx.$queryRaw<Array<{ at: Date | null }>>`
+      SELECT MIN(t."scheduledAt") AS at FROM "PostTarget" t
+      WHERE t."postId" = (
+        SELECT p."id" FROM "Post" p JOIN "DriveImport" d ON d."postId" = p."id"
+        WHERE d."clientId" = ${c.id} ORDER BY p."createdAt" DESC LIMIT 1
+      )`;
+    const scheduledAt = nextDriveSlot({
+      now: new Date(),
+      timeZone: env.BUSINESS_TIMEZONE,
+      // The limit as saved now; a change to it alone does not stop this check.
+      perDay: drivePerDay(readDriveSource(locked?.driveSource)),
+      taken,
+      after: last?.at ?? null,
+    });
     const post = await tx.post.create({
       data: {
         clientId: c.id,
@@ -481,18 +597,21 @@ async function advanceOne(c: DriveClient, row: DriveImport): Promise<string> {
       data: { status: "scheduled", reason: partial, postId: post.id },
     });
     if (!moved.count) throw new Error("this import was moved on by another check");
-    return post.targets;
+    return { targets: post.targets, scheduledAt };
   });
-  if (!targets) return settle(row.id, BY_HAND);
+  if (made === MOVED) return "processing";
+  if (!made) return settle(row.id, BY_HAND);
   // As the schedule route queues them: each keyed on its own target so nothing can queue one twice.
-  for (const target of targets) {
+  for (const target of made.targets) {
     await enqueue(
       "publish",
       { targetId: target.id },
-      { key: target.id, startAfter: scheduledAt, retryLimit: 3, retryDelaySeconds: 30, retryBackoff: true },
+      { key: target.id, startAfter: made.scheduledAt, retryLimit: 3, retryDelaySeconds: 30, retryBackoff: true },
     );
   }
-  console.log(`[drive] import ${row.id} scheduled as targets ${targets.map((t) => t.id).join(", ")}`);
+  console.log(
+    `[drive] import ${row.id} scheduled for ${made.scheduledAt.toISOString()} as targets ${made.targets.map((t) => t.id).join(", ")}`,
+  );
   return "scheduled";
 }
 

@@ -532,6 +532,16 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { scheduledAt: "asc" },
         include: { post: { include: { mediaAsset: true } } },
       });
+      // Posts the Drive auto-post made (Workflows). Only its import rows point at a
+      // post, so this marks every one, including those from before the flag existed.
+      const fromDrive = new Set(
+        (
+          await prisma.driveImport.findMany({
+            where: { clientId: client.id, postId: { in: [...new Set(targets.map((t) => t.postId))] } },
+            select: { postId: true },
+          })
+        ).map((r) => r.postId),
+      );
       return targets.map((t) => ({
         id: t.id,
         postId: t.postId,
@@ -622,6 +632,8 @@ export async function postRoutes(app: FastifyInstance): Promise<void> {
             t.post.mediaAsset?.kind !== "carousel"
           );
         })(),
+        // Made by the Drive auto-post. The calendar paints these violet, over the trial teal.
+        drive: fromDrive.has(t.postId),
         // Cleared from the queue card by the operator; still on the calendar.
         queueDismissed: Boolean(
           ((t.options as Record<string, unknown> | null) ?? {}).queueDismissedAt,

@@ -18,6 +18,8 @@ export class DriveError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** The server's key or its Google project is the problem, never the folder or a file. */
+    public keyProblem = false,
   ) {
     super(message);
   }
@@ -31,17 +33,43 @@ export interface DriveOptions {
   timeoutMs?: number;
 }
 
-function reasonFor(status: number): string {
-  if (status === 400 || status === 401) return "Drive refused the API key. Check GOOGLE_DRIVE_API_KEY and that the Drive API is enabled for it.";
-  if (status === 403) return 'Drive refused access. Check the folder is shared as "Anyone with the link".';
-  if (status === 404) return 'Drive could not find it. Check the link, and that it is shared as "Anyone with the link".';
-  if (status === 429) return "Drive is rate limiting this key. The next check will try again.";
-  if (status >= 500) return "Drive had a problem on its side. The next check will try again.";
-  return `Drive answered ${status}.`;
+const KEY_FROM = "The key is GOOGLE_DRIVE_API_KEY on the server, or YOUTUBE_API_KEY when that is empty.";
+const KEY_INVALID = /^(API_KEY_INVALID|API_KEY_EXPIRED|keyInvalid|keyExpired)$/;
+// ACCESS_DENIED is what a key whose Google project cannot use Drive gets ("Permission
+// denied on the service"); a folder that is not shared answers 404 instead.
+const KEY_BLOCKED = /^(ACCESS_DENIED|SERVICE_DISABLED|SERVICE_NOT_VISIBLE|BILLING_DISABLED|CONSUMER_\w+|accessNotConfigured|API_KEY_\w+_BLOCKED)$/;
+const RATE = /^(rateLimitExceeded|userRateLimitExceeded|dailyLimitExceeded|RATE_LIMIT_EXCEEDED)$/;
+
+/** Google's machine reason from an error body, or "". Only this token is kept, never the body. */
+export function googleReason(body: unknown): string {
+  const e = (body as { error?: { details?: Array<{ reason?: unknown }>; errors?: Array<{ reason?: unknown }> } } | null)
+    ?.error;
+  const r = e?.details?.find((d) => typeof d?.reason === "string")?.reason ?? e?.errors?.[0]?.reason;
+  return typeof r === "string" ? r : "";
+}
+
+/** A Drive failure in plain words, told apart by Google's reason so a key problem never reads as sharing. */
+export function driveFailure(status: number, reason: string): DriveError {
+  if (KEY_INVALID.test(reason) || status === 401 || (status === 400 && !reason))
+    return new DriveError(status, `The server's Google API key is not valid. ${KEY_FROM}`, true);
+  if (status === 403 && KEY_BLOCKED.test(reason))
+    return new DriveError(
+      status,
+      `The server's Google API key is not allowed to use Google Drive. Turn on the Google Drive API in the key's Google Cloud project, and if the key is limited to certain APIs, add Drive to it. ${KEY_FROM}`,
+      true,
+    );
+  if (status === 429 || (status === 403 && RATE.test(reason)))
+    return new DriveError(429, "Drive is rate limiting this key. The next check will try again.");
+  if (status === 403) return new DriveError(403, 'Drive refused access. Check the folder is shared as "Anyone with the link".');
+  if (status === 404)
+    return new DriveError(404, 'Drive could not find it. Check the link, and that it is shared as "Anyone with the link".');
+  if (status >= 500) return new DriveError(status, "Drive had a problem on its side. The next check will try again.");
+  return new DriveError(status, `Drive answered ${status}.`);
 }
 
 async function driveGet(url: string, opts: DriveOptions, timeoutMs: number): Promise<Response> {
-  if (!opts.apiKey) throw new DriveError(0, "No Google API key is set (GOOGLE_DRIVE_API_KEY or YOUTUBE_API_KEY), so Drive cannot be read.");
+  if (!opts.apiKey)
+    throw new DriveError(0, "No Google API key is set on the server (GOOGLE_DRIVE_API_KEY, or YOUTUBE_API_KEY), so Drive cannot be read.", true);
   let res: Response;
   try {
     res = await (opts.fetch ?? fetch)(url, {
@@ -51,10 +79,7 @@ async function driveGet(url: string, opts: DriveOptions, timeoutMs: number): Pro
   } catch (e) {
     throw new DriveError(0, e instanceof Error && e.name === "TimeoutError" ? "Drive did not answer in time." : "Drive could not be reached.");
   }
-  if (!res.ok) {
-    void res.body?.cancel().catch(() => {});
-    throw new DriveError(res.status, reasonFor(res.status));
-  }
+  if (!res.ok) throw driveFailure(res.status, googleReason(await res.json().catch(() => null)));
   return res;
 }
 
