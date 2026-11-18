@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
 import { api, type LabelMap, type ReadyQueue } from "../lib/api";
 import { COLOR_NAME, LABEL_SWATCH } from "../lib/labelColors";
+import { useIsPhone } from "../lib/phone";
 import { clientPath, pathLinkProps } from "../lib/routes";
 import { useAppState } from "../state/AppState";
+import BrandAvatar from "./BrandAvatar";
+import { Ic, PickSheet } from "./analytics/phoneBits";
 
-const COLORS = ["red", "black", "yellow", "green", "orange", "purple", "blue", "sky", "lime", "pink"];
+export const COLORS = ["red", "black", "yellow", "green", "orange", "purple", "blue", "sky", "lime", "pink"];
+
+/** "gray/black" as "Gray or black", for the phone's rows. */
+const colorLabel = (c: string) => {
+  const n = (COLOR_NAME[c] ?? c).replace("/", " or ");
+  return n.charAt(0).toUpperCase() + n.slice(1);
+};
 
 /*
  * Settings › Trello labels. Which card cover color on the Torone Editor
@@ -17,6 +26,9 @@ export default function TrelloLabelCard() {
   const [status, setStatus] = useState<Pick<ReadyQueue, "configured" | "message"> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  /** The color whose client sheet is open (phone). */
+  const [pick, setPick] = useState<string | null>(null);
 
   const load = async () => {
     setMap(await api.get<LabelMap>("/clients/label-map"));
@@ -51,6 +63,99 @@ export default function TrelloLabelCard() {
     } finally {
       setBusy(null);
     }
+  }
+
+  if (isPhone) {
+    // Routed colors first, each group in the desktop's order.
+    const rows = COLORS.map((color) => ({ color, entry: map?.entries.find((e) => e.color === color) ?? null })).sort(
+      (a, b) => Number(!!b.entry) - Number(!!a.entry),
+    );
+    const routed = rows.filter((r) => r.entry).length;
+    const picked = pick ? (rows.find((r) => r.color === pick)?.entry ?? null) : null;
+    return (
+      <>
+        <p className="st-intro">
+          Each card cover color on the Torone Editor Pipeline board sends a card to one client. A label color counts
+          only when the card has no cover. Cards with no color, or a color not listed, are held and never scheduled
+          automatically.
+        </p>
+        {map && (
+          <div className="st-pills">
+            <span className="mb-pill ok">
+              {routed} {routed === 1 ? "color" : "colors"} routed
+            </span>
+            <span className="mb-pill paused">{rows.length - routed} held</span>
+          </div>
+        )}
+        {status && !status.configured && (
+          <div className="mb-banner warn st-ban" role="status" data-testid="trello-not-configured">
+            <Ic name="i-alert" />
+            <span className="mb-bt">
+              <b>Trello is not connected</b>
+              {status.message}
+            </span>
+          </div>
+        )}
+        {error && <p className="mb-err">{error}</p>}
+        <section className="mb-card st-cmap" aria-label="Trello cover color mapping">
+          {rows.map(({ color, entry }) => {
+            const name = colorLabel(color);
+            const text = (
+              <>
+                <b>{name}</b>
+                <small>{entry ? `Ready queue: ${entry.clientName}` : "Held, never scheduled"}</small>
+              </>
+            );
+            const i = entry ? clients.findIndex((c) => c.id === entry.clientId) : -1;
+            return (
+              <div className="st-cm" key={color} data-testid={`label-map-${color}`}>
+                <span className="st-sw" style={{ background: LABEL_SWATCH[color] }} aria-hidden="true" />
+                {entry ? (
+                  <a className="st-cmt" {...pathLinkProps(clientPath(entry.clientSlug))}>
+                    {text}
+                  </a>
+                ) : (
+                  <span className="st-cmt">{text}</span>
+                )}
+                <button
+                  type="button"
+                  className={`st-to${entry ? "" : " held"}`}
+                  aria-haspopup="dialog"
+                  aria-label={`Client for ${name} cover: ${entry ? entry.clientName : "held"}`}
+                  disabled={busy !== null}
+                  onClick={() => setPick(color)}
+                  data-testid={`label-map-${color}-client`}
+                >
+                  {entry && i >= 0 && <BrandAvatar client={clients[i]!} index={i} size={26} />}
+                  <span>{busy === color ? "Saving" : entry ? entry.clientName : "Held"}</span>
+                  <Ic name="i-chev" />
+                </button>
+              </div>
+            );
+          })}
+        </section>
+        {pick && (
+          <PickSheet
+            label={`${colorLabel(pick)} cover goes to`}
+            value={picked?.clientId ?? ""}
+            options={[
+              { value: "", label: "Held (no client)", hint: "Never scheduled automatically" },
+              ...clients.map((c, i) => ({
+                value: c.id,
+                label: c.name,
+                lead: <BrandAvatar client={c} index={i} size={32} />,
+              })),
+            ]}
+            onPick={(v) => {
+              // As on desktop, a color leaves a client only by going to another one.
+              if (v && v !== picked?.clientId) void assign(pick, v);
+            }}
+            onClose={() => setPick(null)}
+            testId="settings.trello.pick"
+          />
+        )}
+      </>
+    );
   }
 
   return (
