@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, fileUrl } from "../../lib/api";
+import { useIsPhone } from "../../lib/phone";
 import { useToast } from "../../components/Toasts";
 import Modal from "../../modals/Modal";
-import type { ClipCandidateRow } from "./clipTypes";
+import { mmss, type ClipCandidateRow } from "./clipTypes";
 
 /**
  * Batch render (mock-ups 15 and 16): pick export settings, check each clip's
@@ -26,7 +27,7 @@ const DONE = new Set(["sent", "rendered", "failed", "none"]);
 
 export default function BatchRender({
   clips,
-  send,
+  send: sendAsked,
   proxyUrl,
   onClose,
   onChanged,
@@ -38,6 +39,9 @@ export default function BatchRender({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const isPhone = useIsPhone();
+  // The phone's one Render button carries "send to Uploads" as a switch; the desktop picks it with its button.
+  const [send, setSend] = useState(sendAsked);
   const [stage, setStage] = useState<"setup" | "progress">("setup");
   const [ex, setEx] = useState({ resolution: 1080 as 720 | 1080 | 1440, fps: 30 as 30 | 60, format: "mp4" as "mp4" | "mov" });
   const [copy, setCopy] = useState(() =>
@@ -91,6 +95,7 @@ export default function BatchRender({
       });
       const skipped = r.items.filter((i) => !i.queued);
       if (skipped.length) toast.success(`${skipped.length} not queued: ${skipped[0].error ?? "skipped"}.`);
+      else if (isPhone) toast.success(`Rendering ${ids.length} ${ids.length === 1 ? "clip" : "clips"}. You can close this.`);
       setStage("progress");
       await poll();
     } catch (e) {
@@ -114,6 +119,162 @@ export default function BatchRender({
               : r.status === "failed"
                 ? `Failed: ${r.error ?? "unknown"}`
                 : r.status;
+
+  if (isPhone) {
+    // Phone sheet: the picked clips on top, settings as segmented controls
+    // that fit the width, sending as a switch, one Render button.
+    const proxy = fileUrl(proxyUrl);
+    const segOf = <T extends string | number>(opts: readonly T[], on: T, set: (v: T) => void, text: (v: T) => string) => (
+      <div className="seg mb-lg">
+        {opts.map((o) => (
+          <button key={o} type="button" aria-pressed={on === o} className={on === o ? "on" : ""} onClick={() => set(o)}>
+            {text(o)}
+          </button>
+        ))}
+      </div>
+    );
+    const head = (title: string, sub: string) => (
+      <div className="modal-head">
+        <div className="mb-ttl">
+          <h3>{title}</h3>
+          <p>{sub}</p>
+        </div>
+        <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
+          <svg>
+            <use href="#i-x" />
+          </svg>
+        </button>
+      </div>
+    );
+    if (stage === "progress") {
+      return (
+        <Modal maxWidth={760} onClose={onClose} label="Batch render">
+          {head(
+            `Rendering ${clips.length} ${clips.length === 1 ? "clip" : "clips"}`,
+            allDone
+              ? "Done. Finished files are in each project and, when sent, in Uploads."
+              : `${concurrency ? `${concurrency} at a time. ` : ""}You can close this; renders keep going.`,
+          )}
+          <div className="modal-body mb-bat">
+            <div className="mb-card mb-batlist">
+              {clips.map((c) => {
+                const r = rows.find((x) => x.candidateId === c.id);
+                const pct = !r ? 0 : r.status === "sent" || r.status === "rendered" || r.status === "sending" ? 100 : r.renderPct;
+                return (
+                  <div key={c.id} className="mb-batrow">
+                    <span className="mb-lt">
+                      <b>{copy[c.id]?.title ?? c.title}</b>
+                      <small className={r?.status === "failed" ? "mb-bad" : undefined}>{r ? label(r) : "Queued"}</small>
+                    </span>
+                    {r?.status === "failed" && (
+                      <button type="button" className="mb-btn sm ghost" onClick={() => void start([c.id])}>
+                        Retry
+                      </button>
+                    )}
+                    <span className="mb-prog">
+                      <i style={{ transform: `scaleX(${pct / 100})` }} />
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="modal-foot">
+            <button type="button" className="mb-btn pri" onClick={onClose}>
+              {allDone ? "Close" : "Hide"}
+            </button>
+          </div>
+        </Modal>
+      );
+    }
+    return (
+      <Modal maxWidth={760} onClose={onClose} label="Batch render">
+        {head(`Render ${clips.length} ${clips.length === 1 ? "clip" : "clips"}`, "Each opens with its brand's recipe, then renders. Aspect follows the clip.")}
+        <div className="modal-body mb-bat">
+          <div className="mb-clipsel" aria-label="Clips to render">
+            {clips.map((c) => (
+              <span key={c.id} className="mb-cthumb">
+                {proxy && <video src={`${proxy}#t=${c.ranges[0].start + 0.5}`} preload="metadata" muted playsInline />}
+                <span className="mb-cck" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <use href="#i-check" />
+                  </svg>
+                </span>
+                <span className="mb-cdur">{mmss(c.duration)}</span>
+              </span>
+            ))}
+          </div>
+          <div className="mb-field">
+            <span className="mb-flab">Resolution</span>
+            {segOf([720, 1080, 1440] as const, ex.resolution, (v) => setEx({ ...ex, resolution: v }), (v) => `${v}p`)}
+          </div>
+          <div className="mb-inrow">
+            <div className="mb-field">
+              <span className="mb-flab">Frame rate</span>
+              {segOf([30, 60] as const, ex.fps, (v) => setEx({ ...ex, fps: v }), (v) => `${v} fps`)}
+            </div>
+            <div className="mb-field">
+              <span className="mb-flab">File</span>
+              {segOf(["mp4", "mov"] as const, ex.format, (v) => setEx({ ...ex, format: v }), (v) => v.toUpperCase())}
+            </div>
+          </div>
+          <button type="button" role="switch" aria-checked={send} className="mb-opt" onClick={() => setSend(!send)}>
+            <span className="mb-lt">
+              <b>Send to Uploads when done</b>
+              <small>Rendered clips appear on Upload and Schedule. Nothing posts from here.</small>
+            </span>
+            <span className={`mb-tog${send ? " on" : ""}`} aria-hidden="true" />
+          </button>
+          {send && (
+            // Folded: each clip's title, description and hashtags, checked before they go to Uploads.
+            <details className="mb-fold">
+              <summary>
+                <span className="mb-lt">
+                  <b>Check the copy</b>
+                  <small>What each clip takes to Uploads</small>
+                </span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-chev" />
+                </svg>
+              </summary>
+              {clips.map((c) => {
+                const d = copy[c.id];
+                const set = (k: "title" | "description" | "hashtags", v: string) => setCopy({ ...copy, [c.id]: { ...d, [k]: v } });
+                return (
+                  <div key={c.id} className="mb-card mb-copy">
+                    {editing === c.id ? (
+                      <>
+                        <input className="mb-input" aria-label="Title" value={d.title} maxLength={120} onChange={(e) => set("title", e.target.value)} />
+                        <textarea className="mb-input" aria-label="Description" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} />
+                        <input className="mb-input" aria-label="Hashtags" value={d.hashtags} placeholder="#tags" onChange={(e) => set("hashtags", e.target.value)} />
+                      </>
+                    ) : (
+                      <span className="mb-lt">
+                        <b>{d.title}</b>
+                        <small>{d.description || "No description"}</small>
+                        <small>{d.hashtags.split(/[\s,]+/).filter(Boolean).map((h) => `#${h.replace(/^#/, "")}`).join(" ")}</small>
+                      </span>
+                    )}
+                    <button type="button" className="mb-btn sm ghost" onClick={() => setEditing(editing === c.id ? null : c.id)}>
+                      {editing === c.id ? "Done" : "Edit copy"}
+                    </button>
+                  </div>
+                );
+              })}
+            </details>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="mb-btn ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="mb-btn pri mb-wide" disabled={busy} onClick={() => void start(clips.map((c) => c.id))}>
+            {busy ? "Starting" : `Render ${clips.length} ${clips.length === 1 ? "clip" : "clips"}`}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal maxWidth={760} onClose={onClose} label="Batch render">

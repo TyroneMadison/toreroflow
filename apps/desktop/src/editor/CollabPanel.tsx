@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, API_URL } from "../lib/api";
+import { useIsPhone } from "../lib/phone";
 import { useToast } from "../components/Toasts";
 import Modal from "../modals/Modal";
 import { useEditor } from "./StudioEditor";
 import { setCommentMarkers, type CommentMarker } from "./commentStore";
+import { PhoneMenu, useLongPress } from "./phoneBits";
 
 /**
  * Phase 8 (mock-up 23): timestamped comments with replies and resolve, a
@@ -66,6 +68,11 @@ export default function CollabPanel({ initial = "comments", onClose }: { initial
   const [showResolved, setShowResolved] = useState(false);
   const [links, setLinks] = useState<ReviewLinkRow[] | null>(null);
   const [hours, setHours] = useState(24 * 7);
+  // Phone: which thread's reply box is open, and a comment's long-press menu (Delete).
+  const isPhone = useIsPhone();
+  const [replyOpen, setReplyOpen] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<CommentRow | null>(null);
+  const press = useLongPress<CommentRow>(setMenuFor);
 
   const load = useCallback(async () => {
     try {
@@ -151,6 +158,230 @@ export default function CollabPanel({ initial = "comments", onClose }: { initial
   }
 
   const threads = (data?.threads ?? []).filter((t) => showResolved || !t.resolvedAt);
+
+  if (isPhone) {
+    // Phone sheet: one segmented control, threads that read like a chat with
+    // 44 px Reply and Resolve, Delete on long-press, and the composer pinned
+    // to the bottom with the playhead time as a chip.
+    const when = (iso: string) => {
+      const d = new Date(iso);
+      return d.toDateString() === new Date().toDateString()
+        ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : d.toLocaleDateString([], { month: "short", day: "numeric" });
+    };
+    const share = async (l: ReviewLinkRow) => {
+      const url = appOrigin() + l.url;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: `Review: ${project.name}`, url });
+        } catch {
+          // Closing the share sheet is not an error.
+        }
+      } else {
+        await navigator.clipboard?.writeText(url).catch(() => undefined);
+        toast.success("Review link copied.");
+      }
+    };
+    const client = <span className="mb-pill info nodot">Client</span>;
+    return (
+      <>
+        <Modal maxWidth={560} onClose={onClose} label="Review">
+          <div className="modal-head">
+            <h3>Review</h3>
+            <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
+              <svg>
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="modal-body mb-collab">
+            <div className="seg mb-lg" role="tablist" aria-label="Review">
+              {(["comments", "share", "export"] as Tab[]).map((t) => (
+                <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+                  {t === "comments" ? `Comments${data ? ` ${data.open}` : ""}` : t === "share" ? "Review link" : "Export"}
+                </button>
+              ))}
+            </div>
+
+            {tab === "comments" && (
+              <>
+                <div className="mb-fhead">
+                  <span className="mb-lab">{data?.open ?? 0} open</span>
+                  <button type="button" className="mb-btn text" onClick={() => setShowResolved(!showResolved)}>
+                    {showResolved ? "Hide resolved" : "Show resolved"}
+                  </button>
+                </div>
+                {data && threads.length === 0 && <p className="mb-p muted">No open comments.</p>}
+                {threads.map((t) => (
+                  <div key={t.id} className={`mb-cth${t.resolvedAt ? " done" : ""}`} {...press(t)}>
+                    <div className="mb-thd">
+                      {t.atSec != null && (
+                        <button type="button" className="mb-cts" aria-label={`Jump to ${fmtAt(t.atSec)}`} onClick={() => seek(t.atSec!)}>
+                          {fmtAt(t.atSec)}
+                        </button>
+                      )}
+                      <b>{t.authorName}</b>
+                      {t.authorKind === "client" && client}
+                      <small>{when(t.createdAt)}</small>
+                    </div>
+                    <p>{t.body}</p>
+                    {t.replies.map((r) => (
+                      <div key={r.id} className="mb-creply" {...press(r)}>
+                        <b>{r.authorName}</b>
+                        {r.authorKind === "client" && client} {r.body}
+                      </div>
+                    ))}
+                    {replyOpen === t.id && (
+                      <div className="mb-inrow">
+                        <input
+                          className="mb-input"
+                          aria-label="Reply"
+                          placeholder="Reply"
+                          enterKeyHint="send"
+                          value={reply[t.id] ?? ""}
+                          onChange={(e) => setReply((m) => ({ ...m, [t.id]: e.target.value }))}
+                          onKeyDown={(e) => e.key === "Enter" && void add(t.id)}
+                        />
+                        <button type="button" className="mb-btn pri" disabled={!reply[t.id]?.trim()} onClick={() => void add(t.id)}>
+                          Send
+                        </button>
+                      </div>
+                    )}
+                    <div className="mb-thacts">
+                      <button type="button" className="mb-btn sm ghost" onClick={() => setReplyOpen(replyOpen === t.id ? null : t.id)}>
+                        Reply
+                      </button>
+                      <button type="button" className="mb-btn sm" onClick={() => void resolve(t, !t.resolvedAt)}>
+                        {!t.resolvedAt && (
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-check" />
+                          </svg>
+                        )}
+                        {t.resolvedAt ? "Reopen" : "Resolve"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <p className="mb-note">Tap a timestamp to jump the preview there. Long-press a comment to delete it.</p>
+              </>
+            )}
+
+            {tab === "share" && (
+              <>
+                <p className="mb-p muted">
+                  A read-only page with the last render and the comments. The client can watch and comment, nothing else. Render first so they have something to watch.
+                </p>
+                <div className="mb-field">
+                  <label htmlFor="rl-hours">The link lasts</label>
+                  <select id="rl-hours" className="mb-input" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+                    <option value={24}>1 day</option>
+                    <option value={24 * 7}>7 days</option>
+                    <option value={24 * 30}>30 days</option>
+                  </select>
+                </div>
+                <button type="button" className="mb-btn pri block" onClick={() => void makeLink()}>
+                  New review link
+                </button>
+                {links?.length === 0 && <p className="mb-p muted">No review links yet.</p>}
+                {links && links.length > 0 && (
+                  <div className="mb-card list">
+                    {links.map((l) => {
+                      const dead = !!l.revokedAt || new Date(l.expiresAt) <= new Date();
+                      return (
+                        <div key={l.id} className={`mb-lrow mb-rl${dead ? " dead" : ""}`}>
+                          <span className="mb-lt">
+                            <b>{(appOrigin() + l.url).replace(/^https?:\/\//, "")}</b>
+                            <small>{l.revokedAt ? "Off" : dead ? "Expired" : `Until ${new Date(l.expiresAt).toLocaleDateString()}`}</small>
+                          </span>
+                          {!dead && (
+                            <>
+                              <button type="button" className="mb-ib" aria-label="Share the link" onClick={() => void share(l)}>
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <use href="#i-share" />
+                                </svg>
+                              </button>
+                              <button type="button" className="mb-btn sm text" onClick={() => void revoke(l)}>
+                                Turn off
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {tab === "export" && (
+              <>
+                <p className="mb-p muted">The cut as a timeline for Premiere or Final Cut (relink to your source files), or the captions.</p>
+                <div className="mb-card list">
+                  {(
+                    [
+                      ["premiere", "Premiere XML", "A timeline for Premiere Pro"],
+                      ["fcpxml", "Final Cut FCPXML", "A timeline for Final Cut Pro"],
+                      ["srt", "SRT", "The captions with their timings"],
+                      ["txt", "TXT", "The transcript as plain text"],
+                    ] as const
+                  ).map(([k, label, sub]) => (
+                    <button key={k} type="button" className="mb-lrow" onClick={() => void download(k)}>
+                      <span className="mb-lic n">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-dl" />
+                        </svg>
+                      </span>
+                      <span className="mb-lt">
+                        <b>{label}</b>
+                        <small>{sub}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          {tab === "comments" && (
+            <div className="modal-foot mb-cfoot">
+              <div className="mb-pinrow">
+                <button type="button" className={`mb-chip${pin ? " on" : " out"}`} aria-pressed={pin} onClick={() => setPin(!pin)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-clock" />
+                  </svg>
+                  at {fmtAt(outputTime)}
+                </button>
+                <small>{pin ? "Pinned to the playhead" : "Not pinned to a time"}</small>
+              </div>
+              <div className="mb-inrow">
+                <textarea
+                  className="mb-input"
+                  aria-label="Comment"
+                  rows={1}
+                  maxLength={2000}
+                  placeholder="Leave a note for the team or client"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+                <button type="button" className="mb-ib mb-csend" aria-label="Comment" disabled={!body.trim()} onClick={() => void add()}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-send" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+        </Modal>
+        {menuFor && (
+          <PhoneMenu
+            title={`${menuFor.authorName}: ${menuFor.body}`}
+            onClose={() => setMenuFor(null)}
+            items={[{ label: "Delete comment", danger: true, run: () => void remove(menuFor) }]}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <Modal maxWidth={560} onClose={onClose} label="Review">
       <div className="collab">

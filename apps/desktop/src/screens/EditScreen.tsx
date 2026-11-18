@@ -23,6 +23,15 @@ const AREAS: { id: EditArea; label: string }[] = [
   { id: "assets", label: "Assets" },
 ];
 
+/** The phone head's one line under each area's title (mobile pass). Ideas brings its own masthead. */
+const PHONE_SUB: Record<Exclude<EditArea, "ideas">, (brand: string) => string> = {
+  studio: (b) => `Cut, score and plan videos for ${b}.`,
+  clips: () => "One long video in, the best short clips out.",
+  analyze: () => "Scores the words, the pace and the frames. Never claims platform numbers.",
+  kit: (b) => `Fonts, colors, logo and voice for ${b}.`,
+  assets: () => "Logos, stills, templates and audio the editor can use.",
+};
+
 export default function EditScreen() {
   const { selectedClient } = useAppState();
   // The open area lives in ?area so the phone tab bar can link straight to Ideas.
@@ -39,6 +48,8 @@ export default function EditScreen() {
   const [openAnalysisId, setOpenAnalysisId] = useState<string | null>(null);
   // The clip job being read. Brand-keyed like the two above.
   const [openClipJobId, setOpenClipJobId] = useState<string | null>(null);
+  const deeper =
+    (area === "studio" && !!openProjectId) || (area === "clips" && !!openClipJobId) || (area === "analyze" && !!openAnalysisId);
 
   if (!selectedClient) {
     return (
@@ -68,6 +79,20 @@ export default function EditScreen() {
         </div>
       </div>
       <div className="stage">
+        {/* Phones: one head (eyebrow, the area's title, one line) and the area
+            chips, both gone on a deeper page (editor, clip job, analysis),
+            which brings its own bar. The shared page head is hidden here. */}
+        {isPhone && !deeper && area !== "ideas" && (
+          <header className="mb-head mb-studiohead">
+            <div>
+              <div className="mb-eyebrow">Studio</div>
+              <h1 className="mb-h1">{AREAS.find((a) => a.id === area)!.label}</h1>
+              <p className="mb-sub">{PHONE_SUB[area](selectedClient.name)}</p>
+            </div>
+          </header>
+        )}
+        {/* Ideas has its own tab in the phone tab bar, so no area chips there either. */}
+        {!(isPhone && (deeper || area === "ideas")) && (
         <div className="seg areas" style={{ display: "inline-flex", marginBottom: 16 }}>
           {AREAS.map((a) => (
             <span
@@ -79,6 +104,7 @@ export default function EditScreen() {
             </span>
           ))}
         </div>
+        )}
         {area === "studio" ? (
           openProjectId ? (
             <StudioEditor
@@ -118,20 +144,8 @@ export default function EditScreen() {
             <AnalyzeHome clientId={selectedClient.id} onOpen={setOpenAnalysisId} />
           )
         ) : (
-          <IdeasHome
-            clientId={selectedClient.id}
-            focusSuper={routeArea === "super"}
-            areaSwitch={
-              // Phones: the area chips give way to this dropdown in the masthead line.
-              isPhone ? (
-                <select className="mb-area" aria-label="Studio area" value={area} onChange={(e) => setArea(e.target.value as EditArea)}>
-                  {AREAS.map((a) => (
-                    <option key={a.id} value={a.id}>{a.label}</option>
-                  ))}
-                </select>
-              ) : undefined
-            }
-          />
+          // Phones reach Ideas from its own tab, so no area switch rides in its masthead.
+          <IdeasHome clientId={selectedClient.id} focusSuper={routeArea === "super"} />
         )}
       </div>
     </section>

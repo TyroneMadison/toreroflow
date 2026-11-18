@@ -3,8 +3,10 @@ import type { MediaAssetInfo } from "../../lib/api";
 import { API_URL, ApiError, api, fileUrl, getToken, videoLabel } from "../../lib/api";
 import Select from "../../components/Select";
 import Modal from "../../modals/Modal";
+import { useIsPhone } from "../../lib/phone";
 import { useToast } from "../../components/Toasts";
 import { formatDuration } from "../../lib/video";
+import { PhoneMenu, useLongPress, useUndoDelete } from "../phoneBits";
 import "./AnalyzeHome.css";
 
 /**
@@ -113,6 +115,18 @@ export default function AnalyzeHome({
   const [assets, setAssets] = useState<MediaAssetInfo[] | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Phones: two buttons in place of the drop zone, and a card's long-press menu (Re-analyze, Delete with Undo).
+  const isPhone = useIsPhone();
+  const [menuFor, setMenuFor] = useState<AnalysisRow | null>(null);
+  const press = useLongPress<AnalysisRow>(setMenuFor);
+  const undoable = useUndoDelete(async (id) => {
+    try {
+      await api.del(`/analyses/${id}`);
+      setRows((cur) => cur?.filter((r) => r.id !== id) ?? cur);
+    } catch (err) {
+      toast.fail("Could not delete that analysis", err);
+    }
+  });
 
   const load = useCallback(async () => {
     try {
@@ -208,7 +222,7 @@ export default function AnalyzeHome({
 
   // The API already orders newest first, so the toggle is a reverse rather
   // than a second sort.
-  const shown = (rows ?? []).filter((r) => statusFilter === "all" || r.status === statusFilter);
+  const shown = (rows ?? []).filter((r) => (statusFilter === "all" || r.status === statusFilter) && !undoable.hidden.has(r.id));
   const ordered = newestFirst ? shown : [...shown].reverse();
 
   const pickable = (assets ?? []).filter(
@@ -217,6 +231,47 @@ export default function AnalyzeHome({
 
   return (
     <div className="anz">
+      {isPhone ? (
+        <section className="mb-hero mb-anzhero" aria-label="Analyze a video">
+          <h3>Analyze a video</h3>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="video/*"
+            hidden
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <div className="mb-btnrow">
+            <button type="button" className="mb-btn pri" onClick={() => fileInput.current?.click()}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-upload" />
+              </svg>
+              From Files
+            </button>
+            <button type="button" className="mb-btn" onClick={() => void openPicker()}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-film" />
+              </svg>
+              Pick an upload
+            </button>
+          </div>
+          <p className="mb-help">MP4, MOV or WebM up to 500 MB. Uploads are analyzed where they sit, no second copy.</p>
+          {uploads.map((u) => (
+            <div className="mb-src" key={u.key}>
+              <span className="mb-lt">
+                <b>{u.name}</b>
+                <small>Uploading {Math.round(u.pct * 100)}%</small>
+                <span className="mb-prog">
+                  <i style={{ transform: `scaleX(${u.pct})` }} />
+                </span>
+              </span>
+            </div>
+          ))}
+        </section>
+      ) : (
       <div className="card glass anzhero">
         <h3>Add a video to analyze</h3>
         <div className="sub">
@@ -279,6 +334,7 @@ export default function AnalyzeHome({
           </div>
         ))}
       </div>
+      )}
 
       <div className="kpis k2 anzstats">
         <div className="kpi glass">
@@ -291,6 +347,18 @@ export default function AnalyzeHome({
         </div>
       </div>
 
+      {isPhone ? (
+        // Phone: the filter and one Newest / Oldest toggle share a line.
+        <div className="mb-anzfilters">
+          <Select className="anzstatus" value={statusFilter} options={STATUS_OPTIONS} onChange={setStatusFilter} aria-label="Filter by status" />
+          <button type="button" className="mb-btn sm" aria-label={newestFirst ? "Newest first, tap for oldest first" : "Oldest first, tap for newest first"} onClick={() => setNewestFirst(!newestFirst)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-sort" />
+            </svg>
+            {newestFirst ? "Newest" : "Oldest"}
+          </button>
+        </div>
+      ) : (
       <div className="rowhead anzfilters">
         <Select
           className="anzstatus"
@@ -308,6 +376,7 @@ export default function AnalyzeHome({
           </span>
         </div>
       </div>
+      )}
 
       {rows === null ? (
         <div className="anzgrid stagger">
@@ -333,6 +402,7 @@ export default function AnalyzeHome({
                 key={r.id}
                 onClick={() => ready && onOpen(r.id)}
                 title={ready ? "Open the breakdown" : undefined}
+                {...(isPhone ? press(r) : {})}
               >
                 <div className="anzshot">
                   {thumb ? (
@@ -345,7 +415,7 @@ export default function AnalyzeHome({
                   {r.durationSec != null && (
                     <span className="anzdur">{formatDuration(r.durationSec)}</span>
                   )}
-                  {ready && r.peak != null && <span className="anzpeak">{r.peak}</span>}
+                  {ready && r.peak != null && <span className={`anzpeak${isPhone && r.peak < 70 ? " warn" : ""}`}>{r.peak}</span>}
                 </div>
                 <div className="anzmeta">
                   <b>{r.name}</b>
@@ -377,6 +447,18 @@ export default function AnalyzeHome({
             );
           })}
         </div>
+      )}
+
+      {menuFor && (
+        <PhoneMenu
+          title={menuFor.name}
+          onClose={() => setMenuFor(null)}
+          items={[
+            ...(menuFor.status === "ready" ? [{ label: "Open the breakdown", run: () => onOpen(menuFor.id) }] : []),
+            ...(menuFor.status !== "running" ? [{ label: "Re-analyze", run: () => void retry(menuFor.id) }] : []),
+            { label: "Delete analysis", danger: true, run: () => undoable.del(menuFor.id, menuFor.name) },
+          ]}
+        />
       )}
 
       {pickerOpen && (

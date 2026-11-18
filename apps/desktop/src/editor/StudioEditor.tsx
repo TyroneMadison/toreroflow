@@ -21,7 +21,10 @@ import {
   type EditDoc,
 } from "@toreroflow/core";
 import { api } from "../lib/api";
+import { useIsPhone } from "../lib/phone";
+import { usePhoneBar } from "../lib/phoneBar";
 import { actionFor, loadOverrides, type KeyActionId, type KeyBinding } from "../lib/keymap";
+import { useCommentMarkers } from "./commentStore";
 import { useEditDoc, type SaveState } from "./useEditDoc";
 import KeymapModal from "./KeymapModal";
 import PhonePreview from "./PhonePreview";
@@ -113,6 +116,21 @@ export function useEditor(): EditorCtx {
 }
 
 const STEPS = ["1. Auto cut", "2. Edit", "3. Caption style", "4. Export"];
+/** The phone's progress bar names (mobile pass). */
+const PHONE_STEPS = ["Auto cut", "Edit", "Captions", "Export"];
+
+/** The phone editor's own bar while the project loads or fails: the app bar is hidden. */
+function PhoneBackBar({ onClose }: { onClose: () => void }) {
+  return (
+    <header className="mb-edbar">
+      <button type="button" className="mb-ib ghost" aria-label="Back to Studio" onClick={onClose}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#i-chev-l" />
+        </svg>
+      </button>
+    </header>
+  );
+}
 
 /** What the database calls a project nobody has named. Matches the Prisma default. */
 const UNTITLED = "Untitled project";
@@ -133,6 +151,9 @@ export default function StudioEditor({
   const [pid, setPid] = useState(projectId);
   const [project, setProject] = useState<EditProjectInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Phones: a full-screen tool. The app bar and tab bar go; the editor draws its own bar.
+  const isPhone = useIsPhone();
+  usePhoneBar(isPhone ? { title: project?.name ?? "Project", back: onClose, hide: true } : null);
 
   useEffect(() => {
     let live = true;
@@ -172,6 +193,7 @@ export default function StudioEditor({
   if (!project) {
     return (
       <div className="stu">
+        {isPhone && <PhoneBackBar onClose={onClose} />}
         <div className="card glass">
           <div className="skel" style={{ height: 18, width: 220, marginBottom: 12 }} />
           <div className="skel" style={{ height: 260 }} />
@@ -243,6 +265,10 @@ function LoadedEditor({
   const [copying, setCopying] = useState(false);
   useCommentsLoader(project.id);
   const [copyError, setCopyError] = useState<string | null>(null);
+  // Phone bar: the open comment count on Review, and one menu for the rest.
+  const isPhone = useIsPhone();
+  const openComments = useCommentMarkers().filter((m) => !m.resolved).length;
+  const [menu, setMenu] = useState(false);
 
   /*
    * The project's name, typed here or nowhere.
@@ -549,32 +575,64 @@ function LoadedEditor({
     ],
   );
 
+  // The one name field, in the desktop header or the phone bar.
+  const nameField = {
+    "aria-label": "Project name",
+    value: nameDraft,
+    maxLength: 120,
+    placeholder: "Name this project",
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setNameDraft(e.target.value),
+    onBlur: commitName,
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") e.currentTarget.blur();
+      if (e.key === "Escape") {
+        setNameDraft(project.name === UNTITLED ? "" : project.name);
+        e.currentTarget.blur();
+      }
+    },
+  };
+
   return (
     <EditorContext.Provider value={ctx}>
       <BrandKitProvider value={kit}>
       <div className="stu">
+        {isPhone ? (
+          // Phone bar: Back, the name (tap to rename), Review with its open
+          // comment count, and one menu for Versions, Recipes and the rest.
+          // Keyboard shortcuts have no phone equivalent, so Keys is not here.
+          <header className="mb-edbar">
+            <button type="button" className="mb-ib ghost" aria-label="Back to Studio" onClick={onClose}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-chev-l" />
+              </svg>
+            </button>
+            <input className="mb-edname" enterKeyHint="done" {...nameField} />
+            <button
+              type="button"
+              className="mb-ib ghost"
+              aria-label={`Review and comments${openComments ? `, ${openComments} open` : ""}`}
+              title="Comments, a client review link, and Premiere / Final Cut export"
+              onClick={() => setPanel("review")}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-comment" />
+              </svg>
+              {openComments > 0 && <span className="mb-badge">{openComments}</span>}
+            </button>
+            <button type="button" className="mb-ib ghost" aria-label="Versions, recipes and more" aria-haspopup="dialog" onClick={() => setMenu(true)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-dots-h" />
+              </svg>
+            </button>
+          </header>
+        ) : (
         <div className="stu-top">
           <button className="iconbtn" title="Back to projects" onClick={onClose}>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M15 5l-7 7 7 7" />
             </svg>
           </button>
-          <input
-            className="namein stu-name"
-            aria-label="Project name"
-            value={nameDraft}
-            maxLength={120}
-            placeholder="Name this project"
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-              if (e.key === "Escape") {
-                setNameDraft(project.name === UNTITLED ? "" : project.name);
-                e.currentTarget.blur();
-              }
-            }}
-          />
+          <input className="namein stu-name" {...nameField} />
           <div className="stu-steps">
             {STEPS.map((label, i) => {
               const n = i + 1;
@@ -642,19 +700,124 @@ function LoadedEditor({
             </button>
           </div>
         </div>
+        )}
 
         <div className="stu-body">
+          {isPhone && (
+            // Phones: the four steps as a progress bar, between the preview
+            // (always on top here) and the step itself.
+            <ol className="mb-steps4" aria-label="Steps">
+              {PHONE_STEPS.map((label, i) => {
+                const n = i + 1;
+                const locked = n === 1 && step > 1;
+                return (
+                  <li key={label}>
+                    <button
+                      type="button"
+                      className={n === step ? "on" : n < step ? "done" : undefined}
+                      aria-current={n === step ? "step" : undefined}
+                      disabled={locked}
+                      onClick={() => n !== step && setStep(n)}
+                    >
+                      <i aria-hidden="true" />
+                      {n} {label}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {isPhone && copyError && <p className="mb-err">{copyError}</p>}
           <div className="stu-stepbody">
             {step === 1 && <AutoCutStep />}
             {step === 2 && <EditStep />}
             {step === 3 && <CaptionStep />}
             {step === 4 && <ExportStep />}
           </div>
-          {step !== 1 && (
+          {(step !== 1 || isPhone) && (
             <PhonePreview seekN={seekN} seekTo={seekTo} onClock={setOutputTime} />
           )}
         </div>
       </div>
+      {menu && (
+        // Phone menu: Versions, Recipes, Save copy and the output aspect.
+        <>
+          <div className="mb-scrim top" onClick={() => setMenu(false)} aria-hidden="true" />
+          <div className="mb-sheet top mb-edmenu" role="dialog" aria-modal="true" aria-label="Project menu">
+            <div className="mb-grab" aria-hidden="true" />
+            <div className="mb-sh">
+              <div className="mb-ttl">
+                <h2>{project.name}</h2>
+                <small>{copyError ?? (saveState === "saving" ? "Saving..." : "All changes saved")}</small>
+              </div>
+              <button type="button" className="mb-ib" aria-label="Close" onClick={() => setMenu(false)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-shb">
+              <div className="mb-card list">
+                {(
+                  [
+                    ["versions", "#i-history", "Versions", "Saved versions of this edit"],
+                    ["recipes", "#i-wand", "Recipes", "Apply a saved recipe to this clip"],
+                  ] as const
+                ).map(([id, icon, label, sub]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className="mb-lrow"
+                    onClick={() => {
+                      setMenu(false);
+                      setPanel(id);
+                    }}
+                  >
+                    <span className="mb-lic n">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href={icon} />
+                      </svg>
+                    </span>
+                    <span className="mb-lt">
+                      <b>{label}</b>
+                      <small>{sub}</small>
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  disabled={copying}
+                  onClick={() => {
+                    setMenu(false);
+                    void saveCopy();
+                  }}
+                >
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-copy" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>{copying ? "Copying..." : "Save copy"}</b>
+                    <small>A new project from this edit</small>
+                  </span>
+                </button>
+              </div>
+              <div className="mb-field">
+                <span className="mb-flab">Output aspect, layouts reframe to it</span>
+                <div className="seg">
+                  {ASPECTS.map((a) => (
+                    <button key={a} type="button" aria-pressed={doc.output.aspect === a} className={doc.output.aspect === a ? "on" : ""} onClick={() => update((d) => setAspect(d, a))}>
+                      {a}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
       {panel === "versions" && <VersionsPanel onClose={() => setPanel(null)} />}
       {panel === "review" && <CollabPanel onClose={() => setPanel(null)} />}
       {panel === "recipes" && (

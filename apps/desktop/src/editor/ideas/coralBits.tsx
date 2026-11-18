@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useIsPhone } from "../../lib/phone";
 
 /**
  * Small pieces shared by the Ideas "Coral Edition" screens (approved v3
@@ -102,13 +103,22 @@ export function Masthead({ folio, word1, word2, lede, aside }: { folio: string; 
   const start = new Date(now.getFullYear(), 0, 1);
   const issue = Math.ceil(((now.getTime() - start.getTime()) / 864e5 + start.getDay() + 1) / 7);
   const month = now.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  // Phones: the issue on the left, the month written out in italics on the right.
+  const isPhone = useIsPhone();
   return (
     <header className="co-mast">
       <div className="co-rule" />
+      {isPhone ? (
+        <div className="co-kick">
+          <span className="k1">Ideas · Issue {issue}</span>
+          {aside ?? <span className="k2">{now.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span>}
+        </div>
+      ) : (
       <div className="co-kick">
         <span className="k1">Ideas · Issue {issue} · {month}</span>
         {aside ?? <span className="k2">p. {folio}</span>}
       </div>
+      )}
       <section className="co-hero">
         <div className="co-vlab"><b>Vol. {now.getFullYear() - 2023}</b> · No. {issue}</div>
         <h1 className="co-d">{word1} <span className="co-us">{word2}</span></h1>

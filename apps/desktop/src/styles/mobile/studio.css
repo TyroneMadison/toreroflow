@@ -1,0 +1,337 @@
+/* ============================ Studio and Ideas (phone) ============================
+   Mobile pass, the Studio areas (Edit, Clips, Analyze, Brand kit, Assets), the
+   editor and its sheets, and Ideas. Everything sits inside the one phone query
+   (phone.check.ts); loaded after styles/mobile.css, whose tokens and mb-* parts
+   it builds on. Motion on transform and opacity only (motion.check.ts).
+   ================================================================================ */
+
+@media (max-width:768px){
+  /* ---- one head (ours, per area) and one chip row ---- */
+  .main:has(>.screen[data-screen="edit"][data-state="ready"])>[data-phone-head="edit"],
+  .main>.screen[data-screen="edit"]>.topbar{display:none}
+  .main>.screen[data-screen="edit"]>.stage{padding:0}
+  .mb-studiohead{margin-bottom:16px}
+  .mb-studiohead .mb-sub{margin:4px 0 0}
+
+  /* ---- Ideas: the editorial look at phone size. The numbered tabs are one
+     underlined row (mobile.css draws them as chips); the niche is a summary
+     card with its form in a sheet; the ways to make ideas come ranked. ---- */
+  html[data-theme] .main .ideashome .co-tabs{gap:22px;margin:0 -16px 16px;padding:0 16px;box-shadow:inset 0 -1px 0 var(--mb-hair) !important}
+  html[data-theme] .main .ideashome .co-tabs button{align-items:flex-end;gap:6px;height:auto;min-height:44px;padding:0 0 10px;border-radius:0;
+    background:none !important;color:var(--mb-muted) !important;font-size:15px;font-weight:500}
+  html[data-theme] .main .ideashome .co-tabs .on{background:none !important;color:var(--mb-ink) !important;font-weight:650;box-shadow:inset 0 -3px 0 var(--mb-coral) !important}
+  .ideashome .co-tabs small{font-family:var(--mb-disp);font-style:italic;font-size:12px}
+  .ideashome .co-tabs .on small{color:var(--mb-coral)}
+  .ideashome>.mb-card{margin-bottom:14px}
+  .mb-niche{display:flex;flex-direction:column;gap:10px}
+  .mb-nichet{font-size:16px;font-weight:650;line-height:1.35;color:var(--mb-ink)}
+  .mb-creators{display:flex;align-items:center;gap:16px}
+  .mb-avs{display:flex}
+  .mb-avs>*{margin-right:-8px;border-radius:50%;box-shadow:0 0 0 2px var(--mb-surface)}
+  .mb-creators small{font-size:12px;color:var(--mb-muted)}
+  .mb-make{display:flex;flex-direction:column;gap:12px}
+  .mb-bigact{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .mb-bigact .mb-btn{flex-direction:column;gap:2px;min-height:56px;padding:6px 10px;font-size:14.5px;white-space:normal}
+  .mb-bigact .mb-btn>span{display:inline-flex;align-items:center;gap:6px}
+  .mb-bigact .mb-btn small{font-size:11.5px;font-weight:600;opacity:.75}
+  .mb-make .sgstart small{margin-left:2px;font-size:12px;font-weight:600;color:var(--mb-muted)}
+  .mb-make .mb-lastrun{align-self:center;margin-top:-6px}
+  .mb-fmts{display:flex;flex-wrap:wrap;gap:8px}
+  .mb-fmts .mb-chip{height:36px;font-size:13.5px}
+  .ideashome>.co-ic+.co-ic{margin-top:12px}
+  .ideashome>.mb-sechd{margin:8px 0 12px}
+  /* The niche sheet reuses the desktop form; these make it a phone form. */
+  .overlay .modal-body.mb-nicheform{display:flex;flex-direction:column;gap:14px;padding:0 16px 16px}
+  .mb-nicheform .field-in{width:100%;min-height:48px;padding:12px 14px;border:0;border-radius:var(--mb-r-ctl);background:var(--mb-raised2);color:var(--mb-ink);font-size:16px}
+  .mb-nicheform .creatorlink{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;border-radius:14px;background:var(--mb-raised)}
+  .mb-nicheform .creatorurl{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mb-nicheform .creatornote{flex:1 0 100%;order:3;font-size:12px;color:var(--mb-muted)}
+  .mb-nicheform .sgcap{display:flex;align-items:center;gap:10px}
+  .mb-nicheform .sgcap .field-in{max-width:120px}
+  /* Super generate as a deeper page: the run, then its ideas, then a sticky
+     bar with Pick for me and Super generate again. */
+  html .main .ideashome.coral:has(>.supergen){padding-bottom:0}
+  .supergen{display:flex;flex-direction:column;gap:12px}
+  .supergen .co-row{order:10;position:sticky;bottom:-32px;z-index:5;display:flex;gap:10px;margin:0 -16px -32px;
+    padding:12px 16px calc(12px + var(--mb-safe-b));background:var(--mb-bg);box-shadow:0 -1px 0 var(--mb-hair)}
+  .supergen .co-row>*{flex:1 1 0;justify-content:center;min-height:48px}
+  .supergen .co-row>.ghost{order:-1}
+
+  /* ---- shared bits for these screens ---- */
+  .mb-inrow>.mb-field{flex:1;min-width:0}
+  .mb-opt{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 0;border:0;border-bottom:1px solid var(--mb-hair);border-radius:0;
+    background:none;color:var(--mb-ink);font:inherit;text-align:left;cursor:pointer}
+  .mb-opt .mb-lt b{font-size:15.5px;font-weight:600;white-space:normal}
+  .mb-opt .mb-lt small{white-space:normal}
+  .mb-prog{display:block;height:6px;border-radius:3px;background:var(--mb-raised2);overflow:hidden}
+  .mb-prog>i{display:block;height:100%;border-radius:3px;background:var(--mb-coral);transform-origin:left;transition:transform .4s ease}
+  .mb-fhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .mb-fhead .mb-btn.text{min-height:44px;margin:-10px -8px;font-size:13px}
+  .mb-sechd{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .mb-sechd .mb-h2{font-size:22px}
+  .mb-sechd small{font-size:12px;color:var(--mb-muted)}
+  .mb-hero{display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:var(--mb-r-card);
+    background:linear-gradient(160deg,rgba(250,97,75,.20),rgba(250,97,75,.04) 55%,transparent),var(--mb-surface);box-shadow:inset 0 0 0 1px var(--mb-hair)}
+  .mb-hero h3{margin:4px 0 0;font-size:17px;font-weight:650;line-height:1.3;color:var(--mb-ink)}
+  .mb-menu .mb-sh h2{font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  select.mb-input,.overlay select.mb-input{-webkit-appearance:none;appearance:none;padding-right:40px;text-overflow:ellipsis;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A39C97' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 14px center;background-size:16px}
+  textarea.mb-input{min-height:96px;resize:vertical;line-height:1.45}
+  /* Big segmented controls, and the raised-2 track the mockups give them inside sheets. */
+  html[data-theme] .seg.mb-lg:not(.areas)>*{height:44px;min-height:44px}
+  html[data-theme] .overlay .seg:not(.areas){background:var(--mb-raised2) !important}
+  html[data-theme] .overlay .seg:not(.areas)>:is(.on,[aria-pressed="true"],[aria-selected="true"]){background:var(--mb-sheet2) !important}
+
+  /* ---- sheets: the mockups' body padding; short ones fit their content ---- */
+  .overlay .modal-body:is(.mb-vers,.mb-rcp,.mb-bat){display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}
+  .overlay>.modal:is(:has(>.mb-vers),:has(>.mb-bat)){height:auto;max-height:calc(100dvh - var(--mb-safe-t) - 10px)}
+  .overlay .modal-head>.mb-ttl{flex:1;min-width:0}
+  .modal-foot .mb-btn.mb-wide{flex-grow:1.5}
+
+  /* Versions */
+  .mb-verlist{padding:2px 14px}
+  .mb-ver{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 0;border-bottom:1px solid var(--mb-hair)}
+  .mb-ver:last-child{border-bottom:0}
+  .mb-vn{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:12px;background:var(--mb-raised2);font-size:12.5px;font-weight:800;color:var(--mb-muted)}
+  .mb-ver.cur .mb-vn{background:var(--mb-acc-soft);color:var(--mb-acc)}
+  .mb-ver .mb-lt b{font-size:15px;font-weight:650}
+  .mb-ver .mb-lt small{font-size:12.5px}
+  .mb-note{margin:0;text-align:center;font-size:12.5px;color:var(--mb-muted)}
+
+  /* Recipes: an accordion, the open recipe's settings under its name */
+  .mb-rcp{gap:8px}
+  .mb-rc{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:8px 12px;border:0;border-radius:16px;background:var(--mb-raised);
+    color:var(--mb-ink);font:inherit;text-align:left;cursor:pointer}
+  .mb-rc.on{box-shadow:inset 0 0 0 1.5px var(--mb-acc-line)}
+  .mb-rc .mb-lt b{font-size:15px;font-weight:650}
+  .mb-rc .mb-lt small{font-size:12.5px}
+  .mb-rc>svg{flex:none;width:18px;height:18px;stroke:var(--mb-muted);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-rcpedit{display:flex;flex-direction:column;gap:12px;margin-bottom:4px}
+  .mb-rcpedit>.mb-lab{margin-top:6px}
+  .mb-swrow{display:flex;align-items:center;gap:10px;min-height:48px;font-size:13px;color:var(--mb-muted)}
+  .mb-swrow input[type=color]{flex:none;width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:none;cursor:pointer;-webkit-appearance:none;appearance:none}
+  .mb-swrow input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+  .mb-swrow input[type=color]::-webkit-color-swatch{border:0;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+  .mb-swrow input[type=color]::-moz-color-swatch{border:0;border-radius:12px}
+  .mb-btn.text.mb-rcpdel{align-self:center;color:var(--c-bad)}
+
+  /* Batch render */
+  .mb-bat>.mb-opt{border-bottom:0}
+  .mb-clipsel{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:2px 16px}
+  .mb-clipsel::-webkit-scrollbar{display:none}
+  .mb-cthumb{position:relative;flex:none;width:64px;height:86px;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#3a2a26,#16121a);box-shadow:inset 0 0 0 1px var(--mb-hair)}
+  .mb-cthumb video{width:100%;height:100%;object-fit:cover}
+  .mb-cthumb::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.55))}
+  .mb-cck{position:absolute;top:5px;right:5px;z-index:2;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--mb-coral);color:var(--mb-oncoral)}
+  .mb-cck svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-cdur{position:absolute;right:5px;bottom:4px;z-index:2;font-size:10.5px;font-weight:700;color:#fff}
+  .mb-fold{display:block}
+  .mb-fold>summary{display:flex;align-items:center;gap:12px;min-height:56px;list-style:none;cursor:pointer}
+  .mb-fold>summary::-webkit-details-marker{display:none}
+  .mb-fold>summary>svg{flex:none;width:18px;height:18px;stroke:var(--mb-muted);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s ease}
+  .mb-fold[open]>summary>svg{transform:rotate(180deg)}
+  .mb-fold .mb-copy{margin-top:8px}
+  .mb-copy{display:flex;flex-direction:column;gap:10px;padding:12px 14px}
+  .mb-copy .mb-lt b,.mb-copy .mb-lt small{white-space:normal}
+  .mb-copy>.mb-btn{align-self:flex-start}
+  .mb-batlist{padding:4px 14px}
+  .mb-batrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 0;border-bottom:1px solid var(--mb-hair)}
+  .mb-batrow:last-child{border-bottom:0}
+  .mb-batrow>.mb-prog{flex:1 0 100%}
+  .mb-batrow .mb-lt small{white-space:normal}
+
+  /* Review: threads that read like a chat, the composer pinned to the bottom */
+  .overlay .modal-body.mb-collab{display:flex;flex-direction:column;gap:10px;padding:0 16px 16px}
+  .mb-cth{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:var(--mb-raised);
+    -webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .mb-cth.done{opacity:.55}
+  .mb-thd{display:flex;align-items:center;gap:8px;min-width:0}
+  .mb-thd b{font-size:14.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mb-thd small{flex:none;margin-left:auto;font-size:12px;color:var(--mb-muted)}
+  .mb-thd .mb-pill,.mb-creply .mb-pill{flex:none;height:20px}
+  .mb-creply .mb-pill{margin-left:6px}
+  .mb-thd .mb-cts{position:relative;flex:none;display:inline-grid;place-items:center;height:26px;min-height:26px;min-width:0;padding:0 8px;border:0;border-radius:8px;
+    background:var(--mb-warn-soft);color:var(--c-warn);font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+  .mb-cts::after{content:"";position:absolute;inset:-9px -4px}
+  .mb-cth>p{margin:0;font-size:14.5px;line-height:1.4;color:var(--mb-ink)}
+  .mb-creply{margin-left:12px;padding:8px 10px;border-radius:12px;background:var(--mb-raised2);font-size:13.5px;line-height:1.4}
+  .mb-thacts{display:flex;gap:8px}
+  .overlay .modal-foot.mb-cfoot{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:8px}
+  .modal-foot.mb-cfoot>*{flex:none}
+  .mb-pinrow{display:flex;align-items:center;gap:8px}
+  .mb-pinrow small{font-size:12px;color:var(--mb-muted)}
+  .mb-pinrow .mb-chip svg{width:16px;height:16px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-cfoot textarea.mb-input{min-height:48px;height:48px;padding-top:13px;resize:none}
+  .mb-cfoot .mb-csend{flex:none;width:48px;height:48px;background:var(--mb-coral);color:var(--mb-oncoral)}
+  .mb-cfoot .mb-csend:disabled{opacity:.4}
+  .mb-rl .mb-lt b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;font-weight:600}
+  .mb-rl.dead{opacity:.55}
+
+  /* ---- Clips: one segmented control, the New clip job card, jobs as rows ---- */
+  html[data-theme] .seg.mb-cliptabs:not(.areas),html[data-theme] .mb-newjob .seg:not(.areas){grid-auto-columns:auto}
+  html[data-theme] .seg.mb-cliptabs:not(.areas)>*{padding:0 4px;font-size:13.5px}
+  html[data-theme] .mb-newjob .seg:not(.areas)>*{padding:0 4px}
+  /* The grid's implicit auto column grew to the widest nowrap title and ran
+     every control off the right edge; a 0-minimum track holds the width. */
+  .clipshome{grid-template-columns:minmax(0,1fr)}
+  .clipshome>.mb-sechd{margin-top:4px}
+  .mb-srcpick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .mb-srcpick>*{position:relative;display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 12px;border:0;border-radius:14px;
+    background:rgba(255,255,255,.06);color:var(--mb-ink);font:inherit;font-size:14.5px;font-weight:650;text-align:left;cursor:pointer}
+  .mb-srcpick svg{flex:none;width:20px;height:20px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-srcpick select{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;cursor:pointer}
+  .mb-srcpick .dis{opacity:.45}
+  .mb-src{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 6px 6px 14px;border-radius:14px;background:rgba(255,255,255,.06)}
+  .mb-jobs{display:flex;flex-direction:column;gap:8px}
+  .mb-job{display:flex;align-items:center;gap:12px;min-height:72px;padding:8px 10px 8px 8px;border-radius:18px;background:var(--mb-surface);
+    box-shadow:inset 0 0 0 1px var(--mb-hair);cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;transition:transform .09s ease}
+  .mb-job:active{transform:scale(.98)}
+  .mb-job.fail{box-shadow:inset 3px 0 0 var(--c-bad),inset 0 0 0 1px var(--mb-hair)}
+  .mb-job .mb-lt{gap:4px}
+  .mb-job .mb-lt b{font-size:15px;font-weight:650}
+  .mb-job .mb-lt small{margin-top:0;font-size:12.5px;white-space:normal}
+  .mb-job .mb-prog{width:140px;max-width:100%}
+  .mb-job .mb-btn.sm{min-height:40px}
+  .mb-jthumb{position:relative;flex:none;width:64px;height:48px;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#3d6fb8,#1d2440 60%,#0f1018);box-shadow:inset 0 0 0 1px var(--mb-hair)}
+  .mb-jthumb video{width:100%;height:100%;object-fit:cover}
+  .mb-score{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;background:var(--mb-ok-soft);color:var(--c-ok);
+    font-family:var(--mb-disp);font-size:16px;font-weight:700}
+  .mb-score.warn{background:var(--mb-warn-soft);color:var(--c-warn)}
+  .mb-pct{flex:none;font-size:12px;color:var(--mb-muted)}
+  .mb-jobskel{height:72px;border-radius:18px}
+  .mb-job .mb-bad{font-weight:inherit}
+
+  /* One clip job: tiles, search, sort and filters, one column of clips, a sticky Render bar */
+  .clipjob{grid-template-columns:minmax(0,1fr)}
+  .mb-cjhead{display:flex;flex-direction:column;gap:12px}
+  .mb-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .mb-stats .mb-tile{min-width:0}
+  .mb-stats small{display:block;font-size:12px;font-weight:600;color:var(--mb-muted)}
+  .mb-stats b{display:block;margin-top:2px;font-family:var(--mb-disp);font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+  .clipjob .cj-body,.clipjob .cj-grid{grid-template-columns:minmax(0,1fr)}
+  .clipjob .cj-card{border:0;border-radius:18px;background:var(--mb-surface);box-shadow:inset 0 0 0 1px var(--mb-hair)}
+  .clipjob .cj-card.sel{box-shadow:inset 0 0 0 1.5px var(--mb-acc-line)}
+  .clipjob .cj-card .top{align-items:center;font-size:12.5px}
+  .clipjob .cj-card .top input[type=checkbox]{width:24px;height:24px;accent-color:var(--mb-coral)}
+  .clipjob .cj-card .t{font-size:15px}
+  .clipjob .cj-card .acts{flex-wrap:wrap}
+  .overlay .cj-detail{width:auto;padding:0 16px 16px;border:0}
+  .overlay .cj-detail .nudges,.overlay .cj-detail .refine{gap:8px}
+  .mb-cjbatch{position:sticky;bottom:-32px;z-index:5;display:flex;align-items:center;gap:8px;margin:0 -16px -32px;
+    padding:12px 16px calc(12px + var(--mb-safe-b));background:var(--mb-bg);box-shadow:0 -1px 0 var(--mb-hair)}
+
+  /* ---- Analyze: two buttons, two tiles, filter and sort on one line, cards two per row ---- */
+  .mb-help{margin:0;font-size:12.5px;line-height:1.4;color:var(--mb-muted)}
+  .mb-anzhero h3{margin:0}
+  .anz .anzstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .anz .anzstats .kpi{min-width:0;padding:12px 14px;border:0;border-radius:var(--mb-r-tile);background:var(--mb-raised) !important;box-shadow:none !important}
+  .anz .anzstats .lab{font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--mb-muted)}
+  .anz .anzstats .val{font-family:var(--mb-disp);font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .mb-anzfilters{display:flex;align-items:center;gap:8px}
+  .mb-anzfilters .anzstatus{flex:1;min-width:0}
+  .anz .anzgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .anz .anzcard{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .anz .anzpeak{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--mb-ok-soft);color:var(--c-ok);
+    font-family:var(--mb-disp);font-size:16px;letter-spacing:0;text-shadow:none}
+  .anz .anzpeak.warn{background:var(--mb-warn-soft);color:var(--c-warn)}
+
+  /* ---- Studio home: the Repurpose card, projects as rows ---- */
+  .studiohome{display:flex;flex-direction:column;gap:12px;max-width:none}
+  .mb-repo{margin-bottom:24px}
+  .mb-src.mb-srcrow{position:relative;min-height:64px;padding:8px 8px 8px 8px;cursor:pointer}
+  .mb-srcrow select{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;cursor:pointer}
+  .mb-srcrow>svg{flex:none;width:18px;height:18px;stroke:var(--mb-muted);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-sthumb{flex:none;width:72px;height:44px;border-radius:10px;overflow:hidden;background:linear-gradient(160deg,#3d6fb8,#1d2440 60%,#0f1018)}
+  .mb-sthumb img{width:100%;height:100%;object-fit:cover}
+  .mb-srcskel{height:64px;border-radius:16px}
+  .mb-src .mb-lt b{font-size:15px;font-weight:650}
+  .mb-src .mb-lt small{font-size:12.5px}
+  .mb-projs{display:flex;flex-direction:column;gap:8px}
+  .mb-proj{display:flex;align-items:center;gap:12px;width:100%;min-height:72px;padding:8px 6px 8px 8px;border:0;border-radius:18px;background:var(--mb-surface);
+    box-shadow:inset 0 0 0 1px var(--mb-hair);color:var(--mb-ink);font:inherit;text-align:left;cursor:pointer;
+    -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;transition:transform .09s ease}
+  .mb-proj:active{transform:scale(.98)}
+  .mb-proj .mb-lt{gap:3px}
+  .mb-proj .mb-lt b{font-size:15.5px;font-weight:650}
+  .mb-proj .mb-lt small{margin-top:0;font-size:12.5px}
+  .mb-pthumb{position:relative;flex:none;width:44px;height:58px;border-radius:10px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--mb-hair)}
+  .mb-pthumb>span{position:absolute;right:5px;bottom:4px;font-size:10.5px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .mb-stepdots{display:flex;gap:3px}
+  .mb-stepdots i{width:16px;height:4px;border-radius:2px;background:var(--mb-raised2)}
+  .mb-stepdots i.on{background:var(--c-ok)}
+  .mb-proj .mb-chev{flex:none;width:18px;height:18px;stroke:var(--mb-muted);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .mb-more{align-self:center}
+
+  /* ---- the editor: full screen (no app bar, no tab bar), its own bar ---- */
+  .stu{animation:mb-stupush .26s var(--mb-ease)}
+  @keyframes mb-stupush{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+  .main:has(.mb-edbar)>:not(.screen){display:none}
+  .mb-edbar{position:sticky;top:-4px;z-index:20;display:flex;align-items:center;gap:2px;margin:-4px -16px 0;
+    padding:calc(4px + var(--mb-safe-t)) 10px 8px;background:var(--mb-bg);box-shadow:0 1px 0 var(--mb-hair)}
+  .mb-edname{flex:1;min-width:0;height:44px;padding:0 6px;border:0;border-radius:12px;background:none;color:var(--mb-ink);
+    font:inherit;font-size:16px;font-weight:650;text-align:center;text-overflow:ellipsis;outline:none}
+  .mb-edname:focus{background:var(--mb-raised)}
+  .mb-edname::placeholder{color:var(--mb-faint)}
+  .mb-menu .mb-sh h2,.mb-edmenu .mb-sh h2{font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mb-edmenu .mb-shb{gap:14px}
+  .stu{gap:12px}
+  .stu-body{flex-direction:column;align-items:stretch;gap:12px}
+  .stu-body>.pv{order:-2}
+  .stu-body>.mb-steps4,.stu-body>.mb-err{order:-1}
+  .mb-steps4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:0;padding:0;list-style:none}
+  .mb-steps4 button{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:6px;width:100%;min-height:44px;padding:0;border:0;
+    background:none;color:var(--mb-muted);font:inherit;font-size:12.5px;font-weight:700;text-align:left;white-space:nowrap;cursor:pointer}
+  .mb-steps4 i{display:block;width:100%;height:4px;border-radius:2px;background:var(--mb-raised2)}
+  .mb-steps4 .on,.mb-steps4 .done{color:var(--mb-ink)}
+  .mb-steps4 .on i{background:var(--mb-coral)}
+  .mb-steps4 .done i{background:var(--c-ok)}
+  .mb-steps4 button:disabled{opacity:1;cursor:default}
+
+  /* The preview on top: the 300 px stage drawn at 62% (9:16 is 186 x 330),
+     play and the time first, then undo, redo and the rest, then the scrubber. */
+  .stu .pv{position:static;width:100%}
+  .stu .pv-frame{display:grid;grid-template-columns:auto minmax(0,1fr) repeat(4,auto);align-items:center;gap:0 2px;width:auto;padding:0;border:0;border-radius:0;
+    background:none !important;box-shadow:none !important}
+  .stu .pv-screen{grid-column:1/-1;justify-self:center;zoom:.62;border-radius:20px}
+  .stu .pv-notch,.stu .pv-home{display:none}
+  .stu .pv-transport{display:contents}
+  .stu .pv-transport>*{order:3}
+  .stu .pv-transport .iconbtn{width:44px;height:44px;border:0;border-radius:var(--mb-r-ctl);background:none;box-shadow:none;color:var(--mb-ink)}
+  .stu .pv-transport .iconbtn svg{width:22px;height:22px}
+  .stu .pv-transport .pv-play{order:1;margin-top:8px;background:var(--mb-ink);color:var(--mb-bg)}
+  .stu .pv-play svg{stroke:var(--mb-bg)}
+  .stu .pv-transport>*:not(.pv-play){margin-top:8px}
+  .stu .pv-time{order:2;align-self:center;margin:8px 0 0 6px;padding:0;border:0;background:none;box-shadow:none;font-size:13px;color:var(--mb-muted);font-variant-numeric:tabular-nums}
+  .stu .pv-scrub{order:4;grid-column:1/-1;padding:12px 4px 4px}
+  .stu .pv-scrub-trough{height:6px}
+  .stu .pv-scrub-dot{width:18px;height:18px}
+
+  /* Step 1 (auto cut): clips as a numbered strip, the options card, a sticky footer. */
+  .acs{gap:14px}
+  .acs .acs-head h3{font-size:17px;font-weight:650}
+  .acs .acs-head .sub{font-size:14px;line-height:1.45;color:var(--mb-muted)}
+  .acs .acs-cards{gap:10px;margin:0 -16px;padding:2px 16px 4px;scrollbar-width:none}
+  .acs .acs-cards::-webkit-scrollbar{display:none}
+  .mb-acsclip{flex:none;display:flex;flex-direction:column;gap:6px;width:96px;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .mb-acsclip .acs-strip{height:128px;border-radius:14px;background-color:var(--mb-raised)}
+  .mb-acsclip small{font-size:11.5px;color:var(--mb-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mb-acsn{position:absolute;top:6px;left:6px;display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:rgba(0,0,0,.55);font-size:11px;font-weight:800;color:#fff}
+  .mb-acsclip .acs-dur{top:auto;right:6px;bottom:6px;padding:0;background:none;font-size:11px;color:#fff}
+  .mb-acsadd{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:96px;height:128px;border:0;border-radius:14px;
+    outline:1.5px dashed rgba(255,255,255,.2);outline-offset:-1.5px;background:none;color:var(--mb-muted);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+  .mb-acsadd svg{width:22px;height:22px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round}
+  .acs .acs-auto{padding:12px 14px;border:0;border-radius:var(--mb-r-card);background:var(--mb-surface);box-shadow:inset 0 0 0 1px var(--mb-hair);backdrop-filter:none;-webkit-backdrop-filter:none}
+  .acs .acs-auto h3{font-size:15px;font-weight:650}
+  .acs .acs-chips{margin:10px 0 8px}
+  .acs .acs-toggle{display:inline-flex;align-items:center;padding:0 16px;border:0;border-radius:999px;background:var(--mb-raised);color:var(--mb-ink);font-size:14.5px;font-weight:600}
+  .acs .acs-toggle.on{background:var(--mb-ink);color:var(--mb-bg)}
+  .acs .acs-auto .sub{font-size:12.5px;line-height:1.4;color:var(--mb-muted)}
+  .acs .acs-actions{position:sticky;bottom:-32px;z-index:5;margin:2px -16px -32px;padding:12px 16px calc(12px + var(--mb-safe-b));
+    background:var(--mb-bg);box-shadow:0 -1px 0 var(--mb-hair)}
+  /* liquid.css paints every .btn with !important; these two are the mockup's raised and coral buttons. */
+  .acs .acs-actions .btn{justify-content:center;min-height:48px;padding:0 18px;border:0 !important;border-radius:var(--mb-r-ctl);background:var(--mb-raised) !important;
+    color:var(--mb-ink) !important;font-size:15.5px;font-weight:650;box-shadow:none !important}
+  .acs .acs-actions .acs-continue{flex:1.4;background:var(--mb-coral) !important;color:var(--mb-oncoral) !important;box-shadow:0 6px 18px rgba(250,97,75,.28) !important}
+  .acs .acs-actions .acs-continue:disabled{opacity:.4}
+}
