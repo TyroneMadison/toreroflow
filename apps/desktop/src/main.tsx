@@ -15,6 +15,8 @@ import "./styles/glass-pages.css";
 import "./styles/solid.css";
 // Phone widths only (lib/phone.ts); loaded last so it wins there and nowhere else.
 import "./styles/mobile.css";
+// Each screen group's phone rules (mobile pass), same phone query, loaded after.
+import.meta.glob("./styles/mobile/*.css", { eager: true });
 
 // Apply persisted theme before first paint to avoid a flash of the wrong theme.
 applyTheme(loadTheme());

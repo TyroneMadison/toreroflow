@@ -38,6 +38,8 @@ import {
 } from "../lib/ideas";
 import { linkProps, navigate } from "../lib/routes";
 import { FAILED_CHANGED, useFailedPosts } from "../lib/failedPosts";
+import { useIsPhone } from "../lib/phone";
+import ThumbPlayer, { mmss, type ThumbPlayerHandle } from "../components/mobile/ThumbPlayer";
 import { openExternal } from "../lib/external";
 import { PLATFORM_LABELS } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
@@ -288,8 +290,23 @@ export function ApprovalsScreen() {
 }
 
 /** The video, comments pinned to moments, and (with a token) Approve or Request changes. */
-function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?: string; onChange?: (d: PublicApproval) => void }) {
+function ApprovalView({
+  data,
+  token,
+  onChange,
+  expires,
+}: {
+  data: PublicApproval;
+  token?: string;
+  onChange?: (d: PublicApproval) => void;
+  /** Phone: the expiry line, shown above the sticky actions. */
+  expires?: string;
+}) {
   const toast = useToast();
+  const isPhone = useIsPhone();
+  const player = useRef<ThumbPlayerHandle>(null);
+  const noteBox = useRef<HTMLTextAreaElement>(null);
+  const [needNote, setNeedNote] = useState(false);
   const ref = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
   const [dur, setDur] = useState(data.video.durationSec ?? 0);
@@ -318,6 +335,101 @@ function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?:
       setBusy(false);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): the thumb-sized player with note markers, notes as
+    // times that jump the video, a note box that follows the playhead, and
+    // Request changes and Approve stuck to the bottom. Request changes asks
+    // for a note first, so the editor knows what to change.
+    const jump = (ms: number | null) => ms != null && player.current?.seek(ms / 1000);
+    return (
+      <div className="id-approve mb-approve">
+        <ThumbPlayer
+          ref={player}
+          src={fileUrl(data.video.url)}
+          label={`Video, ${data.video.name}`}
+          durationHint={data.video.durationSec}
+          markers={pinned.map((c) => ({ at: c.atMs! / 1000 }))}
+          onTime={setAt}
+        />
+        <div className="mb-cardh flat">
+          <span className="mb-lab">
+            {data.comments.length} {data.comments.length === 1 ? "note" : "notes"}
+          </span>
+          {pinned.length > 0 && <small>Tap a time to jump there</small>}
+        </div>
+        <div className="mb-notes">
+          {data.comments.map((c) => (
+            <button key={c.id} type="button" className="mb-cm" onClick={() => jump(c.atMs)} disabled={c.atMs == null}>
+              {c.atMs != null && <span className="mb-ts">{mmss(c.atMs / 1000)}</span>}
+              <p>{c.body}</p>
+            </button>
+          ))}
+          {data.comments.length === 0 && <p className="mb-p muted">No notes yet.</p>}
+        </div>
+        {token && data.status !== "approved" && (
+          <>
+            <div className="mb-field">
+              <label htmlFor="approve-note">Add a note at {mmss(at)}</label>
+              <textarea
+                id="approve-note"
+                ref={noteBox}
+                className="mb-input"
+                rows={3}
+                value={body}
+                maxLength={2000}
+                placeholder="What should change?"
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  setNeedNote(false);
+                }}
+              />
+              {needNote && <div className="mb-err">Add a note first, so the editor knows what to change.</div>}
+            </div>
+            <button type="button" className="mb-btn ghost block" disabled={busy || !body.trim()} onClick={() => void send()}>
+              Add note
+            </button>
+            {expires && <p className="id-note">This link expires {expires}.</p>}
+            <div className="mb-pubacts">
+              <button
+                type="button"
+                className="mb-btn"
+                disabled={busy}
+                onClick={() => {
+                  if (!body.trim()) {
+                    setNeedNote(true);
+                    noteBox.current?.focus();
+                    return;
+                  }
+                  void send("changes_requested");
+                }}
+              >
+                Request changes
+              </button>
+              <button type="button" className="mb-btn pri" disabled={busy} onClick={() => void send("approved")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-check" />
+                </svg>
+                Approve
+              </button>
+            </div>
+          </>
+        )}
+        {data.status === "approved" && (
+          <div className="mb-empty">
+            <span className="mb-ei ok">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-check-circle" />
+              </svg>
+            </span>
+            <h3>Approved. Thank you.</h3>
+            <p>Torerone has your go-ahead and will post it as planned.</p>
+          </div>
+        )}
+        {token && data.status === "changes_requested" && <Note tone="warn">Changes requested. The editor has your notes.</Note>}
+      </div>
+    );
+  }
 
   return (
     <div className="id-approve">
@@ -384,7 +496,48 @@ function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?:
   );
 }
 
-export function PublicShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function PublicShell({
+  title,
+  children,
+  phoneTitle,
+  sub,
+  brand,
+  context,
+  status,
+}: {
+  title: string;
+  children: React.ReactNode;
+  /** Phone only (mobile pass): the shorter title, one line under it, the brand and a status pill. */
+  phoneTitle?: string;
+  sub?: string;
+  brand?: string;
+  /** Replaces "For <brand>" in the phone header, e.g. "Review an edit". */
+  context?: string;
+  status?: React.ReactNode;
+}) {
+  const isPhone = useIsPhone();
+  if (isPhone)
+    return (
+      <main className="id id-public mb-pub">
+        <header className="mb-pubbar">
+          <span className="mb-mk" aria-hidden="true">
+            T
+          </span>
+          <span className="mb-grow">
+            <b>Torerone</b>
+            <small>{context ?? (brand ? `For ${brand}` : null) ? `${context ?? `For ${brand}`} · no account needed` : "No account needed"}</small>
+          </span>
+          {status}
+        </header>
+        <div className="mb-pubbody">
+          <div>
+            <h1 className="mb-h1 pub">{phoneTitle ?? title}</h1>
+            {sub && <p className="mb-sub">{sub}</p>}
+          </div>
+          {children}
+        </div>
+      </main>
+    );
   return (
     <main className="id id-public">
       <header className="id-pubhead">
@@ -398,6 +551,7 @@ export function PublicShell({ title, children }: { title: string; children: Reac
 
 /** /a/:token, opened by the client. */
 export function PublicApprovalPage({ token }: { token: string }) {
+  const isPhone = useIsPhone();
   const [data, setData] = useState<PublicApproval | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -407,9 +561,30 @@ export function PublicApprovalPage({ token }: { token: string }) {
       .catch((err) => setError(err instanceof ApiError && err.status === 404 ? "This link does not exist." : errText(err, "could not open this link")));
   }, [token]);
   return (
-    <PublicShell title={data ? `Review: ${data.video.name}` : "Review a video"}>
-      {error ? <Note tone="bad">{error}</Note> : data ? <ApprovalView data={data} token={token} onChange={setData} /> : <Loading screen="approval" />}
-      {data && <p className="id-note">This link expires {fmtEt(data.expiresAt)}.</p>}
+    <PublicShell
+      title={data ? `Review: ${data.video.name}` : "Review a video"}
+      phoneTitle={data?.video.name.replace(/\.[a-z0-9]{2,4}$/i, "")}
+      sub={data && data.status !== "approved" ? "Watch it, leave notes at any moment, then approve or ask for changes." : undefined}
+      status={
+        data ? (
+          data.status === "approved" ? (
+            <span className="mb-pill ok">Approved</span>
+          ) : data.status === "changes_requested" ? (
+            <span className="mb-pill warn">Changes requested</span>
+          ) : (
+            <span className="mb-pill warn">Waiting for you</span>
+          )
+        ) : null
+      }
+    >
+      {error ? (
+        <Note tone="bad">{error}</Note>
+      ) : data ? (
+        <ApprovalView data={data} token={token} onChange={setData} expires={isPhone && data.status !== "approved" ? fmtEt(data.expiresAt) : undefined} />
+      ) : (
+        <Loading screen="approval" />
+      )}
+      {data && (!isPhone || data.status === "approved") && <p className="id-note">This link expires {fmtEt(data.expiresAt)}.</p>}
     </PublicShell>
   );
 }
@@ -464,6 +639,7 @@ function RequestForm({ token, info, onSent }: { token: string; info: FormInfo; o
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const tooBig = file != null && file.size > info.maxFileBytes;
+  const isPhone = useIsPhone();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -500,6 +676,110 @@ function RequestForm({ token, info, onSent }: { token: string; info: FormInfo; o
       setBusy(false);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): 48px fields with labels above, the right keyboard
+    // for each, the date wheel, one big file button, and Send request stuck
+    // to the bottom; then a Request sent screen.
+    const mb = Math.round(info.maxFileBytes / 1024 / 1024);
+    const due = f.dueDate ? new Date(`${f.dueDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "";
+    if (sent)
+      return (
+        <div className="mb-empty">
+          <span className="mb-ei ok">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-check-circle" />
+            </svg>
+          </span>
+          <h3>Request sent</h3>
+          <p>The editor team has it. You can close this page.</p>
+          <button type="button" className="mb-btn ghost" onClick={() => setSent(false)}>
+            Send another
+          </button>
+        </div>
+      );
+    return (
+      <form className="mb-reqform" onSubmit={(e) => void submit(e)}>
+        <div className="mb-field">
+          <label htmlFor="req-what">
+            What do you need? <span className="mb-req">*</span>
+          </label>
+          <input id="req-what" className="mb-input" required maxLength={2000} value={f.what} onChange={set("what")} placeholder="Walkaround of the new Urus" enterKeyHint="next" />
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-due">Due date</label>
+          <label className="mb-input mb-datebtn">
+            <span className={due ? undefined : "mb-ph"}>{due || "Pick a day"}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-cal" />
+            </svg>
+            <input id="req-due" type="date" value={f.dueDate} onChange={set("dueDate")} aria-label="Due date" />
+          </label>
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-link">Footage link</label>
+          <input
+            id="req-link"
+            className="mb-input"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            pattern="https?://.+"
+            maxLength={2000}
+            value={f.footageUrl}
+            onChange={set("footageUrl")}
+            placeholder="https://drive.google.com/..."
+          />
+          <span className="mb-help">Paste a link to the footage, if it is online.</span>
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-notes">Notes</label>
+          <textarea id="req-notes" className="mb-input" rows={4} maxLength={4000} value={f.notes} onChange={set("notes")} placeholder="Show the interior first." />
+        </div>
+        <div className="mb-field">
+          <span className="mb-flab">File, optional</span>
+          <label className="mb-filebtn">
+            <span className="mb-lic">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-image" />
+              </svg>
+            </span>
+            <span className="mb-lt">
+              <b>{file ? file.name : "Add a photo, video or file"}</b>
+              <small>{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `From Photos or Files, up to ${mb} MB`}</small>
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href={file ? "#i-check" : "#i-plus"} />
+            </svg>
+            <input type="file" accept={info.fileTypes.join(",")} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </label>
+          {tooBig && <div className="mb-err">That file is too big. The limit is {mb} MB.</div>}
+        </div>
+        {/* Bots fill every field; people never see this one. */}
+        <div className="id-hp" aria-hidden="true">
+          <label>
+            Website
+            <input tabIndex={-1} autoComplete="off" value={f.website} onChange={set("website")} />
+          </label>
+        </div>
+        {info.turnstileSiteKey && (
+          <div className="mb-human">
+            <Turnstile siteKey={info.turnstileSiteKey} onToken={setCaptcha} />
+            {captcha && <span className="mb-p muted small">Checked: you are human.</span>}
+          </div>
+        )}
+        {error && <div className="mb-err">{error}</div>}
+        <div className="mb-pubacts">
+          <button type="submit" className="mb-btn pri" disabled={busy || !f.what.trim() || tooBig || (!!info.turnstileSiteKey && !captcha)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-send" />
+            </svg>
+            {busy ? "Sending" : "Send request"}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <form onSubmit={(e) => void submit(e)} onChange={() => setSent(false)}>
@@ -737,7 +1017,12 @@ export function PublicRequestPage({ token }: { token: string }) {
       );
   }, [token]);
   return (
-    <PublicShell title={info ? `Request content for ${info.brandName}` : "Request content"}>
+    <PublicShell
+      title={info ? `Request content for ${info.brandName}` : "Request content"}
+      phoneTitle="Request content"
+      sub="Tell us what you need and when."
+      brand={info?.brandName}
+    >
       {error ? <Note tone="bad">{error}</Note> : info ? <RequestForm token={token} info={info} /> : <Loading screen="request" />}
     </PublicShell>
   );
