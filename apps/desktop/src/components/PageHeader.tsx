@@ -13,6 +13,7 @@ const CREATE_CHIPS = new Set<ScreenId>(["fanout", "queue", "ready", "approvals",
 
 /** Phone subtitles for those pages; the screen's own line steps aside so it sits above the chips. */
 const PHONE_SUB: Partial<Record<ScreenId, string>> = {
+  financials: "What came in, what went out, and what is left.",
   fanout: "One draft for every platform. Override any one alone.",
   queue: "Client rush jumps ahead. Hold and drag to reorder the rest.",
   ready: "Cards in Trello's Ready for posting list, by client.",

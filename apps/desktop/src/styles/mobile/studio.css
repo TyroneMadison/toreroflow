@@ -334,4 +334,8 @@
     color:var(--mb-ink) !important;font-size:15.5px;font-weight:650;box-shadow:none !important}
   .acs .acs-actions .acs-continue{flex:1.4;background:var(--mb-coral) !important;color:var(--mb-oncoral) !important;box-shadow:0 6px 18px rgba(250,97,75,.28) !important}
   .acs .acs-actions .acs-continue:disabled{opacity:.4}
+
+  /* ---- brand kit: the live thumbnail preview leads, as in the mockup ---- */
+  .main .id-two:has(>[data-testid="brandkit.preview"]){display:flex;flex-direction:column}
+  .main [data-testid="brandkit.preview"]{order:-1}
 }

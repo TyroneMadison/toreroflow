@@ -9,6 +9,8 @@ import {
 import { api, fileUrl } from "../../lib/api";
 import { useToast } from "../../components/Toasts";
 import ScoreDial from "./ScoreDial";
+import { useIsPhone } from "../../lib/phone";
+import { usePhoneBar } from "../../lib/phoneBar";
 import "./AnalysisDetail.css";
 
 /**
@@ -240,7 +242,11 @@ export default function AnalysisDetail({
     </div>
   );
 
-  const head = (
+  // A deeper page on the phone: Back and the video's name in the app bar.
+  const isPhone = useIsPhone();
+  usePhoneBar(isPhone ? { title: row?.name ?? "Video analysis", back: onBack } : null);
+
+  const head = isPhone ? null : (
     <div className="and-head">
       <button className="iconbtn" title="Back to the list" onClick={onBack}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
