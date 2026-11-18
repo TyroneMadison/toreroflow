@@ -660,6 +660,14 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       );
     };
     const rangeGroups = groups;
+    // A week with nothing in it gets one empty card and a pointer to the next busy week.
+    const weekEmpty = view === "week" && rangeGroups.length === 0;
+    const nextFrom = startOfDay(strip[0]!);
+    nextFrom.setDate(nextFrom.getDate() + 7);
+    const nextTo = new Date(nextFrom);
+    nextTo.setDate(nextTo.getDate() + 6);
+    nextTo.setHours(23, 59, 59, 999);
+    const nextWeek = weekEmpty ? groupByPost(targets, { from: nextFrom, to: nextTo }) : [];
     const failedInRange = rangeGroups.filter((g) => g.targets.some((t) => t.status === "failed"));
     const firstFailedDay = failedInRange[0] ? new Date(failedInRange[0].lead.scheduledAt!) : null;
     const monthHolidays = view === "month" ? monthCells.filter((d): d is Date => !!d && !!holidayFor(d)) : [];
@@ -948,6 +956,41 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 )}
               </>
             )}
+            {weekEmpty && (
+              <>
+                <div className="mb-card mb-empty mb-weekempty">
+                  <span className="mb-ei">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-cal" />
+                    </svg>
+                  </span>
+                  <h3>Nothing planned this week</h3>
+                  <p>Posts you schedule for {selectedClient?.name ?? "this brand"} show up here, one card per post.</p>
+                  <div className="mb-btnrow">
+                    <button type="button" className="mb-btn ghost" onClick={() => navigate("fanout")}>
+                      Plan a post
+                    </button>
+                    <button type="button" className="mb-btn pri" onClick={onNewPost}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-upload" />
+                      </svg>
+                      Upload
+                    </button>
+                  </div>
+                </div>
+                {nextWeek.length > 0 && (
+                  <div className="mb-nextwk">
+                    <span className="mb-lab">
+                      Next week has {nextWeek.length} {nextWeek.length === 1 ? "post" : "posts"}
+                    </span>
+                    <button type="button" className="mb-btn text" onClick={() => setAnchor(startOfDay(nextFrom))}>
+                      Go to {MONTHS[nextFrom.getMonth()]!.slice(0, 3)} {nextFrom.getDate()}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {!weekEmpty && (
             <div className="mb-dayhead">
               <h2 className="mb-h2">
                 {view === "day" ? weekday : `${weekday} ${anchor.getDate()}`}
@@ -956,8 +999,9 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
                 {dayEvents.length} {dayEvents.length === 1 ? "post" : "posts"}
               </span>
             </div>
+            )}
             {holidayRow(anchor)}
-            {dayEvents.length === 0 && (
+            {dayEvents.length === 0 && !weekEmpty && (
               <div className="mb-empty mb-dayempty">
                 <span className="mb-ei">
                   <svg viewBox="0 0 24 24" aria-hidden="true">

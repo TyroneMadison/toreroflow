@@ -163,4 +163,12 @@
   .mb-wheel button[aria-selected="true"]{color:var(--mb-ink)}
   .mb-wheel button:disabled{opacity:.3}
   .mb-dtcolon{position:relative;z-index:1;font-family:var(--mb-disp);font-size:22px;font-weight:700;color:var(--mb-ink)}
+
+  /* ---- an empty week: one card and the next busy week ---- */
+  .mcal:has(.mb-weekempty) .mb-weekline{display:none}
+  .mb-weekempty{margin-top:8px;padding:28px 20px 22px}
+  .mb-weekempty .mb-btnrow{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;margin-top:6px}
+  .mb-weekempty .mb-btn svg{width:18px;height:18px}
+  .mb-nextwk{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 2px 0}
+  .mb-nextwk .mb-btn{color:var(--mb-coral)}
 }

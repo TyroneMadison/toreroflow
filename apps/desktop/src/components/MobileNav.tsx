@@ -346,6 +346,25 @@ function PhoneNav({ activeScreen, api: apiStatus, onOpenConnect, alerts, onAlert
           </>
         )}
       </header>
+      {offline && !bar && (
+        <section className="mb-offbanner" role="alert" data-testid="mobile.offline-banner">
+          <div className="mb-offmsg">
+            <Svg href="#i-alert" />
+            <span>
+              <b>Can't reach Toreroflow</b>
+              The server is not answering. What is on screen stays; saving and uploading wait until it answers again.
+            </span>
+          </div>
+          <div className="mb-offacts">
+            <button type="button" className="mb-btn" onClick={() => apiStatus.recheck()}>
+              Retry now
+            </button>
+            <button type="button" className="mb-btn ghost" onClick={() => setSheet("offline")}>
+              Status details
+            </button>
+          </div>
+        </section>
+      )}
 
       {sheet && <div className={`mb-scrim${sheet === "create" ? " above-tabs" : ""}`} onClick={close} aria-hidden="true" />}
 
