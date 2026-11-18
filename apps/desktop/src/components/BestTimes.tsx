@@ -25,6 +25,39 @@ function fmt(n: number): string {
 }
 
 /**
+ * The next time at the brand's best hour (top average views per post across
+ * every platform), at least 10 minutes out; null with no view history. The
+ * phone's schedule sheet offers it as a tap-to-apply chip.
+ */
+// ponytail: hour of day only, add weekday buckets once histories are deep enough to trust them.
+export function bestSlot(posts: ClientPost[], from: Date = new Date()): Date | null {
+  const hours = new Map<number, { total: number; n: number }>();
+  for (const p of posts) {
+    const hour = new Date(p.publishedAt).getHours();
+    for (const b of p.byPlatform) {
+      if (b.views <= 0) continue;
+      const cell = hours.get(hour) ?? { total: 0, n: 0 };
+      cell.total += b.views;
+      cell.n += 1;
+      hours.set(hour, cell);
+    }
+  }
+  let best = -1;
+  let top = 0;
+  for (const [hour, c] of hours) {
+    if (c.total / c.n > top) {
+      top = c.total / c.n;
+      best = hour;
+    }
+  }
+  if (best < 0) return null;
+  const slot = new Date(from);
+  slot.setHours(best, 0, 0, 0);
+  if (slot.getTime() < from.getTime() + 10 * 60_000) slot.setDate(slot.getDate() + 1);
+  return slot;
+}
+
+/**
  * Best posting windows derived from the brand's own history: average views
  * per post, bucketed by local hour of day, per platform. Platforms do not
  * expose their native recommendations, so this is measured rather than

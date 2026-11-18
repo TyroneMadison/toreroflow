@@ -15,8 +15,12 @@ import { api, fileUrl } from "../lib/api";
 import { syncComplaint, waitForBankSync } from "../lib/bankSync";
 import { openExternal } from "../lib/external";
 import Select from "../components/Select";
-import type { FinancialsMonth } from "../lib/financials";
+import { ordinalDay, type FinancialsMonth } from "../lib/financials";
 import { useAppState } from "../state/AppState";
+import { useIsPhone } from "../lib/phone";
+
+/** The phone's section chips (mobile pass). */
+type FinTab = "overview" | "in" | "bills" | "oneoff" | "year" | "bank";
 
 /** "2026-03" as "March 2026". */
 function monthLabel(key: string): string {
@@ -63,6 +67,11 @@ export default function FinancialsScreen() {
   // Guards the race where a slow response for one month lands after a faster
   // response for another and silently overwrites it.
   const seq = useRef(0);
+  const isPhone = useIsPhone();
+  const [tab, setTab] = useState<FinTab>("overview");
+  const [addMenu, setAddMenu] = useState(false);
+  /** Bumped to open a section's add form from the phone's add sheet. */
+  const [addSignal, setAddSignal] = useState(0);
 
   const load = useCallback(async () => {
     const mine = ++seq.current;
@@ -137,6 +146,438 @@ export default function FinancialsScreen() {
   }, [knownClients]);
 
   const year = exportYear ?? data?.years[0] ?? new Date().getFullYear();
+  const exportTaxes = () => {
+    void api
+      .get<{ url: string }>(`/financials/export?year=${year}`)
+      .then((r) => openExternal(fileUrl(r.url)!))
+      .catch((err) => toast.fail("Could not build the tax export", err));
+  };
+
+  if (isPhone) {
+    // Phone (mobile pass): a month switcher with arrows, the answer first
+    // (net this month, money in and out, the bank), then chips for the
+    // sections. Overview shows the top three of each list; the chips open
+    // the full lists, so every editor, the donut, the tax card and the annual
+    // export stay one tap away.
+    const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const usd0 = (c: number) => `$${Math.round(c / 100).toLocaleString("en-US")}`;
+    const step = (dir: -1 | 1) => {
+      const d = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + dir, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (dir > 0 && key > recentMonths[0]!.value) return;
+      setMonth(key);
+    };
+    const outCents = data ? data.totals.recurringOutCents + data.totals.oneOffOutCents : 0;
+    const net = data ? data.totals.inCents - outCents : 0;
+    const prev = data && data.series.length > 1 ? data.series[data.series.length - 2]! : null;
+    const prevNet = prev ? prev.inCents - prev.outCents : null;
+    const netChange = prevNet && prevNet !== 0 ? ((net - prevNet) / Math.abs(prevNet)) * 100 : null;
+    const top3 = <T,>(rows: T[]) => rows.slice(0, 3);
+    const TABS: Array<{ id: FinTab; label: string; count?: number }> = [
+      { id: "overview", label: "Overview" },
+      { id: "in", label: "Money in" },
+      { id: "bills", label: "Bills", count: data?.recurring.length },
+      { id: "oneoff", label: "One-off" },
+      { id: "year", label: "Year and taxes" },
+      { id: "bank", label: "Bank" },
+    ];
+    const goAdd = (t: FinTab) => {
+      setAddMenu(false);
+      setTab(t);
+      setAddSignal((n) => n + 1);
+    };
+    return (
+      <section className="screen active mb-page mb-fin" data-screen="financials" data-state={phase}>
+        <div className="mb-monthsw">
+          <button type="button" className="mb-ib" aria-label="Previous month" onClick={() => step(-1)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-chev-l" />
+            </svg>
+          </button>
+          <label className="mb-monthmid">
+            {monthLabel(month)}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-chev" />
+            </svg>
+            <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+              {months.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="mb-ib" aria-label="Next month" disabled={month >= recentMonths[0]!.value} onClick={() => step(1)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-chev-r" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="mb-ib"
+            aria-label="Pull the bank again and refresh"
+            disabled={refreshing || phase === "loading"}
+            onClick={() => void refreshAll()}
+            data-testid="financials.refresh"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshing ? "spin" : undefined}>
+              <use href="#i-refresh" />
+            </svg>
+          </button>
+        </div>
+
+        {phase === "loading" && (
+          <Loading screen="financials" label="Loading the month">
+            <div className="mb-card mb-finhero">
+              <span className="skel" style={{ display: "block", height: 120 }} />
+            </div>
+          </Loading>
+        )}
+        {phase === "error" && (
+          <ErrorState screen="financials" message="Could not load this month. The numbers on this screen are unavailable, not zero." onRetry={() => void load()} />
+        )}
+
+        {phase === "ready" && data && (
+          <>
+            <section className="mb-finhero" aria-label="Net this month">
+              <div className="mb-lab">Net this month</div>
+              <div className={`mb-finbig${net < 0 ? " neg" : ""}`}>{net < 0 ? `-${usd(-net)}` : usd(net)}</div>
+              {netChange != null && (
+                <div className="mb-finvs">
+                  <span className={`mb-delta ${netChange < 0 ? "down" : "up"}`}>
+                    {netChange < 0 ? "▼" : "▲"} {Math.abs(netChange).toFixed(0)}%
+                  </span>
+                  <span>vs {prev ? monthLabel(prev.month).split(" ")[0] : "last month"}</span>
+                </div>
+              )}
+              <div className="mb-trio">
+                <div className="mb-stat">
+                  <small>Money in</small>
+                  <b className="ok">{usd0(data.totals.inCents)}</b>
+                </div>
+                <div className="mb-stat">
+                  <small>Money out</small>
+                  <b className="bad">{usd0(outCents)}</b>
+                </div>
+                <div className="mb-stat">
+                  <small>In the bank</small>
+                  <b className="info">{data.bank ? usd0(data.bank.totalCents) : "Not linked"}</b>
+                </div>
+              </div>
+              {data.bank?.asOf && (
+                <div className="mb-p muted small">
+                  Bank is read-only via SimpleFIN, pulled {new Date(data.bank.asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}.
+                </div>
+              )}
+            </section>
+
+            <div className="mb-chips" role="tablist" aria-label="Sections">
+              {TABS.map((t) => (
+                <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`mb-chip${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
+                  {t.label}
+                  {t.count != null && <small>{t.count}</small>}
+                </button>
+              ))}
+            </div>
+
+            {tab === "overview" && (
+              <>
+                {data.totals.missingBills > 0 && (
+                  <div className="mb-banner warn">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-receipt" />
+                    </svg>
+                    <span className="mb-bt">
+                      <b>
+                        {data.totals.missingBills} bill{data.totals.missingBills === 1 ? "" : "s"} not entered yet
+                      </b>{" "}
+                      {(() => {
+                        const m = data.recurring.find((r) => r.amountCents === null);
+                        return m?.dueDay
+                          ? `${m.name} is usually paid by the ${ordinalDay(m.dueDay)}.`
+                          : `The out and net figures are incomplete until ${data.totals.missingBills === 1 ? "it is" : "they are"} in.`;
+                      })()}
+                    </span>
+                    <button type="button" className="mb-btn sm" onClick={() => setTab("bills")}>
+                      Enter
+                    </button>
+                  </div>
+                )}
+                <section className="mb-card">
+                  <div className="mb-cardh">
+                    <h3>Money in</h3>
+                    <small>
+                      {data.revenue.length} {data.revenue.length === 1 ? "source" : "sources"}
+                    </small>
+                  </div>
+                  {top3(data.revenue).map((r) => (
+                    <div key={r.id} className="mb-mrow">
+                      <i style={{ background: r.color ?? "var(--c-ok)" }} />
+                      <span className="mb-grow">{r.clientName}</span>
+                      <b>{usd(r.amountCents)}</b>
+                    </div>
+                  ))}
+                  {data.revenue.length === 0 && <p className="mb-p muted small">Nothing in yet this month.</p>}
+                  <div className="mb-cardfoot">
+                    <button type="button" className="mb-btn sm ghost" onClick={() => setTab("in")}>
+                      Open
+                    </button>
+                    <button type="button" className="mb-btn sm" onClick={() => goAdd("in")}>
+                      Add income
+                    </button>
+                  </div>
+                </section>
+                <section className="mb-card">
+                  <div className="mb-cardh">
+                    <h3>Bills</h3>
+                    <small>
+                      {usd(data.totals.recurringOutCents)} a month · {data.recurring.length} {data.recurring.length === 1 ? "bill" : "bills"}
+                    </small>
+                  </div>
+                  {top3([...data.recurring].sort((a, b) => (b.amountCents ?? 0) - (a.amountCents ?? 0))).map((r) => (
+                    <div key={r.id} className="mb-mrow">
+                      <i style={{ background: "var(--c-bad)" }} />
+                      <span className="mb-grow">{r.name}</span>
+                      <b>{r.amountCents == null ? "Not entered" : usd(r.amountCents)}</b>
+                    </div>
+                  ))}
+                  <div className="mb-cardfoot">
+                    <button type="button" className="mb-btn sm ghost" onClick={() => setTab("bills")}>
+                      See all {data.recurring.length}
+                    </button>
+                    <button type="button" className="mb-btn sm" onClick={() => goAdd("bills")}>
+                      Add bill
+                    </button>
+                  </div>
+                </section>
+                <section className="mb-card">
+                  <div className="mb-cardh">
+                    <h3>One-off out</h3>
+                    <small>
+                      {usd(data.totals.oneOffOutCents)} in {monthLabel(month).split(" ")[0]}
+                    </small>
+                  </div>
+                  {top3([...data.oneOff].sort((a, b) => (b.amountCents ?? 0) - (a.amountCents ?? 0))).map((r) => (
+                    <div key={r.id} className="mb-mrow">
+                      <i style={{ background: "var(--c-warn)" }} />
+                      <span className="mb-grow">{r.name}</span>
+                      <b>{r.amountCents == null ? "Not entered" : usd(r.amountCents)}</b>
+                    </div>
+                  ))}
+                  {data.oneOff.length === 0 && <p className="mb-p muted small">No one-off costs this month.</p>}
+                  <div className="mb-cardfoot">
+                    <button type="button" className="mb-btn sm ghost" onClick={() => setTab("oneoff")}>
+                      Open
+                    </button>
+                    <button type="button" className="mb-btn sm" onClick={() => goAdd("oneoff")}>
+                      Add expense
+                    </button>
+                  </div>
+                </section>
+                <section className="mb-card" aria-label="Last 12 months">
+                  <div className="mb-cardh">
+                    <h3>Last 12 months</h3>
+                    <span className="mb-legend">
+                      <span style={{ ["--c" as string]: "var(--c-ok)" }}>
+                        <i />
+                        In
+                      </span>
+                      <span style={{ ["--c" as string]: "var(--c-bad)" }}>
+                        <i />
+                        Out
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mb-bars12">
+                    {data.series.map((p) => {
+                      const max = Math.max(1, ...data.series.flatMap((x) => [x.inCents, x.outCents]));
+                      return (
+                        <button
+                          key={p.month}
+                          type="button"
+                          className={`mb-m12${p.month === month ? " on" : ""}`}
+                          aria-label={`${monthLabel(p.month)}: ${usd0(p.inCents)} in, ${usd0(p.outCents)} out`}
+                          onClick={() => setMonth(p.month)}
+                        >
+                          <i className="in" style={{ height: `${Math.max(3, (p.inCents / max) * 100)}%` }} />
+                          <i className="out" style={{ height: `${Math.max(3, (p.outCents / max) * 100)}%` }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mb-mlab">
+                    {data.series
+                      .filter((_, i) => i % 2 === 0 || i === data.series.length - 1)
+                      .slice(-6)
+                      .map((p) => (
+                        <span key={p.month}>{monthLabel(p.month).slice(0, 3)}</span>
+                      ))}
+                  </div>
+                </section>
+                <section className="mb-card">
+                  <div className="mb-cardh">
+                    <h3>This year</h3>
+                    <small>Taxes and the annual export</small>
+                  </div>
+                  <div className="mb-trio">
+                    <div className="mb-stat">
+                      <small>Money in</small>
+                      <b>{usd0(data.ytd.inCents)}</b>
+                    </div>
+                    <div className="mb-stat">
+                      <small>Net</small>
+                      <b>{usd0(data.ytd.netCents)}</b>
+                    </div>
+                    <div className="mb-stat">
+                      <small>Annual bills</small>
+                      <b>{usd(data.totals.annualYearCents)}</b>
+                    </div>
+                  </div>
+                  <div className="mb-cardfoot">
+                    <button type="button" className="mb-btn sm ghost" onClick={() => setTab("year")}>
+                      Taxes
+                    </button>
+                    <button type="button" className="mb-btn sm" onClick={exportTaxes} data-testid="financials.export">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-dl" />
+                      </svg>
+                      Export for taxes
+                    </button>
+                  </div>
+                </section>
+              </>
+            )}
+            {tab === "in" && (
+              <RevenueSection rows={data.revenue} totalCents={data.totals.inCents} month={data.month} onChanged={() => void refresh()} addSignal={addSignal} />
+            )}
+            {tab === "bills" && (
+              <>
+                {data.totals.missingBills > 0 && (
+                  <div className="warnline">
+                    {data.totals.missingBills} bill{data.totals.missingBills === 1 ? "" : "s"} not entered, so the out and net figures are incomplete.
+                  </div>
+                )}
+                <ExpenseSection
+                  title="Money coming out"
+                  sub="Recurring only. Rolls forward each month."
+                  kind="recurring"
+                  rows={data.recurring}
+                  categories={data.categories}
+                  month={data.month}
+                  totalCents={data.totals.recurringOutCents}
+                  missingCount={data.recurring.filter((r) => r.amountCents === null).length}
+                  onChanged={() => void refresh()}
+                  addSignal={addSignal}
+                />
+                <AnnualSection
+                  rows={data.annual}
+                  categories={data.categories}
+                  shareCents={data.totals.annualShareCents}
+                  yearCents={data.totals.annualYearCents}
+                  onChanged={() => void refresh()}
+                />
+              </>
+            )}
+            {tab === "oneoff" && (
+              <ExpenseSection
+                title="One-off expenses"
+                sub="This month only. Does not roll forward, still counts toward taxes."
+                kind="one_off"
+                rows={data.oneOff}
+                categories={data.categories}
+                month={data.month}
+                totalCents={data.totals.oneOffOutCents}
+                missingCount={data.oneOff.filter((r) => r.amountCents === null).length}
+                onChanged={() => void refresh()}
+                addSignal={addSignal}
+              />
+            )}
+            {tab === "year" && (
+              <>
+                <NetCard series={data.series} />
+                <DonutCard rows={data.revenue} totalCents={data.totals.inCents} />
+                <GlanceCard totals={data.totals} ytd={data.ytd} bank={data.bank} />
+                <TaxCard year={year} />
+                <section className="mb-card">
+                  <div className="mb-cardh">
+                    <h3>Export for taxes</h3>
+                  </div>
+                  <p className="mb-p muted small">
+                    Every expense grouped by its Schedule C line, gross receipts by client, meals split at the deductible 50%, and your
+                    business details on the cover.
+                  </p>
+                  <div className="mb-cardfoot">
+                    <select className="mb-input" value={String(year)} onChange={(e) => setExportYear(Number(e.target.value))} aria-label="Export year">
+                      {data.years.map((y) => (
+                        <option key={y} value={String(y)}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" className="mb-btn sm" onClick={exportTaxes} data-testid="financials.export">
+                      Export {year}
+                    </button>
+                  </div>
+                </section>
+              </>
+            )}
+            {tab === "bank" && <BankSection reloadKey={bankKey} onMoneyMoved={() => void refresh()} />}
+
+            <div className="mb-actionbar">
+              <button type="button" className="mb-btn pri" onClick={() => setAddMenu(true)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-plus" />
+                </svg>
+                Add money in or out
+              </button>
+            </div>
+          </>
+        )}
+
+        {addMenu && (
+          <>
+            <div className="mb-scrim" onClick={() => setAddMenu(false)} aria-hidden="true" />
+            <div className="mb-sheet" role="dialog" aria-modal="true" aria-label="Add money in or out">
+              <div className="mb-grab" aria-hidden="true" />
+              <div className="mb-sh">
+                <h2>Add money in or out</h2>
+                <button type="button" className="mb-ib" aria-label="Close" onClick={() => setAddMenu(false)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-x" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-shb">
+                {(
+                  [
+                    ["in", "Income", "Money that came in: a payment, a refund, a transfer", "#i-trend-up", "ok"],
+                    ["bills", "Bill", "A recurring cost that rolls forward each month", "#i-receipt", "bad"],
+                    ["oneoff", "One-off expense", "This month only, still counts toward taxes", "#i-dollar", "warn"],
+                  ] as const
+                ).map(([t, title, sub, icon, tone]) => (
+                  <button key={t} type="button" className="mb-lrow" onClick={() => goAdd(t)}>
+                    <span className={`mb-lic ${tone}`}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href={icon} />
+                      </svg>
+                    </span>
+                    <span className="mb-lt">
+                      <b>{title}</b>
+                      <small>{sub}</small>
+                    </span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-chev-r" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+    );
+  }
+
 
   return (
     <section className="screen active" data-screen="financials" data-state={phase}>

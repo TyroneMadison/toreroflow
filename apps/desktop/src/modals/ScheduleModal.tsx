@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { bestSlot } from "../components/BestTimes";
+import { mmss } from "../components/mobile/ThumbPlayer";
 import Modal from "./Modal";
 import SopPanel, { sopRequired } from "../components/SopPanel";
 import GlassDateTime from "../components/GlassDateTime";
@@ -7,8 +9,10 @@ import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
 import {
   api,
+  fileUrl,
   videoLabel,
   type AudioCatalog,
+  type ClientPost,
   type AudioTrack,
   type MediaAssetInfo,
   type YouTubePlaylistInfo,
@@ -17,6 +21,9 @@ import { PF_ID, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
 import { captionFor, composeCaption, instagramVideoError, scheduleTimeError, youtubeTitleFor } from "@toreroflow/core";
 import { schedulePlatformBlock } from "../lib/shortsSchedule";
+import { useIsPhone } from "../lib/phone";
+import PhoneFold from "../components/mobile/PhoneFold";
+import DateTimeSheet from "../components/mobile/DateTimeSheet";
 import { YT_CATEGORIES } from "../lib/youtube";
 import {
   AudioNameField,
@@ -31,6 +38,7 @@ import {
   captionProblems,
   igPhotoBody,
   TIKTOK_DEFAULTS,
+  TIKTOK_PRIVACY,
   tiktokBody,
   tkTouched,
   type TikTokChoice,
@@ -100,6 +108,8 @@ export default function ScheduleModal({
       connected.filter((a) => accountIds.includes(a.id)).map((a) => a.platform),
     ),
   ] as Platform[];
+  const isPhone = useIsPhone();
+  const [pickingWhen, setPickingWhen] = useState(false);
   const [when, setWhen] = useState(() =>
     localInputValue(new Date(Date.now() + 10 * 60_000)),
   );
@@ -138,6 +148,18 @@ export default function ScheduleModal({
   const [ytPlaylistId, setYtPlaylistId] = useState("");
   const [ytPlaylists, setYtPlaylists] = useState<YouTubePlaylistInfo[] | null>(null);
 
+  // The phone's best-time chip reads the same history the best-times widget
+  // uses, once, quietly; scheduling never waits for it.
+  const [historyPosts, setHistoryPosts] = useState<ClientPost[]>([]);
+  useEffect(() => {
+    if (!isPhone || !selectedClient) return;
+    api
+      .get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`)
+      .then((r) => setHistoryPosts(r.posts))
+      .catch(() => setHistoryPosts([]));
+  }, [isPhone, selectedClient]);
+  const best = isPhone ? bestSlot(historyPosts) : null;
+
   // The reel options make no sense on a set of images: a carousel or image
   // gets only collaborators, people tags and a location, and no YouTube.
   const igSelected = platforms.includes("instagram") && !isCarousel;
@@ -157,6 +179,18 @@ export default function ScheduleModal({
     connected.find((a) => a.platform === "instagram" && accountIds.includes(a.id))?.id ?? null;
   const tkCarousel = isCarousel && platforms.includes("tiktok");
   const [tkAutoMusic, setTkAutoMusic] = useState(false);
+
+  // One-line summaries for the phone's folded option rows.
+  const tkOn = [tk.allowComment && "comments", ...(isCarousel ? [] : [tk.allowDuet && "duet", tk.allowStitch && "stitch"])].filter(Boolean) as string[];
+  const tkSummary = `${TIKTOK_PRIVACY.find((p) => p.value === tk.privacyLevel)?.label ?? "Everyone"} · ${
+    tkOn.length ? `${tkOn.length > 1 ? `${tkOn.slice(0, -1).join(", ")} and ${tkOn[tkOn.length - 1]}` : tkOn[0]} on` : isCarousel ? "comments off" : "comments, duet and stitch off"
+  }`;
+  const igSummary = `Main feed ${igShareToFeed ? "on" : "off"} · ${igTrial ? "trial reel" : "not a trial"} · ${
+    igCollaborators.length ? `${igCollaborators.length} collaborator${igCollaborators.length > 1 ? "s" : ""}` : "no collaborators"
+  }`;
+  const ytSummary = `${ytVisibility ? ytVisibility[0].toUpperCase() + ytVisibility.slice(1) : "Public"} · ${
+    YT_CATEGORIES.find(([id]) => id === ytCategoryId)?.[1] ?? "default category"
+  } · ${ytPlaylists?.find((p) => p.id === ytPlaylistId)?.title ?? "no playlist"}`;
 
   // Playlists load once, the first time the YouTube section shows. A quiet
   // failure: the operator can always schedule without one.
@@ -343,9 +377,13 @@ export default function ScheduleModal({
           borderRadius: "var(--radius) var(--radius) 0 0",
         }}
       >
+        {isPhone && asset.thumbUrl && <img className="mb-schthumb" src={fileUrl(asset.thumbUrl) ?? undefined} alt="" />}
         <div>
           <h3>Schedule post</h3>
-          <p>{videoLabel(asset)}</p>
+          <p>
+            {videoLabel(asset)}
+            {isPhone && asset.durationSec ? ` · ${mmss(asset.durationSec)}` : ""}
+          </p>
         </div>
         <button type="button" className="modal-x" aria-label="Close" data-testid="schedule-close" onClick={onClose}>
           <svg>
@@ -357,7 +395,7 @@ export default function ScheduleModal({
         {!hostOwnsSop && selectedClient && (
           <SopPanel clientId={selectedClient.id} acknowledged={ownAck} onAcknowledge={setOwnAck} compact />
         )}
-        {hasBlock && (
+        {hasBlock && !isPhone && (
           <div data-testid="caption-block-preview" style={{ marginBottom: 16 }}>
             <label className="flabel">Final caption (all platforms)</label>
             <button type="button" className="btn ghost" onClick={() => setUseBlock(!useBlock)} data-testid="caption-block-toggle" style={{ marginBottom: 8 }}>
@@ -383,24 +421,91 @@ export default function ScheduleModal({
           platforms={platforms}
           photo={isCarousel}
           label={
-            <>
-              Caption<span className="hint">counts include the caption block and hashtags</span>
-            </>
+            isPhone ? (
+              "Caption, all platforms"
+            ) : (
+              <>
+                Caption<span className="hint">counts include the caption block and hashtags</span>
+              </>
+            )
           }
         />
+        {hasBlock && isPhone && (
+          <>
+            <button
+              type="button"
+              className="mb-blk"
+              role="switch"
+              aria-checked={useBlock}
+              data-testid="caption-block-toggle"
+              onClick={() => setUseBlock(!useBlock)}
+            >
+              <span className={`mb-tog${useBlock ? " on" : ""}`} aria-hidden="true" />
+              Add {selectedClient?.name}'s caption block
+            </button>
+            <PhoneFold title="Final caption" summary={`${finalCaption.length} characters · YouTube title stays: ${youtubeTitleFor(draft) || "(none)"}`}>
+              <div className="mb-finalcap" data-testid="caption-block-preview">
+                {finalCaption || "No caption yet"}
+              </div>
+            </PhoneFold>
+          </>
+        )}
         <label className="flabel" style={{ marginTop: 14 }}>
           Post at
         </label>
-        <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+        {isPhone ? (
+          <div className="mb-dtrow">
+            <button type="button" className="mb-dtp" onClick={() => setPickingWhen(true)} data-testid="schedule-date">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-cal" />
+              </svg>
+              {new Date(when).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            </button>
+            <button type="button" className="mb-dtp" onClick={() => setPickingWhen(true)} data-testid="schedule-time">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-clock" />
+              </svg>
+              {new Date(when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            </button>
+          </div>
+        ) : (
+          <GlassDateTime value={when} onChange={setWhen} minDate={new Date()} />
+        )}
         {whenError && <div className="autherr">{whenError}</div>}
-        <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
-          Posts with the title saved on this video. Each platform publishes
-          independently with automatic retries.
-        </p>
+        {pickingWhen && (
+          <DateTimeSheet title="Post at" sub="Every picked account posts at this time" value={when} onSet={setWhen} onClose={() => setPickingWhen(false)} />
+        )}
+        {isPhone ? (
+          <div className="mb-bestrow">
+            {best && (
+              <button type="button" className="mb-bestchip" data-testid="schedule-best-time" onClick={() => setWhen(localInputValue(best))}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-spark" />
+                </svg>
+                Best time: {best.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}
+              </button>
+            )}
+            <span>Each platform retries on its own.</span>
+          </div>
+        ) : (
+          <p style={{ fontSize: 11.5, color: "var(--txt-3)", marginTop: 8 }}>
+            Posts with the title saved on this video. Each platform publishes
+            independently with automatic retries.
+          </p>
+        )}
 
-        <label className="flabel" style={{ marginTop: 18 }}>
-          Platforms
-        </label>
+        {isPhone ? (
+          <div className="mb-rowsb">
+            <label className="flabel">Posts to</label>
+            <span>
+              {accountIds.length} of {allConnected.length} accounts
+            </span>
+          </div>
+        ) : (
+          <label className="flabel" style={{ marginTop: 18 }}>
+            Platforms
+          </label>
+        )}
         {connected.length === 0 && allConnected.length === 0 && (
           <p style={{ fontSize: 12.5, color: "var(--txt-3)" }}>
             No connected platforms. Connect them in Settings first.
@@ -464,8 +569,10 @@ export default function ScheduleModal({
           </div>
         )}
 
+        {isPhone && (tkSelected || igPhoto || igSelected || ytSelected) && <div className="mb-lab mb-optlab">Platform options</div>}
         {tkSelected && (
-          <div className="igopts">
+          <PhoneFold title="TikTok" summary={tkSummary} pf="tt">
+<div className="igopts">
             <label className="flabel" style={{ marginTop: 18 }}>
               TikTok {isCarousel ? "photo post" : "video"}
             </label>
@@ -476,10 +583,16 @@ export default function ScheduleModal({
               </p>
             )}
           </div>
+</PhoneFold>
         )}
 
         {igPhoto && (
-          <div className="igopts">
+          <PhoneFold
+            title="Instagram"
+            summary={`${igCollaborators.length ? `${igCollaborators.length} collaborator${igCollaborators.length > 1 ? "s" : ""}` : "No collaborators"} · ${igUserTags.length} tagged · ${igLocation || "no location"}`}
+            pf="ig"
+          >
+<div className="igopts">
             <label className="flabel" style={{ marginTop: 18 }}>
               Instagram post details
             </label>
@@ -500,6 +613,7 @@ export default function ScheduleModal({
             />
             <LocationField id="sched-ig-loc" value={igLocation} onChange={setIgLocation} />
           </div>
+</PhoneFold>
         )}
 
         {tkCarousel && (
@@ -526,7 +640,8 @@ export default function ScheduleModal({
         )}
 
         {igSelected && (
-          <div className="igopts">
+          <PhoneFold title="Instagram" summary={igSummary} pf="ig">
+<div className="igopts">
             <label className="flabel" style={{ marginTop: 18 }}>
               Instagram options
             </label>
@@ -729,10 +844,12 @@ export default function ScheduleModal({
               onChange={(e) => setIgFirstComment(e.target.value)}
             />
           </div>
+</PhoneFold>
         )}
 
         {ytSelected && (
-          <div className="ytopts">
+          <PhoneFold title="YouTube" summary={ytSummary} pf="yt">
+<div className="ytopts">
             <label className="flabel" style={{ marginTop: 18 }}>
               YouTube options
             </label>
@@ -812,8 +929,10 @@ export default function ScheduleModal({
               onChange={(e) => setYtFirstComment(e.target.value)}
             />
           </div>
+</PhoneFold>
         )}
 
+        {isPhone && !isCarousel && <p className="mb-help">Cover: the one set with Edit cover on the video card.</p>}
         {/* Keyed by the message so a second, different failure redraws. */}
         {error && (
           <div className="autherr" key={error}>
@@ -831,9 +950,11 @@ export default function ScheduleModal({
             Reminder: check {selectedClient?.name}'s SOP
           </span>
         )}
-        <button className="btn ghost" onClick={onClose}>
-          Cancel
-        </button>
+        {!isPhone && (
+          <button className="btn ghost" onClick={onClose}>
+            Cancel
+          </button>
+        )}
         {/* Publishing is irreversible, so Post now asks once before firing. */}
         <button
           className={`btn ${confirmNow ? "danger" : "ghost"}`}
@@ -857,10 +978,16 @@ export default function ScheduleModal({
           data-testid="schedule-submit"
           onClick={() => void submit("schedule")}
         >
-          <svg>
-            <use href="#i-bolt" />
-          </svg>{" "}
-          {busy === "schedule" ? "Scheduling…" : "Schedule"}
+          {!isPhone && (
+            <svg>
+              <use href="#i-bolt" />
+            </svg>
+          )}{" "}
+          {busy === "schedule"
+            ? "Scheduling…"
+            : isPhone
+              ? `Schedule for ${new Date(when).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+              : "Schedule"}
         </button>
       </div>
     </Modal>

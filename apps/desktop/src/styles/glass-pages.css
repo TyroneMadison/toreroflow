@@ -16,7 +16,7 @@
 .gx-months button{position:relative;z-index:1;flex:1;min-width:52px;border:0;background:none;color:var(--text-2);font:inherit;font-size:12.5px;
   padding:8px 10px;border-radius:var(--r-pill);cursor:pointer;display:inline-flex;gap:6px;align-items:center;justify-content:center}
 .gx-months button i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
-.gx-months button.on{background:linear-gradient(180deg,rgba(255,150,130,.95),rgba(255,122,102,.88));color:#2A0C06;font-weight:600}
+.gx-months button.on{background:linear-gradient(180deg,rgba(255,150,130,.95),rgba(250,97,75,.88));color:#2A0C06;font-weight:600}
 
 /* ---- story card ---- */
 .gx-story,.gx-brand,.gx-side,.gx-enroll{border-radius:var(--r-chart);padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden}
@@ -79,7 +79,7 @@
 .gx-brand.hero{min-height:520px}
 .gx-brand.hero .gx-title b{font-size:22px}
 .gx-av{flex:none;border-radius:50%;overflow:hidden;display:grid;place-items:center;width:40px;height:40px;font-weight:700;color:#fff;
-  background:linear-gradient(135deg,#FF7A66,#4C9DFF);box-shadow:inset 0 2px 2px rgba(255,255,255,.55),0 0 0 3px rgba(255,255,255,.3),0 6px 16px rgba(0,0,0,.3)}
+  background:linear-gradient(135deg,#FA614B,#4C9DFF);box-shadow:inset 0 2px 2px rgba(255,255,255,.55),0 0 0 3px rgba(255,255,255,.3),0 6px 16px rgba(0,0,0,.3)}
 .gx-av img{width:100%;height:100%;object-fit:cover}
 .gx-plats{display:flex;gap:6px}
 .gx-word{font-size:26px;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
@@ -114,7 +114,7 @@
 .an6-statv{font-size:clamp(40px,4.6vw,68px);font-weight:300;letter-spacing:-.04em;line-height:1;color:var(--text)}
 .an6-stat .tf-lbl{margin-top:6px}
 .an6-profile{border-radius:var(--r-chart);padding:18px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;min-height:200px;overflow:hidden;
-  background:linear-gradient(160deg,rgba(255,122,102,.55),rgba(140,60,200,.45) 55%,rgba(40,90,220,.45)) !important}
+  background:linear-gradient(160deg,rgba(250,97,75,.55),rgba(140,60,200,.45) 55%,rgba(40,90,220,.45)) !important}
 .an6-profile>*{position:relative;z-index:1}
 .an6-orb{width:96px;height:96px;border-radius:50%;margin:0 auto auto;display:grid;place-items:center;overflow:hidden;font-size:38px;font-weight:700;color:#fff;
   background:radial-gradient(circle at 35% 30%,#ffb3a6,#e2523e 70%);box-shadow:inset 0 3px 4px rgba(255,255,255,.55),0 0 0 4px rgba(255,255,255,.3),0 12px 30px rgba(0,0,0,.35)}
@@ -191,7 +191,7 @@
 .an6-ring circle{fill:none;stroke-width:14}
 .an6-ring .track{stroke:rgba(255,255,255,.12)}
 [data-theme="light"] .an6-ring .track{stroke:rgba(30,30,70,.1)}
-.an6-ring .val{stroke:var(--accent);stroke-linecap:round;filter:drop-shadow(0 0 8px rgba(255,122,102,.5))}
+.an6-ring .val{stroke:var(--accent);stroke-linecap:round;filter:drop-shadow(0 0 8px rgba(250,97,75,.5))}
 .an6-ringtxt{position:absolute;top:calc(50% + 6px);left:50%;transform:translate(-50%,-50%);text-align:center}
 .an6-ringtxt b{display:block;font-size:28px;font-weight:700;color:var(--text)}
 .an6-ringtxt span{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)}

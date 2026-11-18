@@ -8,6 +8,10 @@ import DmCampaigns from "../components/DmCampaigns";
 import DmInbox from "../components/DmInbox";
 import DriveAutoPost from "../components/DriveAutoPost";
 import { Empty, ErrorState, Loading } from "../components/states";
+import { useIsPhone } from "../lib/phone";
+import { Ic, Sheet } from "../components/analytics/phoneBits";
+import { JumpChips, SwipeDel, useSoftDelete } from "../components/mobile/FlowBits";
+import SwipeRow from "../components/mobile/SwipeRow";
 
 export default function WorkflowsScreen() {
   const { selectedClient } = useAppState();
@@ -21,6 +25,11 @@ export default function WorkflowsScreen() {
   const [destinations, setDestinations] = useState<Platform[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  // Phone: the New workflow sheet, and the counts the area chips show.
+  const [newOpen, setNewOpen] = useState(false);
+  const [dmCount, setDmCount] = useState<number | null>(null);
+  const [inboxNew, setInboxNew] = useState<number | null>(null);
 
   // Keyed on the id, so a client-list refresh (Sync accounts in Drive auto-post)
   // does not blank and reload the rules below.
@@ -52,7 +61,7 @@ export default function WorkflowsScreen() {
   };
 
   const create = async () => {
-    if (!selectedClient || !name.trim() || destinations.length === 0) return;
+    if (!selectedClient || !name.trim() || destinations.length === 0) return false;
     setBusy(true);
     setError(null);
     try {
@@ -64,8 +73,10 @@ export default function WorkflowsScreen() {
       setName("");
       setDestinations([]);
       await load();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not create workflow");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -90,6 +101,201 @@ export default function WorkflowsScreen() {
       toast.fail(`Could not delete ${w.name}`, err);
     }
   };
+
+  // Phone: a swiped workflow goes at once and is deleted after the Undo toast.
+  const { hidden, del: delWorkflow } = useSoftDelete(async (id) => {
+    const w = workflows?.find((x) => x.id === id);
+    try {
+      await api.del(`/workflows/${id}`);
+      await load();
+    } catch (err) {
+      toast.fail(`Could not delete ${w?.name ?? "that workflow"}`, err);
+      throw err;
+    }
+  });
+
+  if (isPhone) {
+    // Phone (mobile pass): one page with area chips. Drive auto-post leads,
+    // then the workflows as rows with a switch (swipe left to delete, with
+    // Undo) under a banner saying they are saved but not running, New
+    // workflow in a sheet, then the DM campaigns and the DM inbox.
+    const shown = (workflows ?? []).filter((w) => !hidden.has(w.id));
+    const hasMeta = (selectedClient?.accounts ?? []).some(
+      (a) => a.status === "connected" && (a.platform === "instagram" || a.platform === "facebook"),
+    );
+    return (
+      <section className="screen active mb-page fl-page" data-screen="workflows" data-state={state}>
+        <p className="mb-sub mb-subonly">Automations for {selectedClient?.name ?? "this brand"}. Drive auto-post runs on its own.</p>
+        {!selectedClient ? (
+          <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to manage its workflows." />
+        ) : (
+          <>
+            <JumpChips
+              label="Workflow areas"
+              items={[
+                { id: "fl-drive", label: "Drive auto-post" },
+                { id: "fl-wf", label: <>Workflows {workflows && <small>{shown.length}</small>}</> },
+                { id: "fl-dm", label: <>DM campaigns {dmCount !== null && <small>{dmCount}</small>}</> },
+                ...(hasMeta ? [{ id: "fl-inbox", label: <>DM inbox {!!inboxNew && <small>{inboxNew} new</small>}</> }] : []),
+              ]}
+            />
+            <DriveAutoPost client={selectedClient} />
+
+            <div id="fl-wf" className="fl-areah">
+              <h2 className="mb-h2">Workflows</h2>
+              <button type="button" className="mb-btn sm ghost" data-testid="workflow-new" onClick={() => setNewOpen(true)}>
+                <Ic name="i-plus" />
+                New workflow
+              </button>
+            </div>
+            <div className="mb-banner info fl-banner">
+              <Ic name="i-info" />
+              <div className="mb-bt">
+                <b>Saved, not running yet</b>
+                These rules say what should happen when a video posts to the source. Fan-out is not built, so a scheduled video only goes to
+                the platforms you tick.
+              </div>
+            </div>
+            {workflows === null ? (
+              loadError ? (
+                <ErrorState screen="workflows" message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
+              ) : (
+                <Loading screen="workflows" />
+              )
+            ) : shown.length === 0 ? (
+              <div className="mb-card mb-empty">
+                <div className="mb-ei">
+                  <Ic name="i-bolt" />
+                </div>
+                <h3>No workflows yet</h3>
+                <p>Create one to fan a single upload out across platforms.</p>
+              </div>
+            ) : (
+              <>
+                <section className="mb-card list fl-rows" aria-label="Workflows">
+                  {shown.map((w) => (
+                    <div key={w.id} className="fl-swwrap">
+                      <SwipeDel />
+                      <SwipeRow className="fl-swrow" onLeft={() => delWorkflow(w.id, w.name)}>
+                        <div className="fl-wfrow" data-testid={`workflow-${w.id}`}>
+                          <span className="mb-grow">
+                            <b>{w.name}</b>
+                            <span className="fl-flow">
+                              <Pf p={PF_ID[w.sourcePlatform]} size="xs" />
+                              <Ic name="i-arrow-r" />
+                              {w.destinations.map((d) => (
+                                <Pf key={d} p={PF_ID[d]} size="xs" />
+                              ))}
+                              {!w.enabled && <small>Paused</small>}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={w.enabled}
+                            aria-label={`${w.name} enabled`}
+                            className="fl-sw"
+                            data-testid={`workflow-toggle-${w.id}`}
+                            onClick={() => void toggleEnabled(w)}
+                          >
+                            <span className={`mb-tog${w.enabled ? " on" : ""}`} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </SwipeRow>
+                    </div>
+                  ))}
+                </section>
+                <p className="fl-help fl-under">Swipe a workflow left to delete it.</p>
+              </>
+            )}
+
+            <DmCampaigns client={selectedClient} onCount={setDmCount} />
+            <DmInbox client={selectedClient} onNew={setInboxNew} />
+          </>
+        )}
+
+        {newOpen && selectedClient && (
+          <Sheet
+            label="New workflow"
+            title="New workflow"
+            sub={`For ${selectedClient.name}. Kept for when fan-out is built.`}
+            onClose={() => setNewOpen(false)}
+            foot={
+              <>
+                <button type="button" className="mb-btn" onClick={() => setNewOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="mb-btn pri"
+                  data-testid="workflow-create"
+                  disabled={busy || !name.trim() || destinations.length === 0}
+                  onClick={() => void create().then((ok) => ok && setNewOpen(false))}
+                >
+                  {busy ? "Creating…" : "Create workflow"}
+                </button>
+              </>
+            }
+          >
+            <div className="mb-field">
+              <label htmlFor="fl-wfname">Workflow name</label>
+              <input id="fl-wfname" className="mb-input" placeholder="e.g. TikTok everywhere" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="mb-field">
+              <span className="mb-flab">Source platform</span>
+              <div className="fl-srcpick" role="radiogroup" aria-label="Source platform">
+                {PLATFORMS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={source === p}
+                    className={`mb-chip${source === p ? " on" : ""}`}
+                    onClick={() => {
+                      setSource(p);
+                      setDestinations((prev) => prev.filter((d) => d !== p));
+                    }}
+                  >
+                    <Pf p={PF_ID[p]} size="xs" />
+                    {SURFACE_LABEL[p]}
+                    {source === p && <small>Source</small>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-field">
+              <span className="mb-flab">Auto-publish to</span>
+              <div className="mb-card list">
+                {PLATFORMS.filter((p) => p !== source).map((p) => {
+                  const on = destinations.includes(p);
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      role="switch"
+                      aria-checked={on}
+                      aria-label={`Auto-publish to ${PLATFORM_LABELS[p]}`}
+                      data-testid={`workflow-dest-${p}`}
+                      className="mb-lrow"
+                      onClick={() => toggleDestination(p)}
+                    >
+                      <Pf p={PF_ID[p]} size="sm" />
+                      <span className="mb-lt">
+                        <b>{SURFACE_LABEL[p]}</b>
+                        <small>{PLATFORM_LABELS[p]}</small>
+                      </span>
+                      <span className={`mb-tog${on ? " on" : ""}`} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {error && <div className="mb-err">{error}</div>}
+          </Sheet>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active" data-screen="workflows" data-state={state}>

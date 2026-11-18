@@ -4,6 +4,7 @@ import CoverModal from "./CoverModal";
 import SopPanel, { sopRequired } from "../components/SopPanel";
 import { currentRoute, setQuery } from "../lib/routes";
 import BestTimes from "../components/BestTimes";
+import { useIsPhone } from "../lib/phone";
 import GlassDateTime from "../components/GlassDateTime";
 import Select from "../components/Select";
 import { useToast } from "../components/Toasts";
@@ -125,6 +126,7 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
   const noAccount = (yt && ytAccounts.length === 0) || (ig && igAccounts.length === 0);
 
   const liveOrder = PHASES.map((p) => p.id as PhaseId);
+  const isPhone = useIsPhone();
   // The open step lives in the URL (?step=), so a link or a bot lands on it.
   const [phase, setPhaseState] = useState<PhaseId>(() => {
     const s = currentRoute().step as PhaseId | null;
@@ -642,6 +644,21 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
           </button>
         ))}
       </div>
+      {isPhone && (
+        <div className="lf-pstep" data-testid="longform-progress">
+          <div className="lf-pbar" aria-hidden="true">
+            {PHASES.map((p, i) => (
+              <i key={p.id} className={i <= stepIndex ? "on" : undefined} />
+            ))}
+          </div>
+          <div className="lf-plab">
+            <b>
+              Step {stepIndex + 1} of {PHASES.length}: {PHASES[stepIndex]?.label}
+            </b>
+            {stepIndex < PHASES.length - 1 && <span>Next: {PHASES[stepIndex + 1]?.label}</span>}
+          </div>
+        </div>
+      )}
 
       {selectedClient && (
         <div style={{ padding: "0 24px" }}>
@@ -1535,7 +1552,7 @@ export default function LongFormModal({ asset: initialAsset, onClose, onSchedule
             }
             onClick={next}
           >
-            Next
+            {isPhone && PHASES[stepIndex + 1] ? `Next: ${PHASES[stepIndex + 1]!.label}` : "Next"}
           </button>
         ) : (
           <button

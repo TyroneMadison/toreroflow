@@ -28,7 +28,8 @@ export type ScreenId =
   | "failed"
   | "insights"
   | "monthly"
-  | "settings";
+  | "settings"
+  | "more";
 
 export type SectionId = "overview" | "create" | "measure" | "reports" | "settings";
 
@@ -101,7 +102,11 @@ export const SECTIONS: SectionDef[] = [
     id: "settings",
     label: "Settings",
     icon: "#i-gear",
-    pages: [{ id: "settings", label: "Settings", slug: "settings" }],
+    pages: [
+      { id: "settings", label: "Settings", slug: "settings" },
+      // The phone's More tab (mobile pass): every other page in one list.
+      { id: "more", label: "More", slug: "more", hidden: true },
+    ],
   },
 ];
 

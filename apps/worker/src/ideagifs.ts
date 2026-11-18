@@ -37,7 +37,7 @@ export interface Shot {
 
 const OW = 480;
 const OH = 270;
-const CORAL = "#FF6F61";
+const CORAL = "#FA614B";
 const SKINS = ["#623c28", "#4e2f1f", "#704530"];
 const HAIR = "#16110f";
 const SHIRTS = ["#282c3c", "#3b2a2a", "#22342c"];

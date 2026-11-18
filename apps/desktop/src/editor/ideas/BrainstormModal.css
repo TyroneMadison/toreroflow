@@ -26,11 +26,11 @@
 /* A line the strategist wrote in quotes, sitting apart from the prose because
    it is the one part of an answer the operator can act on. */
 .bshook{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;
-  border-radius:var(--radius-sm);background:rgba(255,111,97,.10);border:1px solid rgba(255,111,97,.28)}
+  border-radius:var(--radius-sm);background:rgba(250,97,75,.10);border:1px solid rgba(250,97,75,.28)}
 .bshook span{font-size:12.5px;font-weight:600;line-height:1.45;color:var(--txt)}
 .bshook .cbtn{flex:0 0 auto}
 .bshook .cbtn:disabled{background:var(--glass-2);color:var(--txt-3)}
-[data-theme="light"] .bshook{background:rgba(255,111,97,.13)}
+[data-theme="light"] .bshook{background:rgba(250,97,75,.13)}
 
 /* ---- a turn in flight ---- */
 

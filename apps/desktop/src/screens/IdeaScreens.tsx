@@ -37,13 +37,21 @@ import {
   type LinkState,
 } from "../lib/ideas";
 import { linkProps, navigate } from "../lib/routes";
+import { FAILED_CHANGED, useFailedPosts } from "../lib/failedPosts";
+import { useIsPhone } from "../lib/phone";
+import ThumbPlayer, { mmss, type ThumbPlayerHandle } from "../components/mobile/ThumbPlayer";
+import SwipeRow from "../components/mobile/SwipeRow";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
 import { openExternal } from "../lib/external";
-import { PLATFORM_LABELS } from "../lib/platforms";
+import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
+import Pf from "../components/Pf";
 import { useAppState } from "../state/AppState";
 import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
 import Select from "../components/Select";
 import { Badge, KillSwitch, Lbl, Note } from "../components/ideas/IdeaBits";
+import { Ic, PhoneHead, PickSheet, Sheet, shareLink } from "../components/analytics/phoneBits";
+import BrandAvatar from "../components/BrandAvatar";
 import "./IdeaScreens.css";
 
 /*
@@ -129,6 +137,7 @@ const STATE_TONE: Record<LinkState, "ok" | "warn" | "bad" | undefined> = {
 };
 
 export function ApprovalsScreen() {
+  const isPhone = useIsPhone();
   const { selectedClient } = useAppState();
   const toast = useToast();
   const videos = useBrandVideos(selectedClient?.id);
@@ -227,13 +236,47 @@ export function ApprovalsScreen() {
                   <input className="field-in" readOnly value={url || live.url} onFocus={(e) => e.currentTarget.select()} />
                 </label>
                 {!PUBLIC_APP_URL && <Note tone="warn">Set VITE_PUBLIC_APP_URL so the link opens the web app, not this desktop shell.</Note>}
-                <button type="button" className="btn pri id-full" onClick={() => void copy(url || live.url, toast)}>
-                  Copy link
-                </button>
-                <button type="button" className="btn ghost id-full" disabled={busy} onClick={() => void revoke(live.id)}>
-                  Turn this link off
-                </button>
-                <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                {isPhone ? (
+                  <>
+                    <div className="idr-acts">
+                      <button type="button" className="mb-btn ghost" onClick={() => void copy(url || live.url, toast)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-copy" />
+                        </svg>
+                        Copy link
+                      </button>
+                      <button
+                        type="button"
+                        className="mb-btn pri"
+                        onClick={() =>
+                          void shareLink(url || live.url, "Approval link").then((how) => {
+                            if (how === "copied") toast.success("Link copied");
+                            else if (how === "failed") toast.error("Could not share the link");
+                          })
+                        }
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-share" />
+                        </svg>
+                        Share link
+                      </button>
+                    </div>
+                    <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                    <button type="button" className="mb-btn text danger block" disabled={busy} onClick={() => void revoke(live.id)}>
+                      Turn this link off
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="btn pri id-full" onClick={() => void copy(url || live.url, toast)}>
+                      Copy link
+                    </button>
+                    <button type="button" className="btn ghost id-full" disabled={busy} onClick={() => void revoke(live.id)}>
+                      Turn this link off
+                    </button>
+                    <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -287,8 +330,23 @@ export function ApprovalsScreen() {
 }
 
 /** The video, comments pinned to moments, and (with a token) Approve or Request changes. */
-function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?: string; onChange?: (d: PublicApproval) => void }) {
+function ApprovalView({
+  data,
+  token,
+  onChange,
+  expires,
+}: {
+  data: PublicApproval;
+  token?: string;
+  onChange?: (d: PublicApproval) => void;
+  /** Phone: the expiry line, shown above the sticky actions. */
+  expires?: string;
+}) {
   const toast = useToast();
+  const isPhone = useIsPhone();
+  const player = useRef<ThumbPlayerHandle>(null);
+  const noteBox = useRef<HTMLTextAreaElement>(null);
+  const [needNote, setNeedNote] = useState(false);
   const ref = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
   const [dur, setDur] = useState(data.video.durationSec ?? 0);
@@ -317,6 +375,101 @@ function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?:
       setBusy(false);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): the thumb-sized player with note markers, notes as
+    // times that jump the video, a note box that follows the playhead, and
+    // Request changes and Approve stuck to the bottom. Request changes asks
+    // for a note first, so the editor knows what to change.
+    const jump = (ms: number | null) => ms != null && player.current?.seek(ms / 1000);
+    return (
+      <div className="id-approve mb-approve">
+        <ThumbPlayer
+          ref={player}
+          src={fileUrl(data.video.url)}
+          label={`Video, ${data.video.name}`}
+          durationHint={data.video.durationSec}
+          markers={pinned.map((c) => ({ at: c.atMs! / 1000 }))}
+          onTime={setAt}
+        />
+        <div className="mb-cardh flat">
+          <span className="mb-lab">
+            {data.comments.length} {data.comments.length === 1 ? "note" : "notes"}
+          </span>
+          {pinned.length > 0 && <small>Tap a time to jump there</small>}
+        </div>
+        <div className="mb-notes">
+          {data.comments.map((c) => (
+            <button key={c.id} type="button" className="mb-cm" onClick={() => jump(c.atMs)} disabled={c.atMs == null}>
+              {c.atMs != null && <span className="mb-ts">{mmss(c.atMs / 1000)}</span>}
+              <p>{c.body}</p>
+            </button>
+          ))}
+          {data.comments.length === 0 && <p className="mb-p muted">No notes yet.</p>}
+        </div>
+        {token && data.status !== "approved" && (
+          <>
+            <div className="mb-field">
+              <label htmlFor="approve-note">Add a note at {mmss(at)}</label>
+              <textarea
+                id="approve-note"
+                ref={noteBox}
+                className="mb-input"
+                rows={3}
+                value={body}
+                maxLength={2000}
+                placeholder="What should change?"
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  setNeedNote(false);
+                }}
+              />
+              {needNote && <div className="mb-err">Add a note first, so the editor knows what to change.</div>}
+            </div>
+            <button type="button" className="mb-btn ghost block" disabled={busy || !body.trim()} onClick={() => void send()}>
+              Add note
+            </button>
+            {expires && <p className="id-note">This link expires {expires}.</p>}
+            <div className="mb-pubacts">
+              <button
+                type="button"
+                className="mb-btn"
+                disabled={busy}
+                onClick={() => {
+                  if (!body.trim()) {
+                    setNeedNote(true);
+                    noteBox.current?.focus();
+                    return;
+                  }
+                  void send("changes_requested");
+                }}
+              >
+                Request changes
+              </button>
+              <button type="button" className="mb-btn pri" disabled={busy} onClick={() => void send("approved")}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-check" />
+                </svg>
+                Approve
+              </button>
+            </div>
+          </>
+        )}
+        {data.status === "approved" && (
+          <div className="mb-empty">
+            <span className="mb-ei ok">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-check-circle" />
+              </svg>
+            </span>
+            <h3>Approved. Thank you.</h3>
+            <p>Torerone has your go-ahead and will post it as planned.</p>
+          </div>
+        )}
+        {token && data.status === "changes_requested" && <Note tone="warn">Changes requested. The editor has your notes.</Note>}
+      </div>
+    );
+  }
 
   return (
     <div className="id-approve">
@@ -383,7 +536,48 @@ function ApprovalView({ data, token, onChange }: { data: PublicApproval; token?:
   );
 }
 
-export function PublicShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function PublicShell({
+  title,
+  children,
+  phoneTitle,
+  sub,
+  brand,
+  context,
+  status,
+}: {
+  title: string;
+  children: React.ReactNode;
+  /** Phone only (mobile pass): the shorter title, one line under it, the brand and a status pill. */
+  phoneTitle?: string;
+  sub?: string;
+  brand?: string;
+  /** Replaces "For <brand>" in the phone header, e.g. "Review an edit". */
+  context?: string;
+  status?: React.ReactNode;
+}) {
+  const isPhone = useIsPhone();
+  if (isPhone)
+    return (
+      <main className="id id-public mb-pub">
+        <header className="mb-pubbar">
+          <span className="mb-mk" aria-hidden="true">
+            T
+          </span>
+          <span className="mb-grow">
+            <b>Torerone</b>
+            <small>{context ?? (brand ? `For ${brand}` : null) ? `${context ?? `For ${brand}`} · no account needed` : "No account needed"}</small>
+          </span>
+          {status}
+        </header>
+        <div className="mb-pubbody">
+          <div>
+            <h1 className="mb-h1 pub">{phoneTitle ?? title}</h1>
+            {sub && <p className="mb-sub">{sub}</p>}
+          </div>
+          {children}
+        </div>
+      </main>
+    );
   return (
     <main className="id id-public">
       <header className="id-pubhead">
@@ -397,6 +591,7 @@ export function PublicShell({ title, children }: { title: string; children: Reac
 
 /** /a/:token, opened by the client. */
 export function PublicApprovalPage({ token }: { token: string }) {
+  const isPhone = useIsPhone();
   const [data, setData] = useState<PublicApproval | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -406,9 +601,30 @@ export function PublicApprovalPage({ token }: { token: string }) {
       .catch((err) => setError(err instanceof ApiError && err.status === 404 ? "This link does not exist." : errText(err, "could not open this link")));
   }, [token]);
   return (
-    <PublicShell title={data ? `Review: ${data.video.name}` : "Review a video"}>
-      {error ? <Note tone="bad">{error}</Note> : data ? <ApprovalView data={data} token={token} onChange={setData} /> : <Loading screen="approval" />}
-      {data && <p className="id-note">This link expires {fmtEt(data.expiresAt)}.</p>}
+    <PublicShell
+      title={data ? `Review: ${data.video.name}` : "Review a video"}
+      phoneTitle={data?.video.name.replace(/\.[a-z0-9]{2,4}$/i, "")}
+      sub={data && data.status !== "approved" ? "Watch it, leave notes at any moment, then approve or ask for changes." : undefined}
+      status={
+        data ? (
+          data.status === "approved" ? (
+            <span className="mb-pill ok">Approved</span>
+          ) : data.status === "changes_requested" ? (
+            <span className="mb-pill warn">Changes requested</span>
+          ) : (
+            <span className="mb-pill warn">Waiting for you</span>
+          )
+        ) : null
+      }
+    >
+      {error ? (
+        <Note tone="bad">{error}</Note>
+      ) : data ? (
+        <ApprovalView data={data} token={token} onChange={setData} expires={isPhone && data.status !== "approved" ? fmtEt(data.expiresAt) : undefined} />
+      ) : (
+        <Loading screen="approval" />
+      )}
+      {data && (!isPhone || data.status === "approved") && <p className="id-note">This link expires {fmtEt(data.expiresAt)}.</p>}
     </PublicShell>
   );
 }
@@ -463,6 +679,7 @@ function RequestForm({ token, info, onSent }: { token: string; info: FormInfo; o
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const tooBig = file != null && file.size > info.maxFileBytes;
+  const isPhone = useIsPhone();
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -499,6 +716,110 @@ function RequestForm({ token, info, onSent }: { token: string; info: FormInfo; o
       setBusy(false);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): 48px fields with labels above, the right keyboard
+    // for each, the date wheel, one big file button, and Send request stuck
+    // to the bottom; then a Request sent screen.
+    const mb = Math.round(info.maxFileBytes / 1024 / 1024);
+    const due = f.dueDate ? new Date(`${f.dueDate}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "";
+    if (sent)
+      return (
+        <div className="mb-empty">
+          <span className="mb-ei ok">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-check-circle" />
+            </svg>
+          </span>
+          <h3>Request sent</h3>
+          <p>The editor team has it. You can close this page.</p>
+          <button type="button" className="mb-btn ghost" onClick={() => setSent(false)}>
+            Send another
+          </button>
+        </div>
+      );
+    return (
+      <form className="mb-reqform" onSubmit={(e) => void submit(e)}>
+        <div className="mb-field">
+          <label htmlFor="req-what">
+            What do you need? <span className="mb-req">*</span>
+          </label>
+          <input id="req-what" className="mb-input" required maxLength={2000} value={f.what} onChange={set("what")} placeholder="Walkaround of the new Urus" enterKeyHint="next" />
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-due">Due date</label>
+          <label className="mb-input mb-datebtn">
+            <span className={due ? undefined : "mb-ph"}>{due || "Pick a day"}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-cal" />
+            </svg>
+            <input id="req-due" type="date" value={f.dueDate} onChange={set("dueDate")} aria-label="Due date" />
+          </label>
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-link">Footage link</label>
+          <input
+            id="req-link"
+            className="mb-input"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            pattern="https?://.+"
+            maxLength={2000}
+            value={f.footageUrl}
+            onChange={set("footageUrl")}
+            placeholder="https://drive.google.com/..."
+          />
+          <span className="mb-help">Paste a link to the footage, if it is online.</span>
+        </div>
+        <div className="mb-field">
+          <label htmlFor="req-notes">Notes</label>
+          <textarea id="req-notes" className="mb-input" rows={4} maxLength={4000} value={f.notes} onChange={set("notes")} placeholder="Show the interior first." />
+        </div>
+        <div className="mb-field">
+          <span className="mb-flab">File, optional</span>
+          <label className="mb-filebtn">
+            <span className="mb-lic">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-image" />
+              </svg>
+            </span>
+            <span className="mb-lt">
+              <b>{file ? file.name : "Add a photo, video or file"}</b>
+              <small>{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : `From Photos or Files, up to ${mb} MB`}</small>
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href={file ? "#i-check" : "#i-plus"} />
+            </svg>
+            <input type="file" accept={info.fileTypes.join(",")} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </label>
+          {tooBig && <div className="mb-err">That file is too big. The limit is {mb} MB.</div>}
+        </div>
+        {/* Bots fill every field; people never see this one. */}
+        <div className="id-hp" aria-hidden="true">
+          <label>
+            Website
+            <input tabIndex={-1} autoComplete="off" value={f.website} onChange={set("website")} />
+          </label>
+        </div>
+        {info.turnstileSiteKey && (
+          <div className="mb-human">
+            <Turnstile siteKey={info.turnstileSiteKey} onToken={setCaptcha} />
+            {captcha && <span className="mb-p muted small">Checked: you are human.</span>}
+          </div>
+        )}
+        {error && <div className="mb-err">{error}</div>}
+        <div className="mb-pubacts">
+          <button type="submit" className="mb-btn pri" disabled={busy || !f.what.trim() || tooBig || (!!info.turnstileSiteKey && !captcha)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-send" />
+            </svg>
+            {busy ? "Sending" : "Send request"}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <form onSubmit={(e) => void submit(e)} onChange={() => setSent(false)}>
@@ -569,6 +890,7 @@ const dueLabel = (d: string | null) =>
 export function RequestsScreen() {
   const { selectedClient, clients } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [rows, setRows] = useState<ContentRequestRow[] | null>(null);
   const [config, setConfig] = useState<TrelloIntakeConfig | null>(null);
   const [links, setLinks] = useState<FormLink[] | null>(null);
@@ -631,6 +953,150 @@ export function RequestsScreen() {
   const where = config ? `${config.boardName.replace(/^Torone /, "")}, ${config.listName}` : "Editor Pipeline, To edit";
   const state = error ? "error" : rows === null ? "loading" : "ready";
   const formLink = live ? publicLink(PUBLIC_APP_URL, live.url) : "";
+
+  if (isPhone) {
+    // The phone (mobile pass): the brand's form link first, then every
+    // request with its Trello state, then the form itself for a client who
+    // calls instead of typing.
+    const name = selectedClient?.name ?? "";
+    const avatar = (id: string) => {
+      const i = clients.findIndex((c) => c.id === id);
+      return i >= 0 ? <BrandAvatar client={clients[i]!} index={i} size={36} /> : null;
+    };
+    const share = async (url: string) => {
+      const how = await shareLink(url, `${name} request form`);
+      if (how === "copied") toast.success("Link copied");
+      else if (how === "failed") toast.error("Could not share the link");
+    };
+    return (
+      <Screen id="requests" state={state} title="Content requests" sub="Clients ask. A Trello card lands in the editor pipeline.">
+        {state === "error" && <ErrorState screen="requests" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="requests" label="Loading requests" />}
+        {state === "ready" && (
+          <div className="idr">
+            <section className="mb-card idr-card" data-testid="requests.form">
+              {!selectedClient ? (
+                <p className="mb-help">Pick a brand to share its form.</p>
+              ) : links === null ? (
+                <Loading screen="requests-links" />
+              ) : !live ? (
+                <>
+                  <div className="idr-h">
+                    <h3>{name}'s form link</h3>
+                  </div>
+                  <p className="mb-help">{name} has no live form link. Each link is signed for one brand and can be turned off at any time.</p>
+                  <button type="button" className="mb-btn pri block" disabled={busy === "link"} onClick={() => void makeLink()}>
+                    Make form link
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="idr-h">
+                    <h3>{name}'s form link</h3>
+                    <span className="mb-pill ok">Live</span>
+                  </div>
+                  <label className="idr-url">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-link" />
+                    </svg>
+                    <input readOnly value={formLink || live.url} onFocus={(e) => e.currentTarget.select()} aria-label={`${name}'s form link`} />
+                  </label>
+                  <div className="idr-acts">
+                    <button type="button" className="mb-btn ghost" onClick={() => void copy(formLink || live.url, toast)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-copy" />
+                      </svg>
+                      Copy link
+                    </button>
+                    <button type="button" className="mb-btn pri" onClick={() => void share(formLink || live.url)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-share" />
+                      </svg>
+                      Share link
+                    </button>
+                  </div>
+                  <p className="mb-help">Signed for {name} only. It can be turned off at any time.</p>
+                  <div className="idr-foot">
+                    <button type="button" className="mb-btn text" disabled={busy === "link"} onClick={() => void rotate(live.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-refresh" />
+                      </svg>
+                      Replace link
+                    </button>
+                    <button type="button" className="mb-btn text danger" disabled={busy === "link"} onClick={() => void revoke(live.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-x" />
+                      </svg>
+                      Turn off
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+            <section className="mb-card idr-card" data-testid="requests.list">
+              <div className="idr-h">
+                <h3>Requests</h3>
+                <span>All brands, {rows!.length}</span>
+              </div>
+              {rows!.length === 0 ? (
+                <p className="mb-help">No requests yet. They show here the moment a client sends one.</p>
+              ) : (
+                rows!.map((r) => (
+                  <div key={r.id} className={`idr-row${r.status === "failed" ? " bad" : ""}`}>
+                    {avatar(r.clientId)}
+                    <div className="mb-lt">
+                      <b>{r.what.split("\n")[0]}</b>
+                      <small>
+                        {nameOf(r.clientId)}, {dueLabel(r.dueDate)}
+                      </small>
+                      {r.status === "created" ? (
+                        <span className="idr-st">
+                          <span className="mb-pill ok">Trello card created</span>
+                          <small>{where}</small>
+                        </span>
+                      ) : r.status === "failed" ? (
+                        <span className="idr-st">
+                          <span className="mb-pill bad">Card failed</span>
+                          <small className="idr-err">{r.error ?? "Trello did not answer."}</small>
+                        </span>
+                      ) : (
+                        <span className="idr-st">
+                          <span className="wfq-spin" aria-hidden="true" />
+                          <small>Sending to Trello</small>
+                        </span>
+                      )}
+                    </div>
+                    {r.status === "created" && r.trelloUrl && (
+                      <button type="button" className="mb-ib ghost idr-tr" aria-label="Open the Trello card" onClick={() => void openExternal(r.trelloUrl!)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-trello" />
+                        </svg>
+                      </button>
+                    )}
+                    {r.status === "failed" && (
+                      <button type="button" className="mb-btn sm danger" disabled={busy === r.id} onClick={() => void retry(r.id)}>
+                        {busy === r.id ? "Retrying" : "Retry"}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+            {live && (
+              <section className="mb-card idr-card">
+                <div className="idr-h">
+                  <h3>Client form, no login</h3>
+                  <span>What {name} fills in</span>
+                </div>
+                {info ? <RequestForm token={live.token} info={info} onSent={() => void load()} /> : <Loading screen="requests-form" />}
+                <p className="mb-help">Fill it in for a client who calls; it sends a real request for {name}, the same as their page.</p>
+              </section>
+            )}
+          </div>
+        )}
+      </Screen>
+    );
+  }
 
   return (
     <Screen id="requests" state={state} title="Content requests" sub="Clients ask. A Trello card lands in the editor pipeline.">
@@ -736,7 +1202,12 @@ export function PublicRequestPage({ token }: { token: string }) {
       );
   }, [token]);
   return (
-    <PublicShell title={info ? `Request content for ${info.brandName}` : "Request content"}>
+    <PublicShell
+      title={info ? `Request content for ${info.brandName}` : "Request content"}
+      phoneTitle="Request content"
+      sub="Tell us what you need and when."
+      brand={info?.brandName}
+    >
       {error ? <Note tone="bad">{error}</Note> : info ? <RequestForm token={token} info={info} /> : <Loading screen="request" />}
     </PublicShell>
   );
@@ -752,6 +1223,9 @@ export function MonthlyReportScreen() {
   const [config, setConfig] = useState<ReportJobConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const posts = useBrandPosts(selectedClient?.id);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [allPlan, setAllPlan] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedClient) return;
@@ -775,6 +1249,158 @@ export function MonthlyReportScreen() {
 
   const top = report?.topPostId ? posts?.find((p) => p.postId === report.topPostId)?.assetName : null;
   const state = !selectedClient ? "empty" : error ? "error" : report && config ? "ready" : "loading";
+
+  // Phone (mobile pass, mockup "monthly"): the preview reads like the report
+  // (three tiles, the top post), next month as a short list with See all, and
+  // the schedule as a two-column list with the send switch and its warning.
+  // The switch stays read-only, as on the desktop: sending is turned on at the server.
+  if (isPhone) {
+    const plan = (report?.nextMonthPlan ?? []).map((line) => {
+      // The API writes "Nov 17, instagram: first caption line"; anything else shows as written.
+      const m = /^([A-Z][a-z]{2} \d{1,2}), ([a-z]+)(?:: (.*))?$/.exec(line);
+      return m ? { day: m[1]!, platform: m[2]!, text: m[3] ?? "" } : { day: "", platform: "", text: line };
+    });
+    const topPost = report?.topPostId ? posts?.find((p) => p.postId === report.topPostId) : null;
+    const gained = report?.followersGained ?? 0;
+    return (
+      <section className="screen active mb-page rp-page" data-screen="monthly" data-state={state}>
+        <PhoneHead screen="monthly" sub="Preview first. The job builds every report on the 1st." />
+        {state === "empty" && NO_BRAND("monthly", "Pick a brand with the switcher at the top to preview its report.")}
+        {state === "error" && <ErrorState screen="monthly" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="monthly" label="Building the report" />}
+        {state === "ready" && report && config && (
+          <>
+            <section className="rp-hero" data-testid="report.preview">
+              <div className="rp-rowsb">
+                <span className="mb-lab">Preview · {selectedClient!.name}</span>
+                <button type="button" className="mb-btn sm ghost rp-monthbtn" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="report.month">
+                  {monthLabel(report.month)}
+                  <Ic name="i-chev" />
+                </button>
+              </div>
+              <div className="rp-stats three">
+                <div className="rp-stat">
+                  <div className="k">Views</div>
+                  <div className="v">{compact(report.views)}</div>
+                </div>
+                <div className="rp-stat">
+                  <div className="k">Followers</div>
+                  <div className={`v${gained > 0 ? " rp-ok" : ""}`}>
+                    {gained >= 0 ? "+" : ""}
+                    {gained.toLocaleString("en-US")}
+                  </div>
+                </div>
+                <div className="rp-stat">
+                  <div className="k">Posts</div>
+                  <div className="v">{report.posts}</div>
+                </div>
+              </div>
+              {report.views === 0 && report.posts === 0 ? (
+                <p className="rp-note">
+                  Nothing to report for {monthLabel(report.month)}.{" "}
+                  <a className="rp-a" {...linkProps("analytics")}>
+                    Open Analytics
+                  </a>
+                </p>
+              ) : (
+                <div className="rp-top1">
+                  <span className="rp-thumb">{topPost?.thumbUrl && <img src={fileUrl(topPost.thumbUrl)!} alt="" />}</span>
+                  <span className="rp-grow">
+                    <small>Top post</small>
+                    <b>{report.topPostId ? (topPost?.assetName ?? "a post from this month") : "none this month"}</b>
+                  </span>
+                </div>
+              )}
+              {report.sentAt && <p className="rp-note rp-ok">Sent {fmtEt(report.sentAt)}.</p>}
+            </section>
+
+            <section className="mb-card" data-testid="report.next">
+              <div className="rp-cardh row">
+                <h3>Next month in the report</h3>
+                <small>
+                  {plan.length} {plan.length === 1 ? "post" : "posts"} scheduled
+                </small>
+              </div>
+              {plan.length ? (
+                <div className="rp-list">
+                  {(allPlan ? plan : plan.slice(0, 4)).map((p, i) => (
+                    <div className="rp-nx" key={i}>
+                      <span className="rp-d">{p.day}</span>
+                      {p.platform in PF_ID && <Pf p={PF_ID[p.platform as Platform]} size="xs" />}
+                      <span className="rp-ell">{p.text || PLATFORM_LABELS[p.platform as Platform] || p.platform}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rp-empty">Nothing scheduled yet.</p>
+              )}
+              {plan.length > 4 && (
+                <button type="button" className="mb-btn text sm rp-more" aria-expanded={allPlan} onClick={() => setAllPlan((v) => !v)}>
+                  {allPlan ? "Show fewer" : `See all ${plan.length}`}
+                </button>
+              )}
+            </section>
+
+            <section className="mb-card" data-testid="report.schedule">
+              <div className="rp-cardh">
+                <h3>Schedule</h3>
+              </div>
+              <dl className="rp-kv">
+                <dt>Runs</dt>
+                <dd>The 1st of every month, ET. Next: {nextRunLabel()}</dd>
+                <dt>From</dt>
+                <dd>{REPORT_SENDER}</dd>
+                <dt>To</dt>
+                <dd>
+                  Every email on the client profile.{" "}
+                  {selectedClient!.contactEmail
+                    ? `For ${selectedClient!.name}: ${selectedClient!.contactEmail}`
+                    : `${selectedClient!.name} has no email on the profile yet.`}
+                </dd>
+                <dt>Covers</dt>
+                <dd>The month that just ended</dd>
+              </dl>
+              <div className="rp-send" data-testid="report.killswitch">
+                <span className="rp-grow">
+                  <b>Send emails</b>
+                  <small>
+                    {config.killSwitch
+                      ? "On. Reports go out on the 1st."
+                      : "Off: reports are built as previews and never emailed. Turning this on needs Tyrone's yes."}
+                  </small>
+                </span>
+                <span
+                  className={`mb-tog${config.killSwitch ? " on" : ""}`}
+                  role="switch"
+                  aria-checked={config.killSwitch}
+                  aria-disabled="true"
+                  aria-label="Send monthly report emails"
+                />
+              </div>
+              <div className={`mb-banner ${config.killSwitch ? "info" : "warn"} rp-okb`}>
+                <Ic name={config.killSwitch ? "i-check-circle" : "i-lock"} />
+                <span className="mb-bt">
+                  {config.killSwitch
+                    ? "Sending is on. Each brand gets one email per month."
+                    : "Sending is off. Nothing leaves this app until the kill switch is turned on at the server."}
+                </span>
+              </div>
+            </section>
+          </>
+        )}
+        {picking && (
+          <PickSheet
+            label="Report month"
+            value={month}
+            options={months.map((m) => ({ value: m, label: monthLabel(m) }))}
+            onPick={setMonth}
+            onClose={() => setPicking(false)}
+            testId="report.month-sheet"
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="monthly" state={state} title="Monthly client report" sub="Preview first. The job builds every report on the 1st.">
@@ -855,6 +1481,10 @@ export function InsightsScreen() {
   const [postId, setPostId] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [cell, setCell] = useState<{ d: number; b: number } | null>(null);
+  const [source, setSource] = useState<{ metric: string; platform: string; row: Insights["insights"][number] } | null>(null);
 
   useEffect(() => {
     setHistory(null);
@@ -886,6 +1516,235 @@ export function InsightsScreen() {
   const table = insights ? insightTable(insights.insights) : [];
   const platforms = [...new Set(insights?.insights.map((i) => i.platform ?? "total"))].sort((a, b) => (a === "total" ? 1 : b === "total" ? -1 : a.localeCompare(b)));
   const state = !selectedClient ? "empty" : targets === null || history === null ? "loading" : "ready";
+
+  // Phone (mobile pass, mockup "insights"): the best time first, views by hour
+  // as a heat map that fits the screen, the post as a thumbnail row with a
+  // searchable sheet, and one compact table whose numbers open their source.
+  if (isPhone) {
+    const best = bt?.slots[0] ?? null;
+    const level = (v: number | null) => (v == null || !bt?.max ? 0 : Math.max(1, Math.ceil((v / bt.max) * 4)));
+    const band = (b: number) => hourLabel(b).replace(" AM", "a").replace(" PM", "p");
+    const post = posted.find((t) => t.postId === current);
+    const cols = platforms.filter((p) => p !== "total");
+    // Totals, and every number once four platform columns share 390px, as short numbers.
+    const num = (v: number, p: string) =>
+      (p !== "total" && cols.length <= 3) || v < 10_000 ? v.toLocaleString("en-US") : v < 100_000 ? `${+(v / 1000).toFixed(1)}K` : compact(v);
+    const ORDER = ["views", "reach", "impressions", "likes", "comments", "saves", "shares"];
+    const rank = (m: string) => (ORDER.includes(m) ? ORDER.indexOf(m) : ORDER.length);
+    const rows = [...table].sort((a, b) => rank(a.metric) - rank(b.metric));
+    const label = (p: string) => (p === "total" ? "Total" : ((PLATFORM_LABELS as Record<string, string>)[p] ?? p));
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const tapped = cell && bt ? bt.grid[cell.d]![cell.b] : null;
+    const thumbOf = (t: PostTargetInfo | undefined) => (
+      <span className="rp-thumb">{t?.thumbUrl && <img src={fileUrl(t.thumbUrl)!} alt="" />}</span>
+    );
+    return (
+      <section className="screen active mb-page rp-page" data-screen="insights" data-state={state}>
+        <PhoneHead screen="insights" sub="Every number from every source, merged once, with where it came from." />
+        {state === "empty" && NO_BRAND("insights", "Pick a brand with the switcher at the top to see its numbers.")}
+        {state === "loading" && <Loading screen="insights" label="Loading insights" />}
+        {state === "ready" && bt && (
+          <>
+            <div className="rp-best" data-testid="besttime.slots">
+              <Ic name="i-clock" />
+              <span className="rp-grow">
+                <span className="mb-lab">Best time to post</span>
+                <b>{best ? slotLabel(best) : "No slot beats the average yet"}</b>
+                <small>
+                  {best ? `+${best.uplift}% views vs average, ${best.posts} posts. ` : ""}
+                  {bt.enough
+                    ? `From ${bt.count} posts in the last 90 days.`
+                    : `Not enough data: ${bt.count} of ${ENOUGH_POSTS} posts in the last 90 days. Treat this as a hint.`}
+                </small>
+                {bt.slots.length > 1 && (
+                  <small>
+                    Also good: {bt.slots.slice(1).map((s) => `${slotLabel(s).replace(" ET", "")} (+${s.uplift}%)`).join(", ")}
+                  </small>
+                )}
+              </span>
+            </div>
+
+            <section className="mb-card" data-testid="besttime.heatmap">
+              <div className="rp-cardh row">
+                <h3>Views per post by hour</h3>
+                <small>ET</small>
+              </div>
+              <div className={`rp-heat${bt.enough ? "" : " thin"}`} role="group" aria-label={`Average views per post for ${selectedClient!.name}, by day and three-hour band, last 90 days`}>
+                <span />
+                {BANDS.map((b) => (
+                  <span className="hh" key={b}>
+                    {band(b)}
+                  </span>
+                ))}
+                {DAYS.flatMap((d, di) => [
+                  <span className="dd" key={d}>
+                    {d}
+                  </span>,
+                  ...BANDS.map((b, bi) => {
+                    const v = bt.grid[di]![bi] ?? null;
+                    return (
+                      <button
+                        type="button"
+                        key={`${d}${b}`}
+                        className={`l${level(v)}${cell?.d === di && cell?.b === bi ? " on" : ""}`}
+                        aria-label={`${d} ${hourLabel(b)}: ${v == null ? "no posts" : `${compact(v)} views per post`}`}
+                        aria-pressed={cell?.d === di && cell?.b === bi}
+                        onClick={() => setCell({ d: di, b: bi })}
+                      />
+                    );
+                  }),
+                ])}
+              </div>
+              <p className="rp-note" aria-live="polite">
+                {cell
+                  ? `${slotLabel({ day: cell.d, band: BANDS[cell.b]! })}: ${tapped == null ? "no posts" : `${compact(tapped)} views per post`}.`
+                  : bt.enough
+                    ? "Tap a cell to read it. Last 90 days, every platform."
+                    : `Needs about ${ENOUGH_POSTS} posts to be sure. Tap a cell to read it.`}
+              </p>
+              <div className="rp-legend">
+                <span>
+                  <i className="l0" />
+                  No posts
+                </span>
+                <span>
+                  <i className="l2" />
+                  Some views
+                </span>
+                <span>
+                  <i className="l4" />
+                  Most views
+                </span>
+              </div>
+            </section>
+          </>
+        )}
+        {state === "ready" && (
+          <div className="rp-grp" data-testid="insights.merged">
+            <div className="mb-lab">Merged insights, one post</div>
+            {posted.length === 0 ? (
+              <p className="rp-empty">Nothing has posted for {selectedClient!.name} yet.</p>
+            ) : (
+              <>
+                <button type="button" className="rp-vpick" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="insights.post">
+                  {thumbOf(post)}
+                  <span className="rp-grow">
+                    <b>{post?.assetName ?? "Pick a post"}</b>
+                    <small>{post?.publishedAt ? fmtEt(post.publishedAt) : ""}</small>
+                  </span>
+                  <Ic name="i-chev" />
+                </button>
+                {error ? (
+                  <div className="mb-banner bad rp-okb">
+                    <Ic name="i-alert" />
+                    <span className="mb-bt">{error}</span>
+                  </div>
+                ) : !insights ? (
+                  <Loading screen="insights-post" />
+                ) : table.length === 0 ? (
+                  <p className="rp-empty">No source has reported numbers for this post yet.</p>
+                ) : (
+                  <section className="mb-card">
+                    <table className="rp-mx mb-keep">
+                      <caption className="sr-only">Numbers by metric and platform; tap a number for its source</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">
+                            <span className="sr-only">Metric</span>
+                          </th>
+                          {platforms.map((p) => (
+                            <th scope="col" key={p}>
+                              {p in PF_ID ? <Pf p={PF_ID[p as Platform]} size="sm" /> : label(p)}
+                              {p in PF_ID && <span className="sr-only">{label(p)}</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r) => (
+                          <tr key={r.metric}>
+                            <th scope="row">{cap(r.metric)}</th>
+                            {platforms.map((p) => {
+                              const c = r.cells[p];
+                              return (
+                                <td key={p} className={!c ? "na" : p === "total" ? "tot" : undefined}>
+                                  {c ? (
+                                    <button
+                                      type="button"
+                                      className="rp-cell"
+                                      aria-label={`${cap(r.metric)}, ${label(p)}: ${c.value.toLocaleString("en-US")}, from ${SOURCE_LABEL[c.chosenSource]}`}
+                                      onClick={() => setSource({ metric: r.metric, platform: p, row: c })}
+                                    >
+                                      {num(c.value, p)}
+                                    </button>
+                                  ) : (
+                                    "n/a"
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="rp-help">Tap a number to see its source (Instagram API, YouTube API, Zernio or Toreroflow).</p>
+                  </section>
+                )}
+                {insights?.unavailable.map((u) => (
+                  <div className="mb-banner warn rp-okb" key={u.source}>
+                    <Ic name="i-alert" />
+                    <span className="mb-bt">
+                      {SOURCE_LABEL[u.source]} could not answer: {u.reason}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        {picking && (
+          <PickSheet
+            label="Post"
+            value={current}
+            search="Find a post"
+            onPick={setPostId}
+            onClose={() => setPicking(false)}
+            testId="insights.post-sheet"
+            options={posted.map((t) => ({ value: t.postId, label: t.assetName, hint: t.publishedAt ? fmtEt(t.publishedAt) : undefined, lead: thumbOf(t) }))}
+          />
+        )}
+        {source && (
+          <Sheet
+            label="Where this number came from"
+            title={`${cap(source.metric)}, ${label(source.platform)}`}
+            sub={source.row.day ? `Measured ${source.row.day}` : undefined}
+            onClose={() => setSource(null)}
+            testId="insights.source-sheet"
+          >
+            <div className="rp-stat">
+              <div className="k">Value</div>
+              <div className="v">{source.row.value.toLocaleString("en-US")}</div>
+            </div>
+            <div className="mb-card list">
+              {source.row.sources.map((s) => (
+                <div className="mb-lrow" key={s}>
+                  <span className="mb-lt">
+                    <b>{SOURCE_LABEL[s] ?? s}</b>
+                    <small>{s === source.row.chosenSource ? "Used for this number" : "Also reported it"}</small>
+                  </span>
+                  {s === source.row.chosenSource && (
+                    <span className="rp-ck">
+                      <Ic name="i-check" />
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Sheet>
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="insights" state={state} title="Insights" sub="Every number from every source, merged once, with where it came from.">
@@ -1039,14 +1898,17 @@ function BestTimeCard({ bt, brand }: { bt: ReturnType<typeof bestTime>; brand: s
 
 // ------------------------------------------------------- 7. failed posts
 
-/** Fired after a retry or remove so the app-wide banner recounts now, not in two minutes. */
-const FAILED_CHANGED = "toreroflow:failed-posts-changed";
 
 export function FailedPostsScreen() {
-  const { clients } = useAppState();
+  const { clients, selectClient } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [list, setList] = useState<FailedList | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [thumbs, setThumbs] = useState<Record<string, string | null>>({});
+  const [brandFilter, setBrandFilter] = useState<string>("all");
+  const [selecting, setSelecting] = useState(false);
+  const [askRemoveAll, setAskRemoveAll] = useState(false);
   const [done, setDone] = useState<Record<string, RetryOutcome>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1061,6 +1923,7 @@ export function FailedPostsScreen() {
       const brands = [...new Set(l.items.map((i) => i.brandId))];
       const all = await Promise.all(brands.map((b) => api.get<PostTargetInfo[]>(`/clients/${b}/posts`).catch(() => [])));
       setNames(Object.fromEntries(all.flat().map((t) => [t.id, t.assetName])));
+      setThumbs(Object.fromEntries(all.flat().map((t) => [t.id, t.thumbUrl])));
     } catch (err) {
       setError(errText(err, "could not load failed posts"));
     }
@@ -1099,8 +1962,8 @@ export function FailedPostsScreen() {
   const state = error ? "error" : list === null ? "loading" : list.items.length === 0 ? "empty" : "ready";
 
   // Removing hides the failure notice only; the post and its media stay put.
-  const remove = async (ids: string[] | "all") => {
-    if (ids === "all" && !window.confirm(`Remove all ${open} failure notices? The posts themselves are not deleted.`)) return;
+  const remove = async (ids: string[] | "all", confirmed = false) => {
+    if (ids === "all" && !confirmed && !window.confirm(`Remove all ${open} failure notices? The posts themselves are not deleted.`)) return;
     setBusy("remove");
     try {
       const r = await (ids === "all"
@@ -1119,6 +1982,179 @@ export function FailedPostsScreen() {
       setBusy(null);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): brand chips with counts, one card per failure that
+    // leads with the post and says the reason first, a full-width red Retry
+    // (Reconnect when the login expired), Select as a mode with a bottom bar,
+    // and swipe left to remove a notice (the post itself stays).
+    const shown = list ? list.items.filter((i) => brandFilter === "all" || i.brandId === brandFilter) : [];
+    const countFor = (id: string) => list?.items.filter((i) => i.brandId === id).length ?? 0;
+    const retryPicked = async () => {
+      for (const id of [...picked]) await retry(id);
+    };
+    return (
+      <section className="screen active id mb-page mb-failed" data-screen="failed" data-state={state}>
+        <p className="mb-sub mb-subonly">Every failure with the reason. Nothing retries on its own.</p>
+        {state === "error" && <ErrorState screen="failed" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="failed" label="Loading failed posts" />}
+        {state === "empty" && (
+          <div className="mb-empty">
+            <span className="mb-ei ok">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-check-circle" />
+              </svg>
+            </span>
+            <h3>No failed posts</h3>
+            <p>Everything went out.</p>
+          </div>
+        )}
+        {state === "ready" && (
+          <>
+            <div className="mb-chiphead">
+              <div className="mb-chips" role="tablist" aria-label="Brands">
+                <button type="button" role="tab" aria-selected={brandFilter === "all"} className={`mb-chip${brandFilter === "all" ? " on" : ""}`} onClick={() => setBrandFilter("all")}>
+                  All brands <small>{list!.items.length}</small>
+                </button>
+                {clients.map((c) => (
+                  <button key={c.id} type="button" role="tab" aria-selected={brandFilter === c.id} className={`mb-chip${brandFilter === c.id ? " on" : ""}`} onClick={() => setBrandFilter(c.id)}>
+                    {c.name} {countFor(c.id) > 0 && <small>{countFor(c.id)}</small>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {open > 0 && (
+              <div className="mb-selhead">
+                <span className="mb-lab">
+                  {open} {open === 1 ? "post" : "posts"} failed{selecting && picked.size ? `, ${picked.size} selected` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="mb-btn text sm"
+                  onClick={() => {
+                    setSelecting((v) => !v);
+                    setPicked(new Set());
+                  }}
+                >
+                  {selecting ? "Done" : "Select"}
+                </button>
+              </div>
+            )}
+            {shown.map((i) => {
+              const outcome = done[i.postTargetId];
+              const reconnect = i.action === "reconnect" || outcome === "needs_reconnect";
+              const stillFailed = !outcome || outcome === "needs_reconnect";
+              const name = names[i.postTargetId] ?? "A post";
+              const thumb = thumbs[i.postTargetId];
+              return (
+                <SwipeRow
+                  key={i.postTargetId}
+                  className={`mb-fp${stillFailed ? "" : " ok"}${picked.has(i.postTargetId) ? " picked" : ""}`}
+                  onLeft={stillFailed ? () => void remove([i.postTargetId]) : undefined}
+                  onLong={stillFailed ? () => {
+                    setSelecting(true);
+                    toggle(i.postTargetId);
+                  } : undefined}
+                  testId={`failed.card.${i.postTargetId}`}
+                >
+                  <div className="mb-fptop">
+                    {selecting && stillFailed && (
+                      <input
+                        type="checkbox"
+                        className="mb-check"
+                        checked={picked.has(i.postTargetId)}
+                        onChange={() => toggle(i.postTargetId)}
+                        aria-label={`Select ${name}, ${PLATFORM_LABELS[i.platform]}`}
+                      />
+                    )}
+                    <span className="mb-thumb">{thumb && <img src={fileUrl(thumb) ?? undefined} alt="" />}</span>
+                    <span className="mb-lt">
+                      <b>{name}</b>
+                      <small>
+                        {brandName(i.brandId)}
+                        {i.scheduledAt ? ` · ${fmtEt(i.scheduledAt)}` : ""}
+                      </small>
+                      <span className="mb-fpf">
+                        <span className="mb-pfm failed">
+                          <Pf p={PF_ID[i.platform as Platform]} size="sm" />
+                        </span>
+                        <span className={stillFailed ? "mb-bad" : "mb-okc"}>
+                          {stillFailed ? `${PLATFORM_LABELS[i.platform]} failed` : outcome === "already_live" ? "Already live" : "Queued again"}
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                  {outcome && outcome !== "needs_reconnect" ? (
+                    <div className="mb-fpdone">{RETRY_OUTCOME[outcome]}</div>
+                  ) : (
+                    <>
+                      <div className="mb-why">
+                        <b>{i.reason}.</b> {i.advice}
+                      </div>
+                      {i.error && <div className="mb-raw">{i.error}</div>}
+                      <div className="mb-btnrow">
+                        {reconnect ? (
+                          <a className="mb-btn sm ghost" {...linkProps("settings", "accounts")}>
+                            Reconnect
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            className="mb-btn sm ghost"
+                            onClick={() => {
+                              selectClient(i.brandId);
+                              navigate("calendar");
+                            }}
+                          >
+                            Details
+                          </button>
+                        )}
+                        <button type="button" className="mb-btn sm mb-retry" disabled={busy === i.postTargetId} onClick={() => void retry(i.postTargetId)}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-refresh" />
+                          </svg>
+                          {busy === i.postTargetId ? "Checking" : "Retry"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </SwipeRow>
+              );
+            })}
+            {shown.length === 0 && <p className="mb-p muted mb-center">Nothing failed for this brand.</p>}
+            {open > 0 && <p className="mb-p muted small mb-center">Swipe a card left to remove it from this list. The post is not deleted.</p>}
+            {selecting && (
+              <div className="mb-actionbar">
+                <button type="button" className="mb-btn sm" disabled={!picked.size} onClick={() => void retryPicked()}>
+                  Retry selected
+                </button>
+                <button type="button" className="mb-btn sm" disabled={!picked.size || busy === "remove"} onClick={() => void remove([...picked])}>
+                  Remove selected
+                </button>
+                <button type="button" className="mb-btn sm danger" disabled={busy === "remove"} onClick={() => setAskRemoveAll(true)}>
+                  Remove all
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {askRemoveAll && (
+          <ConfirmSheet
+            title={`Remove all ${open} notices?`}
+            body="This clears them from the list. The posts themselves are not deleted."
+            confirm="Remove all"
+            danger
+            busy={busy === "remove"}
+            onConfirm={() => {
+              setAskRemoveAll(false);
+              void remove("all", true);
+            }}
+            onClose={() => setAskRemoveAll(false)}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="failed" state={state} title="Failed posts" sub="Every failure with the reason, and one tap to retry. Nothing retries on its own.">
@@ -1233,32 +2269,23 @@ export function FailedPostsScreen() {
 
 /** The app-wide alert: a failed post shows on every screen until it is dealt with. */
 export function FailedPostBanner() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const poll = () =>
-      void api
-        .get<FailedList>("/failed-posts")
-        .then((l) => setCount(l.count))
-        .catch(() => {});
-    poll();
-    const t = setInterval(poll, 2 * 60 * 1000);
-    window.addEventListener(FAILED_CHANGED, poll);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener(FAILED_CHANGED, poll);
-    };
-  }, []);
+  // Shared with the phone's Calendar badge (lib/failedPosts.ts), so one poll.
+  const count = useFailedPosts()?.count ?? 0;
   if (!count) return null;
   return (
     <div className="id-alert id-alert-global" role="status" data-testid="failed.banner">
+      <svg className="id-alert-ic" viewBox="0 0 24 24" aria-hidden="true">
+        <use href="#i-alert" />
+      </svg>
       <span>
         <b>
           {count} {count === 1 ? "post" : "posts"} failed.
         </b>{" "}
-        Nothing retries on its own.
+        <span className="id-alert-more">Nothing retries on its own.</span>
       </span>
       <button type="button" className="btn ghost" onClick={() => navigate("failed")}>
-        See failed posts
+        <span className="id-alert-long">See failed posts</span>
+        <span className="id-alert-short">Review</span>
       </button>
     </div>
   );

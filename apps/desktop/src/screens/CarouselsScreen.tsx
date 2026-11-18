@@ -6,6 +6,12 @@ import { useAppState } from "../state/AppState";
 import { Empty, ErrorState, Loading } from "../components/states";
 import CarouselPostCard from "../components/CarouselPostCard";
 import SunraCarouselCard from "../components/SunraCarouselCard";
+import { useIsPhone } from "../lib/phone";
+import { Ic, Sheet } from "../components/analytics/phoneBits";
+import { JumpChips, Stepper, SwipeDel, useSoftDelete } from "../components/mobile/FlowBits";
+import SwipeRow from "../components/mobile/SwipeRow";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
+import { PhoneMenu } from "../editor/phoneBits";
 
 /**
  * Carousels, and the knowledge they are written from.
@@ -53,6 +59,13 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
   const [slideCount, setSlideCount] = useState(7);
   const [working, setWorking] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  // Phone: the written carousel shown open (null is the newest), and the sheets.
+  const [openDraft, setOpenDraft] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<Draft | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Draft | null>(null);
+  const [reading, setReading] = useState<KnowledgeNote | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // A failed refresh after an edit keeps what is on screen and toasts; only a
   // first load with nothing to show turns into the error state.
@@ -82,7 +95,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
   const state = !clientId ? "empty" : notes === null ? (loadError ? "error" : "loading") : "ready";
 
   const addNote = async () => {
-    if (!clientId || !noteTitle.trim() || !noteBody.trim()) return;
+    if (!clientId || !noteTitle.trim() || !noteBody.trim()) return false;
     try {
       await api.post(`/clients/${clientId}/knowledge`, {
         title: noteTitle.trim(),
@@ -91,10 +104,23 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
       setNoteTitle("");
       setNoteBody("");
       await load();
+      return true;
     } catch (err) {
       toast.fail("Could not save that note", err);
+      return false;
     }
   };
+
+  // Phone: a swiped note goes at once and is deleted after the Undo toast.
+  const { hidden, del: delNote } = useSoftDelete(async (id) => {
+    try {
+      await api.del(`/clients/${clientId}/knowledge/${id}`);
+      await load();
+    } catch (err) {
+      toast.fail("Could not delete that note", err);
+      throw err;
+    }
+  });
 
   const generate = async () => {
     if (!clientId || !topic.trim()) return;
@@ -105,6 +131,7 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
         slideCount,
       });
       setTopic("");
+      setOpenDraft(null);
       await load();
     } catch (err) {
       toast.fail("Could not write that carousel", err);
@@ -125,10 +152,22 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
       });
       if (!res.ok) throw new Error(`the sheet could not be built (${res.status})`);
       const blob = await res.blob();
+      const name = `${draft.topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50)}.csv`;
+      // The phone hands the sheet to its share sheet (Save to Files, or Canva);
+      // where that is refused it falls through to the download.
+      const file = isPhone && typeof navigator.canShare === "function" ? new File([blob], name, { type: "text/csv" }) : null;
+      if (file && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: draft.topic });
+          return;
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
+        }
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${draft.topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50)}.csv`;
+      a.download = name;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -144,6 +183,327 @@ export default function CarouselsScreen({ onUploadImages }: { onUploadImages(): 
       toast.fail("Could not delete that carousel", err);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): one page with area chips. Write leads, the written
+    // carousels follow as cards (older ones folded to a row, Delete in the ...
+    // menu), then Sunra, posting, and the knowledge base it all reads from at
+    // the bottom: tap a note to read it, swipe it left to delete with Undo,
+    // and add one in a small sheet.
+    const shown = (notes ?? []).filter((n) => !hidden.has(n.id));
+    const count = shown.length;
+    const openId = openDraft ?? drafts?.[0]?.id;
+    const day = (iso: string) => {
+      const d = new Date(iso);
+      return d.toDateString() === new Date().toDateString() ? "today" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    };
+    return (
+      <section className="screen active mb-page fl-page" data-screen="carousels" data-state={state}>
+        <p className="mb-sub mb-subonly">Write the words, make the slides in Canva or with Sunra, then post the finished set.</p>
+        {state === "empty" ? (
+          <Empty screen="carousels" title="No brand selected" hint="Pick a brand in the dock to write carousels for it." />
+        ) : state === "error" ? (
+          <ErrorState
+            screen="carousels"
+            message={loadError}
+            onRetry={() => {
+              setLoadError(null);
+              void load();
+            }}
+          />
+        ) : state === "loading" ? (
+          <Loading screen="carousels" />
+        ) : (
+          <>
+            <JumpChips
+              label="Carousel areas"
+              items={[
+                { id: "fl-write", label: "Write" },
+                { id: "fl-sunra", label: "Sunra" },
+                { id: "fl-post", label: "Post" },
+                {
+                  id: "fl-kb",
+                  label: (
+                    <>
+                      Knowledge base <small>{count}</small>
+                    </>
+                  ),
+                },
+              ]}
+            />
+
+            <section id="fl-write" className="mb-card fl-card" aria-label="Write a carousel">
+              <h3 className="fl-h3">Write a carousel</h3>
+              <p className="fl-cardsub">
+                Give it a topic. It uses the knowledge base and the accounts {selectedClient?.name ?? "this brand"} wants to be like.
+              </p>
+              <div className="mb-field">
+                <label htmlFor="fl-topic">Topic</label>
+                <input
+                  id="fl-topic"
+                  className="mb-input"
+                  value={topic}
+                  placeholder="3 myths about financing a used truck"
+                  enterKeyHint="go"
+                  onChange={(e) => setTopic(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && topic.trim() && !working) void generate();
+                  }}
+                />
+              </div>
+              <div className="fl-steprow">
+                <span className="mb-lt">
+                  <b>Slides</b>
+                  <small>3 to 10</small>
+                </span>
+                <Stepper label="Slides" value={slideCount} min={3} max={10} onChange={setSlideCount} />
+              </div>
+              <button
+                type="button"
+                className="mb-btn pri block"
+                disabled={!topic.trim() || working}
+                data-testid="carousels.generate"
+                onClick={() => void generate()}
+              >
+                <Ic name="i-wand" />
+                {working ? "Writing…" : "Write it"}
+              </button>
+              <p className="fl-help">
+                {working
+                  ? "This takes a few seconds. It is saved as soon as it is written, so leaving this screen will not lose it."
+                  : count
+                    ? `Written from ${count} ${count === 1 ? "note" : "notes"}. Saved the moment it is written.`
+                    : "The knowledge base is empty, so it comes out generic. Add what you know first."}
+              </p>
+            </section>
+
+            {!!drafts?.length && (
+              <div className="fl-labrow">
+                <span className="mb-lab">Written carousels</span>
+                <span className="mb-lab">{drafts.length}</span>
+              </div>
+            )}
+            {drafts?.map((d) =>
+              d.id === openId ? (
+                <article
+                  key={d.id}
+                  className="mb-card fl-card fl-draft"
+                  data-testid={`carousel-draft-${d.id}`}
+                  aria-label={`Carousel draft: ${d.topic}`}
+                >
+                  <div className="fl-dh">
+                    <span className="mb-grow">
+                      <b>{d.topic}</b>
+                      <small>
+                        {d.slides.length} slides, written {day(d.createdAt)}
+                      </small>
+                    </span>
+                    <button
+                      type="button"
+                      className="mb-ib ghost"
+                      aria-label={`More for ${d.topic}`}
+                      data-testid="carousels.draft-menu"
+                      onClick={() => setMenuFor(d)}
+                    >
+                      <Ic name="i-dots-h" />
+                    </button>
+                  </div>
+                  <ol className="fl-slides">
+                    {d.slides.map((s, i) => (
+                      <li key={i}>
+                        <span className="fl-sn">{i + 1}</span>
+                        <span>
+                          <b>{s.headline}</b>
+                          {s.body && <small>{s.body}</small>}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  {(d.caption || d.hashtags.length > 0) && (
+                    <div className="fl-cap">
+                      <span className="mb-lab">Caption</span>
+                      {d.caption && <p>{d.caption}</p>}
+                      {d.hashtags.length > 0 && <p className="fl-tags">{d.hashtags.map((h) => `#${h}`).join(" ")}</p>}
+                    </div>
+                  )}
+                  <div className="fl-tiles">
+                    <button type="button" data-testid="carousels.download-sheet" onClick={() => void downloadCsv(d)}>
+                      <Ic name="i-dl" />
+                      Download sheet
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="carousels.upload-images"
+                      onClick={() => {
+                        setPendingCarouselDraft({ id: d.id, topic: d.topic });
+                        onUploadImages();
+                      }}
+                    >
+                      <Ic name="i-upload" />
+                      Upload the images
+                    </button>
+                  </div>
+                </article>
+              ) : (
+                <button
+                  key={d.id}
+                  type="button"
+                  className="mb-card fl-fold"
+                  data-testid={`carousel-draft-${d.id}`}
+                  aria-expanded={false}
+                  onClick={() => setOpenDraft(d.id)}
+                >
+                  <span className="fl-fic">
+                    <Ic name="i-list" />
+                  </span>
+                  <span className="mb-lt">
+                    <b>{d.topic}</b>
+                    <small>
+                      {d.slides.length} slides, written {day(d.createdAt)}
+                    </small>
+                  </span>
+                  <Ic name="i-chev" />
+                </button>
+              ),
+            )}
+
+            <SunraCarouselCard />
+
+            <CarouselPostCard />
+
+            <section id="fl-kb" className="mb-card fl-card" aria-label="Knowledge base">
+              <div className="fl-cardh">
+                <h3 className="fl-h3">Knowledge base</h3>
+                <small>
+                  {count} {count === 1 ? "note" : "notes"}
+                </small>
+              </div>
+              <p className="fl-cardsub">
+                What this brand knows that nobody else does. Offers, objections, the questions customers actually ask. Carousels are written
+                from this, and nothing gets invented that is not in it.
+              </p>
+              {count ? (
+                <div className="fl-rows">
+                  {shown.map((n) => (
+                    <div key={n.id} className="fl-swwrap">
+                      <SwipeDel />
+                      <SwipeRow className="fl-swrow" onLeft={() => delNote(n.id, n.title)}>
+                        <button type="button" className="fl-krow" onClick={() => setReading(n)}>
+                          <span className="mb-grow">
+                            <b>{n.title}</b>
+                            <small>{n.body}</small>
+                          </span>
+                          <Ic name="i-chev-r" />
+                        </button>
+                      </SwipeRow>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="fl-help">
+                  Nothing here yet. A carousel written from an empty knowledge base is generic, so add what you know first.
+                </p>
+              )}
+              <button type="button" className="fl-addrow" onClick={() => setAdding(true)}>
+                <Ic name="i-plus" />
+                Add to the knowledge base
+              </button>
+              {count > 0 && <p className="fl-help">Tap a note to read it. Swipe one left to delete it.</p>}
+            </section>
+          </>
+        )}
+
+        {reading && (
+          <Sheet
+            label={reading.title}
+            title={reading.title}
+            onClose={() => setReading(null)}
+            foot={
+              <>
+                <button
+                  type="button"
+                  className="mb-btn danger"
+                  onClick={() => {
+                    delNote(reading.id, reading.title);
+                    setReading(null);
+                  }}
+                >
+                  <Ic name="i-trash" />
+                  Delete
+                </button>
+                <button type="button" className="mb-btn" onClick={() => setReading(null)}>
+                  Done
+                </button>
+              </>
+            }
+          >
+            <p className="mb-p fl-note">{reading.body}</p>
+          </Sheet>
+        )}
+        {adding && (
+          <Sheet
+            label="Add to the knowledge base"
+            title="Add to the knowledge base"
+            sub="Carousels are written from what is here."
+            onClose={() => setAdding(false)}
+            foot={
+              <>
+                <button type="button" className="mb-btn" onClick={() => setAdding(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="mb-btn pri"
+                  disabled={!noteTitle.trim() || !noteBody.trim()}
+                  data-testid="carousels.add-note"
+                  onClick={() => void addNote().then((ok) => ok && setAdding(false))}
+                >
+                  Add
+                </button>
+              </>
+            }
+          >
+            <div className="mb-field">
+              <label htmlFor="fl-ntitle">Title</label>
+              <input id="fl-ntitle" className="mb-input" value={noteTitle} placeholder="Common objections" onChange={(e) => setNoteTitle(e.target.value)} />
+            </div>
+            <div className="mb-field">
+              <label htmlFor="fl-nbody">What to remember</label>
+              <textarea
+                id="fl-nbody"
+                className="mb-input fl-ta"
+                rows={5}
+                value={noteBody}
+                placeholder="They think financing at the dealer is always worse. It is not, and here is why."
+                onChange={(e) => setNoteBody(e.target.value)}
+              />
+            </div>
+          </Sheet>
+        )}
+        {menuFor && (
+          <PhoneMenu
+            title={menuFor.topic}
+            items={[{ label: "Delete", danger: true, run: () => setConfirmDel(menuFor) }]}
+            onClose={() => setMenuFor(null)}
+          />
+        )}
+        {confirmDel && (
+          <ConfirmSheet
+            title="Delete this carousel?"
+            body={`"${confirmDel.topic}" and its slides and caption are deleted. This cannot be undone.`}
+            confirm="Delete"
+            danger
+            onConfirm={() => {
+              const d = confirmDel;
+              setConfirmDel(null);
+              void remove(d);
+            }}
+            onClose={() => setConfirmDel(null)}
+          />
+        )}
+      </section>
+    );
+  }
 
   if (state !== "ready") {
     return (

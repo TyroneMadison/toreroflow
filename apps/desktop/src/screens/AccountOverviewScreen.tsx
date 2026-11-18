@@ -9,7 +9,8 @@ import { useBrandKit } from "../editor/brandKit";
 import { api, type AccountOverview, type OverviewClient } from "../lib/api";
 import { byUrgency, pipeline, reason, status, summary, type Step } from "../lib/accountOverview";
 import { brandColor, initials } from "../lib/avatar";
-import { PF_ID } from "../lib/platforms";
+import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
+import { useIsPhone } from "../lib/phone";
 import { navigate } from "../lib/routes";
 import { useAppState } from "../state/AppState";
 import "./AccountOverviewScreen.css";
@@ -134,6 +135,9 @@ export default function AccountOverviewScreen({
   const { clients: knownClients, selectedClient, selectClient } = useAppState();
   const [data, setData] = useState<AccountOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const isPhone = useIsPhone();
+  /** Phone: the folded brand opened in place. */
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -190,6 +194,194 @@ export default function AccountOverviewScreen({
   }, [idx]);
 
   const state = loading ? "loading" : !data ? "error" : clients.length === 0 ? "empty" : "ready";
+
+  if (isPhone) {
+    // Phone (mobile pass): This week first, the urgent brands as full cards
+    // whose main button matches the problem, and brands that are fine folded
+    // to one row that opens in place, so nobody is drawn twice.
+    const need = clients.filter((c) => status(c).tone === "bad");
+    const rest = clients.filter((c) => status(c).tone !== "bad");
+    const postedWeek = clients.filter((c) => c.lastPostAt !== null && (c.daysQuiet ?? 99) < 7).length;
+    const card = (c: OverviewClient) => {
+      const steps = pipeline(c);
+      const st = status(c, steps);
+      const plan = c.insight?.status;
+      const broken = c.platforms.find((p) => p.status !== "connected");
+      const fixLabel = c.needsReconnect && broken ? `Reconnect ${PLATFORM_LABELS[broken.platform]}` : null;
+      return (
+        <article
+          key={c.id}
+          className={`mb-aoc${st.tone === "bad" ? " need" : ""}`}
+          aria-label={c.name}
+          data-testid={`account-overview.client-${c.id}`}
+          data-status={st.word.toLowerCase().replace(/ /g, "-")}
+        >
+          <div className="mb-aoctop">
+            <Avatar c={c} color={colorOf(c)} />
+            <span className="mb-lt">
+              <b>{c.name}</b>
+              <small>{summary(c)}</small>
+            </span>
+            <span className={`mb-pill ${st.tone === "bad" ? "bad" : st.tone === "warn" ? "warn" : "ok"}`}>{st.word}</span>
+          </div>
+          <div className="mb-aopf">
+            {c.platforms.map((p) => (
+              <Pf key={p.platform + p.handle} p={PF_ID[p.platform]} size="sm" />
+            ))}
+            {st.tone !== "ok" && <span className={st.tone === "bad" ? "mb-bad" : "mb-warnc"}>{reason(c, steps)}</span>}
+          </div>
+          <div className="mb-steps5" role="list" aria-label="Progress">
+            {steps.map((s) => (
+              <span key={s.label} role="listitem" className={s.tone} title={`${s.label}: ${s.detail}`} data-step={s.label.toLowerCase()} data-tone={s.tone}>
+                <i />
+                {s.label}
+              </span>
+            ))}
+          </div>
+          <div className="mb-trio">
+            <div className="mb-stat">
+              <small>Plan</small>
+              <b className={plan === "failed" ? "bad" : undefined}>{isRunning(plan) ? "Running" : isReady(plan) ? "Ready" : plan === "failed" ? "Failed" : "Missing"}</b>
+            </div>
+            <div className="mb-stat">
+              <small>Last post</small>
+              <b>{c.lastPostAt === null ? "Never" : c.daysQuiet === 0 ? "Today" : `${c.daysQuiet}d ago`}</b>
+            </div>
+            <div className="mb-stat">
+              <small>{c.report.label.split(" ")[0]!.slice(0, 3)} report</small>
+              <b className={c.report.stale ? "bad" : undefined}>
+                {c.report.stale ? "Stale" : c.report.url ? (c.report.built && !c.report.opened ? "Ready" : "Live") : "Unpublished"}
+              </b>
+            </div>
+          </div>
+          <div className="mb-btnrow">
+            <button type="button" className="mb-btn sm ghost" onClick={() => navigate("calendar")} data-testid="account-overview.calendar">
+              Open calendar
+            </button>
+            {fixLabel ? (
+              <button type="button" className="mb-btn sm pri" onClick={() => navigate("settings", "accounts")}>
+                {fixLabel}
+              </button>
+            ) : (
+              <button type="button" className="mb-btn sm pri" onClick={() => onOpenInsights(c.id)} data-testid={`account-overview.plan-${c.id}`}>
+                Make next week's plan
+              </button>
+            )}
+          </div>
+          {fixLabel && (
+            <button type="button" className="mb-btn text sm" onClick={() => onOpenInsights(c.id)} data-testid={`account-overview.plan-${c.id}`}>
+              Make next week's plan
+            </button>
+          )}
+        </article>
+      );
+    };
+    return (
+      <section className="screen active mb-page mb-ao" data-screen="account-overview" data-state={state}>
+        <div className="mb-head">
+          <div>
+            <div className="mb-eyebrow">Overview</div>
+            <h1 className="mb-h1">Accounts</h1>
+            <p className="mb-sub">
+              {loading
+                ? "Checking every brand"
+                : !data
+                  ? "The overview did not load."
+                  : needing === 0
+                    ? "Nothing needs you right now."
+                    : `${needing} brand${needing === 1 ? "" : "s"} need${needing === 1 ? "s" : ""} you, most urgent first.`}
+            </p>
+          </div>
+          <button type="button" className="mb-ib" aria-label="Refresh" onClick={() => void load()} data-testid="account-overview.refresh">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-refresh" />
+            </svg>
+          </button>
+        </div>
+        {state === "loading" ? (
+          <Loading screen="account-overview" label="Checking every brand" />
+        ) : state === "error" ? (
+          <ErrorState
+            screen="account-overview"
+            message="Could not load the overview."
+            onRetry={() => {
+              setLoading(true);
+              void load();
+            }}
+          />
+        ) : state === "empty" ? (
+          <Empty
+            screen="account-overview"
+            title="No brands enrolled"
+            hint="Enroll a client and their status appears here."
+            action={
+              <button type="button" className="mb-btn pri" onClick={onOpenConnect} data-testid="account-overview.enroll">
+                Enroll a client
+              </button>
+            }
+          />
+        ) : (
+          <>
+            <div className="mb-wk2" data-testid="account-overview.this-week">
+              <div className="mb-stat">
+                <small>This week, need you</small>
+                <b className={need.length ? "bad" : "ok"}>{need.length}</b>
+              </div>
+              <div className="mb-stat">
+                <small>Posted in 7 days</small>
+                <b>
+                  {postedWeek} of {clients.length}
+                </b>
+              </div>
+            </div>
+            {need.map(card)}
+            {rest.length > 0 && <div className="mb-lab">On track or behind</div>}
+            {rest.map((c) => {
+              const steps = pipeline(c);
+              const st = status(c, steps);
+              return openRow === c.id ? (
+                <div key={c.id} className="mb-aoopen">
+                  {card(c)}
+                  <button type="button" className="mb-btn text sm" onClick={() => setOpenRow(null)}>
+                    Fold {c.name}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="mb-aorow"
+                  onClick={() => {
+                    setOpenRow(c.id);
+                    selectClient(c.id);
+                  }}
+                  data-testid={`account-overview.row-${c.id}`}
+                >
+                  <Avatar c={c} color={colorOf(c)} />
+                  <span className="mb-lt">
+                    <b>{c.name}</b>
+                    <small>{reason(c, steps)}</small>
+                  </span>
+                  <span className={`mb-pill ${st.tone === "warn" ? "warn" : "ok"}`}>{st.word}</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-chev-r" />
+                  </svg>
+                </button>
+              );
+            })}
+            <button type="button" className="mb-btn ghost block" onClick={onOpenConnect} data-testid="account-overview.enroll-more">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-plus" />
+              </svg>
+              Enroll a client
+            </button>
+          </>
+        )}
+        <DataProvenance platforms={overviewPlatforms} />
+      </section>
+    );
+  }
+
 
   return (
     <section className="screen active" data-screen="account-overview" data-state={state}>

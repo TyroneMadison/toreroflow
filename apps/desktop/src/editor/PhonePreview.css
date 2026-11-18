@@ -43,7 +43,7 @@
    whole declaration invalid, so the bar rendered as nothing at all. */
 .pv-scrub-trough{position:relative;height:5px;border-radius:3px;background:rgba(0,0,0,.5);box-shadow:var(--lg-trough)}
 .pv-scrub-fill{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--grad)}
-.pv-scrub-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--grad);box-shadow:0 2px 8px rgba(255,111,97,.5)}
+.pv-scrub-dot{position:absolute;top:50%;width:12px;height:12px;border-radius:50%;background:var(--grad);box-shadow:0 2px 8px rgba(250,97,75,.5)}
 
 .pv-time{align-self:flex-start;margin-top:4px}
 

@@ -19,7 +19,7 @@
 /* chips: small action buttons, coral when active */
 .pnl-chiprow{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
 .pnl-chip{font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:20px;background:var(--glass-2);border:1px solid var(--brd-soft);color:var(--txt);cursor:pointer;font-family:var(--font);transition:.18s}
-.pnl-chip:hover{border-color:rgba(255,111,97,.5)}
+.pnl-chip:hover{border-color:rgba(250,97,75,.5)}
 .pnl-chip.on{background:var(--grad);color:#000;border-color:transparent}
 .pnl-chip:disabled{opacity:.4;cursor:not-allowed}
 .pnl-chip:disabled:hover{border-color:var(--brd-soft)}
@@ -92,13 +92,13 @@
 .lay-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px}
 .lay-frame{position:relative;width:100%;max-height:320px;background:#000;border-radius:8px;overflow:hidden}
 .lay-frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block}
-.lay-crop{position:absolute;border:2px solid #FF6F61;box-shadow:0 0 0 9999px rgba(0,0,0,.45);cursor:grab;touch-action:none}
+.lay-crop{position:absolute;border:2px solid #FA614B;box-shadow:0 0 0 9999px rgba(0,0,0,.45);cursor:grab;touch-action:none}
 .lay-crop:active{cursor:grabbing}
 .lay-legend{margin-top:6px;color:var(--txt-3)}
 .lay-shots b{font-size:13px;display:block;margin-bottom:6px}
 .lay-row{display:flex;align-items:center;gap:6px;border-top:1px solid var(--brd-soft)}
 .lay-rowbtn{flex:1;display:flex;justify-content:space-between;padding:7px 0;background:none;border:none;color:var(--txt);font-family:var(--font);font-size:12px;cursor:pointer}
-.lay-man{color:#FF6F61}
+.lay-man{color:#FA614B}
 
 /* Phase 5 AI passes */
 .ai-pnl .ai-lab{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3);margin-top:12px}

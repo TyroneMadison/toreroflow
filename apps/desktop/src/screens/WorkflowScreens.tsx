@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   canEditTemplates,
   canOverridePreflight,
@@ -14,8 +14,17 @@ import {
   type Template,
   type WorkflowPlatform,
 } from "@toreroflow/contracts";
-import { api, ApiError, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
-import { navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
+import { api, ApiError, fileUrl, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
+import { Ic, PhoneHead, PickSheet } from "../components/analytics/phoneBits";
+import { linkProps, navigate, navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
+import { useIsPhone } from "../lib/phone";
+import { usePhoneBar } from "../lib/phoneBar";
+import Modal from "../modals/Modal";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
+import DateTimeSheet from "../components/mobile/DateTimeSheet";
+import { mmss } from "../components/mobile/ThumbPlayer";
+import Pf from "../components/Pf";
+import { PF_ID } from "../lib/platforms";
 import {
   blankTemplate,
   draftProblem,
@@ -103,6 +112,31 @@ const FIELD_LABEL: Record<OverrideField, string> = {
   postAt: "Post time",
 };
 
+/** The phone's date and time as two big buttons that open the wheels (mobile pass). */
+function PhoneWhen({ value, onSet, title, sub }: { value: string; onSet(v: string): void; title: string; sub?: string }) {
+  const [open, setOpen] = useState(false);
+  const d = new Date(value);
+  return (
+    <>
+      <div className="mb-dtrow">
+        <button type="button" className="mb-dtp" onClick={() => setOpen(true)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-cal" />
+          </svg>
+          {d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+        </button>
+        <button type="button" className="mb-dtp" onClick={() => setOpen(true)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-clock" />
+          </svg>
+          {d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+        </button>
+      </div>
+      {open && <DateTimeSheet title={title} sub={sub} value={value} onSet={onSet} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export function FanoutScreen() {
   const { selectedClient } = useAppState();
   const { draft: draftId } = useRoute();
@@ -184,9 +218,10 @@ export function FanoutScreen() {
   const missing = draft ? WORKFLOW_PLATFORMS.filter((p) => !draft.targets.some((t) => t.platform === p)) : [];
   const viewer = principal.role === "viewer";
   const state = error ? "error" : draft ? "ready" : draftId ? "loading" : !selectedClient ? "empty" : videos ? "pick" : "loading";
+  const isPhone = useIsPhone();
 
   return (
-    <section className="screen active wf" data-screen="fanout" data-state={state}>
+    <section className={`screen active wf${isPhone ? " wfo" : ""}`} data-screen="fanout" data-state={state}>
       <div className="topbar">
         <div className="h">
           <h2>One draft, {draft ? draft.targets.length : 3} platforms</h2>
@@ -200,6 +235,47 @@ export function FanoutScreen() {
         {state === "pick" &&
           (videos!.length === 0 ? (
             <Empty screen="fanout" title="No videos ready" hint="Upload a video in Upload & Schedule, or start from a template." />
+          ) : isPhone ? (
+            <>
+              <div className="wfo-lab">
+                <span className="mb-lab">Start a draft from a ready video</span>
+                <span>{videos!.length}</span>
+              </div>
+              <div className="mb-card list">
+                {videos!.map((v) => (
+                  <button type="button" key={v.id} className="mb-lrow wfo-vid" onClick={() => start(v)}>
+                    <span className="wfo-thumb">
+                      {v.thumbUrl && <img src={fileUrl(v.thumbUrl) ?? undefined} alt="" />}
+                      {v.durationSec ? <small>{mmss(v.durationSec)}</small> : null}
+                    </span>
+                    <span className="mb-lt">
+                      <b>{videoLabel(v)}</b>
+                      <small>
+                        {v.durationSec ? `${mmss(v.durationSec)}, ` : ""}uploaded{" "}
+                        {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </small>
+                    </span>
+                    <svg className="wfo-chev" viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-chev-r" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              <a className="mb-card mb-lrow wfo-vid" {...linkProps("templates")}>
+                <span className="mb-lic n">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-layers" />
+                  </svg>
+                </span>
+                <span className="mb-lt">
+                  <b>Start from a template</b>
+                  <small>Templates in Overview can prefill one too</small>
+                </span>
+                <svg className="wfo-chev" viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-chev-r" />
+                </svg>
+              </a>
+            </>
           ) : (
             <div className="card glass wf-card">
               <div className="wf-lbl">Start a draft</div>
@@ -216,6 +292,22 @@ export function FanoutScreen() {
         {state === "ready" && draft && session && (
           <>
             <div className="card glass wf-card wf-draft" data-testid="fanout-draft">
+              {isPhone && (
+                <div className="wfo-dh">
+                  <span className="wfo-thumb">
+                    {video?.thumbUrl && <img src={fileUrl(video.thumbUrl) ?? undefined} alt="" />}
+                    {video?.durationSec ? <small>{mmss(video.durationSec)}</small> : null}
+                  </span>
+                  <span className="mb-lt">
+                    <small>Draft from</small>
+                    <b>{video ? videoLabel(video) : draft.videoId}</b>
+                    <small>{video?.durationSec ? `Video, ${mmss(video.durationSec)}, ready` : "Video"}</small>
+                  </span>
+                  <span className={`mb-pill ${session.saved ? "ok" : "warn"}`} data-testid="fanout-saved">
+                    {session.saved ? "Saved" : "Not saved"}
+                  </span>
+                </div>
+              )}
               <div className="wf-lbl">
                 Draft{" "}
                 <span className="wf-from" data-testid="fanout-saved">
@@ -248,12 +340,24 @@ export function FanoutScreen() {
                   <div className="wf-field">
                     <span id="fanout-draft-time">Post time</span>
                     <div aria-labelledby="fanout-draft-time">
-                      <GlassDateTime value={toLocalInput(draft.postAt)} onChange={(v) => setDraft({ ...draft, postAt: fromLocalInput(v) })} />
+                      {isPhone ? (
+                        <PhoneWhen title="Post time" sub="Every platform that keeps the draft posts then" value={toLocalInput(draft.postAt)} onSet={(v) => setDraft({ ...draft, postAt: fromLocalInput(v) })} />
+                      ) : (
+                        <GlassDateTime value={toLocalInput(draft.postAt)} onChange={(v) => setDraft({ ...draft, postAt: fromLocalInput(v) })} />
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+            {isPhone && (
+              <div className="wfo-lab">
+                <span className="mb-lab">Platforms</span>
+                <span>
+                  {draft.targets.length} of {WORKFLOW_PLATFORMS.length}
+                </span>
+              </div>
+            )}
             <div className="wf-plat">
               {draft.targets.map((t) => (
                 <PlatformCard key={t.platform} draft={draft} platform={t.platform} onChange={setDraft} />
@@ -278,7 +382,7 @@ export function FanoutScreen() {
                 {saveError}
               </div>
             )}
-            <div className="wf-two">
+            <div className={isPhone ? "mb-actionbar" : "wf-two"}>
               <button
                 type="button"
                 className="btn ghost wf-btn wf-full"
@@ -317,6 +421,7 @@ function PlatformCard({ draft, platform, onChange }: { draft: Draft; platform: W
   const over = isOverridden(target);
   const others = draft.targets.filter((t) => t.platform !== platform && !isOverridden(t)).map((t) => PLATFORM_LABEL[t.platform]);
   const edit = (field: OverrideField, value: string) => onChange(setOverride(draft, platform, field, value));
+  const isPhone = useIsPhone();
   const reset = () =>
     onChange((Object.keys(target.overrides) as OverrideField[]).reduce((d, f) => resetField(d, platform, f), draft));
   const text = (field: "cover" | "cutId") => (
@@ -331,6 +436,89 @@ function PlatformCard({ draft, platform, onChange }: { draft: Draft; platform: W
       />
     </label>
   );
+  if (isPhone) {
+    const time = new Date(shown.postAt).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+    return (
+      <details className={`mb-card wfo-plat${over ? " over" : ""}`} open={over || undefined} data-testid={`fanout-${platform}`}>
+        <summary>
+          <Pf p={PF_ID[platform]} size="sm" />
+          <b>{PLATFORM_LABEL[platform]}</b>
+          {over ? (
+            <span className="mb-pill warn" data-testid={`fanout-${platform}-overridden`}>
+              Overridden
+            </span>
+          ) : (
+            <span className="mb-pill nodot">From draft</span>
+          )}
+          <svg className="wfo-fchev" viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-chev" />
+          </svg>
+          <span className="wfo-peek">
+            <span className="wfo-cap">
+              {platform === "youtube" && shown.title ? <b>{shown.title}. </b> : null}
+              {shown.caption}
+            </span>
+            <small>
+              {target.overrides.cover ? "Own cover" : "Same cover"}, {target.overrides.cutId ? "a cut" : "the full video"}, {time}
+            </small>
+          </span>
+        </summary>
+        <div className="wfo-body">
+          <label className="wf-field">
+            <span>Caption</span>
+            <textarea
+              id={fieldId(platform, "caption")}
+              className={`field-in${"caption" in target.overrides ? " ov" : ""}`}
+              rows={4}
+              value={shown.caption}
+              onChange={(e) => edit("caption", e.target.value)}
+              data-testid={`fanout-${platform}-caption`}
+            />
+          </label>
+          {platform === "youtube" && (
+            <label className="wf-field">
+              <span>Title</span>
+              <input id={fieldId(platform, "title")} className="field-in" value={shown.title ?? ""} onChange={(e) => edit("title", e.target.value)} />
+            </label>
+          )}
+          <details className="wf-more" open={"postAt" in target.overrides || "cover" in target.overrides || "cutId" in target.overrides || undefined}>
+            <summary>
+              Cover, cut and time
+              {"postAt" in target.overrides && <small>Post time changed</small>}
+            </summary>
+            {text("cover")}
+            {text("cutId")}
+            <div className="wf-field">
+              <span>Post time{"postAt" in target.overrides ? "" : " (draft)"}</span>
+              <PhoneWhen title={`${PLATFORM_LABEL[platform]} post time`} value={toLocalInput(shown.postAt)} onSet={(v) => edit("postAt", fromLocalInput(v))} />
+            </div>
+          </details>
+          {over && (
+            <div className="wf-reset">
+              <p className="wf-note">
+                <b>Changed: {Object.keys(target.overrides).map((f) => FIELD_LABEL[f as OverrideField].toLowerCase()).join(", ")}.</b>
+                {others.length ? ` ${others.join(" and ")} kept the draft.` : ""}
+              </p>
+              <button type="button" className="mb-btn sm ghost" onClick={reset} data-testid={`fanout-${platform}-reset`}>
+                Reset to draft
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="mb-btn text wfo-remove"
+            onClick={() => onChange(setTargets(draft, draft.targets.map((t) => t.platform).filter((p) => p !== platform)))}
+            data-testid={`fanout-${platform}-remove`}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-x" />
+            </svg>
+            Remove {PLATFORM_LABEL[platform]}
+          </button>
+        </div>
+      </details>
+    );
+  }
   return (
     <div className={`card glass wf-card${over ? " over" : ""}`} data-testid={`fanout-${platform}`}>
       <div className="wf-lbl">
@@ -408,6 +596,10 @@ export function PreflightScreen() {
   const videos = useReadyVideos(session && !saved ? session.draft.brandId : null);
   const media = videos?.find((v) => v.id === session?.draft.videoId) ?? null;
   const inputsReady = session !== null && (saved || videos !== null);
+  const isPhone = useIsPhone();
+  // The phone's draft head names the video even for a saved draft.
+  const phoneVideos = useReadyVideos(isPhone && saved ? session?.draft.brandId : null);
+  const headVideo = media ?? phoneVideos?.find((v) => v.id === session?.draft.videoId) ?? null;
 
   // The draft in hand from Fan-out, else the saved one.
   useEffect(() => {
@@ -463,6 +655,173 @@ export function PreflightScreen() {
   const reasonOk = OverrideRequestSchema.safeParse({ reason }).success;
   const canOverride = canOverridePreflight(principal);
   const state = !draftId ? "empty" : error ? "error" : result ? "ready" : "loading";
+
+  usePhoneBar(
+    isPhone
+      ? {
+          title: "Preflight",
+          back: () => navigatePath(draftId ? `/create/fanout?draft=${encodeURIComponent(draftId)}` : "/create/fanout"),
+          action:
+            state === "ready" ? (
+              <button type="button" className="mb-ib ghost" aria-label="Check again" onClick={() => void run()}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-refresh" />
+                </svg>
+              </button>
+            ) : undefined,
+        }
+      : null,
+  );
+
+  const prow = (issue: Issue, kind: "blocking" | "warning" | "ok", i: number) => {
+    const { platform } = fixTarget(issue);
+    return (
+      <li className={`pfl-row ${kind}`} key={`${kind}-${i}`} data-testid={`preflight-${kind}`}>
+        <span className="pfl-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <use href={kind === "blocking" ? "#i-x" : kind === "warning" ? "#i-alert" : "#i-check"} />
+          </svg>
+        </span>
+        <span className="mb-lt">
+          <b>
+            <Pf p={PF_ID[platform]} size="xs" />
+            {PLATFORM_LABEL[platform]}
+          </b>
+          <small>
+            <span className="sr-only">{kind === "blocking" ? "Blocking: " : kind === "warning" ? "Warning: " : "Passed: "}</span>
+            {issue.message}
+          </small>
+        </span>
+        {kind !== "ok" && (
+          <a className="mb-btn sm ghost" {...pathLinkProps(fixHref(issue, draftId!, saved))}>
+            {fixLabel(issue)}
+          </a>
+        )}
+      </li>
+    );
+  };
+
+  if (isPhone) {
+    const groups: Array<[string, Issue[], "blocking" | "warning" | "ok"]> = result
+      ? [
+          ["Blocking", result.blocking, "blocking"],
+          ["Warnings", result.warnings, "warning"],
+          ["Passed", result.ok, "ok"],
+        ]
+      : [];
+    const d = session?.draft;
+    return (
+      <section className="screen active wf wfo pfl" data-screen="preflight" data-state={state}>
+        <div className="stage">
+          {d && (
+            <div className="wfo-dh">
+              <span className="wfo-thumb">
+                {headVideo?.thumbUrl && <img src={fileUrl(headVideo.thumbUrl) ?? undefined} alt="" />}
+                {headVideo?.durationSec ? <small>{mmss(headVideo.durationSec)}</small> : null}
+              </span>
+              <span className="mb-lt">
+                <b>{headVideo ? videoLabel(headVideo) : (d.title ?? "Draft")}</b>
+                <small>
+                  Draft, {saved ? "saved" : "not saved"}. {n} platform{n === 1 ? "" : "s"},{" "}
+                  {new Date(d.postAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </small>
+              </span>
+            </div>
+          )}
+          <p className="mb-help">Checks every target at once before anything posts.</p>
+          {state === "empty" && <Empty screen="preflight" title="No draft to check" hint="Open a draft in Fan-out and press Check." />}
+          {state === "error" && (
+            <ErrorState screen="preflight" message={error} onRetry={() => (session ? void run() : navigatePath(`/create/fanout?draft=${encodeURIComponent(draftId!)}`))} />
+          )}
+          {state === "loading" && <Loading screen="preflight" label="Running preflight" />}
+          {state === "ready" && result && summary && (
+            <>
+              <div className={`pfl-banner ${summary.blocked ? "bad" : "ok"}`} role="status" data-testid="preflight-summary">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href={summary.blocked ? "#i-x" : "#i-check"} />
+                </svg>
+                <span>
+                  <b>{summary.blocked ? "Posting blocked." : "Ready to post."}</b>
+                  <br />
+                  {summary.text}
+                </span>
+              </div>
+              {groups
+                .filter(([, list]) => list.length > 0)
+                .map(([title, list, kind]) => (
+                  <div key={kind} className="pfl-grp">
+                    <div className="wfo-lab">
+                      <span className="mb-lab">{title}</span>
+                      <span>{list.length}</span>
+                    </div>
+                    <ul className="mb-card pfl-card" aria-label={title}>
+                      {list.map((x, k) => prow(x, kind, k))}
+                    </ul>
+                  </div>
+                ))}
+              {!result.blocking.length && !result.warnings.length && !result.ok.length && <p className="mb-help">Nothing to check on this draft.</p>}
+              {summary.blocked && canOverride && (
+                <form
+                  className="mb-card pfl-ovr"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (reasonOk) void override();
+                  }}
+                >
+                  <div className="idr-h">
+                    <h3>Operator override</h3>
+                    <span className="mb-pill nodot">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-lock" />
+                      </svg>
+                      Logged
+                    </span>
+                  </div>
+                  <label className="wf-field">
+                    <span>Reason (logged, required)</span>
+                    <input
+                      className="field-in"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="Why post anyway?"
+                      required
+                      minLength={3}
+                      maxLength={500}
+                      aria-describedby="wf-reason-hint"
+                      data-testid="preflight-reason"
+                    />
+                  </label>
+                  <p id="wf-reason-hint" className="mb-help">
+                    At least 3 characters. Saved with your name and the time.
+                  </p>
+                  <button type="submit" className="mb-btn ghost block" disabled={!reasonOk || busy} data-testid="preflight-override">
+                    {busy ? "Logging" : "Override and schedule"}
+                  </button>
+                </form>
+              )}
+              <div className="mb-actionbar pfl-bar">
+                <p id="wf-clear-hint">
+                  {summary.blocked
+                    ? `Unlocks once every × is fixed.${canOverride ? "" : " Only the operator or Polly can override."}`
+                    : "Nothing is blocking. Opens the usual schedule flow for this video."}
+                </p>
+                <button
+                  type="button"
+                  className="mb-btn pri"
+                  disabled={summary.blocked || busy || !session}
+                  aria-describedby="wf-clear-hint"
+                  onClick={() => session && toSchedule(session.draft)}
+                  data-testid="preflight-schedule"
+                >
+                  Schedule all {n}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   const row = (issue: Issue, kind: "blocking" | "warning" | "ok", i: number) => {
     const { platform } = fixTarget(issue);
@@ -579,6 +938,7 @@ interface QueueLabel {
   name: string;
   client: string;
   at: string | null;
+  thumb: string | null;
 }
 
 export function QueueScreen() {
@@ -591,6 +951,11 @@ export function QueueScreen() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [live, setLive] = useState("");
   const canWrite = principal.role !== "viewer";
+  const isPhone = useIsPhone();
+  // The phone's hold-and-drag on a row's grip: the row follows the finger and
+  // drops between the rows its middle passes.
+  const [lift, setLift] = useState<{ id: string; y0: number; dy: number } | null>(null);
+  const listRef = useRef<HTMLOListElement>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -604,7 +969,8 @@ export function QueueScreen() {
       for (const { c, ps } of posts)
         for (const p of ps) {
           const prev = m.get(p.postId);
-          if (!prev || (p.scheduledAt && (!prev.at || p.scheduledAt < prev.at))) m.set(p.postId, { name: p.assetName, client: c.name, at: p.scheduledAt });
+          if (!prev || (p.scheduledAt && (!prev.at || p.scheduledAt < prev.at)))
+            m.set(p.postId, { name: p.assetName, client: c.name, at: p.scheduledAt, thumb: p.thumbUrl });
         }
       setLabels(m);
       setItems(q.items);
@@ -631,8 +997,8 @@ export function QueueScreen() {
     }
   };
 
-  const reorder = (id: string, to: number) => {
-    const ids = moveId(next.map((i) => i.id), id, to);
+  const reorder = (id: string, to: number) => applyOrder(moveId(next.map((i) => i.id), id, to), id);
+  const applyOrder = (ids: string[], id: string) => {
     if (ids.join() === next.map((i) => i.id).join()) return;
     setItems([...uploading, ...ids.map((x, position) => ({ ...next.find((i) => i.id === x)!, position }))]);
     setLive(`${label(id)} moved to position ${ids.indexOf(id) + 1} of ${ids.length}.`);
@@ -657,6 +1023,164 @@ export function QueueScreen() {
     at ? new Date(at).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) + " ET" : "No slot";
 
   const state = error && !items ? "error" : items ? "ready" : "loading";
+
+  if (isPhone) {
+    // Failures first in their own card; the rest keep their queue slots, so a
+    // phone reorder moves only the waiting rows around the failed ones.
+    const failedRows = next.filter((i) => i.state === "failed");
+    const waiting = next.filter((i) => i.state !== "failed");
+    const dropAt = (id: string, y: number) => {
+      const rows = [...(listRef.current?.querySelectorAll<HTMLElement>("[data-qid]") ?? [])].filter((r) => r.dataset.qid !== id);
+      const to = rows.filter((r) => {
+        const b = r.getBoundingClientRect();
+        return b.top + b.height / 2 < y;
+      }).length;
+      const order = moveId(waiting.map((i) => i.id), id, to);
+      let k = 0;
+      applyOrder(next.map((i) => (i.state === "failed" ? i.id : order[k++])), id);
+    };
+    const grip = (item: QueueItem) => ({
+      onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        if (!canWrite) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setLift({ id: item.id, y0: e.clientY, dy: 0 });
+      },
+      onPointerMove: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        if (lift?.id === item.id) setLift({ ...lift, dy: e.clientY - lift.y0 });
+      },
+      onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        if (lift?.id === item.id && Math.abs(lift.dy) > 8) dropAt(item.id, e.clientY);
+        setLift(null);
+      },
+      onPointerCancel: () => setLift(null),
+    });
+    const thumb = (id: string) => {
+      const t = labels.get(id)?.thumb;
+      return t ? <img className="wfq-thumb" src={fileUrl(t) ?? undefined} alt="" /> : <span className="wfq-thumb" aria-hidden="true" />;
+    };
+    return (
+      <section className="screen active wf wfq" data-screen="queue" data-state={state}>
+        <div className="stage">
+        {state === "error" && <ErrorState screen="queue" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="queue" label="Loading the queue" />}
+        {state === "ready" && (
+          <>
+            <div className="sr-only" aria-live="polite">
+              {live}
+            </div>
+            {uploading.length > 0 && (
+              <section className="mb-card wfq-card">
+                <div className="wfq-h">
+                  <h3>Uploading now</h3>
+                  <span>{uploading.length}</span>
+                </div>
+                {uploading.map((i) => (
+                  <div key={i.id} className="wfq-fly">
+                    {thumb(i.id)}
+                    <div className="mb-lt">
+                      <b>{label(i.id)}</b>
+                      <small>{labels.get(i.id)?.client ?? ""}</small>
+                      <div className="wf-prog" role="progressbar" aria-label={`Uploading ${label(i.id)}`}>
+                        <i />
+                      </div>
+                    </div>
+                    <span className="wfq-spin" aria-hidden="true" />
+                  </div>
+                ))}
+              </section>
+            )}
+            {failedRows.length > 0 && (
+              <section className="mb-card wfq-card wfq-fail">
+                <div className="wfq-h">
+                  <h3>Failed</h3>
+                  <span className="mb-pill bad">{failedRows.length}</span>
+                </div>
+                {failedRows.map((i) => (
+                  <div key={i.id} className="wfq-fly" data-testid={`queue-row-${i.id}`}>
+                    {thumb(i.id)}
+                    <div className="mb-lt">
+                      <b>{label(i.id)}</b>
+                      <small>
+                        {labels.get(i.id)?.client}, {when(labels.get(i.id)?.at ?? null)}
+                      </small>
+                    </div>
+                    <button type="button" className="mb-btn sm ghost" onClick={() => navigate("failed")}>
+                      See why
+                    </button>
+                  </div>
+                ))}
+                <p className="mb-help">Shown first so it is not missed. The reason and Retry are in Failed posts.</p>
+              </section>
+            )}
+            <section className="mb-card wfq-card">
+              <div className="wfq-h">
+                <h3 id="wf-next">Up next</h3>
+                <span>{waiting.length}</span>
+                {waiting.length > 0 && <span className="mb-lab">Client rush</span>}
+              </div>
+              {waiting.length === 0 ? (
+                <p className="mb-help" data-testid="queue.empty">
+                  Nothing waiting to upload.
+                </p>
+              ) : (
+                <ol className="wfq-list" aria-labelledby="wf-next" ref={listRef}>
+                  {waiting.map((item, i) => {
+                    const l = labels.get(item.id);
+                    const lifted = lift?.id === item.id;
+                    return (
+                      <li
+                        key={item.id}
+                        data-qid={item.id}
+                        className={`wfq-row${lifted ? " lift" : ""}`}
+                        style={lifted ? { transform: `translateY(${lift.dy}px)` } : undefined}
+                        data-testid={`queue-row-${item.id}`}
+                      >
+                        <button
+                          type="button"
+                          id={`wf-drag-${item.id}`}
+                          className="wfq-grip"
+                          disabled={!canWrite}
+                          aria-label={`Reorder ${label(item.id)}, position ${i + 1} of ${waiting.length}. Hold and drag, or use the arrow keys.`}
+                          onKeyDown={(e) => onKey(e, item.id, next.indexOf(item))}
+                          {...grip(item)}
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-grip" />
+                          </svg>
+                        </button>
+                        <span className="wfq-pos">{i + 1}</span>
+                        <span className="mb-lt">
+                          <b>
+                            <span className="wfq-name">{label(item.id)}</span>
+                            {item.priority === "rush" && <span className="mb-pill acc nodot">Client rush</span>}
+                          </b>
+                          <small>
+                            {l?.client}, {when(l?.at ?? null)}
+                          </small>
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          className={`mb-tog${item.priority === "rush" ? " on" : ""}`}
+                          aria-checked={item.priority === "rush"}
+                          aria-label={`Client rush for ${label(item.id)}`}
+                          disabled={!canWrite}
+                          onClick={() => rush(item)}
+                          data-testid={`queue-rush-${item.id}`}
+                        />
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </section>
+            <p className="mb-help wfq-foot">Calendar and the daily counter stay as they are. This only changes upload order.</p>
+          </>
+        )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="screen active wf" data-screen="queue" data-state={state}>
@@ -773,6 +1297,9 @@ export function RollupScreen() {
   const [rollup, setRollup] = useState<Rollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [swipe, setSwipe] = useState<{ x: number; y: number } | null>(null);
 
   const load = useCallback(async () => {
     setRollup(null);
@@ -798,6 +1325,138 @@ export function RollupScreen() {
 
   const video = videos?.find((v) => v.id === videoId);
   const state = !selectedClient ? "empty" : error ? "error" : unavailable || (rollup && !rollupHasData(rollup)) ? "unavailable" : rollup ? "ready" : videos?.length === 0 ? "novideo" : "loading";
+
+  // Phone (mobile pass, mockup "rollup"): the video as a thumbnail row that
+  // opens a searchable sheet, one compact table (metrics down, platforms
+  // across) with the best platform per row in green, swipe for the next video.
+  if (isPhone) {
+    const at = videos?.findIndex((v) => v.id === videoId) ?? -1;
+    const step = (d: number) => {
+      const next = videos?.[at + d];
+      if (next) setQuery({ video: next.id });
+    };
+    const posted = rollup ? WORKFLOW_PLATFORMS.filter((p) => rollup.rows.some((r) => r[p] != null)) : [];
+    const dur = (s: number | null) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}` : null);
+    const thumbOf = (v: MediaAssetInfo | undefined) => (
+      <span className="rp-thumb">
+        {v?.thumbUrl && <img src={fileUrl(v.thumbUrl)!} alt="" />}
+        {dur(v?.durationSec ?? null) && <span className="rp-dur">{dur(v!.durationSec)}</span>}
+      </span>
+    );
+    return (
+      <section className="screen active mb-page rp-page wf" data-screen="rollup" data-state={state}>
+        <PhoneHead screen="rollup" sub="One video, every platform, side by side." />
+        {videos && videos.length > 0 && (
+          <button type="button" className="rp-vpick" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="rollup.video">
+            {thumbOf(video)}
+            <span className="rp-grow">
+              <b>{video ? videoLabel(video) : "Pick a video"}</b>
+              <small>
+                {posted.length
+                  ? `Posted to ${posted.length} ${posted.length === 1 ? "platform" : "platforms"}`
+                  : video
+                    ? `Uploaded ${new Date(video.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                    : `${videos.length} videos`}
+              </small>
+            </span>
+            <small className="rp-muted">Change</small>
+            <Ic name="i-chev" />
+          </button>
+        )}
+        {state === "empty" && <Empty screen="rollup" title="No brand selected" hint="Pick a brand with the switcher at the top." />}
+        {state === "novideo" && <Empty screen="rollup" title="No videos yet" hint="A video shows here once it has posted." />}
+        {state === "error" && <ErrorState screen="rollup" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="rollup" label="Loading the rollup" />}
+        {state === "unavailable" && (
+          <Empty
+            screen="rollup"
+            title="No numbers yet"
+            hint="Zernio analytics are not available for this video right now. They show here once a platform reports them. Per-post insights are unchanged."
+            action={
+              <button type="button" className="mb-btn" onClick={() => void load()}>
+                Check again
+              </button>
+            }
+          />
+        )}
+        {state === "ready" && rollup && (
+          <>
+            <section
+              className="mb-card rp-mxcard"
+              data-testid="rollup-table"
+              onTouchStart={(e) => setSwipe({ x: e.touches[0]!.clientX, y: e.touches[0]!.clientY })}
+              onTouchEnd={(e) => {
+                const t = e.changedTouches[0]!;
+                const dx = swipe ? t.clientX - swipe.x : 0;
+                const dy = swipe ? t.clientY - swipe.y : 0;
+                setSwipe(null);
+                if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+              }}
+            >
+              <table className="rp-mx mb-keep">
+                <caption className="sr-only">Metrics for {video ? videoLabel(video) : "this video"} by platform</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <span className="sr-only">Metric</span>
+                    </th>
+                    {WORKFLOW_PLATFORMS.map((p) => (
+                      <th scope="col" key={p}>
+                        <Pf p={PF_ID[p]} size="sm" />
+                        <span className="sr-only">{PLATFORM_LABEL[p]}</span>
+                      </th>
+                    ))}
+                    <th scope="col">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rollup.rows.map((r) => {
+                    // Green for the best platform, only when there is more than one to compare.
+                    const reported = WORKFLOW_PLATFORMS.filter((p) => r[p] != null);
+                    const best = reported.length > 1 ? reported.reduce((a, b) => (r[b]! > r[a]! ? b : a)) : null;
+                    return (
+                      <tr key={r.metric}>
+                        <th scope="row">{METRIC_LABEL[r.metric]}</th>
+                        {WORKFLOW_PLATFORMS.map((p) => (
+                          <td key={p} className={r[p] == null ? "na" : p === best ? "win" : undefined}>
+                            {fmtMetric(r.metric, r[p])}
+                          </td>
+                        ))}
+                        <td className="tot">{fmtMetric(r.metric, r.total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+            <p className="rp-help">
+              Green marks the best platform per row. Average watch is weighted by views; n/a means the platform has not reported
+              it. Per-post insight pages are unchanged.
+              {videos && videos.length > 1 ? " Swipe the table for the next or previous video." : ""}
+            </p>
+          </>
+        )}
+        {picking && videos && (
+          <PickSheet
+            label="Video"
+            value={videoId ?? ""}
+            search="Find a video"
+            onPick={(v) => setQuery({ video: v })}
+            onClose={() => setPicking(false)}
+            testId="rollup.video-sheet"
+            options={videos.map((v) => ({
+              value: v.id,
+              label: videoLabel(v),
+              hint: [dur(v.durationSec), `uploaded ${new Date(v.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}`]
+                .filter(Boolean)
+                .join(", "),
+              lead: thumbOf(v),
+            }))}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active wf" data-screen="rollup" data-state={state}>
@@ -886,6 +1545,10 @@ export function TemplatesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; form: TemplateForm } | null>(null);
   const [using, setUsing] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const [tplFilter, setTplFilter] = useState<string>("all");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [askDelete, setAskDelete] = useState<Template | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -922,8 +1585,8 @@ export function TemplatesScreen() {
     }
   };
 
-  const remove = async (t: Template) => {
-    if (!window.confirm(`Delete the template "${t.name}"?`)) return;
+  const remove = async (t: Template, confirmed = false) => {
+    if (!confirmed && !window.confirm(`Delete the template "${t.name}"?`)) return;
     try {
       await api.del(`/templates/${t.id}`);
       void load();
@@ -934,6 +1597,210 @@ export function TemplatesScreen() {
 
   const state = error && !templates ? "error" : templates ? "ready" : "loading";
   const byBrand = clients.map((c) => ({ c, list: (templates ?? []).filter((t) => t.brandId === c.id) })).filter((g) => g.list.length);
+
+  if (isPhone) {
+    // Phone (mobile pass): client chips with counts instead of one long
+    // grouped page; each card shows platforms with cadence and times, a short
+    // two-column list, the suggestion, and Use template as the one button.
+    // Edit and Delete live in a "more" menu (Delete asks first), New template
+    // sits in a sticky bar and the editor opens as a full-height sheet.
+    const list = (templates ?? []).filter((t) => tplFilter === "all" || t.brandId === tplFilter);
+    const count = (id: string) => (templates ?? []).filter((t) => t.brandId === id).length;
+    const menuT = (templates ?? []).find((t) => t.id === menuFor) ?? null;
+    return (
+      <section className="screen active wf mb-page mb-tpl" data-screen="templates" data-state={state}>
+        <p className="mb-sub mb-subonly">Saved upload setups per client and brand.</p>
+        {state === "error" && <ErrorState screen="templates" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="templates" label="Loading templates" />}
+        {state === "ready" && (
+          <>
+            {(templates ?? []).length > 0 && (
+              <div className="mb-chips" role="tablist" aria-label="Clients">
+                <button type="button" role="tab" aria-selected={tplFilter === "all"} className={`mb-chip${tplFilter === "all" ? " on" : ""}`} onClick={() => setTplFilter("all")}>
+                  All <small>{(templates ?? []).length}</small>
+                </button>
+                {clients.map((c) => (
+                  <button key={c.id} type="button" role="tab" aria-selected={tplFilter === c.id} className={`mb-chip${tplFilter === c.id ? " on" : ""}`} onClick={() => setTplFilter(c.id)}>
+                    {c.name} {count(c.id) > 0 && <small>{count(c.id)}</small>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!list.length && (
+              <Empty screen="templates" title="No templates yet" hint={canEdit ? "Save a brand's usual setup with New template." : "The operator or Polly can add one."} />
+            )}
+            {list.map((t) => {
+              const s = suggestion(cadence[t.brandId] ?? null);
+              return (
+                <article key={t.id} className="mb-tp" data-testid={`template-${t.id}`}>
+                  <div className="mb-tptop">
+                    <span className="mb-lt">
+                      <b>{t.name}</b>
+                      <small>
+                        {clientName(t.brandId)} · {t.scope === "brand" ? "brand" : "client"} template
+                      </small>
+                    </span>
+                    {canEdit && (
+                      <button type="button" className="mb-ib ghost" aria-label={`More for ${t.name}`} onClick={() => setMenuFor(t.id)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-dots-h" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <div className="mb-tppf">
+                    {t.platforms.map((p) => (
+                      <Pf key={p} p={PF_ID[p]} size="sm" />
+                    ))}
+                    <span className="mb-muted">
+                      {[t.cadence || null, t.postTimes.length ? t.postTimes.map((x) => `${x}`).join(" and ") + " ET" : null].filter(Boolean).join(" · ") || "Any time"}
+                    </span>
+                  </div>
+                  <dl className="mb-kv">
+                    <dt>Caption</dt>
+                    <dd>{t.captionPattern || "None"}</dd>
+                    <dt>Hashtags</dt>
+                    <dd>{t.hashtags.length ? t.hashtags.map((h) => `#${h}`).join(" ") : "None"}</dd>
+                    <dt>Cover</dt>
+                    <dd>{t.coverStyle || "None"}</dd>
+                  </dl>
+                  {s && (
+                    <div className={`mb-sug ${s.tone}`}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href={s.tone === "ok" ? "#i-spark" : "#i-alert"} />
+                      </svg>
+                      <span>{s.text}</span>
+                    </div>
+                  )}
+                  {using === t.id ? (
+                    <UseTemplate t={t} onCancel={() => setUsing(null)} />
+                  ) : (
+                    <button type="button" className="mb-btn sm pri block" onClick={() => setUsing(t.id)} data-testid={`template-use-${t.id}`}>
+                      Use template
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+            <div className="mb-bot">
+              <span className="mb-lic info">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-key" />
+                </svg>
+              </span>
+              <div>
+                <b>Bot access</b>
+                <p className="mb-p muted small">
+                  Polly can read, apply and edit these templates. Other bots can apply a template only with the templates:apply scope.
+                </p>
+              </div>
+            </div>
+            {canEdit && (
+              <div className="mb-actionbar">
+                <button
+                  type="button"
+                  className="mb-btn pri"
+                  onClick={() => setEditing({ id: null, form: templateToForm(blankTemplate(clients[0]?.id ?? "")) })}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-plus" />
+                  </svg>
+                  New template
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {editing && (
+          <Modal maxWidth={560} onClose={() => setEditing(null)} label={editing.id ? "Edit template" : "New template"}>
+            <div className="modal-head">
+              <div>
+                <h3>{editing.id ? "Edit template" : "New template"}</h3>
+                <p>A brand's usual upload setup, ready to apply.</p>
+              </div>
+              <button type="button" className="modal-x" aria-label="Close" onClick={() => setEditing(null)}>
+                <svg>
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <TemplateEditor editing={editing} onChange={setEditing} onSave={() => void save()} />
+            </div>
+          </Modal>
+        )}
+        {menuT && (
+          <>
+            <div className="mb-scrim" onClick={() => setMenuFor(null)} aria-hidden="true" />
+            <div className="mb-sheet" role="dialog" aria-modal="true" aria-label={menuT.name}>
+              <div className="mb-grab" aria-hidden="true" />
+              <div className="mb-sh">
+                <div className="mb-ttl">
+                  <h2>{menuT.name}</h2>
+                  <small>{clientName(menuT.brandId)}</small>
+                </div>
+                <button type="button" className="mb-ib" aria-label="Close" onClick={() => setMenuFor(null)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-x" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-shb">
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  onClick={() => {
+                    setMenuFor(null);
+                    setEditing({ id: menuT.id, form: templateToForm(menuT) });
+                  }}
+                >
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-pencil" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Edit</b>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  onClick={() => {
+                    setMenuFor(null);
+                    setAskDelete(menuT);
+                  }}
+                >
+                  <span className="mb-lic bad">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-trash" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b className="mb-bad">Delete</b>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {askDelete && (
+          <ConfirmSheet
+            title={`Delete "${askDelete.name}"?`}
+            body="The template goes away for everyone, bots included. Posts made with it stay."
+            confirm="Delete"
+            danger
+            onConfirm={() => {
+              const t = askDelete;
+              setAskDelete(null);
+              void remove(t, true);
+            }}
+            onClose={() => setAskDelete(null)}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active wf" data-screen="templates" data-state={state}>

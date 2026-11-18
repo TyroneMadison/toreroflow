@@ -6,6 +6,7 @@ import { useAppState } from "../state/AppState";
 import CarouselBuilderModal, { type CropRect } from "../modals/CarouselBuilderModal";
 import { useToast } from "./Toasts";
 import { usePhotoDetails } from "./PhotoDetails";
+import { useIsPhone } from "../lib/phone";
 
 interface Item {
   file: File;
@@ -45,6 +46,7 @@ export default function PhotoComposer({
   const [stage, setStage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const isPhone = useIsPhone();
   const d = usePhotoDetails("pcomp", picked ? (picked.draftCopy?.hashtags ?? []) : hashtags);
 
   // Object URLs live as long as their item; the browser frees nothing on its own.
@@ -205,6 +207,7 @@ export default function PhotoComposer({
                 <div key={it.url} className={i === 0 ? "on" : undefined}>
                   {isImage(it.file) ? <img src={it.url} alt={`Item ${i + 1}`} /> : <video src={it.url} muted playsInline />}
                   <span className="pcomp-num">{i + 1}</span>
+                  {isPhone && i === 0 && type === "carousel" && <span className="mb-covertag">Cover</span>}
                   {it.crop && <span className="cbld-cropped">cropped</span>}
                   <button type="button" className="pcomp-x" aria-label={`Remove item ${i + 1}`} onClick={() => remove(i)}>
                     ✕
@@ -249,11 +252,21 @@ export default function PhotoComposer({
           <div className="pcomp-actions">
             {(items.length > 0 || picked) && (
               <button type="button" className="btn ghost" disabled={busy} onClick={() => input.current?.click()}>
+                {isPhone && (
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-plus" />
+                  </svg>
+                )}
                 {type === "image" ? "Replace picture" : "Add photo or video"}
               </button>
             )}
             {items.length > 0 && (
               <button type="button" className="btn ghost" disabled={busy} onClick={() => setArranging(true)}>
+                {isPhone && (
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-crop" />
+                  </svg>
+                )}
                 {type === "image" ? "Crop" : "Arrange and crop"}
               </button>
             )}
@@ -319,6 +332,13 @@ export default function PhotoComposer({
       </div>
 
       <div className="pcomp-foot">
+        {isPhone && count > 0 && (
+          <span className="mb-pcsum">
+            {label}, {count} {type === "image" ? "picture" : count === 1 ? "item" : "items"}, {d.accountCount}{" "}
+            {d.accountCount === 1 ? "account" : "accounts"},{" "}
+            {d.timing === "now" ? "now" : new Date(d.when).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}
+          </span>
+        )}
         {problems[0] && count > 0 && <span className="pcomp-why">{problems[0]}</span>}
         {stage && (
           <span className="pcomp-why" role="status">

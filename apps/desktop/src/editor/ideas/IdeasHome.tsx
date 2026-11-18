@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../lib/api";
+import { useIsPhone } from "../../lib/phone";
+import { usePhoneBar } from "../../lib/phoneBar";
 import { useToast } from "../../components/Toasts";
+import Modal from "../../modals/Modal";
 import type { NicheProfile } from "./NicheCard";
 import SuperGenerate, { PlatformDot, useSuperRun, type SuperIdea as SuperIdeaT } from "./SuperGenerate";
 import IdeaList from "./IdeaList";
@@ -8,7 +11,7 @@ import SavedIdeas from "./SavedIdeas";
 import ShootPlan from "./ShootPlan";
 import HookLibrary from "./HookLibrary";
 import FormatPicker from "./FormatPicker";
-import { Masthead } from "./coralBits";
+import { Avatar, IdeaCard, Masthead, hookLine } from "./coralBits";
 import BrainstormModal from "./BrainstormModal";
 import { CREATOR_LINK_CAP, VIDEO_FORMATS, cleanCreatorLinks, parseCreatorLink } from "@toreroflow/core";
 import "@fontsource-variable/fraunces/wght.css";
@@ -56,7 +59,7 @@ const TABS: Array<{ id: Tab; label: string; folio: string; h: [string, string]; 
 
 const NICHE_CAP = 200;
 
-export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: { clientId: string; focusSuper?: boolean; areaSwitch?: ReactNode }) {
+export default function IdeasHome({ clientId, focusSuper = false }: { clientId: string; focusSuper?: boolean }) {
   const toast = useToast();
   const superRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -83,6 +86,11 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
   const [starting, setStarting] = useState(false);
   const [savedFolio, setSavedFolio] = useState("09");
   const sg = useSuperRun(clientId);
+  // Phones: the niche and creators edit in a sheet behind a summary card, the
+  // format chips fold after seven, and a Super generate run is a deeper page.
+  const isPhone = useIsPhone();
+  const [editNiche, setEditNiche] = useState(false);
+  const [allFormats, setAllFormats] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -307,9 +315,270 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
   const ytCount = creators.filter((c) => parseCreatorLink(c)?.platform === "youtube").length;
 
   const page = TABS.find((t) => t.id === tab)!;
+  const phoneSuper = isPhone && tab === "generate" && view === "super" && !!sg.run;
+  usePhoneBar(
+    phoneSuper
+      ? {
+          title: "Super generate",
+          back: () => setView("formats"),
+          action: superBlocked ? undefined : (
+            <button
+              type="button"
+              className="mb-btn sm text"
+              disabled={starting || sg.run?.status === "running"}
+              onClick={() => void superGenerate()}
+            >
+              Run again
+            </button>
+          ),
+        }
+      : null,
+  );
+
+  // The niche, the creators and the spending cap: the desktop's step 1 card,
+  // and the phone's Edit sheet behind its summary card.
+  const nicheForm = (
+    <>
+      <div className="cfield nichegap">
+        <span className="lab">Niche</span>
+        <input
+          className="field-in"
+          maxLength={NICHE_CAP}
+          value={niche}
+          placeholder="e.g. Exotic car rentals in New Jersey"
+          onChange={(e) => setNiche(e.target.value)}
+          onBlur={() => void saveNiche()}
+        />
+      </div>
+      <div className="cfield nichegap">
+        <span className="lab">Creators that inspire you</span>
+        <div className="creatorlinks">
+          {creators.map((c) => {
+            const l = parseCreatorLink(c);
+            return (
+              <div className="creatorlink" key={c}>
+                <PlatformDot platform={l?.platform ?? "other"} />
+                <span className="creatorurl">{c}</span>
+                {l?.platform !== "youtube" && <span className="creatornote">YouTube only for Super generate</span>}
+                {l?.platform === "youtube" && !superBlocked && (
+                  <button
+                    type="button"
+                    className="creatorgen"
+                    title={`Study ${l.handle} and write ideas from them alone`}
+                    disabled={starting || sg.run?.status === "running"}
+                    onClick={() => void superGenerate(c)}
+                  >
+                    {sg.run?.status === "running" && sg.run.creators.length === 1 && sg.run.creators[0]?.url === c
+                      ? "Generating..."
+                      : "Generate"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="chipx"
+                  title={`Remove ${c}`}
+                  onClick={() => void saveCreators(creators.filter((v) => v !== c))}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {creators.length < CREATOR_LINK_CAP && (
+            <input
+              className="field-in"
+              value={draft}
+              placeholder={`Paste creator channel link (${creators.length + 1} of ${CREATOR_LINK_CAP})`}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitDraft}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitDraft();
+                }
+              }}
+            />
+          )}
+          <span className="nichenote">
+            {creators.length >= CREATOR_LINK_CAP ? `That is the most (${CREATOR_LINK_CAP})` : `+ Add creator · up to ${CREATOR_LINK_CAP}`}
+          </span>
+        </div>
+      </div>
+    </>
+  );
+  const capField = (
+    <label className="sgcap">
+      <span className="sub">Spending cap per run $</span>
+      <input
+        className="field-in"
+        type="number"
+        min={0.1}
+        max={50}
+        step={0.5}
+        value={(capCents / 100).toFixed(2)}
+        onChange={(e) => setCapCents(Math.round(Number(e.target.value) * 100) || 0)}
+        onBlur={() => {
+          const cap = Math.min(5000, Math.max(10, capCents));
+          setCapCents(cap);
+          void saveCreators(creators, cap);
+        }}
+      />
+    </label>
+  );
+
+  // Phone Generate tab: the niche as one summary card (Edit opens a sheet),
+  // then the ways to make ideas ranked, then the newest run's ideas.
+  const ytCreators = creators.filter((c) => parseCreatorLink(c)?.platform === "youtube");
+  const fmtShown = allFormats ? CATEGORIES : CATEGORIES.slice(0, 7);
+  const capText = `${(capCents / 100).toFixed(2)} cap`;
+  const phoneMake = (
+    <>
+      <section className="mb-card mb-niche" aria-label="Your niche and inspiration">
+        <div className="mb-fhead">
+          <span className="mb-lab">1 · Your niche and inspiration</span>
+          <button type="button" className="mb-btn text" onClick={() => setEditNiche(true)}>
+            {niche.trim() || creators.length ? "Edit" : "Add"}
+          </button>
+        </div>
+        <b className="mb-nichet">{niche.trim() || "Add your niche and the creators you follow. Everything below writes from this."}</b>
+        {creators.length > 0 && (
+          <div className="mb-creators">
+            <span className="mb-avs" aria-hidden="true">
+              {creators.slice(0, 5).map((c) => (
+                <Avatar key={c} handle={parseCreatorLink(c)?.handle ?? c} small />
+              ))}
+            </span>
+            <small>
+              {creators.length} {creators.length === 1 ? "creator" : "creators"}
+              {ytCreators.length ? ` · ${ytCreators.length} on YouTube` : ""}
+            </small>
+          </div>
+        )}
+      </section>
+      <section className="mb-card mb-make" aria-label="Make ideas">
+        <span className="mb-lab">2 · Make ideas</span>
+        <div className="mb-bigact">
+          <button type="button" className="mb-btn pri" disabled={loading || !niche.trim()} onClick={brainstorm}>
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-spark" />
+              </svg>
+              Brainstorm
+            </span>
+            <small>Quick ideas</small>
+          </button>
+          <button type="button" className="mb-btn" onClick={() => setChat(true)}>
+            <span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-comment" />
+              </svg>
+              Chat
+            </span>
+            <small>Open brainstorm chat</small>
+          </button>
+        </div>
+        <span ref={superRef} />
+        {superBlocked ? (
+          <div className="mb-banner warn">
+            <span className="mb-bt">
+              <b>Super generate needs a YouTube API key.</b> Add YOUTUBE_API_KEY on the server to turn it on.
+            </span>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="mb-btn ghost block sgstart"
+              disabled={starting || ytCount === 0 || sg.run?.status === "running"}
+              onClick={() => void superGenerate()}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-shuffle" />
+              </svg>
+              {sg.run?.status === "running" ? "Running..." : "Super generate"}
+              <small>{ytCount === 0 ? "Add a YouTube channel first" : `${ytCount} ${ytCount === 1 ? "creator" : "creators"}, $${capText}`}</small>
+            </button>
+            {sg.run && (
+              <button type="button" className="mb-btn text mb-lastrun" onClick={() => setView("super")}>
+                Show last run
+              </button>
+            )}
+          </>
+        )}
+        <div className="mb-fhead">
+          <span className="mb-flab">Or pick a format</span>
+          <button type="button" className="mb-btn text" disabled={loading} onClick={() => void generate([])}>
+            Pick for me
+          </button>
+        </div>
+        <div className="mb-fmts">
+          {fmtShown.map((c) => (
+            <button
+              type="button"
+              key={c}
+              className={`mb-chip${chosen.includes(c) ? " on" : ""}`}
+              aria-pressed={chosen.includes(c)}
+              onClick={() => setChosen((cur) => (cur.includes(c) ? cur.filter((v) => v !== c) : [...cur, c]))}
+            >
+              {c}
+            </button>
+          ))}
+          {!allFormats && CATEGORIES.length > 7 && (
+            <button type="button" className="mb-chip out" onClick={() => setAllFormats(true)}>
+              + {CATEGORIES.length - 7} more
+            </button>
+          )}
+        </div>
+        {chosen.length > 0 && (
+          <button type="button" className="mb-btn block" disabled={loading} onClick={() => void generate(chosen)}>
+            Find formats for {chosen.length} {chosen.length === 1 ? "pick" : "picks"}
+          </button>
+        )}
+      </section>
+      {editNiche && (
+        <Modal maxWidth={520} onClose={() => setEditNiche(false)} label="Your niche and inspiration">
+          <div className="modal-head">
+            <div className="mb-ttl">
+              <h3>Your niche</h3>
+              <p>Everything Ideas writes starts here. Saved per client.</p>
+            </div>
+            <button type="button" className="modal-x" aria-label="Close" onClick={() => setEditNiche(false)}>
+              <svg>
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="modal-body mb-nicheform">
+            {nicheForm}
+            {capField}
+          </div>
+          <div className="modal-foot">
+            <button
+              type="button"
+              className="mb-btn pri"
+              onClick={() => {
+                commitDraft();
+                void saveNiche();
+                setEditNiche(false);
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+  const fresh = isPhone && !loading && formats.length === 0 && sg.run?.status === "ready" && sg.run.ideas.length > 0 ? sg.run.ideas : null;
+  /** Banks a Super generate idea and counts it as saved for the run's feedback. */
+  const addSuperIdea = (i: SuperIdeaT) => {
+    sendFeedback(sg.run?.id ?? "", [i], true);
+    void bank(i.text, i.format ? `${i.format} · ${i.label}` : i.label, "analysis", i.script, i.creator, i.shots, i.funnelStage, i.whyItWorks, i.difficulty, i.needs);
+  };
 
   return (
     <div className="ideashome coral">
+      {!phoneSuper && (
       <Masthead
         folio={tab === "saved" ? savedFolio : page.folio}
         word1={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1 ? "Super" : page.h[0]}
@@ -317,8 +586,9 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
         lede={tab === "generate" && view === "super" && sg.run && sg.run.creators.length > 1
           ? "Ideas split evenly across all your creators, balanced across the funnel. Or let us pick one for you."
           : page.lede}
-        aside={areaSwitch}
       />
+      )}
+      {!phoneSuper && (
       <nav className="co-tabs" role="tablist">
         {TABS.map((t, k) => (
           <button
@@ -335,6 +605,7 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
           </button>
         ))}
       </nav>
+      )}
 
       {tab === "hooks" ? (
         <HookLibrary clientId={clientId} onUsed={() => { setReloadKey((n) => n + 1); setTab("saved"); }} />
@@ -349,75 +620,14 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
         </>
       ) : (
         <>
+          {isPhone ? (
+            !phoneSuper && phoneMake
+          ) : (
           <div className="ideagrid">
             <div className="card glass ideacontext">
               <h3>1 · Your niche &amp; inspiration</h3>
               <div className="sub">Everything below writes from this. Saved per client.</div>
-              <div className="cfield nichegap">
-                <span className="lab">Niche</span>
-                <input
-                  className="field-in"
-                  maxLength={NICHE_CAP}
-                  value={niche}
-                  placeholder="e.g. Exotic car rentals in New Jersey"
-                  onChange={(e) => setNiche(e.target.value)}
-                  onBlur={() => void saveNiche()}
-                />
-              </div>
-              <div className="cfield nichegap">
-                <span className="lab">Creators that inspire you</span>
-                <div className="creatorlinks">
-                  {creators.map((c) => {
-                    const l = parseCreatorLink(c);
-                    return (
-                      <div className="creatorlink" key={c}>
-                        <PlatformDot platform={l?.platform ?? "other"} />
-                        <span className="creatorurl">{c}</span>
-                        {l?.platform !== "youtube" && <span className="creatornote">YouTube only for Super generate</span>}
-                        {l?.platform === "youtube" && !superBlocked && (
-                          <button
-                            type="button"
-                            className="creatorgen"
-                            title={`Study ${l.handle} and write ideas from them alone`}
-                            disabled={starting || sg.run?.status === "running"}
-                            onClick={() => void superGenerate(c)}
-                          >
-                            {sg.run?.status === "running" && sg.run.creators.length === 1 && sg.run.creators[0]?.url === c
-                              ? "Generating..."
-                              : "Generate"}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="chipx"
-                          title={`Remove ${c}`}
-                          onClick={() => void saveCreators(creators.filter((v) => v !== c))}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {creators.length < CREATOR_LINK_CAP && (
-                    <input
-                      className="field-in"
-                      value={draft}
-                      placeholder={`Paste creator channel link (${creators.length + 1} of ${CREATOR_LINK_CAP})`}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onBlur={commitDraft}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commitDraft();
-                        }
-                      }}
-                    />
-                  )}
-                  <span className="nichenote">
-                    {creators.length >= CREATOR_LINK_CAP ? `That is the most (${CREATOR_LINK_CAP})` : `+ Add creator · up to ${CREATOR_LINK_CAP}`}
-                  </span>
-                </div>
-              </div>
+              {nicheForm}
             </div>
 
             <div className="card glass ideapicker">
@@ -496,31 +706,16 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
                   )}
                 </div>
               )}
-              <label className="sgcap">
-                <span className="sub">Spending cap per run $</span>
-                <input
-                  className="field-in"
-                  type="number"
-                  min={0.1}
-                  max={50}
-                  step={0.5}
-                  value={(capCents / 100).toFixed(2)}
-                  onChange={(e) => setCapCents(Math.round(Number(e.target.value) * 100) || 0)}
-                  onBlur={() => {
-                    const cap = Math.min(5000, Math.max(10, capCents));
-                    setCapCents(cap);
-                    void saveCreators(creators, cap);
-                  }}
-                />
-              </label>
+              {capField}
             </div>
           </div>
+          )}
 
           {view === "super" && sg.run ? (
             <SuperGenerate
               run={sg.run}
               onCancel={() => void cancelSuper()}
-              onAdd={(i) => { sendFeedback(sg.run?.id ?? "", [i], true); void bank(i.text, i.format ? `${i.format} · ${i.label}` : i.label, "analysis", i.script, i.creator, i.shots, i.funnelStage, i.whyItWorks, i.difficulty, i.needs); }}
+              onAdd={addSuperIdea}
               added={added}
               busy={starting || sg.run?.status === "running"}
               onRerun={(c) => void superGenerate(c)}
@@ -577,6 +772,31 @@ export default function IdeasHome({ clientId, focusSuper = false, areaSwitch }: 
                     </div>
                   ))}
                 </div>
+              )}
+
+              {fresh && (
+                <>
+                  <div className="mb-sechd">
+                    <h2 className="mb-h2">From your last run</h2>
+                    <small>
+                      {fresh.length} {fresh.length === 1 ? "idea" : "ideas"}
+                    </small>
+                  </div>
+                  {fresh.slice(0, 6).map((i, k) => (
+                    <IdeaCard
+                      key={i.text}
+                      no={k + 1}
+                      idea={{ title: i.text, creator: i.creator, funnelStage: i.funnelStage, difficulty: i.difficulty, needs: i.needs, hook: hookLine(i.script), why: i.whyItWorks, format: i.format || i.label }}
+                      saved={added.includes(i.text)}
+                      onSave={() => addSuperIdea(i)}
+                    />
+                  ))}
+                  {fresh.length > 6 && (
+                    <button type="button" className="mb-btn ghost block" onClick={() => setView("super")}>
+                      See all {fresh.length} ideas from the run
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}

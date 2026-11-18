@@ -17,7 +17,7 @@ export const AN_SECTIONS = [
   { id: "an-growth", label: "Growth" },
 ] as const;
 
-const PF_COLOR: Record<string, string> = {
+export const PF_COLOR: Record<string, string> = {
   tiktok: "#25F4EE",
   instagram: "linear-gradient(90deg,#F58529,#DD2A7B)",
   youtube: "#FF3B30",

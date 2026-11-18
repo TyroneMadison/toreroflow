@@ -17,6 +17,7 @@ import CommentsScreen from "./screens/CommentsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import { FanoutScreen, PreflightScreen, QueueScreen, RollupScreen, TemplatesScreen } from "./screens/WorkflowScreens";
 import SettingsScreen from "./screens/SettingsScreen";
+import MoreScreen from "./screens/MoreScreen";
 import ReadyQueueScreen from "./screens/ReadyQueueScreen";
 import ScheduleScreen from "./screens/ScheduleScreen";
 import AuthScreen from "./screens/AuthScreen";
@@ -38,6 +39,7 @@ import { ToastProvider } from "./components/Toasts";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import AlertDock from "./components/AlertDock";
 import UpdateBanner from "./components/UpdateBanner";
+import WebUpdateBanner from "./components/mobile/WebUpdateBanner";
 import { useApiStatus } from "./components/ApiStatus";
 import { api, getActivity, subscribeActivity, type AlertsResponse, type SystemAlert } from "./lib/api";
 import { buildAgentState, publishAgentState } from "./lib/agentState";
@@ -195,16 +197,14 @@ function Shell() {
         <MobileNav
           activeScreen={activeScreen}
           api={apiStatus}
-          theme={theme}
-          onToggleTheme={toggleTheme}
           onOpenConnect={openConnect}
-          alertCount={visibleAlerts.length}
-          alertIsError={visibleAlerts.some((a) => a.severity === "error")}
+          alerts={alerts}
+          onAlertsChanged={refreshAlerts}
         />
         <main className="main">
           {/* The Dashboard draws its own header with its controls; the screens
               not yet restyled get the shared one above their old topbar. */}
-          {activeScreen !== "dashboard" && (
+          {activeScreen !== "dashboard" && activeScreen !== "more" && (
             <PageHeader
               screen={activeScreen}
               controls={
@@ -219,7 +219,8 @@ function Shell() {
               }
             />
           )}
-          {activeScreen !== "failed" && <FailedPostBanner />}
+          <WebUpdateBanner />
+          {activeScreen !== "failed" && activeScreen !== "more" && <FailedPostBanner />}
           {activeScreen === "dashboard" && (
             <DashboardScreen key="dashboard" onOpenInsights={openInsights} onOpenConnect={openConnect} />
           )}
@@ -284,6 +285,9 @@ function Shell() {
           {activeScreen === "monthly" && <MonthlyReportScreen key={`monthly-${selectedClientId ?? "none"}`} />}
           {activeScreen === "settings" && (
             <SettingsScreen key="settings" onOpenConnect={openConnect} />
+          )}
+          {activeScreen === "more" && (
+            <MoreScreen key="more" theme={theme} onToggleTheme={toggleTheme} apiStatus={apiStatus} />
           )}
         </main>
       </div>

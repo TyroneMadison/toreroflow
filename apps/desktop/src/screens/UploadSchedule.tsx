@@ -1,4 +1,4 @@
-import { linkProps, setQuery, useRoute } from "../lib/routes";
+import { linkProps, navigate, setQuery, useRoute } from "../lib/routes";
 import { igLimitText, Seg } from "../components/PostDetails";
 import { COMPOSER_TYPES, type ComposerType } from "../lib/postDetails";
 import PhotoComposer from "../components/PhotoComposer";
@@ -21,6 +21,9 @@ import Pf from "../components/Pf";
 import { PF_ID } from "../lib/platforms";
 import ScheduleModal from "../modals/ScheduleModal";
 import LongFormModal from "../modals/LongFormModal";
+import { useIsPhone } from "../lib/phone";
+import SwipeRow from "../components/mobile/SwipeRow";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
 import PostDetailModal from "../modals/PostDetailModal";
 import CoverModal from "../modals/CoverModal";
 import { usesLongFormWizard } from "../lib/youtube";
@@ -111,6 +114,22 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   const [revBusy, setRevBusy] = useState<string | null>(null);
   const [schedBusy, setSchedBusy] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Phone (mobile pass): one video open at a time, the Create sheet's
+  // hints (Photo post, Long-form, Continue where you left off), and the
+  // delete confirm that replaces the card's own Delete button.
+  const isPhone = useIsPhone();
+  const [openAsset, setOpenAsset] = useState<string | null>(null);
+  const [longHint, setLongHint] = useState(false);
+  const [askDelete, setAskDelete] = useState<MediaAssetInfo | null>(null);
+  useEffect(() => {
+    const type = sessionStorage.getItem("tf-compose-type");
+    const open = sessionStorage.getItem("tf-open-asset");
+    sessionStorage.removeItem("tf-compose-type");
+    sessionStorage.removeItem("tf-open-asset");
+    if (type === "carousel") setCtype("carousel");
+    if (type === "longform") setLongHint(true);
+    if (open) setOpenAsset(open);
+  }, []);
   const departTimer = useRef<number | null>(null);
 
   const connectedCount = (selectedClient?.accounts ?? []).filter(
@@ -491,6 +510,26 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
     void load();
   };
 
+  /** Save what is on screen, then open the scheduler or the long-form steps. */
+  const startSchedule = (asset: MediaAssetInfo) => {
+    // What posts has to be what is on screen. saveDraft is a no-op when
+    // nothing was typed, and returns false when the server refused, in which
+    // case the modal stays shut rather than publishing older copy.
+    if (schedBusy) return;
+    setSchedBusy(asset.id);
+    void saveDraft(asset)
+      .then((ok) => {
+        // The short/long toggle alone decides the door.
+        if (ok) {
+          if (usesLongFormWizard(asset)) setLongForm(asset);
+          else setScheduling(asset);
+        }
+      })
+      .finally(() => setSchedBusy(null));
+  };
+  const openId = openAsset && assets.some((a) => a.id === openAsset) ? openAsset : (assets[0]?.id ?? null);
+  const openOne = assets.find((a) => a.id === openId) ?? null;
+
   if (!selectedClient) {
     return (
       <section className="screen active" data-screen="upload" data-state={state}>
@@ -549,10 +588,69 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             options={COMPOSER_TYPES}
           />
 
-          {ctype === "reel" ? (
+          {ctype === "reel" && isPhone ? (
+            <div className="mb-pick">
+              <input
+                ref={fileInput}
+                type="file"
+                accept="video/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <div className="mb-pickh">
+                <span className="mb-lic">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-upload" />
+                  </svg>
+                </span>
+                <span>
+                  <b>Add videos</b>
+                  <small>MP4 or MOV up to 4K, several at once.</small>
+                </span>
+              </div>
+              {longHint && (
+                <div className="mb-banner info">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-video" />
+                  </svg>
+                  <span className="mb-bt">
+                    <b>Long-form:</b> pick the long video. Mark it long-form and Schedule opens the long-form steps for YouTube or Instagram.
+                  </span>
+                </div>
+              )}
+              <div className="mb-doors">
+                <button type="button" onClick={() => fileInput.current?.click()} data-testid="upload.pick.photos">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-image" />
+                  </svg>
+                  Photos
+                </button>
+                <button type="button" onClick={() => fileInput.current?.click()} data-testid="upload.pick.files">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-folder" />
+                  </svg>
+                  Files
+                </button>
+                <button type="button" onClick={() => navigate("workflows")} data-testid="upload.pick.drive">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-drive" />
+                  </svg>
+                  Google Drive
+                </button>
+              </div>
+              <div className="mb-minis">
+                <span className="mb-pill nodot">AI title and caption</span>
+                <span className="mb-pill nodot">Never re-encoded</span>
+              </div>
+            </div>
+          ) : ctype === "reel" ? (
             <div
               className="drop"
-              style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+              style={dragOver ? { borderColor: "rgba(250,97,75,.65)" } : undefined}
               role="button"
               tabIndex={0}
               aria-label="Add videos"
@@ -642,6 +740,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                 <div className="body">
                   <div className="name">{name}</div>
                   <div className="transcript">Uploading…</div>
+                  {isPhone && <div className="mb-prog run" aria-hidden="true"><i /></div>}
                 </div>
               </div>
             ))}
@@ -655,6 +754,34 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
               const ytTitle = ytTitles[asset.id] ?? asset.draftCopy?.youtubeTitle ?? "";
               const ytDescription =
                 ytDescriptions[asset.id] ?? asset.draftCopy?.youtubeDescription ?? "";
+              if (isPhone && asset.id !== openId)
+                return (
+                  <button type="button" className="mb-vmini" key={asset.id} onClick={() => setOpenAsset(asset.id)} data-testid={`upload.fold.${asset.id}`}>
+                    <span className="mb-thumb">
+                      {thumb && <img src={thumb} alt="" />}
+                      {asset.durationSec != null && <span className="mb-dur">{formatDuration(asset.durationSec)}</span>}
+                    </span>
+                    <span className="mb-vmt">
+                      <span className="mb-vmh">
+                        <b>{name || asset.name}</b>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-chev" />
+                        </svg>
+                      </span>
+                      {description && <span className="mb-cap2">{description}</span>}
+                      <span className="mb-vmtags">
+                        {asset.status !== "ready" ? (
+                          <span className="mb-pill">{STATUS_LABEL[asset.status]}</span>
+                        ) : asset.draftCopy ? (
+                          <span className="mb-pill info">AI copy drafted</span>
+                        ) : (
+                          <span className="mb-pill">No caption yet</span>
+                        )}
+                        {asset.isRevision && <span className="mb-pill warn">Revision</span>}
+                      </span>
+                    </span>
+                  </button>
+                );
               return (
                 <div
                   className={`jobwrap${departing === asset.id ? " departing" : ""}`}
@@ -712,6 +839,13 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           setNames((n) => ({ ...n, [asset.id]: e.target.value }))
                         }
                       />
+                      {isPhone && (
+                        <button type="button" className="mb-ib ghost mb-vmore" aria-label={`Delete ${asset.name}`} onClick={() => setAskDelete(asset)}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-trash" />
+                          </svg>
+                        </button>
+                      )}
                       {asset.isRevision && <span className="tag rev">Revision</span>}
                       {asset.status === "ready" && asset.hasTranscript && (
                         <span className="tag ok">Transcribed</span>
@@ -788,10 +922,17 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         label={`Format of ${asset.name}`}
                         testId={`fmt-${asset.id}`}
                         value={asset.format ?? "short_form"}
-                        options={[
-                          { id: "short_form", label: "This is a short-form video" },
-                          { id: "long_form", label: "This is a long-form video" },
-                        ]}
+                        options={
+                          isPhone
+                            ? [
+                                { id: "short_form", label: "Short-form" },
+                                { id: "long_form", label: "Long-form" },
+                              ]
+                            : [
+                                { id: "short_form", label: "This is a short-form video" },
+                                { id: "long_form", label: "This is a long-form video" },
+                              ]
+                        }
                         onChange={(f) => void setFormat(asset, f)}
                       />
                       </div>
@@ -921,23 +1062,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                           connectedCount === 0 ||
                           schedBusy === asset.id
                         }
-                        onClick={() => {
-                          // What posts has to be what is on screen. saveDraft
-                          // is a no-op when nothing was typed, and returns
-                          // false when the server refused, in which case the
-                          // modal stays shut rather than publishing older copy.
-                          if (schedBusy) return;
-                          setSchedBusy(asset.id);
-                          void saveDraft(asset)
-                            .then((ok) => {
-                              // The short/long toggle alone decides the door.
-                              if (ok) {
-                                if (usesLongFormWizard(asset)) setLongForm(asset);
-                                else setScheduling(asset);
-                              }
-                            })
-                            .finally(() => setSchedBusy(null));
-                        }}
+                        onClick={() => startSchedule(asset)}
                       >
                         <svg>
                           <use href="#i-bolt" />
@@ -952,6 +1077,32 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
             })}
           </div>
 
+          {isPhone && openOne && openOne.status === "ready" && (
+            <div className="mb-actionbar mb-uplbar">
+              <button
+                type="button"
+                className="mb-btn"
+                onClick={() => void saveDraft(openOne)}
+                disabled={
+                  drafts[openOne.id] === undefined &&
+                  names[openOne.id] === undefined &&
+                  ytTitles[openOne.id] === undefined &&
+                  ytDescriptions[openOne.id] === undefined
+                }
+              >
+                {savedFlash === openOne.id ? "Saved" : "Save copy"}
+              </button>
+              <button
+                type="button"
+                className="mb-btn pri"
+                disabled={connectedCount === 0 || schedBusy === openOne.id}
+                onClick={() => startSchedule(openOne)}
+                data-testid="upload.schedule"
+              >
+                {schedBusy === openOne.id ? "Saving" : `Schedule ${(names[openOne.id] ?? openOne.draftCopy?.name ?? "").trim() || "this video"}`}
+              </button>
+            </div>
+          )}
           <div>
             {selectedClient && (
               <div style={{ marginBottom: 16 }}>
@@ -989,7 +1140,8 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                   <p>Schedule a processed video and it will line up here.</p>
                 </div>
               ) : (
-                queued.map((p) => (
+                (isPhone ? [...queued].sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed")) : queued).map((p) => (
+                    <SwipeRow key={`sw-${p.id}`} onLeft={isPhone && (p.status === "scheduled" || p.status === "failed") ? () => void removeFromQueue(p.id) : undefined}>
                     <div
                       className={`queue-item${overTargetId === p.id ? " dragover" : ""}${
                         dragTargetId === p.id ? " dragging" : ""
@@ -1086,8 +1238,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
                         </div>
                       )}
                     </div>
+                    </SwipeRow>
                   ))
               )}
+              {isPhone && queued.length > 0 && <p className="mb-p muted small mb-qhint">Swipe a row left to remove it. The calendar button changes its day.</p>}
             </div>
 
             <div className="card glass" style={{ marginTop: 16 }}>
@@ -1108,6 +1262,20 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           </div>
         </div>
       </div>
+      {askDelete && (
+        <ConfirmSheet
+          title={`Delete ${askDelete.draftCopy?.name?.trim() || askDelete.name}?`}
+          body="The upload and its drafted copy go away. Posts already scheduled from it are not touched."
+          confirm="Delete"
+          danger
+          onConfirm={() => {
+            const a = askDelete;
+            setAskDelete(null);
+            void removeAsset(a);
+          }}
+          onClose={() => setAskDelete(null)}
+        />
+      )}
 
       {scheduling && (
         <ScheduleModal

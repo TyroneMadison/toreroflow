@@ -22,6 +22,9 @@ import {
 import ViewsChart from "../components/ViewsChart";
 import AnalyticsHero, { AnalyticsTabs } from "../components/analytics/AnalyticsHero";
 import { QueueCard, ReachCard } from "../components/analytics/AnalyticsPanels";
+import { fmt, fmtDate, fmtDay, fmtDur, gain, thumb } from "../components/analytics/fmt";
+import AnalyticsPhone from "../components/analytics/AnalyticsPhone";
+import { useIsPhone } from "../lib/phone";
 import { queueRows } from "../lib/queue";
 import { Empty, ErrorState, Loading } from "../components/states";
 import { clientAvatarUrl } from "../lib/avatar";
@@ -40,14 +43,7 @@ const PLATFORM_COLOR: Record<Platform, string> = {
   facebook: "#1877f2",
 };
 
-const color = (p: string): string => PLATFORM_COLOR[p as Platform] ?? "#FF6F61";
-
-function fmt(n: number | null | undefined): string {
-  if (n == null) return "-";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(Math.round(n * 10) / 10);
-}
+const color = (p: string): string => PLATFORM_COLOR[p as Platform] ?? "#FA614B";
 
 /**
  * A measured total, or a dash.
@@ -61,31 +57,6 @@ function fmt(n: number | null | undefined): string {
 function shown(metric: MetricName, total: number | null): string {
   if (total == null || (total === 0 && ZERO_IS_UNMEASURED.has(metric))) return "-";
   return fmt(total);
-}
-
-function fmtDur(sec: number | null): string {
-  if (sec == null || sec <= 0) return "-";
-  const s = Math.round(sec);
-  const m = Math.floor(s / 60);
-  if (m >= 60) return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-}
-
-/** YouTube's default.jpg is tiny; swap for the medium-quality frame. */
-function thumb(url: string | null): string | null {
-  if (!url) return null;
-  return url.includes("ytimg.com") ? url.replace("/default.jpg", "/mqdefault.jpg") : url;
-}
-
-/** Follower change across the analytics window (first vs last snapshot). */
-function gain(a: AccountAnalytics): number | null {
-  const f = a.history.map((h) => h.followers).filter((x): x is number => x != null);
-  if (f.length < 2) return null;
-  return f[f.length - 1]! - f[0]!;
 }
 
 /** Views summed across accounts per calendar day, oldest first. */
@@ -131,11 +102,6 @@ function GainRows({ accounts, label }: { accounts: AccountAnalytics[]; label: st
       })}
     </div>
   );
-}
-
-/** A "YYYY-MM-DD" day as written, never shifted a day back by the viewer's timezone. */
-function fmtDay(day: string): string {
-  return new Date(`${day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
 /**
@@ -318,6 +284,7 @@ function RankCard({
 export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () => void }) {
   const { clients, selectedClient, selectClient } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [data, setData] = useState<ClientAnalytics | null>(null);
   const [posts, setPosts] = useState<ClientPost[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -658,6 +625,54 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
         ? "loading"
         : "ready";
 
+  // Phone (mobile pass): the same figures, laid out per the phone mockup. The
+  // brand comes from the app bar's brand pill, so there is no brand dropdown.
+  if (isPhone) {
+    return (
+      <AnalyticsPhone
+        state={state}
+        client={selectedClient}
+        clientIndex={Math.max(0, clients.findIndex((c) => c.id === selectedClient?.id))}
+        reloadKey={reloadKey}
+        onOpenConnect={onOpenConnect}
+        onRetry={() => setReloadKey((k) => k + 1)}
+        refresh={() => void refresh()}
+        refreshing={refreshing}
+        exportReport={() => void exportReport()}
+        exporting={exporting}
+        loading={loading}
+        tab={tab}
+        setTab={setTab}
+        tabs={platformTabs}
+        rangeDays={rangeDays}
+        setRangeDays={setRangeDays}
+        earliest={earliest}
+        rangeLabel={rangeLabel}
+        platforms={connectedPlatforms.map((a) => a.platform)}
+        stats={kpis}
+        shares={pieSegs}
+        shareTotal={pieTotal}
+        reach={totalReach}
+        prevReach={prevReach}
+        posts={all}
+        chartPlatforms={activePlatforms}
+        mostViewed={mostViewed}
+        tiers={[tier1m, tier100k, tier10k]}
+        carousels={carousels}
+        queue={queue}
+        queueLoading={queueLoading}
+        engagement={engagement}
+        follows={followsReported ? totalFollows : null}
+        dms={dmsReported ? { sent: totalDms, opens: anyDmClicks ? totalDmClicks : null, videos: campaigned.length } : null}
+        savesNote={totalSaves === null}
+        uploads={uploadCounts}
+        accounts={accounts}
+        allAccounts={accountsAll}
+        refreshedAt={lastRefreshedAt}
+      />
+    );
+  }
+
   return (
     <section className="screen active" data-screen="analytics" data-state={state}>
       <div className="topbar">
@@ -701,7 +716,7 @@ export default function AnalyticsScreen({ onOpenConnect }: { onOpenConnect?: () 
                       borderRadius: 8,
                       fontSize: 10,
                       overflow: "hidden",
-                      background: "linear-gradient(135deg,#FF6F61,#FF9A73)",
+                      background: "linear-gradient(135deg,#FA614B,#FF9A73)",
                     }}
                   >
                     {clientAvatarUrl(client) ? (

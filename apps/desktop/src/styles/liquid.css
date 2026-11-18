@@ -79,10 +79,10 @@ html[data-shell="desktop"] .tf-bg,html[data-shell="desktop"] .tf-vig{display:non
 /* ---- Financials v3 language: big numbers, clear pressed buttons ---- */
 .tf-btn{background:var(--press-bg) !important;border:1.5px solid rgba(255,255,255,calc(.55 - .1 * var(--L))) !important;color:#fff !important;
   box-shadow:inset 0 3px 8px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.25),0 1px 0 rgba(255,255,255,.35) !important}
-.tf-btn.pri{background:linear-gradient(180deg,rgba(255,122,102,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important;
-  box-shadow:inset 0 3px 8px rgba(80,10,0,.35),inset 0 -1px 0 rgba(255,255,255,.35),0 6px 18px rgba(255,122,102,.35) !important}
+.tf-btn.pri{background:linear-gradient(180deg,rgba(250,97,75,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important;
+  box-shadow:inset 0 3px 8px rgba(80,10,0,.35),inset 0 -1px 0 rgba(255,255,255,.35),0 6px 18px rgba(250,97,75,.35) !important}
 .di.on,.tf-tabs a.a,.tf-seg button[aria-pressed="true"]{background:var(--press-bg) !important;color:#fff !important;
-  box-shadow:inset 0 3px 8px rgba(0,0,0,.3),inset 0 0 0 1.5px rgba(255,170,150,.8),0 0 18px rgba(255,122,102,.3) !important}
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.3),inset 0 0 0 1.5px rgba(255,170,150,.8),0 0 18px rgba(250,97,75,.3) !important}
 .di.on svg{color:var(--accent-hi)}
 h1,h2,.big,.hero,.kpi-v,.val,.v{text-shadow:0 1px 12px rgba(5,15,60,.35)}
 
@@ -116,7 +116,7 @@ html[data-glass="low"] *{text-shadow:none !important}
 /* ---- older .btn buttons get the same clear pressed look ---- */
 .btn{background:var(--press-bg) !important;border:1.5px solid rgba(255,255,255,calc(.5 - .1 * var(--L))) !important;color:#fff !important;
   box-shadow:inset 0 3px 8px rgba(0,0,0,.25),inset 0 -1px 0 rgba(255,255,255,.22),0 1px 0 rgba(255,255,255,.3) !important}
-.btn.pub,.btn.pri{background:linear-gradient(180deg,rgba(255,122,102,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important}
+.btn.pub,.btn.pri{background:linear-gradient(180deg,rgba(250,97,75,.6),rgba(200,70,55,.6)) !important;border-color:rgba(255,200,190,.7) !important}
 
 /* ---- per-panel edge bending (lib/refraction.ts) ---- */
 /* A panel with its own lens map uses it instead of the shared ripple. */

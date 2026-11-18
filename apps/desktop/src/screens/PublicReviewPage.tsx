@@ -7,6 +7,8 @@ import type { CommentThread } from "../editor/CollabPanel";
 import { fmtAt } from "../editor/CollabPanel";
 import type { CommentMarker } from "../editor/commentStore";
 import "../editor/StudioEditor.css";
+import { useIsPhone } from "../lib/phone";
+import ThumbPlayer, { mmss, type ThumbPlayerHandle } from "../components/mobile/ThumbPlayer";
 
 interface ReviewData {
   name: string;
@@ -35,6 +37,9 @@ export default function PublicReviewPage({ token }: { token: string }) {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
+  const player = useRef<ThumbPlayerHandle>(null);
+  const isPhone = useIsPhone();
+  const [editName, setEditName] = useState(false);
   const path = `/v/${encodeURIComponent(token)}`;
 
   const load = useCallback(
@@ -46,6 +51,7 @@ export default function PublicReviewPage({ token }: { token: string }) {
 
   const seek = (t: number) => {
     if (video.current) video.current.currentTime = t;
+    player.current?.seek(t);
   };
 
   async function submit(e: FormEvent) {
@@ -67,6 +73,113 @@ export default function PublicReviewPage({ token }: { token: string }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (isPhone) {
+    // Phone (mobile pass): video first with note dots, notes read like a chat
+    // (resolved ones dimmed at the bottom), and a messaging-style composer
+    // stuck to the bottom: the remembered name, an "at 0:01" chip that follows
+    // the playhead, and a 48px Send.
+    const threads = data ? [...data.threads].sort((a, b) => Number(!!a.resolvedAt) - Number(!!b.resolvedAt)) : [];
+    const resolved = threads.filter((t) => t.resolvedAt).length;
+    const replying = replyTo ? data?.threads.find((t) => t.id === replyTo) : null;
+    return (
+      <PublicShell
+        title={data ? `Review: ${data.name}` : "Review an edit"}
+        phoneTitle={data?.name}
+        sub={data ? "Leave notes at the exact second. Torerone sees them right away." : undefined}
+        context="Review an edit"
+      >
+        {error && <Note tone="bad">{error}</Note>}
+        {!data && !error && <Loading screen="review" />}
+        {data && (
+          <div className="mb-review">
+            {data.video ? (
+              <ThumbPlayer
+                ref={player}
+                src={data.video.url}
+                label={`Video, ${data.name}`}
+                markers={data.markers.map((m) => ({ at: m.at, done: m.resolved }))}
+                onTime={setTime}
+                onDuration={setDuration}
+              />
+            ) : (
+              <Note tone="warn">The video is not rendered yet. You can still read and leave notes.</Note>
+            )}
+            <div className="mb-cardh flat">
+              <span className="mb-lab">
+                {threads.length} {threads.length === 1 ? "note" : "notes"}
+                {resolved ? `, ${resolved} resolved` : ""}
+              </span>
+              {duration > 0 && threads.length > 0 && <small>Tap a time to jump there</small>}
+            </div>
+            <div className="mb-notes">
+              {threads.length === 0 && <p className="mb-p muted">No notes yet. Pause on a moment and write what should change.</p>}
+              {threads.map((t) => (
+                <div key={t.id} className={`mb-th${t.resolvedAt ? " res" : ""}`}>
+                  <div className="mb-thh">
+                    {t.atSec != null && (
+                      <button type="button" className="mb-ts" onClick={() => seek(t.atSec!)}>
+                        {mmss(t.atSec)}
+                      </button>
+                    )}
+                    <b>{t.authorName}</b>
+                    {t.resolvedAt && <span className="mb-pill nodot">Resolved</span>}
+                  </div>
+                  <p>{t.body}</p>
+                  {t.replies.map((r) => (
+                    <div key={r.id} className="mb-reply">
+                      <b>{r.authorName}</b> {r.body}
+                    </div>
+                  ))}
+                  {!t.resolvedAt && (
+                    <button type="button" className="mb-btn text sm mb-replybtn" onClick={() => setReplyTo(t.id)}>
+                      Reply
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="mb-p muted small mb-center">This link expires {new Date(data.expiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.</p>
+            <form className="mb-composer" onSubmit={submit}>
+              {(editName || !name.trim()) && (
+                <input className="mb-input" placeholder="Your name" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && setEditName(false)} autoComplete="name" />
+              )}
+              <div className="mb-chiprow">
+                {name.trim() && !editName && (
+                  <button type="button" className="mb-chip" onClick={() => setEditName(true)}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-user" />
+                    </svg>
+                    {name}
+                  </button>
+                )}
+                {replying ? (
+                  <button type="button" className="mb-chip on" onClick={() => setReplyTo(null)}>
+                    Replying to {replying.authorName}, cancel
+                  </button>
+                ) : (
+                  <button type="button" className={`mb-chip${pin ? " on" : ""}`} aria-pressed={pin} onClick={() => setPin((p) => !p)}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-clock" />
+                    </svg>
+                    {pin ? `at ${mmss(time)}` : "No time"}
+                  </button>
+                )}
+              </div>
+              <div className="mb-sendrow">
+                <textarea className="mb-input" rows={1} maxLength={2000} placeholder={replyTo ? "Your reply" : "What should change here?"} value={body} onChange={(e) => setBody(e.target.value)} />
+                <button className="mb-send" aria-label={replyTo ? "Send reply" : "Send note"} disabled={busy || !name.trim() || !body.trim()}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-send" />
+                  </svg>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </PublicShell>
+    );
   }
 
   return (

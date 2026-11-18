@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipActivityFeed, ClipImports, ClipLibrary, ClipPerformanceTable } from "./ClipsLibrary";
 import type { MediaAssetInfo } from "../../lib/api";
-import { API_URL, ApiError, api, getToken, videoLabel } from "../../lib/api";
+import { API_URL, ApiError, api, fileUrl, getToken, videoLabel } from "../../lib/api";
+import { useIsPhone } from "../../lib/phone";
 import { useToast } from "../../components/Toasts";
 import { formatDuration } from "../../lib/video";
+import { PhoneMenu, useLongPress, useUndoDelete } from "../phoneBits";
 import { RUNNING, type ClipJobRow } from "./clipTypes";
 import RecipesPanel, { useRecipes } from "./RecipesPanel";
 import "./Clips.css";
@@ -66,6 +68,11 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
   const [drag, setDrag] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<"jobs" | "library" | "performance" | "activity" | "imports">("jobs");
+  const isPhone = useIsPhone();
+  // Phone: a job's long-press menu, and delete with Undo instead of a Delete button per row.
+  const [menuFor, setMenuFor] = useState<ClipJobRow | null>(null);
+  const press = useLongPress<ClipJobRow>(setMenuFor);
+  const undoable = useUndoDelete((id) => remove(id));
 
   const load = useCallback(async () => {
     try {
@@ -123,7 +130,16 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
     }
   }
 
-  const tabs = (
+  const tabs = isPhone ? (
+    // Phone: one segmented control that fits the width.
+    <div className="seg mb-cliptabs" role="tablist" aria-label="Clips">
+      {(["jobs", "library", "performance", "activity", "imports"] as const).map((t) => (
+        <button key={t} type="button" role="tab" aria-selected={view === t} className={view === t ? "on" : ""} onClick={() => setView(t)}>
+          {t[0]!.toUpperCase() + t.slice(1)}
+        </button>
+      ))}
+    </div>
+  ) : (
     <div className="pnl-pills cliptabs">
       {(["jobs", "library", "performance", "activity", "imports"] as const).map((t) => (
         <button key={t} className={`pnl-pill${view === t ? " on" : ""}`} onClick={() => setView(t)}>
@@ -140,6 +156,231 @@ export default function ClipsHome({ clientId, onOpen }: { clientId: string; onOp
         {view === "performance" && <ClipPerformanceTable clientId={clientId} onOpen={onOpen} />}
         {view === "activity" && <ClipActivityFeed clientId={clientId} onOpen={onOpen} />}
         {view === "imports" && <ClipImports clientId={clientId} onOpen={onOpen} />}
+      </div>
+    );
+  }
+
+  if (isPhone) {
+    // Phone: a compact "New clip job" card (From Files or From Uploads, then
+    // full-width options) and jobs as rows; Delete moves to long-press.
+    const upload = uploads.find((u) => u.id === fromUpload);
+    const picked = file
+      ? { name: file.name, meta: `${Math.round(file.size / 1e6)} MB` }
+      : upload
+        ? { name: videoLabel(upload), meta: upload.durationSec ? `Long video · ${formatDuration(upload.durationSec)}` : "Long video" }
+        : null;
+    const def = recipes.find((r) => r.isDefault);
+    const retry = async (j: ClipJobRow) => {
+      try {
+        await api.post(`/clip-jobs/${j.id}/retry`, { stage: j.stage === "score" ? "score" : j.stage === "curate" ? "curate" : "analyze" });
+        void load();
+      } catch (e) {
+        toast.fail("Retrying", e);
+      }
+    };
+    const shown = jobs?.filter((j) => !undoable.hidden.has(j.id)) ?? null;
+    return (
+      <div className="clipshome">
+        {tabs}
+        <section className="mb-hero mb-newjob" aria-label="New clip job">
+          <div>
+            <div className="mb-lab">New clip job</div>
+            <h3>Podcasts, talks, streams</h3>
+          </div>
+          <input ref={input} type="file" accept="video/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <div className="mb-srcpick">
+            <button type="button" onClick={() => input.current?.click()}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-folder" />
+              </svg>
+              From Files
+            </button>
+            <label className={uploads.length ? undefined : "dis"}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-upload" />
+              </svg>
+              From Uploads
+              <select
+                aria-label="From Uploads"
+                value={fromUpload}
+                disabled={!uploads.length}
+                onChange={(e) => {
+                  setFile(null);
+                  setFromUpload(e.target.value);
+                }}
+              >
+                <option value="">Choose a video</option>
+                {uploads.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {videoLabel(u)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {picked && (
+            <div className="mb-src">
+              <span className="mb-lt">
+                <b>{picked.name}</b>
+                <small>{picked.meta}</small>
+              </span>
+              <button
+                type="button"
+                className="mb-ib ghost"
+                aria-label="Clear the video"
+                onClick={() => {
+                  setFile(null);
+                  setFromUpload("");
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+          )}
+          <div className="mb-field">
+            <span className="mb-flab">Clip length</span>
+            <div className="seg">
+              {LENGTHS.map((l) => (
+                <button key={l.id} type="button" aria-pressed={length === l.id} className={length === l.id ? "on" : ""} onClick={() => setLength(l.id)}>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mb-field">
+            <span className="mb-flab">Aspect</span>
+            <div className="seg">
+              {ASPECTS.map((a) => (
+                <button key={a} type="button" aria-pressed={aspect === a} className={aspect === a ? "on" : ""} onClick={() => setAspect(a)}>
+                  {a}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mb-field">
+            <div className="mb-fhead">
+              <label className="mb-flab" htmlFor="cj-recipe">
+                Recipe
+              </label>
+              <button type="button" className="mb-btn text" onClick={() => setShowRecipes(true)}>
+                Edit recipes
+              </button>
+            </div>
+            <select id="cj-recipe" className="mb-input" value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
+              <option value="">{def ? `Brand default (${def.name})` : "Brand default (none set)"}</option>
+              {recipes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mb-field">
+            <label htmlFor="cj-prompt">Prompt, optional</label>
+            <input id="cj-prompt" className="mb-input" value={prompt} maxLength={300} placeholder="e.g. moments about pricing" onChange={(e) => setPrompt(e.target.value)} />
+          </div>
+          <button type="button" className="mb-btn pri block" disabled={busy !== null || (!file && !fromUpload)} onClick={() => void start()}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-scissors" />
+            </svg>
+            {busy !== null ? (busy > 0 ? `Uploading ${Math.round(busy * 100)}%` : "Starting") : "Get clips"}
+          </button>
+        </section>
+
+        <div className="mb-sechd">
+          <h2 className="mb-h2">Clip jobs</h2>
+          {shown && shown.length > 0 && (
+            <small>
+              {shown.length} {shown.length === 1 ? "job" : "jobs"}
+            </small>
+          )}
+        </div>
+        {showRecipes && (
+          <RecipesPanel
+            clientId={clientId}
+            onClose={() => {
+              setShowRecipes(false);
+              void loadRecipes();
+            }}
+          />
+        )}
+        {shown === null ? (
+          <div className="mb-jobs">
+            <div className="skel mb-jobskel" />
+            <div className="skel mb-jobskel" />
+          </div>
+        ) : shown.length === 0 ? (
+          <p className="mb-p muted">No clip jobs yet. Pick a long video above and it comes back as ranked short clips.</p>
+        ) : (
+          <div className="mb-jobs">
+            {shown.map((j) => {
+              const live = RUNNING.has(j.status);
+              const failed = j.status === "failed";
+              const proxy = fileUrl(j.source.proxyUrl);
+              const len = j.source.durationSec ? formatDuration(j.source.durationSec) : "--";
+              const why = j.error ? j.error[0]!.toUpperCase() + j.error.slice(1) : "Failed, reason unknown";
+              return (
+                <div
+                  key={j.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`mb-job${failed ? " fail" : ""}`}
+                  onClick={() => onOpen(j.id)}
+                  onKeyDown={(e) => e.key === "Enter" && onOpen(j.id)}
+                  {...press(j)}
+                >
+                  <span className="mb-jthumb">{proxy && <video src={`${proxy}#t=2`} preload="metadata" muted playsInline />}</span>
+                  <span className="mb-lt">
+                    <b>{j.source.name}</b>
+                    {failed ? (
+                      <small className="mb-bad">{why}</small>
+                    ) : (
+                      <small>
+                        {len} · {j.status === "ready" ? `${j.clipCount ?? 0} clips · ready` : j.status}
+                      </small>
+                    )}
+                    {live && (
+                      <span className="mb-prog">
+                        <i style={{ transform: `scaleX(${j.pct / 100})` }} />
+                      </span>
+                    )}
+                  </span>
+                  {j.status === "ready" && j.topScore != null ? (
+                    <span className={`mb-score${j.topScore < 70 ? " warn" : ""}`} aria-label={`Top score ${j.topScore}`}>
+                      {j.topScore}
+                    </span>
+                  ) : live ? (
+                    <small className="mb-pct">{j.pct}%</small>
+                  ) : failed ? (
+                    <button
+                      type="button"
+                      className="mb-btn sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void retry(j);
+                      }}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {menuFor && (
+          <PhoneMenu
+            title={menuFor.source.name}
+            onClose={() => setMenuFor(null)}
+            items={[
+              { label: "Open", run: () => onOpen(menuFor.id) },
+              ...(menuFor.status === "failed" ? [{ label: "Retry", run: () => void retry(menuFor) }] : []),
+              { label: "Delete clip job", danger: true, run: () => undoable.del(menuFor.id, menuFor.source.name) },
+            ]}
+          />
+        )}
       </div>
     );
   }

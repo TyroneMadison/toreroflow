@@ -58,6 +58,7 @@ export default function ExpenseSection({
   totalCents,
   missingCount,
   onChanged,
+  addSignal,
 }: {
   title: string;
   sub: string;
@@ -68,11 +69,16 @@ export default function ExpenseSection({
   totalCents: number;
   missingCount: number;
   onChanged(): void;
+  /** Phone: bumped by the "Add money in or out" sheet to open the add form. */
+  addSignal?: number;
 }) {
   const toast = useToast();
   const byKey = new Map(categories.map((c) => [c.key, c]));
   const recurring = kind === "recurring";
   const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    if (addSignal) setAdding(true);
+  }, [addSignal]);
   const [draft, setDraft] = useState<AddDraft>({
     name: "",
     categoryLine: recurring ? "software" : "other",

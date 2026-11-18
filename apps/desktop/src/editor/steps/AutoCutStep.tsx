@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { addCut, appendClip, fillerCuts, silenceCuts } from "@toreroflow/core";
 import { api, fileUrl } from "../../lib/api";
+import { useIsPhone } from "../../lib/phone";
 import { useToast } from "../../components/Toasts";
+import ConfirmSheet from "../../components/mobile/ConfirmSheet";
 import { useEditor } from "../StudioEditor";
+import { PhoneMenu, useLongPress } from "../phoneBits";
 import "./AutoCutStep.css";
 
 /**
@@ -20,6 +23,11 @@ interface UploadRow {
 export default function AutoCutStep() {
   const { project, assets, refreshAssets, doc, update, setStep } = useEditor();
   const toast = useToast();
+  // Phones: a clip's long-press menu (move, delete) replaces dragging and the Delete button.
+  const isPhone = useIsPhone();
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [askDelete, setAskDelete] = useState<string | null>(null);
+  const press = useLongPress<string>(setMenuFor);
 
   const clipAssets = assets.filter((a) => a.kind === "clip");
   const byId = new Map(clipAssets.map((a) => [a.id, a]));
@@ -242,6 +250,16 @@ export default function AutoCutStep() {
     });
   };
 
+  /** The phone's Move earlier / Move later, committed like a drop. */
+  const move = (id: string, by: -1 | 1) => {
+    const ids = [...orderRef.current];
+    const i = ids.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+    update((doc2) => ({ ...doc2, clips: ids.flatMap((assetId) => doc2.clips.filter((c) => c.assetId === assetId)) }));
+  };
+
   /* ---- delete, two presses like everywhere else ---- */
 
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -297,7 +315,7 @@ export default function AutoCutStep() {
   const dropZone = (big: boolean) => (
     <div
       className={`drop${big ? " acs-drop-big" : " acs-drop"}`}
-      style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+      style={dragOver ? { borderColor: "rgba(250,97,75,.65)" } : undefined}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -315,7 +333,7 @@ export default function AutoCutStep() {
           <use href="#i-up" />
         </svg>
       </div>
-      <b>Drag your clips in, or click to browse</b>
+      <b>{isPhone ? "Add your clips from Photos or Files" : "Drag your clips in, or click to browse"}</b>
       <p>MP4, MOV and other common formats. Up to 4GB each.</p>
     </div>
   );
@@ -340,13 +358,21 @@ export default function AutoCutStep() {
         <>
           <div className="acs-head">
             <h3>Review your clips</h3>
+            {isPhone ? (
+              <div className="sub">
+                {clipAssets.length} {clipAssets.length === 1 ? "clip" : "clips"}, {Math.round(totalSec)} seconds. Long-press a clip to
+                move it in the order auto cut reads them, or to delete it.
+              </div>
+            ) : (
             <div className="sub">
               {clipAssets.length} {clipAssets.length === 1 ? "clip" : "clips"} -{" "}
               {Math.round(totalSec)}s. Drag to set the order auto cut reads them.
             </div>
+            )}
           </div>
 
-          {dropZone(false)}
+          {/* Phones add clips from the strip's Add clips tile and the footer. */}
+          {!isPhone && dropZone(false)}
 
           {uploads.length > 0 && (
             <div className="acs-uprows">
@@ -382,12 +408,29 @@ export default function AutoCutStep() {
           )}
 
           <div className="acs-cards">
-            {order.map((id) => {
+            {order.map((id, i) => {
               const a = byId.get(id);
               if (!a) return null;
               const ready = a.status === "ready";
               const dragging = d?.active && d.id === id;
               const strip = ready ? fileUrl(a.stripUrl) : null;
+              if (isPhone) {
+                // Phone: a numbered tile with its length; long-press for Move and Delete.
+                return (
+                  <div key={id} className="mb-acsclip" {...press(id)} aria-label={`Clip ${i + 1}, ${a.originalName}`}>
+                    <div
+                      className={`acs-strip${!ready && a.status !== "failed" ? " skel" : ""}`}
+                      style={strip ? { backgroundImage: `url(${strip})` } : undefined}
+                    >
+                      <span className="mb-acsn">{i + 1}</span>
+                      {a.durationSec != null && <span className="acs-dur">{Math.round(a.durationSec)}s</span>}
+                      {!ready && a.status !== "failed" && <span className="mini acs-proc">Processing...</span>}
+                      {a.status === "failed" && <span className="acs-failedtag">Failed</span>}
+                    </div>
+                    <small>{a.originalName}</small>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={id}
@@ -449,6 +492,14 @@ export default function AutoCutStep() {
                 </div>
               );
             })}
+            {isPhone && (
+              <button type="button" className="mb-acsadd" onClick={() => fileInput.current?.click()}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-plus" />
+                </svg>
+                Add clips
+              </button>
+            )}
           </div>
 
           <div className="card glass acs-auto">
@@ -478,10 +529,35 @@ export default function AutoCutStep() {
               Add more clips
             </button>
             <button className="btn acs-continue" disabled={busy} onClick={onContinue}>
-              {busy ? "Processing clips..." : "Continue"}
+              {busy ? "Processing clips..." : isPhone ? "Continue to Edit" : "Continue"}
             </button>
           </div>
         </>
+      )}
+      {menuFor && (
+        <PhoneMenu
+          title={byId.get(menuFor)?.originalName ?? "Clip"}
+          onClose={() => setMenuFor(null)}
+          items={[
+            ...(order.indexOf(menuFor) > 0 ? [{ label: "Move earlier", run: () => move(menuFor, -1) }] : []),
+            ...(order.indexOf(menuFor) < order.length - 1 ? [{ label: "Move later", run: () => move(menuFor, 1) }] : []),
+            { label: "Delete clip", danger: true, run: () => setAskDelete(menuFor) },
+          ]}
+        />
+      )}
+      {askDelete && (
+        <ConfirmSheet
+          title="Delete this clip?"
+          body={`${byId.get(askDelete)?.originalName ?? "The clip"} leaves this project.`}
+          confirm="Delete"
+          danger
+          onClose={() => setAskDelete(null)}
+          onConfirm={() => {
+            const id = askDelete;
+            setAskDelete(null);
+            void removeClip(id);
+          }}
+        />
       )}
     </div>
   );

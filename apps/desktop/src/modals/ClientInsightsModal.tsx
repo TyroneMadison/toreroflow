@@ -14,6 +14,12 @@ import {
 } from "../lib/api";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
+import { useIsPhone } from "../lib/phone";
+import { navigate } from "../lib/routes";
+import { useAppState } from "../state/AppState";
+import BrandAvatar from "../components/BrandAvatar";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
+import { Ic, PickSheet } from "../components/analytics/phoneBits";
 
 interface ClientInsightsModalProps {
   clientId: string;
@@ -101,6 +107,11 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
   const [newHandle, setNewHandle] = useState("");
   const [newPlatform, setNewPlatform] = useState("both");
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const { clients, selectClient } = useAppState();
+  const [pickPlatform, setPickPlatform] = useState(false);
+  const [allSugg, setAllSugg] = useState(false);
+  const [askRemove, setAskRemove] = useState<{ id: string; handle: string } | null>(null);
 
   const loadInspirations = useCallback(async () => {
     try {
@@ -167,6 +178,210 @@ export default function ClientInsightsModal({ clientId, onClose }: ClientInsight
   const running = isRunning(insight?.status);
   const suggestions = isReady(insight?.status) ? insight?.suggestions : null;
   const pdfUrl = isReady(insight?.status) ? fileUrl(insight?.url ?? null) : null;
+
+  // Phone sheet (mobile pass, mockup "m-client-insights"): the brand in the
+  // head, three tiles and the accounts by views, research as tagged cards
+  // (top three, See more), the accounts they want to be like with Remove
+  // (asks first) and the add row, and Research as the footer's main button.
+  // Same state and calls as the desktop dialog.
+  if (isPhone) {
+    const client = clients.find((c) => c.id === clientId);
+    const name = data?.client.name ?? client?.name ?? "Client";
+    const byViews = [...(data?.accounts ?? [])].sort((a, b) => (b.latest?.views ?? -1) - (a.latest?.views ?? -1));
+    const shown = suggestions ? (allSugg ? suggestions : suggestions.slice(0, 3)) : [];
+    const PLATFORM_CHOICES = [
+      { value: "both", label: "Both" },
+      { value: "instagram", label: "Instagram" },
+      { value: "tiktok", label: "TikTok" },
+    ];
+    return (
+      <Modal maxWidth={640} onClose={onClose} label={`${name} analytics`} testId="client-insights">
+        <div className="modal-head rp-cihead">
+          {client && <BrandAvatar client={client} index={clients.indexOf(client)} size={44} />}
+          <div>
+            <h3>{name}</h3>
+            <p>{running ? "Working on new suggestions. You can close this." : "Analytics · live metrics land daily"}</p>
+          </div>
+          <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
+            <svg>
+              <use href="#i-x" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body rp-ci">
+          <div className="rp-stats three">
+            {(
+              [
+                ["Views", data?.totals.views],
+                ["Reach", data?.totals.reach],
+                ["Followers", data?.totals.followers],
+              ] as const
+            ).map(([k, v]) => (
+              <div className="rp-stat" key={k}>
+                <div className="k">{k}</div>
+                <div className="v">{fmt(v ?? null)}</div>
+              </div>
+            ))}
+          </div>
+          {byViews.length ? (
+            <div className="mb-card list rp-ciacc">
+              {byViews.map((a) => (
+                <div className="mb-lrow" key={a.id}>
+                  <Pf p={PF_ID[a.platform]} size="sm" />
+                  <span className="mb-lt">
+                    <b>
+                      {PLATFORM_LABELS[a.platform]} <span className="rp-muted">@{a.handle}</span>
+                    </b>
+                  </span>
+                  <b className="rp-civ">{a.latest ? fmt(a.latest.views) : "no data yet"}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rp-note">No platforms connected yet. Connect them in Settings, Connected accounts.</p>
+          )}
+
+          <div className="rp-rowsb rp-cisec">
+            <div>
+              <h3 className="rp-h3">Deep research</h3>
+              <small className="rp-muted">
+                {running ? "Working on it. You can close this and carry on." : "AI moves to improve this brand's numbers"}
+              </small>
+            </div>
+            {pdfUrl && (
+              <button type="button" className="mb-btn sm ghost" onClick={() => void openExternal(pdfUrl)}>
+                <Ic name="i-dl" />
+                PDF
+              </button>
+            )}
+          </div>
+          {running && (
+            <p className="rp-note">
+              The plan is being written in the background. It will be here when you come back, and it saves itself as a PDF.
+            </p>
+          )}
+          {insight?.status === "failed" && <div className="mb-err">That run did not finish: {insight.error ?? "unknown error"}</div>}
+          {shown.map((s, i) => (
+            <div className="rp-sg" key={i}>
+              <span className="rp-tg">{s.category}</span>
+              <b>{s.title}</b>
+              <p>{s.detail}</p>
+            </div>
+          ))}
+          <div className="rp-cilinks">
+            {suggestions && suggestions.length > 3 && (
+              <button type="button" className="mb-btn text sm" aria-expanded={allSugg} onClick={() => setAllSugg((v) => !v)}>
+                {allSugg ? "Show fewer" : `See ${suggestions.length - 3} more`}
+              </button>
+            )}
+            <button type="button" className="mb-btn text sm" disabled={starting || running} onClick={() => void generate()}>
+              {running ? "Working" : suggestions ? "Regenerate" : "Generate"}
+            </button>
+          </div>
+
+          <div className="rp-cisec">
+            <h3 className="rp-h3">Accounts they want to be like</h3>
+            <small className="rp-muted">
+              {researching ? "Pulling what these accounts have been posting." : "What is working for them on Instagram and TikTok"}
+            </small>
+          </div>
+          {insp?.run?.error && <div className="mb-err">{insp.run.error}</div>}
+          {insp && insp.accounts.length > 0 && (
+            <div className="mb-card list rp-ciacc">
+              {insp.accounts.map((a) => (
+                <div className="mb-lrow" key={a.id}>
+                  {a.platform === "instagram" || a.platform === "tiktok" ? (
+                    <Pf p={PF_ID[a.platform]} size="sm" />
+                  ) : (
+                    <span className="rp-pfpair">
+                      <Pf p="ig" size="xs" />
+                      <Pf p="tt" size="xs" />
+                    </span>
+                  )}
+                  <span className="mb-lt">
+                    <b>@{a.handle}</b>
+                    <small className={a.error ? "rp-warn" : undefined}>
+                      {a.error
+                        ? a.error
+                        : a.lastFetchedAt
+                          ? `Last pulled ${new Date(a.lastFetchedAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                          : a.resolved
+                            ? "Found, not pulled yet"
+                            : "Not looked up yet"}
+                    </small>
+                  </span>
+                  <button type="button" className="mb-ib ghost" aria-label={`Remove @${a.handle}`} onClick={() => setAskRemove({ id: a.id, handle: a.handle })}>
+                    <Ic name="i-x" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {insp && insp.accounts.length === 0 && (
+            <p className="rp-note">
+              No accounts yet. New clients name 5 of these when they sign up; add them by hand for anyone who joined before that.
+            </p>
+          )}
+          <div className="rp-ciadd">
+            <input
+              className="mb-input"
+              placeholder="@handle or a profile link"
+              aria-label="Account to add, a handle or a profile link"
+              value={newHandle}
+              enterKeyHint="done"
+              autoCapitalize="none"
+              onChange={(e) => setNewHandle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addInspiration();
+              }}
+            />
+            <button type="button" className="mb-btn rp-ciplat" aria-haspopup="dialog" aria-label="Which app this account is on" onClick={() => setPickPlatform(true)}>
+              {PLATFORM_CHOICES.find((o) => o.value === newPlatform)?.label}
+              <Ic name="i-chev" />
+            </button>
+            <button type="button" className="mb-btn" disabled={!newHandle.trim()} onClick={() => void addInspiration()}>
+              Add
+            </button>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button
+            type="button"
+            className="mb-btn ghost"
+            onClick={() => {
+              selectClient(clientId);
+              navigate("analytics");
+              onClose();
+            }}
+          >
+            Open Analytics
+          </button>
+          {insp && insp.accounts.length > 0 && (
+            <button type="button" className="mb-btn pri rp-cimain" disabled={researching} onClick={() => void startResearch()}>
+              {researching ? "Working" : `Research (${money(insp.quoteCents)})`}
+            </button>
+          )}
+        </div>
+        {pickPlatform && (
+          <PickSheet label="Which app" value={newPlatform} options={PLATFORM_CHOICES} onPick={setNewPlatform} onClose={() => setPickPlatform(false)} top />
+        )}
+        {askRemove && (
+          <ConfirmSheet
+            title={`Remove @${askRemove.handle}?`}
+            body="Anything already pulled for this account goes with it."
+            confirm="Remove"
+            danger
+            onClose={() => setAskRemove(null)}
+            onConfirm={() => {
+              const id = askRemove.id;
+              setAskRemove(null);
+              void removeInspiration(id);
+            }}
+          />
+        )}
+      </Modal>
+    );
+  }
 
   return (
     <Modal maxWidth={640} onClose={onClose}>

@@ -15,6 +15,7 @@ import {
   type Sharing,
 } from "../lib/ideas";
 import { useAppState } from "../state/AppState";
+import { useIsPhone } from "../lib/phone";
 import { useToast } from "../components/Toasts";
 import { ErrorState, Loading } from "../components/states";
 import Select from "../components/Select";
@@ -127,7 +128,7 @@ export function BrandKitArea({ brandId, brandName }: { brandId: string; brandNam
 
   // The thumbnail preview is a 4:5 post cover; the logo sits where the thumbnail builder puts it.
   const box = logoSize ? logoBox(1080, 1350, logoSize.w, logoSize.h) : null;
-  const main = kit.colors[0] ?? "#FF7A66";
+  const main = kit.colors[0] ?? "#FA614B";
   const dark = kit.colors.find((c, i) => i > 0) ?? "#111111";
 
   return (
@@ -173,7 +174,7 @@ export function BrandKitArea({ brandId, brandName }: { brandId: string; brandNam
             </span>
           ))}
           {kit.colors.length < MAX_COLORS && (
-            <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => change({ colors: [...kit.colors, "#FF7A66"] })}>
+            <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => change({ colors: [...kit.colors, "#FA614B"] })}>
               Add color
             </button>
           )}
@@ -433,6 +434,7 @@ const STEP_TEXT: Record<ReturnType<typeof stepStatus>, string> = { done: "done",
 
 export function RepurposeCard({ brandId }: { brandId: string }) {
   const toast = useToast();
+  const isPhone = useIsPhone();
   const videos = useBrandVideos(brandId);
   const kit = useBrandKit(brandId);
   const [picked, setPicked] = useState("");
@@ -493,6 +495,51 @@ export function RepurposeCard({ brandId }: { brandId: string }) {
 
   const progress = job ? repurposeProgress(job) : 0;
   const current = job ? REPURPOSE_STEPS.find((s) => s.id === job.step)?.label : null;
+
+  if (isPhone && !job) {
+    // Phone: the long video as one row (its length shown; tap to pick
+    // another), then Start repurpose. A running job keeps the card below.
+    const thumb = fileUrl(source?.thumbUrl ?? null);
+    return (
+      <section className="mb-hero mb-repo" data-testid="repurpose" aria-label="Repurpose">
+        <div>
+          <div className="mb-lab">Repurpose</div>
+          <h3>One long video in. Clips, captions and thumbnails out.</h3>
+        </div>
+        {videos === null ? (
+          <div className="skel mb-srcskel" />
+        ) : !videos.length ? (
+          <p className="mb-p muted">Upload a long video in Upload & Schedule first.</p>
+        ) : (
+          <label className="mb-src mb-srcrow">
+            <span className="mb-sthumb">{thumb && <img src={thumb} alt="" />}</span>
+            <span className="mb-lt">
+              <b>{source ? videoLabel(source) : "Pick a long video"}</b>
+              <small>Long video{source?.durationSec ? ` · ${fmtDuration(source.durationSec)}` : ""}</small>
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-chev" />
+            </svg>
+            <select aria-label="Long video" value={sourceId} onChange={(e) => setPicked(e.target.value)}>
+              {long.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {videoLabel(v)}
+                  {v.durationSec ? `, ${fmtDuration(v.durationSec)}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {error && <Note tone="bad">{error}</Note>}
+        <button type="button" className="mb-btn pri block" disabled={busy || !sourceId} onClick={() => void start()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-wand" />
+          </svg>
+          Start repurpose
+        </button>
+      </section>
+    );
+  }
 
   return (
     <div className="card glass id-card" data-testid="repurpose" style={{ marginBottom: 16 }}>

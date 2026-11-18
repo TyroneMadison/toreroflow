@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fileUrl } from "../../lib/api";
+import { useIsPhone } from "../../lib/phone";
+import { usePhoneBar } from "../../lib/phoneBar";
 import { useToast } from "../../components/Toasts";
 import Modal from "../../modals/Modal";
 import ScoreDial from "../analyze/ScoreDial";
@@ -41,6 +43,11 @@ export default function ClipJobView({
   const [downFor, setDownFor] = useState<string | null>(null);
   const [refine, setRefine] = useState({ start: "", end: "", prompt: "" });
   const [batch, setBatch] = useState<{ send: boolean } | null>(null);
+  // Phones: a deeper page with Back and the job's name in the app bar.
+  const isPhone = useIsPhone();
+  usePhoneBar(
+    isPhone ? { title: job ? `${job.source.name}${job.candidates?.length ? `, ${job.candidates.length} clips` : ""}` : "Clip job", back: onBack } : null,
+  );
 
   const load = useCallback(async () => {
     try {
@@ -106,11 +113,65 @@ export default function ClipJobView({
 
   if (!job) return <div className="skel projskel" />;
   const log = job.options.log ?? [];
+  // Phones read a clip's detail in a sheet; the desktop docks it beside the grid.
+  const wrapDetail = (el: React.ReactElement) =>
+    isPhone ? (
+      <Modal maxWidth={560} onClose={() => setDetail(null)} label="Clip detail">
+        {el}
+      </Modal>
+    ) : (
+      el
+    );
   const d = job.candidates?.find((c) => c.id === detail) ?? null;
   const proxy = fileUrl(job.source.proxyUrl);
 
   return (
     <div className="clipjob">
+      {isPhone ? (
+        // Phone head: the job as tiles, then search, sort and filters that fit the width.
+        <div className="mb-cjhead">
+          <h2 className="mb-h2">Clip job</h2>
+          <div className="mb-stats">
+            <div className="mb-tile">
+              <small>Clips</small>
+              <b>{job.candidates?.length ?? 0}</b>
+            </div>
+            <div className="mb-tile">
+              <small>Top score</small>
+              <b>{scores.length ? scores[scores.length - 1] : "--"}</b>
+            </div>
+            <div className="mb-tile">
+              <small>Median</small>
+              <b>{median ?? "--"}</b>
+            </div>
+          </div>
+          {job.status === "ready" && (
+            <>
+              <label className="mb-search">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-search" />
+                </svg>
+                <input aria-label="Search clip transcripts" placeholder="Search clip transcripts" value={q} onChange={(e) => setQ(e.target.value)} />
+              </label>
+              <div className="seg">
+                <button type="button" aria-pressed={sort === "score"} className={sort === "score" ? "on" : ""} onClick={() => setSort("score")}>
+                  Score
+                </button>
+                <button type="button" aria-pressed={sort === "time"} className={sort === "time" ? "on" : ""} onClick={() => setSort("time")}>
+                  Timeline order
+                </button>
+              </div>
+              <div className="mb-chips">
+                {(["all", "liked", "edited", "15-60", "60-180"] as Filter[]).map((f) => (
+                  <button key={f} type="button" className={`mb-chip${filter === f ? " on" : ""}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>
+                    {f === "all" ? "All" : f === "liked" ? "Liked" : f === "edited" ? "Edited" : `${f}s`}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
       <div className="cj-head">
         <button className="btn ghost" onClick={onBack}>
           Back
@@ -138,6 +199,7 @@ export default function ClipJobView({
           </>
         )}
       </div>
+      )}
 
       {job.status !== "ready" && (
         <div className="cj-progress">
@@ -216,9 +278,20 @@ export default function ClipJobView({
             {cands.length === 0 && <div className="empty">No clips match.</div>}
           </div>
 
-          {d && (
+          {d && wrapDetail(
             <aside className="cj-detail">
+              {isPhone ? (
+                <div className="modal-head">
+                  <h3>{d.title}</h3>
+                  <button type="button" className="modal-x" aria-label="Close" onClick={() => setDetail(null)}>
+                    <svg>
+                      <use href="#i-x" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
               <h4>{d.title}</h4>
+              )}
               {proxy && <video controls src={`${proxy}#t=${d.ranges[0].start}`} />}
               <div className="sub">{d.why}</div>
               <ul className="ranges">
@@ -271,7 +344,22 @@ export default function ClipJobView({
         </div>
       )}
 
-      {sel.size > 0 && (
+      {sel.size > 0 && isPhone && (
+        // Phone: one Render; sending to Uploads is a switch in its sheet.
+        <div className="mb-cjbatch">
+          <span className="mb-lt">
+            <b>{sel.size} selected</b>
+            {sel.size > 20 && <small>Up to 20 at once</small>}
+          </span>
+          <button type="button" className="mb-btn sm" onClick={() => void open([...sel])}>
+            Open in editor
+          </button>
+          <button type="button" className="mb-btn sm pri" disabled={sel.size > 20} onClick={() => setBatch({ send: true })}>
+            Render
+          </button>
+        </div>
+      )}
+      {sel.size > 0 && !isPhone && (
         <div className="cj-batch">
           <span>{sel.size} selected</span>
           <span style={{ display: "flex", gap: 8 }}>
