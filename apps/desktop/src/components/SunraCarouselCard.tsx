@@ -6,6 +6,8 @@ import { useAppState } from "../state/AppState";
 import { useToast } from "./Toasts";
 import Select from "./Select";
 import { Lbl, Note, Switch } from "./ideas/IdeaBits";
+import { useIsPhone } from "../lib/phone";
+import { Stepper } from "./mobile/FlowBits";
 import "../screens/IdeaScreens.css";
 
 /**
@@ -40,6 +42,7 @@ export default function SunraCarouselCard() {
   const [busy, setBusy] = useState<"quote" | "build" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [result, setResult] = useState<string[] | null>(null);
+  const isPhone = useIsPhone();
 
   const loadModels = useCallback(() => {
     setModels(null);
@@ -123,6 +126,171 @@ export default function SunraCarouselCard() {
       toast.fail("Could not change Sunra spending", err);
     }
   };
+
+  const holds = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  if (isPhone) {
+    // Phone (mobile pass): Spending in the card header, Platform as a two-way
+    // switch, Slides as a stepper and Model as a radio list with the credits
+    // a slide. The price box keeps Approve grey, with the reason, until
+    // spending is on and Sunra is connected.
+    const spending = !!status?.generationEnabled;
+    return (
+      <section id="fl-sunra" className="mb-card fl-card" data-testid="carousels.sunra" aria-label="Build it with Sunra">
+        <div className="fl-cardh">
+          <h3 className="fl-h3">Build it with Sunra</h3>
+          {status && (
+            <span className="fl-swlab" data-testid="carousels.sunra-switch">
+              Spending
+              <button
+                type="button"
+                role="switch"
+                aria-checked={spending}
+                aria-label="Sunra spending"
+                className="fl-sw"
+                onClick={() => void toggleSpending(!spending)}
+              >
+                <span className={`mb-tog${spending ? " on" : ""}`} aria-hidden="true" />
+              </button>
+            </span>
+          )}
+        </div>
+        <p className="fl-cardsub">
+          Say what the carousel should be. Sunra makes every slide, sized for Instagram or TikTok. You see the price in credits first and
+          nothing is spent until you approve it.
+        </p>
+        {status && !status.connected && (
+          <p className="fl-warn">
+            <b>Sunra is not connected.</b> The server has no Sunra key yet, so you can pick a model and see prices, but nothing can be built
+            until it is connected in the server settings.
+          </p>
+        )}
+        <div className="mb-field">
+          <span className="mb-flab">Platform</span>
+          <div className="seg" role="radiogroup" aria-label="Platform">
+            {(["instagram", "tiktok"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="radio"
+                aria-checked={platform === p}
+                className={platform === p ? "on" : undefined}
+                onClick={() => setPlatform(p)}
+              >
+                {p === "instagram" ? "Instagram 4:5" : "TikTok 9:16"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="fl-steprow">
+          <span className="mb-lt">
+            <b>Slides</b>
+            <small>
+              Up to {cap} for {platform === "instagram" ? "Instagram" : "TikTok"}
+            </small>
+          </span>
+          <Stepper label="Slides" value={count} min={1} max={cap} onChange={setSlides} />
+        </div>
+        <div className="mb-field">
+          <span className="mb-flab">Model</span>
+          {modelsError ? (
+            <div className="mb-err" role="alert">
+              Could not load Sunra models: {modelsError}
+              <button type="button" className="mb-btn sm fl-retry" onClick={loadModels}>
+                Try again
+              </button>
+            </div>
+          ) : models === null ? (
+            <p className="fl-help">Loading Sunra models...</p>
+          ) : !offered.length ? (
+            <p className="fl-help">No Sunra model makes {platform === "instagram" ? "4:5" : "9:16"} images right now.</p>
+          ) : (
+            <div className="fl-models" role="radiogroup" aria-label="Sunra models">
+              {offered.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={m.id === model?.id}
+                  className="fl-mrow"
+                  onClick={() => setModelId(m.id)}
+                >
+                  <span className="fl-radio" aria-hidden="true" />
+                  <span className="mb-lt">
+                    <b>{m.label}</b>
+                    <small>{m.provider}</small>
+                  </span>
+                  <span className="fl-cr">
+                    <b>{m.creditsPerImage}</b> a slide
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="mb-field">
+          <label htmlFor="fl-sunra-prompt">What do you want?</label>
+          <textarea
+            id="fl-sunra-prompt"
+            className="mb-input fl-ta"
+            rows={3}
+            maxLength={4000}
+            value={prompt}
+            placeholder="5 slides on spotting a flooded used car, bold headline on each, dark blue and orange"
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+        </div>
+        {!quote ? (
+          <button
+            type="button"
+            className="mb-btn block"
+            disabled={!selectedClient || !prompt.trim() || !model || busy !== null}
+            data-testid="carousels.sunra-build"
+            onClick={() => void getQuote()}
+          >
+            {busy === "quote" ? "Getting the price..." : "Get the price"}
+          </button>
+        ) : (
+          <div className="fl-quote" data-testid="carousels.sunra-quote">
+            <div className="fl-qh">
+              <span className="mb-lab">Approve</span>
+              <button type="button" className="mb-btn text sm" disabled={busy !== null} onClick={() => setQuote(null)}>
+                Cancel
+              </button>
+            </div>
+            <p>
+              {quote.slides} slides x {quote.creditsPerImage} credits = <b>{quote.credits} credits</b>, {quote.width}x{quote.height} (
+              {quote.aspectRatio}), {model?.label ?? quote.modelId}. This price holds until {holds(quote.expiresAt)}.
+            </p>
+            <button
+              type="button"
+              className="mb-btn block fl-ink"
+              disabled={busy !== null || !canBuild}
+              data-testid="carousels.sunra-approve"
+              onClick={() => void approve()}
+            >
+              {busy === "build" ? "Building..." : `Approve and spend ${quote.credits} credits`}
+            </button>
+            {!canBuild && (
+              <p className="fl-warnc">{!status?.connected ? "Connect Sunra on the server to build." : "Turn Sunra spending on to build."}</p>
+            )}
+          </div>
+        )}
+        {problem && (
+          <div className="mb-err" role="alert">
+            {problem}
+          </div>
+        )}
+        {result && (
+          <div className="fl-strip" data-testid="carousels.sunra-result">
+            {result.map((u, i) => (
+              <img key={u} src={fileUrl(u) ?? undefined} alt={`Slide ${i + 1}`} />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
 
   return (
     <div className="card glass id-card" style={{ marginTop: 16 }} data-testid="carousels.sunra">

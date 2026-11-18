@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import Pf from "./Pf";
 import { useToast } from "./Toasts";
 import { PF_ID } from "../lib/platforms";
+import { useIsPhone } from "../lib/phone";
+import { Ic } from "./analytics/phoneBits";
+import Modal from "../modals/Modal";
 import {
   api,
   type ClientSummary,
@@ -33,8 +36,9 @@ function ago(iso: string | null): string {
  * webhook to stay honest and would otherwise answer confidently with a week-old
  * thread and broken images. Reading live costs a request and is always right.
  */
-export default function DmInbox({ client }: { client: ClientSummary }) {
+export default function DmInbox({ client, onNew }: { client: ClientSummary; onNew?: (n: number) => void }) {
   const toast = useToast();
+  const isPhone = useIsPhone();
   const meta = client.accounts.filter(
     (a) => a.status === "connected" && (a.platform === "instagram" || a.platform === "facebook"),
   );
@@ -63,6 +67,11 @@ export default function DmInbox({ client }: { client: ClientSummary }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The phone's area chip shows how many messages are new.
+  useEffect(() => {
+    if (threads) onNew?.(threads.reduce((n, t) => n + t.unreadCount, 0));
+  }, [threads, onNew]);
 
   const openThread = async (t: InboxConversation) => {
     if (openId === t.id) {
@@ -105,6 +114,122 @@ export default function DmInbox({ client }: { client: ClientSummary }) {
   };
 
   if (!meta.length) return null;
+
+  if (isPhone) {
+    // Phone (mobile pass): account chips, then the threads as rows; a tap
+    // opens the thread full height with the reply box and Send at the bottom.
+    const open = threads?.find((t) => t.id === openId) ?? null;
+    const who = (t: InboxConversation) => t.participantName ?? t.participantId ?? "someone";
+    return (
+      <>
+        <div id="fl-inbox" className="fl-areah">
+          <h2 className="mb-h2">DM inbox</h2>
+        </div>
+        <div className="mb-chips fl-acchips" role="tablist" aria-label="Inbox account">
+          {meta.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="tab"
+              aria-selected={a.id === accountId}
+              className={`mb-chip${a.id === accountId ? " on" : ""}`}
+              onClick={() => {
+                setAccountId(a.id);
+                setThreads(null);
+                setOpenId(null);
+              }}
+            >
+              <Pf p={PF_ID[a.platform as Platform]} size="sm" />
+              {a.handle}
+            </button>
+          ))}
+        </div>
+        <p className="mb-sub fl-areasub">Replies go out as the client's account, to a real person. Nothing here sends on its own.</p>
+        {error && <div className="mb-err">{error}</div>}
+        {threads === null && <p className="fl-help">Loading…</p>}
+        {threads?.length === 0 && <p className="fl-help">No conversations on this account yet.</p>}
+        {!!threads?.length && (
+          <section className="mb-card list" aria-label="Conversations">
+            {threads.map((t) => (
+              <button key={t.id} type="button" className={`fl-th${t.unreadCount > 0 ? " unread" : ""}`} onClick={() => void openThread(t)}>
+                {t.participantPicture ? (
+                  <img className="fl-av" src={t.participantPicture} alt="" />
+                ) : (
+                  <span className="fl-av" aria-hidden="true">
+                    {who(t).charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="mb-grow">
+                  <span className="fl-tt">
+                    <b>{who(t)}</b>
+                    {t.instagramProfile?.isVerified && (
+                      <span className="fl-ver" aria-label="Verified">
+                        <Ic name="i-check-circle" />
+                      </span>
+                    )}
+                    {t.instagramProfile?.isFollower && <span className="fl-fl">follows</span>}
+                    {t.unreadCount > 0 && <span className="fl-new">{t.unreadCount} new</span>}
+                    <span className="fl-when">{ago(t.updatedTime)}</span>
+                  </span>
+                  {t.lastMessage && <span className="fl-last">{t.lastMessage}</span>}
+                </span>
+              </button>
+            ))}
+          </section>
+        )}
+        {open && (
+          <Modal maxWidth={560} onClose={() => setOpenId(null)} label={`Conversation with ${who(open)}`} testId="dm-thread">
+            <div className="modal-head">
+              <div>
+                <h3>{who(open)}</h3>
+                <p>As {meta.find((a) => a.id === accountId)?.handle ?? "this account"}. Replies go to a real person.</p>
+              </div>
+              <button type="button" className="modal-x" aria-label="Close" onClick={() => setOpenId(null)}>
+                <svg>
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body fl-thread">
+              {messages === null && <p className="fl-help">Loading…</p>}
+              {messages?.length === 0 && <p className="fl-help">No messages in this thread.</p>}
+              {messages?.map((m) => (
+                <div key={m.id} className={`fl-msg ${m.direction}`}>
+                  {m.message && <span>{m.message}</span>}
+                  {m.attachments.map((a, i) =>
+                    a.url && a.type?.startsWith("image") ? (
+                      <img key={i} src={a.url} alt="" />
+                    ) : a.url ? (
+                      <a key={i} href={a.url} target="_blank" rel="noreferrer">
+                        {a.type ?? "attachment"}
+                      </a>
+                    ) : null,
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="modal-foot fl-reply">
+              <input
+                className="mb-input"
+                placeholder="Write a reply…"
+                aria-label="Reply"
+                maxLength={1000}
+                enterKeyHint="send"
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && reply.trim() && !sending) void send(open);
+                }}
+              />
+              <button type="button" className="btn pri" disabled={sending || !reply.trim()} onClick={() => void send(open)}>
+                {sending ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </Modal>
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="dmsec">

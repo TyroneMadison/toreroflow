@@ -3,6 +3,11 @@ import Pf from "./Pf";
 import { PF_ID } from "../lib/platforms";
 import Select from "./Select";
 import { useToast } from "./Toasts";
+import { useIsPhone } from "../lib/phone";
+import { Ic } from "./analytics/phoneBits";
+import ConfirmSheet from "./mobile/ConfirmSheet";
+import Modal from "../modals/Modal";
+import { PhoneMenu } from "../editor/phoneBits";
 import {
   api,
   type CatalogueVideo,
@@ -20,9 +25,13 @@ import {
  * send. A campaign on TikTok or YouTube would save, look correct, and never
  * fire once, so those accounts are not offered.
  */
-export default function DmCampaigns({ client }: { client: ClientSummary }) {
+export default function DmCampaigns({ client, onCount }: { client: ClientSummary; onCount?: (n: number) => void }) {
   const toast = useToast();
   const [campaigns, setCampaigns] = useState<DmCampaign[] | null>(null);
+  const isPhone = useIsPhone();
+  // Phone: the ... menu and the delete confirm for one campaign.
+  const [menuFor, setMenuFor] = useState<DmCampaign | null>(null);
+  const [delFor, setDelFor] = useState<DmCampaign | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -65,6 +74,11 @@ export default function DmCampaigns({ client }: { client: ClientSummary }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The phone's area chip shows how many there are.
+  useEffect(() => {
+    if (campaigns) onCount?.(campaigns.length);
+  }, [campaigns, onCount]);
 
   // The video list is only needed once the form is open, and only to scope a
   // campaign to one post. A client with no catalogue simply cannot scope.
@@ -164,6 +178,348 @@ export default function DmCampaigns({ client }: { client: ClientSummary }) {
     }
   };
 
+  // The New campaign fields, shared by the desktop form and the phone sheet.
+  const formFields = (
+    <>
+      <label className="flabel">Account</label>
+      <Select
+        value={accountId}
+        onChange={setAccountId}
+        aria-label="Account"
+        options={eligible.map((a) => ({
+          value: a.id,
+          label: `${a.handle} (${a.platform})`,
+        }))}
+      />
+      <label className="flabel" style={{ marginTop: 12 }}>
+        Name<span className="hint">yours, not the client's; it never leaves the app</span>
+      </label>
+      <input
+        className="field-in"
+        placeholder="e.g. Free detailing guide"
+        maxLength={120}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <label className="flabel" style={{ marginTop: 12 }}>
+        Keywords<span className="hint">comma separated; any one of them triggers it</span>
+      </label>
+      <input
+        className="field-in"
+        placeholder="e.g. GUIDE, INFO, SEND IT"
+        value={keywords}
+        onChange={(e) => setKeywords(e.target.value)}
+      />
+      <div className="dmgrid">
+        <div>
+          <label className="flabel" style={{ marginTop: 12 }}>
+            Match
+          </label>
+          <Select
+            value={matchMode}
+            onChange={(v) => setMatchMode(v as "exact" | "contains" | "word")}
+            aria-label="Match mode"
+            options={[
+              { value: "contains", label: "Contains the keyword" },
+              { value: "word", label: "As a whole word" },
+              { value: "exact", label: "Exactly the keyword" },
+            ]}
+          />
+        </div>
+        <div>
+          <label className="flabel" style={{ marginTop: 12 }}>
+            Never match<span className="hint">optional</span>
+          </label>
+          <input
+            className="field-in"
+            placeholder="e.g. scam, spam"
+            value={excludes}
+            onChange={(e) => setExcludes(e.target.value)}
+          />
+        </div>
+      </div>
+      <label className="flabel" style={{ marginTop: 12 }}>
+        The DM<span className="hint">what the commenter receives</span>
+      </label>
+      <textarea
+        className="field-in"
+        rows={3}
+        maxLength={1000}
+        placeholder="Thanks for commenting! Here is the guide I promised."
+        value={dmMessage}
+        onChange={(e) => setDmMessage(e.target.value)}
+      />
+      <div className="dmgrid">
+        <div>
+          <label className="flabel" style={{ marginTop: 12 }}>
+            Button label<span className="hint">20 characters</span>
+          </label>
+          <input
+            className="field-in"
+            placeholder="Get the guide"
+            maxLength={20}
+            value={buttonTitle}
+            onChange={(e) => setButtonTitle(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="flabel" style={{ marginTop: 12 }}>
+            Button link
+          </label>
+          <input
+            className="field-in"
+            placeholder="https://…"
+            value={buttonUrl}
+            onChange={(e) => setButtonUrl(e.target.value)}
+          />
+        </div>
+      </div>
+      <label className="flabel" style={{ marginTop: 12 }}>
+        Public reply<span className="hint">optional, left on the comment itself</span>
+      </label>
+      <input
+        className="field-in"
+        placeholder="Sent! Check your DMs 📩"
+        maxLength={2200}
+        value={commentReply}
+        onChange={(e) => setCommentReply(e.target.value)}
+      />
+      <label className="flabel" style={{ marginTop: 12 }}>
+        Scope
+        <span className="hint">
+          a campaign on one video is what puts DM counts on that video's stats
+        </span>
+      </label>
+      {scope ? (
+        <div className="igrow">
+          <span className="revtoggle on" onClick={() => setScope(null)}>
+            {scope.title.slice(0, 48)} ✕
+          </span>
+        </div>
+      ) : (
+        <>
+          <span className="revtoggle" onClick={() => setPickerOpen((v) => !v)}>
+            {pickerOpen ? "Close list" : "Whole account · pick a video"}
+          </span>
+          {pickerOpen && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                className="field-in"
+                placeholder="Search the catalogue"
+                value={videoSearch}
+                onChange={(e) => setVideoSearch(e.target.value)}
+              />
+              <div style={{ maxHeight: 190, overflowY: "auto", marginTop: 6 }}>
+                {(videos ?? [])
+                  .filter((v) =>
+                    v.title.toLowerCase().includes(videoSearch.trim().toLowerCase()),
+                  )
+                  .slice(0, 30)
+                  .map((v) => (
+                    <div
+                      key={v.platformVideoId}
+                      className="rrow"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => {
+                        setScope(v);
+                        setPickerOpen(false);
+                      }}
+                    >
+                      <span className="t">{v.title}</span>
+                    </div>
+                  ))}
+                {videos !== null && !videos.length && (
+                  <p className="lnote">No catalogue yet for this client.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      <div className="igrow" style={{ marginTop: 12 }}>
+        <span
+          className={`revtoggle${alsoDms ? " on" : ""}`}
+          onClick={() => setAlsoDms((v) => !v)}
+        >
+          <span className="knob" />
+          Also answer people who DM the keyword
+        </span>
+        <span
+          className={`revtoggle${linkTracking ? " on" : ""}`}
+          onClick={() => setLinkTracking((v) => !v)}
+        >
+          <span className="knob" />
+          Track link opens
+        </span>
+      </div>
+    </>
+  );
+
+  if (isPhone) {
+    // Phone (mobile pass): compact cards (Live or Paused, tap to switch;
+    // keywords, scope, the numbers, Leads), Delete in the ... menu asking
+    // first, and New campaign in a full-height sheet with every field.
+    return (
+      <>
+        <div id="fl-dm" className="fl-areah">
+          <h2 className="mb-h2">DM campaigns</h2>
+          {eligible.length > 0 && (
+            <button type="button" className="mb-btn sm ghost" data-testid="dm-new" onClick={() => setOpen(true)}>
+              <Ic name="i-plus" />
+              New campaign
+            </button>
+          )}
+        </div>
+        {!eligible.length ? (
+          <p className="mb-sub fl-areasub">
+            Comment-to-DM needs an Instagram or Facebook account. Meta is the only platform that exposes both the comment webhook and the DM
+            send, so a campaign on any other account would save and never fire.
+          </p>
+        ) : (
+          <p className="mb-sub fl-areasub">
+            Someone comments your keyword and gets a DM with your link. Scope one to a video and its sends land on that video's numbers, in
+            the app and on the client's report.
+          </p>
+        )}
+        {error && <div className="mb-err">{error}</div>}
+        {eligible.length > 0 && campaigns === null && <p className="fl-help">Loading…</p>}
+        {campaigns?.length === 0 && eligible.length > 0 && <p className="fl-help">No campaigns yet.</p>}
+        {campaigns?.map((c) => (
+          <article key={c.id} className="mb-card fl-dmc" aria-label={c.name}>
+            <div className="fl-dmtop">
+              <Pf p={PF_ID[c.platform]} size="sm" />
+              <b>{c.name}</b>
+              <button
+                type="button"
+                className="fl-pillbtn"
+                aria-label={c.isActive ? `Live. Pause ${c.name}` : `Paused. Resume ${c.name}`}
+                onClick={() => void toggleActive(c)}
+              >
+                <span className={`mb-pill ${c.isActive ? "ok" : "paused"}`}>{c.isActive ? "Live" : "Paused"}</span>
+              </button>
+            </div>
+            <div className="fl-kws">
+              {c.keywords.map((k) => (
+                <span className="fl-kw" key={k}>
+                  {k}
+                </span>
+              ))}
+              <span>{c.postTitle ? `on "${c.postTitle.slice(0, 40)}"` : "whole account"}</span>
+            </div>
+            <div className="fl-dms">
+              <div>
+                <b>{c.stats.triggered}</b>
+                <span>triggered</span>
+              </div>
+              <div>
+                <b>{c.stats.dmsSent}</b>
+                <span>DMs sent</span>
+              </div>
+              <div>
+                <b>{c.stats.uniqueContacts}</b>
+                <span>people</span>
+              </div>
+              {c.linkTracking && (
+                <div>
+                  <b>{c.stats.linkClicks}</b>
+                  <span>link opens</span>
+                </div>
+              )}
+              {c.stats.dmsFailed > 0 && (
+                <div className="bad">
+                  <b>{c.stats.dmsFailed}</b>
+                  <span>failed</span>
+                </div>
+              )}
+              {/* Instagram sends no read receipt, so read shows only for Facebook. */}
+              {c.platform === "facebook" && (
+                <div>
+                  <b>{c.stats.read}</b>
+                  <span>read</span>
+                </div>
+              )}
+            </div>
+            <div className="fl-dmf">
+              <button type="button" className="mb-btn text sm" aria-expanded={logsFor === c.id} onClick={() => void showLogs(c)}>
+                {logsFor === c.id ? "Hide leads" : "Leads"}
+                <Ic name="i-chev-r" />
+              </button>
+              <button type="button" className="mb-ib ghost" aria-label={`More for ${c.name}`} onClick={() => setMenuFor(c)}>
+                <Ic name="i-dots-h" />
+              </button>
+            </div>
+            {logsFor === c.id && (
+              <div className="fl-logs">
+                {logs === null && <p className="fl-help">Loading…</p>}
+                {logs?.length === 0 && <p className="fl-help">Nobody has triggered this yet.</p>}
+                {logs?.map((l) => (
+                  <div className="fl-logrow" key={l.id}>
+                    <span className="mb-grow">
+                      <b>{l.commenterName ?? l.commenterId ?? "someone"}</b>
+                      {l.commentText && <small>"{l.commentText.slice(0, 80)}"</small>}
+                    </span>
+                    <span className={l.status === "failed" ? "fl-bad" : undefined}>
+                      {l.status}
+                      {l.source && l.source !== "comment" ? `, ${l.source}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+        {open && (
+          <Modal maxWidth={560} onClose={() => setOpen(false)} label="New campaign" testId="dm-new-sheet">
+            <div className="modal-head">
+              <div>
+                <h3>New campaign</h3>
+                <p>Someone comments a keyword and gets this DM.</p>
+              </div>
+              <button type="button" className="modal-x" aria-label="Close" onClick={() => setOpen(false)}>
+                <svg>
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body fl-dmsheet">{formFields}</div>
+            <div className="modal-foot">
+              <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="btn pri" disabled={busy} onClick={() => void create()}>
+                {busy ? "Creating…" : "Create campaign"}
+              </button>
+            </div>
+          </Modal>
+        )}
+        {menuFor && (
+          <PhoneMenu
+            title={menuFor.name}
+            items={[
+              { label: menuFor.isActive ? "Pause" : "Resume", run: () => void toggleActive(menuFor) },
+              { label: "Delete", danger: true, run: () => setDelFor(menuFor) },
+            ]}
+            onClose={() => setMenuFor(null)}
+          />
+        )}
+        {delFor && (
+          <ConfirmSheet
+            title="Delete this campaign?"
+            body={`${delFor.name} stops answering comments. This cannot be undone.`}
+            confirm="Delete"
+            danger
+            onConfirm={() => {
+              const c = delFor;
+              setDelFor(null);
+              void remove(c);
+            }}
+            onClose={() => setDelFor(null)}
+          />
+        )}
+      </>
+    );
+  }
+
   if (!eligible.length) {
     return (
       <div className="dmsec">
@@ -192,177 +548,7 @@ export default function DmCampaigns({ client }: { client: ClientSummary }) {
 
       {open && (
         <div className="dmform">
-          <label className="flabel">Account</label>
-          <Select
-            value={accountId}
-            onChange={setAccountId}
-            aria-label="Account"
-            options={eligible.map((a) => ({
-              value: a.id,
-              label: `${a.handle} (${a.platform})`,
-            }))}
-          />
-          <label className="flabel" style={{ marginTop: 12 }}>
-            Name<span className="hint">yours, not the client's; it never leaves the app</span>
-          </label>
-          <input
-            className="field-in"
-            placeholder="e.g. Free detailing guide"
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <label className="flabel" style={{ marginTop: 12 }}>
-            Keywords<span className="hint">comma separated; any one of them triggers it</span>
-          </label>
-          <input
-            className="field-in"
-            placeholder="e.g. GUIDE, INFO, SEND IT"
-            value={keywords}
-            onChange={(e) => setKeywords(e.target.value)}
-          />
-          <div className="dmgrid">
-            <div>
-              <label className="flabel" style={{ marginTop: 12 }}>
-                Match
-              </label>
-              <Select
-                value={matchMode}
-                onChange={(v) => setMatchMode(v as "exact" | "contains" | "word")}
-                aria-label="Match mode"
-                options={[
-                  { value: "contains", label: "Contains the keyword" },
-                  { value: "word", label: "As a whole word" },
-                  { value: "exact", label: "Exactly the keyword" },
-                ]}
-              />
-            </div>
-            <div>
-              <label className="flabel" style={{ marginTop: 12 }}>
-                Never match<span className="hint">optional</span>
-              </label>
-              <input
-                className="field-in"
-                placeholder="e.g. scam, spam"
-                value={excludes}
-                onChange={(e) => setExcludes(e.target.value)}
-              />
-            </div>
-          </div>
-          <label className="flabel" style={{ marginTop: 12 }}>
-            The DM<span className="hint">what the commenter receives</span>
-          </label>
-          <textarea
-            className="field-in"
-            rows={3}
-            maxLength={1000}
-            placeholder="Thanks for commenting! Here is the guide I promised."
-            value={dmMessage}
-            onChange={(e) => setDmMessage(e.target.value)}
-          />
-          <div className="dmgrid">
-            <div>
-              <label className="flabel" style={{ marginTop: 12 }}>
-                Button label<span className="hint">20 characters</span>
-              </label>
-              <input
-                className="field-in"
-                placeholder="Get the guide"
-                maxLength={20}
-                value={buttonTitle}
-                onChange={(e) => setButtonTitle(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="flabel" style={{ marginTop: 12 }}>
-                Button link
-              </label>
-              <input
-                className="field-in"
-                placeholder="https://…"
-                value={buttonUrl}
-                onChange={(e) => setButtonUrl(e.target.value)}
-              />
-            </div>
-          </div>
-          <label className="flabel" style={{ marginTop: 12 }}>
-            Public reply<span className="hint">optional, left on the comment itself</span>
-          </label>
-          <input
-            className="field-in"
-            placeholder="Sent! Check your DMs 📩"
-            maxLength={2200}
-            value={commentReply}
-            onChange={(e) => setCommentReply(e.target.value)}
-          />
-          <label className="flabel" style={{ marginTop: 12 }}>
-            Scope
-            <span className="hint">
-              a campaign on one video is what puts DM counts on that video's stats
-            </span>
-          </label>
-          {scope ? (
-            <div className="igrow">
-              <span className="revtoggle on" onClick={() => setScope(null)}>
-                {scope.title.slice(0, 48)} ✕
-              </span>
-            </div>
-          ) : (
-            <>
-              <span className="revtoggle" onClick={() => setPickerOpen((v) => !v)}>
-                {pickerOpen ? "Close list" : "Whole account · pick a video"}
-              </span>
-              {pickerOpen && (
-                <div style={{ marginTop: 8 }}>
-                  <input
-                    className="field-in"
-                    placeholder="Search the catalogue"
-                    value={videoSearch}
-                    onChange={(e) => setVideoSearch(e.target.value)}
-                  />
-                  <div style={{ maxHeight: 190, overflowY: "auto", marginTop: 6 }}>
-                    {(videos ?? [])
-                      .filter((v) =>
-                        v.title.toLowerCase().includes(videoSearch.trim().toLowerCase()),
-                      )
-                      .slice(0, 30)
-                      .map((v) => (
-                        <div
-                          key={v.platformVideoId}
-                          className="rrow"
-                          style={{ cursor: "pointer" }}
-                          onClick={() => {
-                            setScope(v);
-                            setPickerOpen(false);
-                          }}
-                        >
-                          <span className="t">{v.title}</span>
-                        </div>
-                      ))}
-                    {videos !== null && !videos.length && (
-                      <p className="lnote">No catalogue yet for this client.</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          <div className="igrow" style={{ marginTop: 12 }}>
-            <span
-              className={`revtoggle${alsoDms ? " on" : ""}`}
-              onClick={() => setAlsoDms((v) => !v)}
-            >
-              <span className="knob" />
-              Also answer people who DM the keyword
-            </span>
-            <span
-              className={`revtoggle${linkTracking ? " on" : ""}`}
-              onClick={() => setLinkTracking((v) => !v)}
-            >
-              <span className="knob" />
-              Track link opens
-            </span>
-          </div>
+          {formFields}
           <button className="btn" disabled={busy} onClick={create} style={{ marginTop: 14 }}>
             {busy ? "Creating…" : "Create campaign"}
           </button>
