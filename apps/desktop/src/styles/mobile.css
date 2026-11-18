@@ -72,7 +72,9 @@
   .mb-offline{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px 0 10px;border:0;border-radius:999px;background:var(--mb-bad-soft);
     color:var(--c-bad);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
   .mb-offline svg{width:18px;height:18px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round}
-  .mb-top.deeper{gap:4px}
+  .mb-top.deeper{gap:4px;box-shadow:0 1px 0 var(--mb-hair)}
+  /* Phone pages grow with their content instead of shrinking under the tab bar. */
+  .main>.screen.mb-page{flex:1 0 auto}
   /* ---- API down: one banner under the app bar, the page keeps what it loaded ---- */
   .mb-offbanner{order:0;flex:none;display:flex;flex-direction:column;gap:10px;margin:4px 12px 8px}
   .mb-offmsg{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:16px;background:var(--mb-bad-soft);box-shadow:inset 0 0 0 1px rgba(255,107,107,.32);font-size:14.5px;line-height:1.45;color:var(--mb-ink)}
