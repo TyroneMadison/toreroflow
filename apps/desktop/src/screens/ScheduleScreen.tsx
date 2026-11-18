@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, markCardUploaded, videoLabel, type MediaAssetInfo, type ReadyQueue } from "../lib/api";
-import { clientPath, pathLinkProps, useRoute } from "../lib/routes";
+import { api, fileUrl, markCardUploaded, videoLabel, type MediaAssetInfo, type ReadyQueue } from "../lib/api";
+import { clientPath, navigatePath, pathLinkProps, useRoute } from "../lib/routes";
+import { useIsPhone } from "../lib/phone";
+import { usePhoneBar } from "../lib/phoneBar";
+import { mmss } from "../components/mobile/ThumbPlayer";
+import BrandAvatar from "../components/BrandAvatar";
+import { LABEL_SWATCH, COLOR_NAME, baseColor } from "../lib/labelColors";
 import { useAppState } from "../state/AppState";
 import SopPanel, { sopRequired } from "../components/SopPanel";
 import ScheduleModal from "../modals/ScheduleModal";
@@ -21,6 +26,24 @@ export default function ScheduleScreen() {
   const [done, setDone] = useState(false);
   /** The last step: move the card to "Approved by Client/ uploaded". */
   const [move, setMove] = useState<{ state: "idle" | "moving" | "moved" | "failed"; error?: string }>({ state: "idle" });
+  const isPhone = useIsPhone();
+  const [showAll, setShowAll] = useState(false);
+  // A deeper page on the phone: Back to the client's Ready queue, the card in Trello as the one action.
+  usePhoneBar(
+    isPhone
+      ? {
+          title: "Schedule card",
+          back: () => navigatePath(clientPath(client?.slug ?? null)),
+          action: card ? (
+            <a className="mb-ib ghost" href={card.url} target="_blank" rel="noreferrer" aria-label="Open in Trello">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-trello" />
+              </svg>
+            </a>
+          ) : undefined,
+        }
+      : null,
+  );
 
   // The modal body reads the selected client, so point it at this one.
   useEffect(() => {
@@ -63,8 +86,36 @@ export default function ScheduleScreen() {
   };
   // The SOP is a gentle reminder; scheduling is never held back for it.
   const remind = sopRequired(client.sop) && !ack;
+  const clientIndex = clients.findIndex((c) => c.id === client.id);
   return (
-    <section className="screen active rq" data-screen="schedule" data-state={done ? "scheduled" : "ready"}>
+    <section className={`screen active rq${isPhone ? " sdc" : ""}`} data-screen="schedule" data-state={done ? "scheduled" : "ready"}>
+      {isPhone && (
+        <header className="sdc-head">
+          <a className="sdc-crumb" {...pathLinkProps(clientPath(client.slug))}>
+            <BrandAvatar client={client} index={clientIndex} size={20} />
+            {client.name} · Ready
+          </a>
+          <h1>{card?.name ?? "Trello card"}</h1>
+          {card && (
+            <div className="rqp-lbls">
+              {card.labels.map((l, i) => {
+                const b = baseColor(l.color);
+                return (
+                  <span key={i} className="rqp-lbl" style={b ? { ["--sw" as string]: LABEL_SWATCH[b] } : undefined}>
+                    <i />
+                    {(b && COLOR_NAME[b]) || b || "no color"}
+                    {l.name ? ` · ${l.name}` : ""}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <div className="sdc-pipe" aria-label="Pipeline stage">
+            Edited › <b>{done ? "Scheduled" : "Ready for posting"}</b>
+            {done ? "" : " › Scheduled"}
+          </div>
+        </header>
+      )}
       <nav className="rq-crumbs" aria-label="Breadcrumb">
         <a {...pathLinkProps(clientPath(client.slug))} data-testid="back-to-ready">
           {client.name} · Ready
@@ -114,6 +165,27 @@ export default function ScheduleScreen() {
                 <p>Loading uploads…</p>
               ) : assets.length === 0 ? (
                 <p data-testid="schedule-no-assets">No processed uploads for {client.name} yet. Upload the video in Upload &amp; Schedule first.</p>
+              ) : isPhone ? (
+                <div className="sdc-list" role="radiogroup" aria-label="Uploaded video for this card" data-testid="schedule-asset">
+                  {(showAll ? assets : assets.slice(0, 3)).map((a) => (
+                    <label key={a.id} className={`sdc-vid${a.id === assetId ? " on" : ""}`}>
+                      <span className="wfo-thumb">
+                        {a.thumbUrl && <img src={fileUrl(a.thumbUrl) ?? undefined} alt="" />}
+                        {a.durationSec ? <small>{mmss(a.durationSec)}</small> : null}
+                      </span>
+                      <span className="mb-lt">
+                        <b>{videoLabel(a)}</b>
+                        <small>Uploaded {new Date(a.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small>
+                      </span>
+                      <input type="radio" name="sched-asset" checked={a.id === assetId} onChange={() => setAssetId(a.id)} />
+                    </label>
+                  ))}
+                  {assets.length > 3 && !showAll && (
+                    <button type="button" className="mb-btn text sdc-more" onClick={() => setShowAll(true)}>
+                      Show all {assets.length} uploads
+                    </button>
+                  )}
+                </div>
               ) : (
                 <select
                   id="sched-asset"

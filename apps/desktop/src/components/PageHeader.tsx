@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { sectionOf, type ScreenId } from "../lib/nav";
 import { linkProps, SETTINGS_SECTIONS, useRoute } from "../lib/routes";
 import { useIsPhone } from "../lib/phone";
@@ -6,7 +6,19 @@ import { useAppState } from "../state/AppState";
 
 /** Screens that draw their own phone head (eyebrow, title, one line and an
  *  action), so the shared one steps aside on the phone. */
-export const PHONE_SELF_HEAD = new Set<ScreenId>(["overview", "calendar"]);
+export const PHONE_SELF_HEAD = new Set<ScreenId>(["overview", "calendar", "preflight", "schedule"]);
+
+/** Create pages that show the section's page chips on the phone (mockups). */
+const CREATE_CHIPS = new Set<ScreenId>(["fanout", "queue", "ready", "approvals", "requests"]);
+
+/** Phone subtitles for those pages; the screen's own line steps aside so it sits above the chips. */
+const PHONE_SUB: Partial<Record<ScreenId, string>> = {
+  fanout: "One draft for every platform. Override any one alone.",
+  queue: "Client rush jumps ahead. Hold and drag to reorder the rest.",
+  ready: "Cards in Trello's Ready for posting list, by client.",
+  approvals: "Send a no-login link. The client approves or asks for changes.",
+  requests: "Clients ask. A Trello card lands in the editor pipeline.",
+};
 
 /** Phone titles that differ from the page label (mobile pass mockups). */
 const PHONE_TITLE: Partial<Record<ScreenId, string>> = {
@@ -54,28 +66,35 @@ export default function PageHeader({
           link: linkProps(p.id),
           testid: `nav.page.${p.slug}`,
         }));
+  // The phone chip row scrolls to show the page it is on, with the one before peeking.
+  const chipRow = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const row = chipRow.current;
+    const on = row?.querySelector<HTMLElement>(".a");
+    if (row && on) row.scrollLeft = Math.max(0, on.offsetLeft - 48);
+  }, [screen, isPhone]);
   if (isPhone && PHONE_SELF_HEAD.has(screen)) return null;
   if (isPhone) {
     // One head pattern on the phone: coral eyebrow, Fraunces title, and the
-    // page chips only for Reports (Overview and Create pages live in More).
+    // page chips for Reports and the Create queues (the rest live in More).
     const agency = user?.agencyName ?? "Torerone";
     const eyebrow =
       screen === "edit" ? "Studio"
       : screen === "settings" ? agency
       : screen === "financials" ? `Overview · ${agency}`
       : section.label;
-    const chips = section.id === "reports" ? tabs : [];
+    const chips = section.id === "reports" || CREATE_CHIPS.has(screen) ? tabs : [];
     return (
       <header className="tf-head mb-phead" data-phone-head={screen}>
         <div className="mb-ph">
           <div>
             <div className="mb-eyebrow">{eyebrow}</div>
             <h1 className="mb-h1">{PHONE_TITLE[screen] ?? title ?? page.label}</h1>
-            {subtitle && <div className="mb-sub">{subtitle}</div>}
+            {(subtitle ?? PHONE_SUB[screen]) && <div className="mb-sub">{subtitle ?? PHONE_SUB[screen]}</div>}
           </div>
         </div>
         {chips.length > 1 && (
-          <nav className="tf-tabs mb-chips" aria-label={section.label}>
+          <nav className="tf-tabs mb-chips" aria-label={section.label} ref={chipRow}>
             {chips.map((t) => (
               <a key={t.key} aria-current={t.on ? "page" : undefined} className={t.on ? "a" : undefined} {...t.link} data-testid={t.testid}>
                 {t.label}

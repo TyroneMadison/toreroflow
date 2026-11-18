@@ -50,7 +50,8 @@ import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
 import Select from "../components/Select";
 import { Badge, KillSwitch, Lbl, Note } from "../components/ideas/IdeaBits";
-import { Ic, PhoneHead, PickSheet, Sheet } from "../components/analytics/phoneBits";
+import { Ic, PhoneHead, PickSheet, Sheet, shareLink } from "../components/analytics/phoneBits";
+import BrandAvatar from "../components/BrandAvatar";
 import "./IdeaScreens.css";
 
 /*
@@ -854,6 +855,7 @@ const dueLabel = (d: string | null) =>
 export function RequestsScreen() {
   const { selectedClient, clients } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [rows, setRows] = useState<ContentRequestRow[] | null>(null);
   const [config, setConfig] = useState<TrelloIntakeConfig | null>(null);
   const [links, setLinks] = useState<FormLink[] | null>(null);
@@ -916,6 +918,150 @@ export function RequestsScreen() {
   const where = config ? `${config.boardName.replace(/^Torone /, "")}, ${config.listName}` : "Editor Pipeline, To edit";
   const state = error ? "error" : rows === null ? "loading" : "ready";
   const formLink = live ? publicLink(PUBLIC_APP_URL, live.url) : "";
+
+  if (isPhone) {
+    // The phone (mobile pass): the brand's form link first, then every
+    // request with its Trello state, then the form itself for a client who
+    // calls instead of typing.
+    const name = selectedClient?.name ?? "";
+    const avatar = (id: string) => {
+      const i = clients.findIndex((c) => c.id === id);
+      return i >= 0 ? <BrandAvatar client={clients[i]!} index={i} size={36} /> : null;
+    };
+    const share = async (url: string) => {
+      const how = await shareLink(url, `${name} request form`);
+      if (how === "copied") toast.success("Link copied");
+      else if (how === "failed") toast.error("Could not share the link");
+    };
+    return (
+      <Screen id="requests" state={state} title="Content requests" sub="Clients ask. A Trello card lands in the editor pipeline.">
+        {state === "error" && <ErrorState screen="requests" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="requests" label="Loading requests" />}
+        {state === "ready" && (
+          <div className="idr">
+            <section className="mb-card idr-card" data-testid="requests.form">
+              {!selectedClient ? (
+                <p className="mb-help">Pick a brand to share its form.</p>
+              ) : links === null ? (
+                <Loading screen="requests-links" />
+              ) : !live ? (
+                <>
+                  <div className="idr-h">
+                    <h3>{name}'s form link</h3>
+                  </div>
+                  <p className="mb-help">{name} has no live form link. Each link is signed for one brand and can be turned off at any time.</p>
+                  <button type="button" className="mb-btn pri block" disabled={busy === "link"} onClick={() => void makeLink()}>
+                    Make form link
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="idr-h">
+                    <h3>{name}'s form link</h3>
+                    <span className="mb-pill ok">Live</span>
+                  </div>
+                  <label className="idr-url">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-link" />
+                    </svg>
+                    <input readOnly value={formLink || live.url} onFocus={(e) => e.currentTarget.select()} aria-label={`${name}'s form link`} />
+                  </label>
+                  <div className="idr-acts">
+                    <button type="button" className="mb-btn ghost" onClick={() => void copy(formLink || live.url, toast)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-copy" />
+                      </svg>
+                      Copy link
+                    </button>
+                    <button type="button" className="mb-btn pri" onClick={() => void share(formLink || live.url)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-share" />
+                      </svg>
+                      Share link
+                    </button>
+                  </div>
+                  <p className="mb-help">Signed for {name} only. It can be turned off at any time.</p>
+                  <div className="idr-foot">
+                    <button type="button" className="mb-btn text" disabled={busy === "link"} onClick={() => void rotate(live.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-refresh" />
+                      </svg>
+                      Replace link
+                    </button>
+                    <button type="button" className="mb-btn text danger" disabled={busy === "link"} onClick={() => void revoke(live.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-x" />
+                      </svg>
+                      Turn off
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+            <section className="mb-card idr-card" data-testid="requests.list">
+              <div className="idr-h">
+                <h3>Requests</h3>
+                <span>All brands, {rows!.length}</span>
+              </div>
+              {rows!.length === 0 ? (
+                <p className="mb-help">No requests yet. They show here the moment a client sends one.</p>
+              ) : (
+                rows!.map((r) => (
+                  <div key={r.id} className={`idr-row${r.status === "failed" ? " bad" : ""}`}>
+                    {avatar(r.clientId)}
+                    <div className="mb-lt">
+                      <b>{r.what.split("\n")[0]}</b>
+                      <small>
+                        {nameOf(r.clientId)}, {dueLabel(r.dueDate)}
+                      </small>
+                      {r.status === "created" ? (
+                        <span className="idr-st">
+                          <span className="mb-pill ok">Trello card created</span>
+                          <small>{where}</small>
+                        </span>
+                      ) : r.status === "failed" ? (
+                        <span className="idr-st">
+                          <span className="mb-pill bad">Card failed</span>
+                          <small className="idr-err">{r.error ?? "Trello did not answer."}</small>
+                        </span>
+                      ) : (
+                        <span className="idr-st">
+                          <span className="wfq-spin" aria-hidden="true" />
+                          <small>Sending to Trello</small>
+                        </span>
+                      )}
+                    </div>
+                    {r.status === "created" && r.trelloUrl && (
+                      <button type="button" className="mb-ib ghost idr-tr" aria-label="Open the Trello card" onClick={() => void openExternal(r.trelloUrl!)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-trello" />
+                        </svg>
+                      </button>
+                    )}
+                    {r.status === "failed" && (
+                      <button type="button" className="mb-btn sm danger" disabled={busy === r.id} onClick={() => void retry(r.id)}>
+                        {busy === r.id ? "Retrying" : "Retry"}
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+            {live && (
+              <section className="mb-card idr-card">
+                <div className="idr-h">
+                  <h3>Client form, no login</h3>
+                  <span>What {name} fills in</span>
+                </div>
+                {info ? <RequestForm token={live.token} info={info} onSent={() => void load()} /> : <Loading screen="requests-form" />}
+                <p className="mb-help">Fill it in for a client who calls; it sends a real request for {name}, the same as their page.</p>
+              </section>
+            )}
+          </div>
+        )}
+      </Screen>
+    );
+  }
 
   return (
     <Screen id="requests" state={state} title="Content requests" sub="Clients ask. A Trello card lands in the editor pipeline.">

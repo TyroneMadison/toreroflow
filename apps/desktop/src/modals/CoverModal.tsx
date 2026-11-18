@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useIsPhone } from "../lib/phone";
 import Modal from "./Modal";
 import { useToast } from "../components/Toasts";
 import { api, fileUrl, uploadCoverImage, videoLabel, type MediaAssetInfo } from "../lib/api";
@@ -36,6 +37,7 @@ interface CoverModalProps {
  */
 export default function CoverModal({ asset, onClose, onChanged, onPick, initialMs, title }: CoverModalProps) {
   const toast = useToast();
+  const isPhone = useIsPhone();
   const video = useRef<HTMLVideoElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [positionSec, setPositionSec] = useState(() => {
@@ -111,7 +113,10 @@ export default function CoverModal({ asset, onClose, onChanged, onPick, initialM
       <div className="modal-head">
         <div>
           <h3>{title ?? "Edit cover"}</h3>
-          <p>{videoLabel(asset)}</p>
+          <p>
+            {videoLabel(asset)}
+            {isPhone && duration > 0 ? `, ${fmtPosition(duration)}` : ""}
+          </p>
         </div>
         <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
           <svg>
@@ -138,15 +143,36 @@ export default function CoverModal({ asset, onClose, onChanged, onPick, initialM
             <div className="coverwait">Video not ready yet.</div>
           )}
         </div>
-        <label className="flabel" style={{ marginTop: 14 }}>
-          Scrub to the frame you want
-          <span className="hint">
-            {fmtPosition(positionSec)}
-            {duration > 0 ? ` of ${fmtPosition(duration)}` : ""} · arrow keys step one frame
-          </span>
-        </label>
+        {isPhone ? (
+          <div className="mb-covstep">
+            <button type="button" className="mb-ib" aria-label="One frame back" onClick={() => seek(Math.max(0, positionSec - FRAME_SEC))}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-chev-l" />
+              </svg>
+            </button>
+            <span>
+              <b>{fmtPosition(positionSec)}</b>
+              {duration > 0 ? ` of ${fmtPosition(duration)}` : ""}
+            </span>
+            <button type="button" className="mb-ib" aria-label="One frame forward" onClick={() => seek(Math.min(duration || positionSec + FRAME_SEC, positionSec + FRAME_SEC))}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-chev-r" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <label className="flabel" style={{ marginTop: 14 }}>
+            Scrub to the frame you want
+            <span className="hint">
+              {fmtPosition(positionSec)}
+              {duration > 0 ? ` of ${fmtPosition(duration)}` : ""} · arrow keys step one frame
+            </span>
+          </label>
+        )}
         <input
-          className="coverscrub"
+          className={`coverscrub${isPhone ? " mb-filmstrip" : ""}`}
+          style={isPhone && asset.thumbUrl ? { backgroundImage: `url(${fileUrl(asset.thumbUrl)})` } : undefined}
+          aria-label="Scrub to the frame you want"
           type="range"
           min={0}
           max={Math.max(duration, 0.1)}

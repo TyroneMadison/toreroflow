@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAppState } from "../state/AppState";
+import { useIsPhone } from "../lib/phone";
 
 /*
  * A client's posting SOP, shown wherever a post is scheduled. When the client
@@ -27,6 +28,8 @@ export default function SopPanel({
   const [draft, setDraft] = useState(sop ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const [open, setOpen] = useState(false);
 
   // A changed SOP needs reading again.
   useEffect(() => {
@@ -50,6 +53,45 @@ export default function SopPanel({
   }
 
   const name = client?.name ?? "This client";
+  // The phone's schedule sheet (mobile pass): the checkbox and the SOP's
+  // first line as one row; the chevron opens the whole text.
+  if (isPhone && compact && !editable && sop) {
+    return (
+      <section className="mb-sop" aria-label={`${name} posting SOP`} data-testid="sop-panel" data-sop-state="present">
+        <div className="mb-soprow">
+          <label className="mb-sopck" data-testid="sop-ack-label">
+            <input
+              type="checkbox"
+              data-testid="sop-ack"
+              aria-label={`I checked ${name}'s SOP`}
+              checked={acknowledged}
+              onChange={(e) => onAcknowledge(e.target.checked)}
+            />
+            <span className="mb-lt">
+              <b>I checked {name}'s SOP</b>
+              <small>{sop.trim().split("\n")[0]}</small>
+            </span>
+          </label>
+          <button
+            type="button"
+            className="mb-ib ghost"
+            aria-expanded={open}
+            aria-label={open ? "Hide the SOP" : "Read the whole SOP"}
+            onClick={() => setOpen((o) => !o)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href={open ? "#i-chev-u" : "#i-chev"} />
+            </svg>
+          </button>
+        </div>
+        {open && (
+          <div className="mb-sopbody" data-testid="sop-body">
+            {sop}
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
     <section
       className="card glass sop-panel"

@@ -298,6 +298,20 @@
   .id-alert-long{display:none}
   .id-alert-short{display:inline}
 
+  /* ---- older .btn and .tf-btn buttons in the phone's button language: a
+     raised neutral, pri (and pub) the coral primary, ghost outlined, danger
+     red. liquid.css forces the desktop glass look with !important. ---- */
+  html .main .btn,html .overlay .btn,html .main .tf-btn,html .overlay .tf-btn,html .main .cbtn,html .overlay .cbtn{min-height:44px;padding:0 16px;border:0 !important;border-radius:var(--mb-r-ctl);
+    background:var(--mb-raised) !important;color:var(--mb-ink) !important;box-shadow:none !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;
+    font-size:14.5px;font-weight:650;text-shadow:none}
+  html .overlay .btn,html .overlay .tf-btn,html .overlay .cbtn{background:var(--mb-raised2) !important}
+  html .main .btn.ghost,html .overlay .btn.ghost,html .main .tf-btn.ghost,html .overlay .tf-btn.ghost{background:transparent !important;box-shadow:inset 0 0 0 1px var(--mb-hair2) !important}
+  html .main .btn.pri,html .main .btn.pub,html .overlay .btn.pri,html .overlay .btn.pub,html .main .tf-btn.pri,html .overlay .tf-btn.pri{background:var(--mb-coral) !important;color:var(--mb-oncoral) !important;
+    box-shadow:0 6px 18px rgba(250,97,75,.28) !important}
+  html .main .btn.danger,html .overlay .btn.danger{background:var(--mb-bad-soft) !important;color:var(--c-bad) !important}
+  html .main .btn:disabled,html .overlay .btn:disabled,html .main .tf-btn:disabled,html .main .cbtn:disabled,html .overlay .cbtn:disabled{opacity:.45}
+  html .main .btn svg,html .overlay .btn svg,html .main .tf-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+
   /* ---- data source footer: a quiet line, not a box ---- */
   .main .prov{margin:4px 0 0;padding:4px 2px 0;border:0;border-radius:0;background:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
   .main .prov-row{font-size:13px;color:var(--mb-muted);line-height:1.4}
