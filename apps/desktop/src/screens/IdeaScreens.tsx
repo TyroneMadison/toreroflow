@@ -40,8 +40,11 @@ import { linkProps, navigate } from "../lib/routes";
 import { FAILED_CHANGED, useFailedPosts } from "../lib/failedPosts";
 import { useIsPhone } from "../lib/phone";
 import ThumbPlayer, { mmss, type ThumbPlayerHandle } from "../components/mobile/ThumbPlayer";
+import SwipeRow from "../components/mobile/SwipeRow";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
 import { openExternal } from "../lib/external";
-import { PLATFORM_LABELS } from "../lib/platforms";
+import { PF_ID, PLATFORM_LABELS, type Platform } from "../lib/platforms";
+import Pf from "../components/Pf";
 import { useAppState } from "../state/AppState";
 import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
@@ -1327,10 +1330,15 @@ function BestTimeCard({ bt, brand }: { bt: ReturnType<typeof bestTime>; brand: s
 
 
 export function FailedPostsScreen() {
-  const { clients } = useAppState();
+  const { clients, selectClient } = useAppState();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [list, setList] = useState<FailedList | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [thumbs, setThumbs] = useState<Record<string, string | null>>({});
+  const [brandFilter, setBrandFilter] = useState<string>("all");
+  const [selecting, setSelecting] = useState(false);
+  const [askRemoveAll, setAskRemoveAll] = useState(false);
   const [done, setDone] = useState<Record<string, RetryOutcome>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1345,6 +1353,7 @@ export function FailedPostsScreen() {
       const brands = [...new Set(l.items.map((i) => i.brandId))];
       const all = await Promise.all(brands.map((b) => api.get<PostTargetInfo[]>(`/clients/${b}/posts`).catch(() => [])));
       setNames(Object.fromEntries(all.flat().map((t) => [t.id, t.assetName])));
+      setThumbs(Object.fromEntries(all.flat().map((t) => [t.id, t.thumbUrl])));
     } catch (err) {
       setError(errText(err, "could not load failed posts"));
     }
@@ -1383,8 +1392,8 @@ export function FailedPostsScreen() {
   const state = error ? "error" : list === null ? "loading" : list.items.length === 0 ? "empty" : "ready";
 
   // Removing hides the failure notice only; the post and its media stay put.
-  const remove = async (ids: string[] | "all") => {
-    if (ids === "all" && !window.confirm(`Remove all ${open} failure notices? The posts themselves are not deleted.`)) return;
+  const remove = async (ids: string[] | "all", confirmed = false) => {
+    if (ids === "all" && !confirmed && !window.confirm(`Remove all ${open} failure notices? The posts themselves are not deleted.`)) return;
     setBusy("remove");
     try {
       const r = await (ids === "all"
@@ -1403,6 +1412,179 @@ export function FailedPostsScreen() {
       setBusy(null);
     }
   };
+
+  if (isPhone) {
+    // Phone (mobile pass): brand chips with counts, one card per failure that
+    // leads with the post and says the reason first, a full-width red Retry
+    // (Reconnect when the login expired), Select as a mode with a bottom bar,
+    // and swipe left to remove a notice (the post itself stays).
+    const shown = list ? list.items.filter((i) => brandFilter === "all" || i.brandId === brandFilter) : [];
+    const countFor = (id: string) => list?.items.filter((i) => i.brandId === id).length ?? 0;
+    const retryPicked = async () => {
+      for (const id of [...picked]) await retry(id);
+    };
+    return (
+      <section className="screen active id mb-page mb-failed" data-screen="failed" data-state={state}>
+        <p className="mb-sub mb-subonly">Every failure with the reason. Nothing retries on its own.</p>
+        {state === "error" && <ErrorState screen="failed" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="failed" label="Loading failed posts" />}
+        {state === "empty" && (
+          <div className="mb-empty">
+            <span className="mb-ei ok">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-check-circle" />
+              </svg>
+            </span>
+            <h3>No failed posts</h3>
+            <p>Everything went out.</p>
+          </div>
+        )}
+        {state === "ready" && (
+          <>
+            <div className="mb-chiphead">
+              <div className="mb-chips" role="tablist" aria-label="Brands">
+                <button type="button" role="tab" aria-selected={brandFilter === "all"} className={`mb-chip${brandFilter === "all" ? " on" : ""}`} onClick={() => setBrandFilter("all")}>
+                  All brands <small>{list!.items.length}</small>
+                </button>
+                {clients.map((c) => (
+                  <button key={c.id} type="button" role="tab" aria-selected={brandFilter === c.id} className={`mb-chip${brandFilter === c.id ? " on" : ""}`} onClick={() => setBrandFilter(c.id)}>
+                    {c.name} {countFor(c.id) > 0 && <small>{countFor(c.id)}</small>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {open > 0 && (
+              <div className="mb-selhead">
+                <span className="mb-lab">
+                  {open} {open === 1 ? "post" : "posts"} failed{selecting && picked.size ? `, ${picked.size} selected` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="mb-btn text sm"
+                  onClick={() => {
+                    setSelecting((v) => !v);
+                    setPicked(new Set());
+                  }}
+                >
+                  {selecting ? "Done" : "Select"}
+                </button>
+              </div>
+            )}
+            {shown.map((i) => {
+              const outcome = done[i.postTargetId];
+              const reconnect = i.action === "reconnect" || outcome === "needs_reconnect";
+              const stillFailed = !outcome || outcome === "needs_reconnect";
+              const name = names[i.postTargetId] ?? "A post";
+              const thumb = thumbs[i.postTargetId];
+              return (
+                <SwipeRow
+                  key={i.postTargetId}
+                  className={`mb-fp${stillFailed ? "" : " ok"}${picked.has(i.postTargetId) ? " picked" : ""}`}
+                  onLeft={stillFailed ? () => void remove([i.postTargetId]) : undefined}
+                  onLong={stillFailed ? () => {
+                    setSelecting(true);
+                    toggle(i.postTargetId);
+                  } : undefined}
+                  testId={`failed.card.${i.postTargetId}`}
+                >
+                  <div className="mb-fptop">
+                    {selecting && stillFailed && (
+                      <input
+                        type="checkbox"
+                        className="mb-check"
+                        checked={picked.has(i.postTargetId)}
+                        onChange={() => toggle(i.postTargetId)}
+                        aria-label={`Select ${name}, ${PLATFORM_LABELS[i.platform]}`}
+                      />
+                    )}
+                    <span className="mb-thumb">{thumb && <img src={fileUrl(thumb) ?? undefined} alt="" />}</span>
+                    <span className="mb-lt">
+                      <b>{name}</b>
+                      <small>
+                        {brandName(i.brandId)}
+                        {i.scheduledAt ? ` · ${fmtEt(i.scheduledAt)}` : ""}
+                      </small>
+                      <span className="mb-fpf">
+                        <span className="mb-pfm failed">
+                          <Pf p={PF_ID[i.platform as Platform]} size="sm" />
+                        </span>
+                        <span className={stillFailed ? "mb-bad" : "mb-okc"}>
+                          {stillFailed ? `${PLATFORM_LABELS[i.platform]} failed` : outcome === "already_live" ? "Already live" : "Queued again"}
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                  {outcome && outcome !== "needs_reconnect" ? (
+                    <div className="mb-fpdone">{RETRY_OUTCOME[outcome]}</div>
+                  ) : (
+                    <>
+                      <div className="mb-why">
+                        <b>{i.reason}.</b> {i.advice}
+                      </div>
+                      {i.error && <div className="mb-raw">{i.error}</div>}
+                      <div className="mb-btnrow">
+                        {reconnect ? (
+                          <a className="mb-btn sm ghost" {...linkProps("settings", "accounts")}>
+                            Reconnect
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            className="mb-btn sm ghost"
+                            onClick={() => {
+                              selectClient(i.brandId);
+                              navigate("calendar");
+                            }}
+                          >
+                            Details
+                          </button>
+                        )}
+                        <button type="button" className="mb-btn sm mb-retry" disabled={busy === i.postTargetId} onClick={() => void retry(i.postTargetId)}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-refresh" />
+                          </svg>
+                          {busy === i.postTargetId ? "Checking" : "Retry"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </SwipeRow>
+              );
+            })}
+            {shown.length === 0 && <p className="mb-p muted mb-center">Nothing failed for this brand.</p>}
+            {open > 0 && <p className="mb-p muted small mb-center">Swipe a card left to remove it from this list. The post is not deleted.</p>}
+            {selecting && (
+              <div className="mb-actionbar">
+                <button type="button" className="mb-btn sm" disabled={!picked.size} onClick={() => void retryPicked()}>
+                  Retry selected
+                </button>
+                <button type="button" className="mb-btn sm" disabled={!picked.size || busy === "remove"} onClick={() => void remove([...picked])}>
+                  Remove selected
+                </button>
+                <button type="button" className="mb-btn sm danger" disabled={busy === "remove"} onClick={() => setAskRemoveAll(true)}>
+                  Remove all
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {askRemoveAll && (
+          <ConfirmSheet
+            title={`Remove all ${open} notices?`}
+            body="This clears them from the list. The posts themselves are not deleted."
+            confirm="Remove all"
+            danger
+            busy={busy === "remove"}
+            onConfirm={() => {
+              setAskRemoveAll(false);
+              void remove("all", true);
+            }}
+            onClose={() => setAskRemoveAll(false)}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="failed" state={state} title="Failed posts" sub="Every failure with the reason, and one tap to retry. Nothing retries on its own.">

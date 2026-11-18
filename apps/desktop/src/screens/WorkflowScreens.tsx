@@ -16,6 +16,11 @@ import {
 } from "@toreroflow/contracts";
 import { api, ApiError, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
 import { navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
+import { useIsPhone } from "../lib/phone";
+import Modal from "../modals/Modal";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
+import Pf from "../components/Pf";
+import { PF_ID } from "../lib/platforms";
 import {
   blankTemplate,
   draftProblem,
@@ -886,6 +891,10 @@ export function TemplatesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string | null; form: TemplateForm } | null>(null);
   const [using, setUsing] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const [tplFilter, setTplFilter] = useState<string>("all");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [askDelete, setAskDelete] = useState<Template | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -922,8 +931,8 @@ export function TemplatesScreen() {
     }
   };
 
-  const remove = async (t: Template) => {
-    if (!window.confirm(`Delete the template "${t.name}"?`)) return;
+  const remove = async (t: Template, confirmed = false) => {
+    if (!confirmed && !window.confirm(`Delete the template "${t.name}"?`)) return;
     try {
       await api.del(`/templates/${t.id}`);
       void load();
@@ -934,6 +943,210 @@ export function TemplatesScreen() {
 
   const state = error && !templates ? "error" : templates ? "ready" : "loading";
   const byBrand = clients.map((c) => ({ c, list: (templates ?? []).filter((t) => t.brandId === c.id) })).filter((g) => g.list.length);
+
+  if (isPhone) {
+    // Phone (mobile pass): client chips with counts instead of one long
+    // grouped page; each card shows platforms with cadence and times, a short
+    // two-column list, the suggestion, and Use template as the one button.
+    // Edit and Delete live in a "more" menu (Delete asks first), New template
+    // sits in a sticky bar and the editor opens as a full-height sheet.
+    const list = (templates ?? []).filter((t) => tplFilter === "all" || t.brandId === tplFilter);
+    const count = (id: string) => (templates ?? []).filter((t) => t.brandId === id).length;
+    const menuT = (templates ?? []).find((t) => t.id === menuFor) ?? null;
+    return (
+      <section className="screen active wf mb-page mb-tpl" data-screen="templates" data-state={state}>
+        <p className="mb-sub mb-subonly">Saved upload setups per client and brand.</p>
+        {state === "error" && <ErrorState screen="templates" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="templates" label="Loading templates" />}
+        {state === "ready" && (
+          <>
+            {(templates ?? []).length > 0 && (
+              <div className="mb-chips" role="tablist" aria-label="Clients">
+                <button type="button" role="tab" aria-selected={tplFilter === "all"} className={`mb-chip${tplFilter === "all" ? " on" : ""}`} onClick={() => setTplFilter("all")}>
+                  All <small>{(templates ?? []).length}</small>
+                </button>
+                {clients.map((c) => (
+                  <button key={c.id} type="button" role="tab" aria-selected={tplFilter === c.id} className={`mb-chip${tplFilter === c.id ? " on" : ""}`} onClick={() => setTplFilter(c.id)}>
+                    {c.name} {count(c.id) > 0 && <small>{count(c.id)}</small>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!list.length && (
+              <Empty screen="templates" title="No templates yet" hint={canEdit ? "Save a brand's usual setup with New template." : "The operator or Polly can add one."} />
+            )}
+            {list.map((t) => {
+              const s = suggestion(cadence[t.brandId] ?? null);
+              return (
+                <article key={t.id} className="mb-tp" data-testid={`template-${t.id}`}>
+                  <div className="mb-tptop">
+                    <span className="mb-lt">
+                      <b>{t.name}</b>
+                      <small>
+                        {clientName(t.brandId)} · {t.scope === "brand" ? "brand" : "client"} template
+                      </small>
+                    </span>
+                    {canEdit && (
+                      <button type="button" className="mb-ib ghost" aria-label={`More for ${t.name}`} onClick={() => setMenuFor(t.id)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-dots-h" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <div className="mb-tppf">
+                    {t.platforms.map((p) => (
+                      <Pf key={p} p={PF_ID[p]} size="sm" />
+                    ))}
+                    <span className="mb-muted">
+                      {[t.cadence || null, t.postTimes.length ? t.postTimes.map((x) => `${x}`).join(" and ") + " ET" : null].filter(Boolean).join(" · ") || "Any time"}
+                    </span>
+                  </div>
+                  <dl className="mb-kv">
+                    <dt>Caption</dt>
+                    <dd>{t.captionPattern || "None"}</dd>
+                    <dt>Hashtags</dt>
+                    <dd>{t.hashtags.length ? t.hashtags.map((h) => `#${h}`).join(" ") : "None"}</dd>
+                    <dt>Cover</dt>
+                    <dd>{t.coverStyle || "None"}</dd>
+                  </dl>
+                  {s && (
+                    <div className={`mb-sug ${s.tone}`}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href={s.tone === "ok" ? "#i-spark" : "#i-alert"} />
+                      </svg>
+                      <span>{s.text}</span>
+                    </div>
+                  )}
+                  {using === t.id ? (
+                    <UseTemplate t={t} onCancel={() => setUsing(null)} />
+                  ) : (
+                    <button type="button" className="mb-btn sm pri block" onClick={() => setUsing(t.id)} data-testid={`template-use-${t.id}`}>
+                      Use template
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+            <div className="mb-bot">
+              <span className="mb-lic info">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-key" />
+                </svg>
+              </span>
+              <div>
+                <b>Bot access</b>
+                <p className="mb-p muted small">
+                  Polly can read, apply and edit these templates. Other bots can apply a template only with the templates:apply scope.
+                </p>
+              </div>
+            </div>
+            {canEdit && (
+              <div className="mb-actionbar">
+                <button
+                  type="button"
+                  className="mb-btn pri"
+                  onClick={() => setEditing({ id: null, form: templateToForm(blankTemplate(clients[0]?.id ?? "")) })}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-plus" />
+                  </svg>
+                  New template
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {editing && (
+          <Modal maxWidth={560} onClose={() => setEditing(null)} label={editing.id ? "Edit template" : "New template"}>
+            <div className="modal-head">
+              <div>
+                <h3>{editing.id ? "Edit template" : "New template"}</h3>
+                <p>A brand's usual upload setup, ready to apply.</p>
+              </div>
+              <button type="button" className="modal-x" aria-label="Close" onClick={() => setEditing(null)}>
+                <svg>
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <TemplateEditor editing={editing} onChange={setEditing} onSave={() => void save()} />
+            </div>
+          </Modal>
+        )}
+        {menuT && (
+          <>
+            <div className="mb-scrim" onClick={() => setMenuFor(null)} aria-hidden="true" />
+            <div className="mb-sheet" role="dialog" aria-modal="true" aria-label={menuT.name}>
+              <div className="mb-grab" aria-hidden="true" />
+              <div className="mb-sh">
+                <div className="mb-ttl">
+                  <h2>{menuT.name}</h2>
+                  <small>{clientName(menuT.brandId)}</small>
+                </div>
+                <button type="button" className="mb-ib" aria-label="Close" onClick={() => setMenuFor(null)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-x" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-shb">
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  onClick={() => {
+                    setMenuFor(null);
+                    setEditing({ id: menuT.id, form: templateToForm(menuT) });
+                  }}
+                >
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-pencil" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Edit</b>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  onClick={() => {
+                    setMenuFor(null);
+                    setAskDelete(menuT);
+                  }}
+                >
+                  <span className="mb-lic bad">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-trash" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b className="mb-bad">Delete</b>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {askDelete && (
+          <ConfirmSheet
+            title={`Delete "${askDelete.name}"?`}
+            body="The template goes away for everyone, bots included. Posts made with it stay."
+            confirm="Delete"
+            danger
+            onConfirm={() => {
+              const t = askDelete;
+              setAskDelete(null);
+              void remove(t, true);
+            }}
+            onClose={() => setAskDelete(null)}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active wf" data-screen="templates" data-state={state}>

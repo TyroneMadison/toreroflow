@@ -5,7 +5,11 @@ import DataProvenance from "../components/DataProvenance";
 import PageHeader from "../components/PageHeader";
 import Pf from "../components/Pf";
 import { Empty, ErrorState, Loading } from "../components/states";
-import { api, type ClientAnalytics } from "../lib/api";
+import { api, type ClientAnalytics, type ClientPost } from "../lib/api";
+import BestTimes from "../components/BestTimes";
+import QuotaCard from "../components/QuotaCard";
+import PhoneViewsChart from "../components/mobile/PhoneViewsChart";
+import { useIsPhone } from "../lib/phone";
 import { brandColor } from "../lib/avatar";
 import { dailyViews, pctChange } from "../lib/brandTrend";
 import { PF_ID } from "../lib/platforms";
@@ -40,22 +44,36 @@ interface BrandData {
 type Load = { state: "loading" } | { state: "error" } | { state: "ready"; data: Record<string, BrandData> };
 
 /** A small trend line for a card, same shape as the mockup's. */
-function Sparkline({ values, color }: { values: number[]; color: string }) {
+function Sparkline({ values, color, w = 120, h = 36 }: { values: number[]; color: string; w?: number; h?: number }) {
   // Min to max, not zero to max: a sparkline is about shape, not size.
   const min = Math.min(...values);
   const span = Math.max(1, Math.max(...values) - min);
   const pts = values
-    .map((v, i) => `${((i / (values.length - 1)) * 120).toFixed(1)},${(33 - ((v - min) / span) * 30).toFixed(1)}`)
+    .map((v, i) => `${((i / (values.length - 1)) * w).toFixed(1)},${(h - 3 - ((v - min) / span) * (h - 6)).toFixed(1)}`)
     .join(" ");
   return (
-    <svg width="120" height="36" viewBox="0 0 120 36" aria-hidden="true">
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 4px ${color})` }} />
     </svg>
   );
 }
 
 export default function DashboardScreen({ onOpenInsights, onOpenConnect }: DashboardScreenProps) {
-  const { clients } = useAppState();
+  const { clients, selectedClient } = useAppState();
+  const isPhone = useIsPhone();
+  // Phone only: the active brand's published history for Best times.
+  const [bestPosts, setBestPosts] = useState<ClientPost[]>([]);
+  useEffect(() => {
+    if (!isPhone || !selectedClient) return;
+    let gone = false;
+    api
+      .get<{ posts: ClientPost[] }>(`/clients/${selectedClient.id}/analytics/posts`)
+      .then((d) => !gone && setBestPosts(d.posts))
+      .catch(() => !gone && setBestPosts([]));
+    return () => {
+      gone = true;
+    };
+  }, [isPhone, selectedClient]);
   // The period lives in ?range; one this screen does not offer reads as 30.
   const { range } = useRoute();
   const days: number = RANGES.find((r) => r === range) ?? 30;
@@ -201,6 +219,202 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
     ) : (
       body
     );
+
+  if (isPhone) {
+    // Phone dashboard (mobile pass): period chips with words and the dates,
+    // one readable chart first, one summary card per brand (the active one
+    // outlined), Add client as a dashed row, then the active brand's work
+    // this period and best times. Page tabs live in More on the phone.
+    const day = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const from = new Date(Date.now() - (days - 1) * 86_400_000);
+    const skel = <span className="skel" />;
+    return (
+      <section className="dash mb-page mb-dash" data-screen="dashboard" data-state={state} aria-busy={state === "loading"}>
+        <div className="mb-head">
+          <div>
+            <div className="mb-eyebrow">Overview</div>
+            <h1 className="mb-h1">Dashboard</h1>
+            <p className="mb-sub">
+              {clients.length
+                ? `Quick overview across ${clients.length} ${clients.length === 1 ? "brand" : "brands"}`
+                : "Add your first brand to get started"}
+            </p>
+          </div>
+          <button type="button" className="mb-ib" aria-label="Refresh" onClick={refresh} disabled={state === "loading"} data-testid="dashboard.refresh">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-refresh" />
+            </svg>
+          </button>
+        </div>
+        <div className="mb-range" role="group" aria-label="Date range">
+          {RANGES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={`mb-chip${days === r ? " on" : ""}`}
+              aria-pressed={days === r}
+              onClick={() => setQuery({ range: r })}
+              data-testid={`dashboard.range.${r}`}
+            >
+              {r} days
+            </button>
+          ))}
+          <span className="mb-when">
+            {day(from)} to {day(new Date())}
+          </span>
+        </div>
+
+        {state === "empty" && (
+          <Empty
+            screen="dashboard"
+            title="No brands yet"
+            hint="Every brand you add gets its own results card here."
+            action={
+              <button type="button" className="mb-btn pri" onClick={onOpenConnect} data-testid="dashboard.empty.add-client">
+                Add client
+              </button>
+            }
+          />
+        )}
+        {state === "error" && (
+          <ErrorState
+            screen="dashboard"
+            message="None of the brands' analytics came back. Check that the API is online, then try again."
+            onRetry={refresh}
+          />
+        )}
+
+        {(state === "loading" || state === "ready") && (
+          <>
+            <section className="mb-card mb-vcard" aria-labelledby="mvot" data-testid="dashboard.views-chart">
+              <div className="mb-lab" id="mvot">
+                Views, all brands
+              </div>
+              <div className="mb-vtop">
+                <span className="mb-num">{state === "loading" ? skel : fmt(totalViews)}</span>
+                {totalChange != null && (
+                  <span className={`mb-delta ${totalChange < 0 ? "down" : "up"}`}>
+                    {totalChange < 0 ? "▼" : "▲"} {Math.abs(totalChange).toFixed(1)}%
+                  </span>
+                )}
+                <span className="mb-vvs">vs the {days} days before</span>
+              </div>
+              {series.length > 0 ? (
+                <PhoneViewsChart series={series} days={days} label={chartLabel} />
+              ) : (
+                state === "ready" && <p className="mb-p muted small">No daily views recorded in this window yet.</p>
+              )}
+              <div className="mb-vlg">
+                {clients.map((c, i) => (
+                  <span key={c.id} style={{ ["--c" as string]: brandColor(i) }}>
+                    <b>
+                      <i />
+                      {c.name}
+                    </b>
+                    {data[c.id] ? fmt(data[c.id]!.a.totals.views) : "-"}
+                  </span>
+                ))}
+              </div>
+            </section>
+
+            <div className="mb-sech">
+              <h2 className="mb-h2">Brands</h2>
+              <button type="button" className="mb-btn ghost sm" onClick={exportReport} disabled={state !== "ready"} data-testid="dashboard.export">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-dl" />
+                </svg>
+                Export report
+              </button>
+            </div>
+
+            {clients.map((client, i) => {
+              const d = data[client.id];
+              const connected = client.accounts.filter((a) => a.status === "connected");
+              const change = d ? pctChange(d.a.totals.views, d.prevViews) : null;
+              const on = client.id === selectedClient?.id;
+              const tiles: Array<[string, string]> = [
+                ["Views", d ? fmt(d.a.totals.views) : "-"],
+                ["Retention", d?.a.totals.avgWatchSec != null ? `${d.a.totals.avgWatchSec.toFixed(1)}s` : "-"],
+                ["Likes", d?.a.hasData ? fmt(d.a.totals.likes) : "-"],
+                ["Comments", d?.a.hasData ? fmt(d.a.totals.comments) : "-"],
+              ];
+              return (
+                <section
+                  key={client.id}
+                  className={`mb-card mb-bc${on ? " on" : ""}`}
+                  aria-label={client.name}
+                  onClick={() => onOpenInsights(client.id)}
+                  data-testid={`dashboard.brand-card.${client.id}`}
+                >
+                  <div className="mb-bch">
+                    <BrandAvatar client={client} index={i} size={40} />
+                    <span className="mb-bcn">
+                      <b>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenInsights(client.id);
+                          }}
+                          data-testid={`dashboard.brand-card.${client.id}.open`}
+                        >
+                          {client.name}
+                        </button>
+                        {on && <span className="mb-pill acc nodot">Active</span>}
+                      </b>
+                      <small>
+                        {connected.map((a) => (
+                          <Pf key={a.id} p={PF_ID[a.platform]} size="xs" />
+                        ))}
+                        {connected.length
+                          ? connected.length > 3
+                            ? connected.length
+                            : `${connected.length} ${connected.length === 1 ? "platform" : "platforms"}`
+                          : "No platforms connected"}
+                      </small>
+                    </span>
+                    {d && d.series.length > 1 && change != null && (
+                      <span className="mb-trend">
+                        <Sparkline values={d.series} color={change < 0 ? "var(--c-bad)" : "var(--c-ok)"} w={64} h={24} />
+                        <span className={`mb-delta ${change < 0 ? "down" : "up"}`}>{fmtPct(change)}</span>
+                      </span>
+                    )}
+                  </div>
+                  <dl className="mb-tiles4">
+                    {tiles.map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{state === "loading" ? skel : value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              );
+            })}
+
+            <button type="button" className="mb-addrow" onClick={onOpenConnect} data-testid="dashboard.add-client">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-plus" />
+              </svg>
+              Add client
+            </button>
+
+            {selectedClient && <QuotaCard clientId={selectedClient.id} clientName={selectedClient.name} reloadKey={nonce} />}
+            {selectedClient && (
+              <section className="mb-card mb-best" aria-label="Best times to post">
+                <div>
+                  <h3 className="mb-cardt">Best times to post</h3>
+                  <p className="mb-p muted small">{selectedClient.name}, average views per post by hour</p>
+                </div>
+                <BestTimes posts={bestPosts} />
+              </section>
+            )}
+          </>
+        )}
+        <DataProvenance platforms={allPlatforms} />
+      </section>
+    );
+  }
 
   return (
     <section className="dash" data-screen="dashboard" data-state={state} aria-busy={state === "loading"}>

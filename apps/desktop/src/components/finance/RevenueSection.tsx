@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatCents } from "@toreroflow/core";
 import { useToast } from "../Toasts";
 import { api, fileUrl, type ClientSummary } from "../../lib/api";
@@ -34,11 +34,14 @@ export default function RevenueSection({
   totalCents,
   month,
   onChanged,
+  addSignal,
 }: {
   rows: RevenueRow[];
   totalCents: number;
   month: string;
   onChanged(): void;
+  /** Phone: bumped by the "Add money in or out" sheet to open the add form. */
+  addSignal?: number;
 }) {
   const toast = useToast();
   const { clients, refreshClients } = useAppState();
@@ -67,6 +70,9 @@ export default function RevenueSection({
    * received the moment it is added, because it describes money that exists.
    */
   const [addingIncome, setAddingIncome] = useState(false);
+  useEffect(() => {
+    if (addSignal) setAddingIncome(true);
+  }, [addSignal]);
   const [incomeLabel, setIncomeLabel] = useState("");
   const [incomeDollars, setIncomeDollars] = useState("");
   // Inline edit of one row's amount for this month only. The standing price

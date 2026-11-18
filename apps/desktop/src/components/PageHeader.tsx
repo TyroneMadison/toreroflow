@@ -4,6 +4,10 @@ import { linkProps, SETTINGS_SECTIONS, useRoute } from "../lib/routes";
 import { useIsPhone } from "../lib/phone";
 import { useAppState } from "../state/AppState";
 
+/** Screens that draw their own phone head (eyebrow, title, one line and an
+ *  action), so the shared one steps aside on the phone. */
+export const PHONE_SELF_HEAD = new Set<ScreenId>(["overview", "calendar"]);
+
 /** Phone titles that differ from the page label (mobile pass mockups). */
 const PHONE_TITLE: Partial<Record<ScreenId, string>> = {
   overview: "Accounts",
@@ -50,6 +54,7 @@ export default function PageHeader({
           link: linkProps(p.id),
           testid: `nav.page.${p.slug}`,
         }));
+  if (isPhone && PHONE_SELF_HEAD.has(screen)) return null;
   if (isPhone) {
     // One head pattern on the phone: coral eyebrow, Fraunces title, and the
     // page chips only for Reports (Overview and Create pages live in More).
