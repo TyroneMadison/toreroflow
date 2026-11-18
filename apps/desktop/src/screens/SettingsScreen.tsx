@@ -150,18 +150,18 @@ function DirectConnection({
             : revoked
               ? "access was withdrawn, send a fresh link"
               : connection
-                ? `${connection.externalName ?? "channel"} Â· shares, watch time, subscribers gained`
+                ? `${connection.externalName ?? "channel"} · shares, watch time, subscribers gained`
                 : "not authorized, so shares and watch time stay blank"}
         </span>
       </div>
       {configured && (
         <button className="cbtn" disabled={busy} onClick={() => void copyLink()}>
-          {busy ? "â€¦" : connection ? "Copy new link" : "Copy link"}
+          {busy ? "…" : connection ? "Copy new link" : "Copy link"}
         </button>
       )}
       {connection && (
         <button className="dangerbtn" disabled={busy} onClick={() => void remove()}>
-          {busy ? "â€¦" : "Remove"}
+          {busy ? "…" : "Remove"}
         </button>
       )}
     </div>
@@ -244,7 +244,7 @@ function ContactFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
         <label className="cfield" key={f.key}>
           <span className="lab">
             {f.label}
-            {saving === f.key && <i> savingâ€¦</i>}
+            {saving === f.key && <i> saving…</i>}
           </span>
           <input
             className="field-in"
@@ -376,7 +376,7 @@ function BillingFields({ client, onSaved }: { client: ClientSummary; onSaved(): 
       <label className="cfield">
         <span className="lab">
           Monthly price
-          {saving && <i> savingâ€¦</i>}
+          {saving && <i> saving…</i>}
         </span>
         <div className="pricein">
           <span>$</span>
@@ -915,8 +915,8 @@ function ProfileCard({
         <div className="psub">
           {client.name}
           {connected.length
-            ? ` Â· ${connected.length} connected ${connected.length === 1 ? "platform" : "platforms"}`
-            : " Â· no platforms yet"}
+            ? ` · ${connected.length} connected ${connected.length === 1 ? "platform" : "platforms"}`
+            : " · no platforms yet"}
         </div>
         <div className="pplat">
           {connected.map((a) => (
@@ -1030,7 +1030,7 @@ function ProfileCard({
           <div className="flabel" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 14 }}>
             Platforms
             <span className="link" style={{ textTransform: "none", letterSpacing: 0 }} onClick={onSync}>
-              {busyKey === `sync:${client.id}` ? "Syncingâ€¦" : "Sync accounts"}
+              {busyKey === `sync:${client.id}` ? "Syncing…" : "Sync accounts"}
             </span>
           </div>
           {pending && (
@@ -1059,7 +1059,7 @@ function ProfileCard({
                     </span>
                   </div>
                   <button className="cbtn" disabled={busy} onClick={() => onConnect(platform)}>
-                    {busy ? "â€¦" : "Connect"}
+                    {busy ? "…" : "Connect"}
                   </button>
                 </div>
               );
@@ -1096,7 +1096,7 @@ function ProfileCard({
                       disabled={busy}
                       onClick={() => onDisconnect(account.id)}
                     >
-                      {busy ? "â€¦" : "Disconnect"}
+                      {busy ? "…" : "Disconnect"}
                     </button>
                   </div>
                   {/* YouTube only for now: it is the one platform whose direct
@@ -1131,7 +1131,7 @@ function ProfileCard({
               title={`Copy ${client.name}'s welcome link. Send it when accounts need connecting or reconnecting; what they do there flows back into the app on its own.`}
               onClick={() => void copyWelcomeLink()}
             >
-              {linkBusy ? "Getting the linkâ€¦" : "Copy their welcome link (connect / reconnect)"}
+              {linkBusy ? "Getting the link…" : "Copy their welcome link (connect / reconnect)"}
             </button>
             {welcomeUrl && (
               <div
@@ -1180,7 +1180,7 @@ function ProfileCard({
                   }}
                 />
                 <button className="cbtn" disabled={remBusy || !remHandle.trim()} onClick={() => void addReminder()}>
-                  {remBusy ? "â€¦" : "Add"}
+                  {remBusy ? "…" : "Add"}
                 </button>
                 <button className="btn ghost" style={{ fontSize: 11.5 }} onClick={() => setRemOpen(false)}>
                   Cancel
@@ -1554,7 +1554,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
               <span>
                 {autostart === null
                   ? isTauri()
-                    ? "checkingâ€¦"
+                    ? "checking…"
                     : "desktop app only"
                   : autostart
                     ? "On"
@@ -1669,7 +1669,7 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
         <div className="card glass setsec" id="settings-operator" data-section="operator">
           <h3>Operator</h3>
           <div className="sub" style={{ marginBottom: 12 }}>
-            Signed in as {user?.email} Â· {user?.agencyName}
+            Signed in as {user?.email} · {user?.agencyName}
           </div>
           <button className="btn ghost" onClick={logout} data-testid="settings.logout">
             Log out
