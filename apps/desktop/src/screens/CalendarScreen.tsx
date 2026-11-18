@@ -719,7 +719,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
             <span className="mb-pb">
               <span className="mb-pt">
                 <b>{lead.assetName}</b>
-                <span className="mb-when">{lead.scheduledAt ? fmtTime(lead.scheduledAt).replace(/\s?[AP]M$/i, "") : ""}</span>
+                <span className="mb-ptime">{lead.scheduledAt ? fmtTime(lead.scheduledAt).replace(/\s?[AP]M$/i, "") : ""}</span>
               </span>
               <span className="mb-pfs">
                 {g.targets.map((t) => (

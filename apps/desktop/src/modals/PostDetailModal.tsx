@@ -631,7 +631,7 @@ export default function PostDetailModal({
                     !(sameTime && movable[0] && t.id !== movable[0].id) && (
                       <button
                         type="button"
-                        className={`mb-when${edited ? " edited" : ""}`}
+                        className={`mb-whenbtn${edited ? " edited" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setPickingId(t.id);
@@ -655,7 +655,7 @@ export default function PostDetailModal({
                       </button>
                     )
                   ) : t.status === "posted" ? (
-                    <div className="mb-when posted">
+                    <div className="mb-whenbtn posted">
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <use href="#i-check" />
                       </svg>
@@ -674,7 +674,7 @@ export default function PostDetailModal({
                       {t.error && <div className="mb-raw">{t.error}</div>}
                     </div>
                   ) : (
-                    <div className="mb-when posted">
+                    <div className="mb-whenbtn posted">
                       <span className="mb-grow">{t.scheduledAt ? `${fmtDay(t.scheduledAt)}, ${fmtClock(t.scheduledAt)}` : "Not scheduled"}</span>
                     </div>
                   )}

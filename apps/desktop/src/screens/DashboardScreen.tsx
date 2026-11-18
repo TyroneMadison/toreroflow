@@ -259,7 +259,7 @@ export default function DashboardScreen({ onOpenInsights, onOpenConnect }: Dashb
               {r} days
             </button>
           ))}
-          <span className="mb-when">
+          <span className="mb-dates">
             {day(from)} to {day(new Date())}
           </span>
         </div>

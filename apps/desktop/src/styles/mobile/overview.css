@@ -4,7 +4,7 @@
   /* ---- dashboard ---- */
   .mb-dash{gap:16px}
   .mb-range{display:flex;align-items:center;gap:8px}
-  .mb-when{margin-left:auto;font-size:12.5px;color:var(--mb-muted);white-space:nowrap}
+  .mb-dates{margin-left:auto;font-size:12.5px;color:var(--mb-muted);white-space:nowrap}
   .mb-num{font-family:var(--mb-disp);font-size:40px;font-weight:700;letter-spacing:-.02em;line-height:1;color:var(--mb-ink);font-variant-numeric:lining-nums tabular-nums}
   .mb-num .skel{display:inline-block;width:120px;height:34px}
   .mb-delta{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
