@@ -390,6 +390,7 @@
   .overlay .modal-x{width:44px;height:44px;border:0;border-radius:var(--mb-r-ctl);background:var(--mb-raised);color:var(--mb-ink)}
   .overlay .modal-x svg{width:18px;height:18px}
   .overlay .modal-foot{gap:10px;border:0;background:var(--mb-surface);box-shadow:0 -1px 0 var(--mb-hair);z-index:3}
+  .overlay .modal-body{padding:2px 16px 16px}
   .overlay .mb-card{background:var(--mb-raised);box-shadow:none}
   .overlay .mb-input,.mb-sheet .mb-input{background:var(--mb-raised2)}
 

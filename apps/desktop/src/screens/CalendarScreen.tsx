@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent as RDragEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent as RDragEvent } from "react";
 import BestTimes from "../components/BestTimes";
 import Pf from "../components/Pf";
 import { useToast } from "../components/Toasts";
@@ -22,6 +22,8 @@ import { Empty, ErrorState, Loading } from "../components/states";
 import { useIsPhone } from "../lib/phone";
 import { navigate } from "../lib/routes";
 import { dayKey, isOwnBrand, xPostedLabel } from "../lib/xPosted";
+import SwipeRow from "../components/mobile/SwipeRow";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -393,6 +395,13 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
   const [dropKey, setDropKey] = useState<string | null>(null);
   /** The open details panel: the post, and the platform it opens on. */
   const [detail, setDetail] = useState<{ group: PostGroup; focus: PostTargetInfo } | null>(null);
+  /** Phone: a long-pressed card's menu, a post being moved to a tapped day, the pause confirm. */
+  const [menuFor, setMenuFor] = useState<PostGroup | null>(null);
+  const [moving, setMoving] = useState<PostGroup | null>(null);
+  const [askPause, setAskPause] = useState(false);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const swipeX = useRef<number | null>(null);
+  const suppressClick = useRef(false);
   /** Opens a card's panel on the given platform, else its first failure, else its first time. */
   const openCard = (g: PostGroup, focus?: PostTargetInfo) =>
     setDetail({ group: g, focus: focus ?? g.targets.find((t) => t.status === "failed") ?? g.lead });
@@ -406,6 +415,11 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     setDropKey(null);
     const group = groups.find((g) => g.postId === e.dataTransfer.getData("text/post"));
     if (!group) return;
+    await moveGroup(group, day);
+  };
+
+  /** Moves every platform of a post that can still move to `day`, each keeping its own time. */
+  const moveGroup = async (group: PostGroup, day: Date) => {
     // Dropping back onto the same day would be a pointless round trip.
     const moves = dragMoves(group, day);
     if (moves.length === 0) return;
@@ -443,6 +457,20 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
       }
     }
     void load();
+  };
+
+  /** Phone: retry a failed platform from its card, the same call the details sheet makes. */
+  const retryTarget = async (t: PostTargetInfo) => {
+    setRetrying(t.id);
+    try {
+      await api.post(`/posts/targets/${t.id}/retry`, {});
+      toast.success(`${PLATFORM_LABELS[t.platform]} is queued again. It goes out in a minute.`);
+    } catch (err) {
+      toast.fail(`Could not retry ${PLATFORM_LABELS[t.platform]}`, err);
+    } finally {
+      setRetrying(null);
+      void load();
+    }
   };
 
   const dragProps = (day: Date) => ({
@@ -571,75 +599,277 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
    * inline. Dragging has no phone equivalent; Reschedule is in the detail.
    */
   if (isPhone) {
-    const strip = view === "month" ? [] : DOW.map((_, i) => {
+    // Phone calendar (mobile pass): one segmented control with Today and a
+    // small pause pill, a week strip whose dots carry each post's status (it
+    // swipes to the next week), one card per post with its platforms, other
+    // times spelled out and a red strip with Retry right there when a
+    // platform failed, "Add a post on <day>" at the end of the list, and a
+    // colour key. Long-press a card to move it or open it.
+    const strip = DOW.map((_, i) => {
       const d = mondayOf(anchor);
       d.setDate(d.getDate() + i);
       return d;
     });
-    /*
-     * The phone lists one day at a time, so it groups per day: a post whose
-     * platforms fall on two days is listed on each, at that day's earliest
-     * time, and never leaves a day it posts on reading "Nothing on this day".
-     */
     const dayGroups = (day: Date) => {
       const from = startOfDay(day);
       const to = new Date(from);
       to.setHours(23, 59, 59, 999);
       return groupByPost(targets, { from, to });
     };
+    const dotTone = (g: PostGroup) => {
+      if (g.targets.some((t) => t.status === "failed")) return "bad";
+      if (g.targets.some((t) => t.drive)) return "drive";
+      if (g.targets.every((t) => t.trial)) return "trial";
+      const s = groupStatus(g);
+      return s === "posted" ? "ok" : s === "scheduled" ? "info" : "";
+    };
     const dayEvents = dayGroups(anchor);
+    const todayStart = startOfDay(new Date());
+    const isPast = (d: Date) => startOfDay(d) < todayStart;
+    const weekday = anchor.toLocaleDateString("en-US", { weekday: "long" });
     const dayButton = (day: Date, key: string | number, label?: string) => {
-      const n = dayGroups(day).length;
+      const gs = dayGroups(day);
       const on = day.toDateString() === anchor.toDateString();
+      const hol = view === "month" ? holidayFor(day) : null;
       return (
         <button
           type="button"
           key={key}
-          className={`mcal-day${on ? " on" : ""}${day.toDateString() === today ? " today" : ""}`}
+          className={`mcal-day${on ? " on" : ""}${day.toDateString() === today ? " today" : ""}${isPast(day) && !on ? " past" : ""}${hol ? " hol" : ""}${moving ? " target" : ""}`}
           aria-pressed={on}
-          aria-label={`${day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}, ${n} ${n === 1 ? "post" : "posts"}`}
-          onClick={() => setAnchor(startOfDay(day))}
+          aria-label={`${day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}, ${gs.length} ${gs.length === 1 ? "post" : "posts"}${hol ? `, ${hol.name}` : ""}`}
+          onClick={() => {
+            if (moving) {
+              const g = moving;
+              setMoving(null);
+              void moveGroup(g, day);
+              return;
+            }
+            setAnchor(startOfDay(day));
+          }}
         >
           {label && <small>{label}</small>}
           <b>{day.getDate()}</b>
+          {hol && <em className="mcal-star" aria-hidden="true">★</em>}
           <span className="mcal-dots" aria-hidden="true">
-            {Array.from({ length: Math.min(n, 3) }, (_, k) => <i key={k} />)}
+            {gs.slice(0, 3).map((g) => (
+              <i key={g.postId} className={dotTone(g)} />
+            ))}
           </span>
         </button>
       );
     };
-    return (
-      <section className="screen active mcal" data-screen="calendar" data-state={state}>
-        <div className="mcal-head">
-          <div className="mcal-titles">
-            <div className="mcal-eyebrow">Calendar · {selectedClient?.name ?? "No brand"}</div>
-            <h2 className="mcal-title">
-              {view === "day"
-                ? anchor.toLocaleDateString([], { month: "long", day: "numeric" })
-                : `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
-            </h2>
+    const rangeGroups = groups;
+    const failedInRange = rangeGroups.filter((g) => g.targets.some((t) => t.status === "failed"));
+    const firstFailedDay = failedInRange[0] ? new Date(failedInRange[0].lead.scheduledAt!) : null;
+    const monthHolidays = view === "month" ? monthCells.filter((d): d is Date => !!d && !!holidayFor(d)) : [];
+    const onSwipe = (dx: number) => {
+      if (Math.abs(dx) < 60) return;
+      step(dx < 0 ? 1 : -1);
+    };
+    const card = (g: PostGroup) => {
+      const status = groupStatus(g);
+      const failed = g.targets.find((t) => t.status === "failed");
+      const reconnect = g.targets.some((t) => t.status === "failed" && /token|auth|expired|reconnect|permission|signed out/i.test(t.error ?? ""));
+      const lead = g.lead;
+      const leadTime = lead.scheduledAt ? new Date(lead.scheduledAt).getTime() : 0;
+      const others = g.targets.filter((t) => t.scheduledAt && new Date(t.scheduledAt).getTime() !== leadTime);
+      const drive = g.targets.some((t) => t.drive);
+      const trial = g.targets.every((t) => t.trial);
+      const carousel = lead.assetKind === "carousel";
+      const thumb = fileUrl(lead.thumbUrl);
+      const handles = [...new Set(g.targets.map((t) => t.accountHandle).filter(Boolean))] as string[];
+      const sameAll = others.length === 0;
+      const tone = failed ? " failed" : isHeld(g) ? " held" : drive ? " drive" : trial ? " trial" : "";
+      return (
+        <SwipeRow
+          key={g.postId}
+          className={`mb-post${tone}`}
+          onLong={() => {
+            suppressClick.current = true;
+            setMenuFor(g);
+          }}
+          testId={`calendar.card.${g.postId}`}
+        >
+          <div
+            className="mb-postin"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                return;
+              }
+              openCard(g);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openCard(g);
+              }
+            }}
+          >
+            <span className={`mb-thumb${carousel ? " stack" : ""}`}>
+              {thumb && <img src={thumb} alt="" />}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href={carousel ? "#i-layers" : "#i-play"} />
+              </svg>
+              {carousel && lead.slideCount > 0 && <span className="mb-dur">{lead.slideCount}</span>}
+            </span>
+            <span className="mb-pb">
+              <span className="mb-pt">
+                <b>{lead.assetName}</b>
+                <span className="mb-when">{lead.scheduledAt ? fmtTime(lead.scheduledAt).replace(/\s?[AP]M$/i, "") : ""}</span>
+              </span>
+              <span className="mb-pfs">
+                {g.targets.map((t) => (
+                  <span
+                    key={t.id}
+                    className={`mb-pfm ${t.status}${t.trial ? " trial" : ""}`}
+                    role="img"
+                    aria-label={`${platformName(t)}: ${POST_STATUS[t.status].label}, ${targetTime(t, lead)}`}
+                  >
+                    <Pf p={PF_ID[t.platform]} size="sm" />
+                  </span>
+                ))}
+                {drive && (
+                  <span className="mb-pill drive nodot">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-drive" />
+                    </svg>
+                    Drive
+                  </span>
+                )}
+                {!drive && g.targets.some((t) => t.trial) && <span className="mb-pill trial nodot">Trial reel</span>}
+                {carousel && <span className="mb-pill nodot">Carousel{lead.slideCount ? `, ${lead.slideCount} slides` : ""}</span>}
+                {isHeld(g) && <span className="mb-pill paused nodot">Paused</span>}
+                {others.length > 0 && !failed && (
+                  <span className="mb-times inline">
+                    {others.map((t) => `${PLATFORM_LABELS[t.platform]} at ${fmtTime(t.scheduledAt!)}`).join(", ")}
+                  </span>
+                )}
+              </span>
+              {failed ? (
+                <span className="mb-fail">
+                  <span className="mb-failtxt">
+                    {PLATFORM_LABELS[failed.platform]}: {failed.error ?? "did not post"}
+                  </span>
+                  {reconnect ? (
+                    <button
+                      type="button"
+                      className="mb-btn sm mb-retry"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate("settings", "accounts");
+                      }}
+                    >
+                      Reconnect
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="mb-btn sm mb-retry"
+                      disabled={retrying === failed.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void retryTarget(failed);
+                      }}
+                    >
+                      {retrying === failed.id ? "Retrying" : "Retry"}
+                    </button>
+                  )}
+                </span>
+              ) : (
+                <span className="mb-times">
+                  {drive && handles.length
+                    ? handles.map((h) => `@${h.replace(/^@/, "")}`).join(" and ")
+                    : sameAll && g.targets.length > 1
+                      ? `${g.targets.length === 2 ? "Both" : g.targets.length === 3 ? "All three" : `All ${g.targets.length}`} at ${fmtTime(lead.scheduledAt!)}. ${POST_STATUS[status].label}${groupMovable(g) ? ", can move." : "."}`
+                      : others.length
+                        ? ""
+                        : `${POST_STATUS[status].label}${groupMovable(g) ? ", can move." : "."}`}
+                </span>
+              )}
+            </span>
           </div>
-          <div className="mcal-nav">
-            {pauseToggle}
-            <button type="button" className="mcal-ib" aria-label="Previous" onClick={() => step(-1)}>
-              <svg aria-hidden="true" style={{ transform: "rotate(90deg)" }}><use href="#i-chev" /></svg>
+        </SwipeRow>
+      );
+    };
+    return (
+      <section className="screen active mcal mb-page" data-screen="calendar" data-state={state}>
+        <div className="mb-head">
+          <div>
+            <div className="mb-eyebrow">Calendar</div>
+            <h1 className="mb-h1">{view === "day" ? anchor.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : MONTHS[anchor.getMonth()]}</h1>
+          </div>
+          <div className="mb-hnav">
+            <button type="button" className="mb-ib" aria-label={`Previous ${view}`} onClick={() => step(-1)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-chev-l" />
+              </svg>
             </button>
-            <button type="button" className="mcal-ib" aria-label="Next" onClick={() => step(1)}>
-              <svg aria-hidden="true" style={{ transform: "rotate(-90deg)" }}><use href="#i-chev" /></svg>
+            <button type="button" className="mb-ib" aria-label={`Next ${view}`} onClick={() => step(1)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-chev-r" />
+              </svg>
             </button>
           </div>
         </div>
-        <div className="mcal-views" role="tablist" aria-label="Calendar view">
-          {(["day", "week", "month"] as CalView[]).map((v) => (
-            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : undefined} onClick={() => setView(v)}>
-              {v[0]!.toUpperCase() + v.slice(1)}
+        <div className="mb-calctl">
+          <div className="mcal-views" role="tablist" aria-label="Calendar view">
+            {(["day", "week", "month"] as CalView[]).map((v) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "on" : undefined} onClick={() => setView(v)}>
+                {v[0]!.toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="mb-chip out" onClick={() => setAnchor(startOfDay(new Date()))}>
+            Today
+          </button>
+          {selectedClient && (
+            <button
+              type="button"
+              className={`mb-upl${paused ? " paused" : ""}`}
+              aria-pressed={paused}
+              aria-label={paused ? `Uploads paused for ${selectedClient.name}. Tap to continue` : `Uploads on for ${selectedClient.name}. Tap to pause`}
+              disabled={pauseBusy}
+              onClick={() => (paused ? void togglePause() : setAskPause(true))}
+              data-testid="calendar.pause"
+            >
+              <i aria-hidden="true" />
+              {paused ? "Paused" : "On"}
             </button>
-          ))}
-          <button type="button" onClick={() => setAnchor(startOfDay(new Date()))}>Today</button>
+          )}
         </div>
 
         {pauseBanner}
-        {state === "empty" && <Empty screen="calendar" title="No brand selected" hint="Pick a brand at the top to see its calendar." />}
+        {moving && (
+          <div className="mb-banner info" role="status">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-cal" />
+            </svg>
+            <span className="mb-bt">
+              <b>Moving {moving.lead.assetName}.</b> Tap a day. Only scheduled platforms move, each keeps its own time.
+            </span>
+            <button type="button" className="mb-btn sm" onClick={() => setMoving(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
+        {state === "empty" && (
+          <div className="mb-empty">
+            <span className="mb-ei">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-users" />
+              </svg>
+            </span>
+            <h3>Pick a brand to see its calendar</h3>
+            <p>Each brand has its own calendar of posts.</p>
+            <button type="button" className="mb-btn pri" onClick={() => document.querySelector<HTMLButtonElement>('[data-testid="mobile.brand-switcher"]')?.click()}>
+              Pick a brand
+            </button>
+          </div>
+        )}
         {state === "loading" && <Loading screen="calendar" label="Loading the calendar" />}
         {state === "error" && (
           <ErrorState
@@ -655,85 +885,223 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
         {state === "ready" && (
           <>
             {view === "week" && (
-              <div className="mcal-strip">{strip.map((d, i) => dayButton(d, i, DOW[i]![0]))}</div>
+              <>
+                <div
+                  className="mcal-strip"
+                  onPointerDown={(e) => (swipeX.current = e.clientX)}
+                  onPointerUp={(e) => {
+                    if (swipeX.current != null) onSwipe(e.clientX - swipeX.current);
+                    swipeX.current = null;
+                  }}
+                  style={{ touchAction: "pan-y" }}
+                >
+                  {strip.map((d, i) => dayButton(d, i, DOW[i]![0]))}
+                </div>
+                <div className="mb-weekline">
+                  <span>Week of {MONTHS[strip[0]!.getMonth()]!.slice(0, 3)} {strip[0]!.getDate()}</span>
+                  <span>
+                    {rangeGroups.length} {rangeGroups.length === 1 ? "post" : "posts"}
+                    {failedInRange.length ? `, ${failedInRange.length} failed` : ""}
+                  </span>
+                </div>
+              </>
             )}
             {view === "month" && (
-              <div className="mcal-month">
-                {DOW.map((d) => <span key={d} className="mcal-dow">{d[0]}</span>)}
-                {monthCells.map((d, i) => (d ? dayButton(d, i) : <span key={`b${i}`} />))}
-              </div>
+              <>
+                <div
+                  className="mcal-month"
+                  onPointerDown={(e) => (swipeX.current = e.clientX)}
+                  onPointerUp={(e) => {
+                    if (swipeX.current != null) onSwipe(e.clientX - swipeX.current);
+                    swipeX.current = null;
+                  }}
+                  style={{ touchAction: "pan-y" }}
+                >
+                  {DOW.map((d) => (
+                    <span key={d} className="mcal-dow">
+                      {d[0]}
+                    </span>
+                  ))}
+                  {monthCells.map((d, i) => (d ? dayButton(d, i) : <span key={`b${i}`} />))}
+                </div>
+                <div className="mb-weekline">
+                  <span>
+                    {rangeGroups.length} {rangeGroups.length === 1 ? "post" : "posts"} in {MONTHS[anchor.getMonth()]}
+                  </span>
+                  {firstFailedDay && (
+                    <button type="button" className="mb-linkbtn bad" onClick={() => setAnchor(startOfDay(firstFailedDay))}>
+                      {failedInRange.length} failed, {firstFailedDay.toLocaleDateString("en-US", { weekday: "short" })} {firstFailedDay.getDate()}
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-chev-r" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {monthHolidays.length > 0 && (
+                  <div className="mb-chips">
+                    {monthHolidays.map((d) => (
+                      <button key={d.toDateString()} type="button" className="mb-chip mb-holchip" onClick={() => setAnchor(startOfDay(d))}>
+                        ★ {holidayFor(d)!.name} <small>{d.getDate()}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
-            <div className="mcal-dayhead">
-              <h3>{anchor.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}</h3>
-              <span className="tf-lbl">{dayEvents.length} {dayEvents.length === 1 ? "post" : "posts"}</span>
+            <div className="mb-dayhead">
+              <h2 className="mb-h2">
+                {view === "day" ? weekday : `${weekday} ${anchor.getDate()}`}
+              </h2>
+              <span className="mb-lab">
+                {dayEvents.length} {dayEvents.length === 1 ? "post" : "posts"}
+              </span>
             </div>
             {holidayRow(anchor)}
-            <div className="mcal-agenda card glass">
-              {dayEvents.length === 0 && (
-                <div className="mcal-none">
-                  Nothing on this day yet.
-                  <button type="button" className="btn ghost" onClick={onNewPost}>+ Add post</button>
-                </div>
-              )}
-              {dayEvents.map((g) => {
-                const [hm, ap] = fmtTime(g.lead.scheduledAt!).split(" ");
-                const status = groupStatus(g);
-                const failed = g.targets.find((t) => t.status === "failed");
-                const reconnect = g.targets.some(
-                  (t) => t.status === "failed" && /token|auth|expired|reconnect|permission/i.test(t.error ?? ""),
-                );
-                const others = otherTimes(g);
-                return (
-                  <div className={`mcal-item st-${status}${isHeld(g) ? " held" : ""}${kindCls(g)}`} key={g.postId}>
-                    <div className="mcal-time"><b>{hm}</b><small>{ap}</small></div>
-                    <div className="mcal-body">
-                      <div className="mcal-name">
-                        <PlatformIcons group={g} />{" "}
-                        <span>
-                          {carouselMark(g)}
-                          {g.lead.assetName}
-                        </span>
-                        {kindTag(g)}
-                      </div>
-                      <div className={`mcal-st st-${status}`}>
-                        <StatusIcon status={status} />
-                        {POST_STATUS[status].label}
-                        {isHeld(g) && <> {heldBadge}</>}
-                        {failed?.error
-                          ? ` · ${g.targets.length > 1 ? `${PLATFORM_LABELS[failed.platform]}: ` : ""}${failed.error}`
-                          : groupMovable(g)
-                            ? " · can move"
-                            : ""}
-                      </div>
-                      {others.length > 0 && <div className="mcal-times">{others.join(" · ")}</div>}
-                      <div className="mcal-acts">
-                        {failed ? (
-                          <>
-                            <button type="button" className="btn" onClick={() => openCard(g, failed)}>Retry</button>
-                            {reconnect && (
-                              <button type="button" className="btn ghost" onClick={() => navigate("settings", "accounts")}>Reconnect</button>
-                            )}
-                          </>
-                        ) : (
-                          <button type="button" className="btn ghost" onClick={() => openCard(g)}>
-                            {groupMovable(g) ? "Reschedule" : "Details"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
+            {dayEvents.length === 0 && (
+              <div className="mb-empty mb-dayempty">
+                <span className="mb-ei">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-cal" />
+                  </svg>
+                </span>
+                <h3>Nothing on {weekday} yet</h3>
+                <p>{isPast(anchor) ? "Nothing went out this day." : "Upload a video for this day, or plan one from a draft."}</p>
+                {!isPast(anchor) && (
+                  <div className="mb-btnrow">
+                    <button type="button" className="mb-btn pri" onClick={onNewPost}>
+                      Upload
+                    </button>
+                    <button type="button" className="mb-btn ghost" onClick={() => navigate("fanout")}>
+                      Plan a post
+                    </button>
                   </div>
-                );
-              })}
+                )}
+              </div>
+            )}
+            {dayEvents.map(card)}
+            {dayEvents.length > 0 && !isPast(anchor) && (
+              <button type="button" className="mb-addrow" onClick={onNewPost} data-testid="calendar.new-post">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-plus" />
+                </svg>
+                Add a post on {weekday}
+              </button>
+            )}
+            <div className="mb-key" aria-label="Colour key">
+              <span style={{ ["--c" as string]: "var(--c-ok)" }}>
+                <i />
+                Posted
+              </span>
+              <span style={{ ["--c" as string]: "var(--c-info)" }}>
+                <i />
+                Scheduled
+              </span>
+              <span style={{ ["--c" as string]: "var(--c-bad)" }}>
+                <i />
+                Failed
+              </span>
+              <span style={{ ["--c" as string]: "var(--c-drive)" }}>
+                <i />
+                Drive
+              </span>
+              <span style={{ ["--c" as string]: "var(--c-trial)" }}>
+                <i />
+                Trial
+              </span>
+              <span style={{ ["--c" as string]: "var(--c-paused)" }}>
+                <i />
+                Paused
+              </span>
+              {view === "month" && (
+                <>
+                  <span style={{ ["--c" as string]: "var(--c-warn)" }}>
+                    <i />
+                    Publishing
+                  </span>
+                  <span style={{ ["--c" as string]: "var(--mb-muted)" }}>
+                    <i />
+                    Sent to client
+                  </span>
+                  <span className="mb-keystar">★ Holiday</span>
+                </>
+              )}
             </div>
           </>
         )}
 
-        <div className="mb-actionbar">
-          <button type="button" className="tf-btn pri" onClick={onNewPost} data-testid="calendar.new-post">
-            <svg aria-hidden="true"><use href="#i-plus" /></svg>
-            New post
-          </button>
-        </div>
+        {menuFor && (
+          <>
+            <div className="mb-scrim" onClick={() => setMenuFor(null)} aria-hidden="true" />
+            <div className="mb-sheet" role="dialog" aria-modal="true" aria-label={menuFor.lead.assetName}>
+              <div className="mb-grab" aria-hidden="true" />
+              <div className="mb-sh">
+                <div className="mb-ttl">
+                  <h2>{menuFor.lead.assetName}</h2>
+                  <small>{menuFor.lead.scheduledAt ? new Date(menuFor.lead.scheduledAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</small>
+                </div>
+                <button type="button" className="mb-ib" aria-label="Close" onClick={() => setMenuFor(null)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-x" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-shb">
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  disabled={!groupMovable(menuFor)}
+                  onClick={() => {
+                    const g = menuFor;
+                    setMenuFor(null);
+                    if (view === "day") setView("week");
+                    setMoving(g);
+                  }}
+                >
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-calplus" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Move to another day</b>
+                    <small>{groupMovable(menuFor) ? "Then tap a day. Each platform keeps its own time." : "Nothing here can move: it already went out."}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="mb-lrow"
+                  onClick={() => {
+                    const g = menuFor;
+                    setMenuFor(null);
+                    openCard(g);
+                  }}
+                >
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-pencil" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Details, times and caption</b>
+                    <small>Change a platform's time, the caption or the cover, or remove it</small>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {askPause && selectedClient && (
+          <ConfirmSheet
+            title={`Pause uploads for ${selectedClient.name}?`}
+            body="Scheduled posts are held, not deleted. Continue moves them forward so the first lands on the day you resume."
+            confirm="Pause uploads"
+            onConfirm={() => {
+              setAskPause(false);
+              void togglePause();
+            }}
+            onClose={() => setAskPause(false)}
+          />
+        )}
         {detailModal}
       </section>
     );

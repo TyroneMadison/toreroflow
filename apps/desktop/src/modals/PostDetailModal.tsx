@@ -8,7 +8,11 @@ import Pf from "../components/Pf";
 import { api, fileUrl, uploadAbThumb, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
 import { PF_ID, PLATFORM_LABELS } from "../lib/platforms";
 import { canMove, POST_STATUS } from "../lib/postStatus";
-import { explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
+import { captionLimits, explainPublishFailure, scheduleTimeError } from "@toreroflow/core";
+import { useIsPhone } from "../lib/phone";
+import { navigate } from "../lib/routes";
+import DateTimeSheet, { toLocalValue } from "../components/mobile/DateTimeSheet";
+import ConfirmSheet from "../components/mobile/ConfirmSheet";
 
 interface PostDetailModalProps {
   /** The platform the panel opens on: its caption, status and actions show first. */
@@ -106,6 +110,14 @@ export default function PostDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retried, setRetried] = useState(false);
+  // Phone sheet state (mobile pass): the platform whose time is being picked,
+  // one time for every platform, and the "asks first" sheets.
+  const isPhone = useIsPhone();
+  const [pickingId, setPickingId] = useState<string | null>(null);
+  const [sameTime, setSameTime] = useState(false);
+  const [askDiscard, setAskDiscard] = useState(false);
+  const [askRemove, setAskRemove] = useState<"one" | "all" | null>(null);
+  const [askDay, setAskDay] = useState(false);
 
   /*
    * The video itself, for the preview and the cover picker, which both want
@@ -386,6 +398,22 @@ export default function PostDetailModal({
   };
 
   /** Removes just this platform's post; other platforms keep their slots. */
+  /** Phone: every platform that can still move comes off the schedule. */
+  const removeAll = async (list: PostTargetInfo[]) => {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const t of list) await api.del(`/posts/targets/${t.id}`);
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "could not remove");
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     setBusy(true);
     setError(null);
@@ -400,6 +428,558 @@ export default function PostDetailModal({
       setBusy(false);
     }
   };
+
+  const abBlock = (
+    <>
+      {!abTest || abTest.state === "cancelled" ? (
+              <>
+                <p className="what">
+                  Two images, {abPeriod} days each, measured by this video's own daily view
+                  capture. Make variant A the image that is live today; swaps happen on the
+                  worker's daily pass. Views/day folds impressions in with click-through, so a
+                  narrow verdict is noise.
+                </p>
+                <div className="igrow">
+                  {(["a", "b"] as const).map((slot) => (
+                    <label key={slot} className={`revtoggle${abKeys[slot] ? " on" : ""}`} style={{ cursor: "pointer" }}>
+                      {abBusy === slot
+                        ? "Uploading…"
+                        : abKeys[slot]
+                          ? `Variant ${slot.toUpperCase()} ready`
+                          : `Upload variant ${slot.toUpperCase()}`}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void pickVariant(slot, f);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  ))}
+                  {([3, 5, 7] as const).map((d) => (
+                    <span
+                      key={d}
+                      className={`revtoggle${abPeriod === d ? " on" : ""}`}
+                      onClick={() => setAbPeriod(d)}
+                    >
+                      {d}d each
+                    </span>
+                  ))}
+                  <button
+                    className="btn"
+                    disabled={!abKeys.a || !abKeys.b || abBusy !== null}
+                    onClick={() => void startAb()}
+                  >
+                    {abBusy === "start" ? "Starting…" : "Start test"}
+                  </button>
+                </div>
+              </>
+            ) : abTest.state === "running" ? (
+              <div className="igrow" style={{ alignItems: "center" }}>
+                <span className="what" style={{ flex: 1 }}>
+                  Running: variant {(abTest.applied ?? "a").toUpperCase()} is
+                  {abTest.applied ? " live" : " queued for the next daily pass"} ·{" "}
+                  {abTest.periodDays} days per variant.
+                </span>
+                <button className="btn ghost" disabled={abBusy !== null} onClick={() => void cancelAb()}>
+                  {abBusy === "cancel" ? "Cancelling…" : "Cancel test"}
+                </button>
+              </div>
+            ) : abTest.state === "done" ? (
+              <p className="what">
+                {abTest.result?.winner
+                  ? `Winner: variant ${String(abTest.result.winner).toUpperCase()}, now live. `
+                  : ""}
+                {abTest.result?.note ?? "The test finished."}
+              </p>
+            ) : (
+              <p className="what">{abTest.note ?? "The test stopped."}</p>
+            )}
+    </>
+  );
+
+  if (isPhone) {
+    // Phone details sheet (mobile pass): quick chips under the title, one
+    // card per platform with its own large time button (the date and time
+    // sheet moves that platform only; an edited time is outlined coral with
+    // what it was), posted platforms say when and link out, failed ones say
+    // why with Retry, a "Same time for every platform" switch, the caption
+    // per platform with a live count, the destructive actions apart at the
+    // bottom, and a footer that counts the edits.
+    const dirtyCount =
+      (nameDirty ? 1 : 0) + movedTimes.length + platforms.filter((t) => captionDirtyFor(t) || ytTitleDirtyFor(t)).length;
+    const lead = platforms.find((t) => t.scheduledAt) ?? target;
+    const dayText = lead.scheduledAt ? new Date(lead.scheduledAt).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) : "Not scheduled";
+    const allScheduled = platforms.every((t) => t.status === "scheduled");
+    const summaryText = multi
+      ? `${platforms.length} platforms${allScheduled ? ", all scheduled" : `, ${[...new Set(platforms.map((t) => POST_STATUS[t.status].label.toLowerCase()))].join(" and ")}`}`
+      : `${PLATFORM_LABELS[target.platform]}, ${POST_STATUS[target.status].label.toLowerCase()}`;
+    const fmtDay = (v: string) => new Date(v).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const fmtClock = (v: string) => new Date(v).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const movable = platforms.filter((t) => canMove(t.status));
+    const pickT = platforms.find((t) => t.id === pickingId) ?? null;
+    const limit = captionLimits(target.platform)?.chars ?? null;
+    const tone = (t: PostTargetInfo) =>
+      t.status === "posted" ? "ok" : t.status === "failed" ? "bad" : t.status === "scheduled" ? (t.trial ? "trial" : "info") : "warn";
+    const guardedClose = () => (anyDirty ? setAskDiscard(true) : onClose());
+    const setWhen = (t: PostTargetInfo, v: string) =>
+      setWhens((m) => {
+        if (!sameTime) return { ...m, [t.id]: v };
+        const next = { ...m };
+        for (const x of movable) next[x.id] = v;
+        return next;
+      });
+    return (
+      <>
+        <Modal maxWidth={600} onClose={guardedClose} label={`${target.assetName}, details`} testId="post-details">
+          <div className="modal-head mb-pdhead">
+            <button
+              type="button"
+              className="mb-thumb"
+              aria-label={videoSrc ? "Play the video" : target.assetName}
+              disabled={!videoSrc}
+              onClick={() => videoSrc && setViewing("preview")}
+            >
+              {thumb && <img src={thumb} alt="" />}
+              {videoSrc && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-play" />
+                </svg>
+              )}
+            </button>
+            <div className="mb-pdttl">
+              <h3>{target.assetName}</h3>
+              <p>
+                {dayText}. {summaryText}.
+              </p>
+            </div>
+            <button type="button" className="modal-x" aria-label="Close" onClick={guardedClose}>
+              <svg>
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="modal-body mb-pd">
+            <div className="mb-chips">
+              {videoSrc && (
+                <button type="button" className="mb-chip" onClick={() => setViewing("preview")}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-play" />
+                  </svg>
+                  Preview
+                </button>
+              )}
+              {canCover && (
+                <button type="button" className="mb-chip" onClick={() => setViewing("cover")}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-image" />
+                  </svg>
+                  Change cover
+                </button>
+              )}
+              <button
+                type="button"
+                className="mb-chip"
+                onClick={() => {
+                  onClose();
+                  navigate("edit");
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href="#i-film" />
+                </svg>
+                Open in Studio
+              </button>
+              {studioUrl && (
+                <a className="mb-chip" href={studioUrl} target="_blank" rel="noreferrer">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-ext" />
+                  </svg>
+                  YouTube Studio
+                </a>
+              )}
+            </div>
+
+            <div className="mb-cardh flat">
+              <span className="mb-lab">Platforms and times</span>
+              {movable.length > 0 && <small>{multi ? "Tap a time to move one platform" : "Tap the time to move it"}</small>}
+            </div>
+            {platforms.map((t) => {
+              const on = multi && t.id === target.id;
+              const edited = whenDirtyFor(t);
+              const whenError = whenErrorFor(t);
+              const fail = t.status === "failed" ? explainPublishFailure(t.error) : null;
+              return (
+                <div key={t.id} className={`mb-plat${on ? " on" : ""}`} onClick={() => multi && select(t.id)}>
+                  <div className="mb-plattop">
+                    <span className={`mb-pfm ${t.status}${t.trial ? " trial" : ""}`}>
+                      <Pf p={PF_ID[t.platform]} />
+                    </span>
+                    <span className="mb-lt">
+                      <b>{PLATFORM_LABELS[t.platform]}</b>
+                      <small>
+                        {t.accountHandle ? `@${t.accountHandle.replace(/^@/, "")}` : PLATFORM_LABELS[t.platform]}
+                        {t.trial ? ", trial reel" : ""}
+                      </small>
+                    </span>
+                    <span className={`mb-pill ${tone(t)}`}>{t.trial && t.status === "scheduled" ? "Trial" : POST_STATUS[t.status].label}</span>
+                  </div>
+                  {canMove(t.status) ? (
+                    !(sameTime && movable[0] && t.id !== movable[0].id) && (
+                      <button
+                        type="button"
+                        className={`mb-when${edited ? " edited" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPickingId(t.id);
+                        }}
+                        data-testid={`post-details.time.${t.platform}`}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-clock" />
+                        </svg>
+                        <span className="mb-grow">
+                          <span>{fmtDay(whenOf(t))}</span>
+                          <span className="mb-t">{fmtClock(whenOf(t))}</span>
+                        </span>
+                        {edited ? (
+                          <span className="mb-ed">Edited</span>
+                        ) : (
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <use href="#i-chev-r" />
+                          </svg>
+                        )}
+                      </button>
+                    )
+                  ) : t.status === "posted" ? (
+                    <div className="mb-when posted">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-check" />
+                      </svg>
+                      <span className="mb-grow">
+                        Posted {t.publishedAt ? `${fmtDay(t.publishedAt)}, ${fmtClock(t.publishedAt)}` : ""}
+                      </span>
+                      {t.remoteUrl && (
+                        <a className="mb-link" href={t.remoteUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                          View
+                        </a>
+                      )}
+                    </div>
+                  ) : fail ? (
+                    <div className="mb-pdfail">
+                      <b>{fail.summary}</b> {fail.advice}
+                      {t.error && <div className="mb-raw">{t.error}</div>}
+                    </div>
+                  ) : (
+                    <div className="mb-when posted">
+                      <span className="mb-grow">{t.scheduledAt ? `${fmtDay(t.scheduledAt)}, ${fmtClock(t.scheduledAt)}` : "Not scheduled"}</span>
+                    </div>
+                  )}
+                  {edited && t.scheduledAt && (
+                    <div className="mb-p muted small">
+                      Was {fmtClock(toLocalValue(new Date(t.scheduledAt)))}.{multi ? ` Only ${PLATFORM_LABELS[t.platform]} moves.` : ""}
+                    </div>
+                  )}
+                  {whenError && <div className="mb-err">{whenError}</div>}
+                </div>
+              );
+            })}
+            {movable.length > 1 && (
+              <button
+                type="button"
+                className="mb-sametime"
+                role="switch"
+                aria-checked={sameTime}
+                onClick={() => {
+                  if (!sameTime && movable[0]) {
+                    const v = whenOf(movable[0]);
+                    setWhens((m) => {
+                      const next = { ...m };
+                      for (const x of movable) next[x.id] = v;
+                      return next;
+                    });
+                  }
+                  setSameTime((s) => !s);
+                }}
+              >
+                <span className="mb-lic n">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-clock" />
+                  </svg>
+                </span>
+                <span className="mb-lt">
+                  <b>Same time for every platform</b>
+                  <small>{sameTime ? "On: one time moves them all" : "Off: each platform keeps its own time"}</small>
+                </span>
+                <span className={`mb-tog${sameTime ? " on" : ""}`} aria-hidden="true" />
+              </button>
+            )}
+            {platforms.some((t) => !canMove(t.status)) && movable.length > 0 && <p className="mb-p muted small">Only scheduled posts can be moved.</p>}
+
+            {target.youtube && target.youtube.studioTasks.length > 0 && (
+              <div className="mb-yttask">
+                <span className="mb-lic warn">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-alert" />
+                  </svg>
+                </span>
+                <span className="mb-lt">
+                  <b>
+                    YouTube: {target.youtube.studioTasks.length} {target.youtube.studioTasks.length === 1 ? "thing" : "things"} to finish in Studio
+                  </b>
+                  <small>{target.youtube.studioTasks.join(", ")}</small>
+                </span>
+              </div>
+            )}
+            {target.youtube?.enrich && (
+              <p className="mb-p muted small">
+                {target.youtube.enrich.state === "applied"
+                  ? "Tags, license and the other API-side settings were applied automatically."
+                  : target.youtube.enrich.state === "pending"
+                    ? "Tags, license and the other API-side settings apply within a minute of publishing."
+                    : target.youtube.enrich.detail}
+              </p>
+            )}
+
+            {target.mediaAssetId && (
+              <div className="mb-field">
+                <label htmlFor="pd-name">Video name</label>
+                <input id="pd-name" className="mb-input" maxLength={300} value={name} onChange={(e) => setName(e.target.value)} />
+                {nameError ? <div className="mb-err">{nameError}</div> : <span className="mb-help">Your label in the app. Never published.</span>}
+              </div>
+            )}
+            {ytTitleEditable && (
+              <div className="mb-field">
+                <label htmlFor="pd-yt">YouTube title</label>
+                <input id="pd-yt" className="mb-input" maxLength={100} value={ytTitle} onChange={(e) => setYtTitle(e.target.value)} placeholder="The title viewers see on YouTube" />
+                {ytTitleError ? <div className="mb-err">{ytTitleError}</div> : <span className="mb-help">{ytTitle.trim().length}/100</span>}
+              </div>
+            )}
+
+            <div className="mb-cardh flat">
+              <span className="mb-lab">Caption</span>
+              {multi && <small>Switch platform to edit its caption</small>}
+            </div>
+            {multi && (
+              <div className="mb-chips">
+                {platforms.map((t) => (
+                  <button key={t.id} type="button" className={`mb-chip mb-capchip${t.id === target.id ? " on" : ""}`} onClick={() => select(t.id)}>
+                    <Pf p={PF_ID[t.platform]} size="sm" />
+                    {PLATFORM_LABELS[t.platform]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {captionEditable ? (
+              <>
+                <div className="mb-capbox">
+                  <textarea className="mb-input" rows={6} maxLength={5000} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="No caption" />
+                  <span className={`mb-count${limit && caption.length > limit ? " over" : ""}`}>
+                    {caption.length.toLocaleString("en-US")}
+                    {limit ? ` / ${limit.toLocaleString("en-US")}` : ""}
+                  </span>
+                </div>
+                {target.hashtags.length > 0 && (
+                  <span className="mb-help">Added underneath when it posts: {target.hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")}</span>
+                )}
+                <div className="mb-capact">
+                  {target.mediaAssetId && (
+                    <button type="button" className="mb-btn sm" disabled={writing} onClick={() => void writeWithAi()}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-spark" />
+                      </svg>
+                      {writing ? "Writing" : "Write with AI"}
+                    </button>
+                  )}
+                  {sameDay.length > 1 && (
+                    <button
+                      type="button"
+                      className="mb-btn sm ghost"
+                      disabled={busy || copyError !== null || timeError !== null}
+                      onClick={() => setAskDay(true)}
+                    >
+                      Use on all {sameDay.length} posts on {dayLabel.split(",")[0]}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              target.caption && <div className="mb-capread">{target.caption}</div>
+            )}
+
+            {canAbTest && (
+              <details className="mb-yttask mb-ab">
+                <summary>
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-image" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Thumbnail A/B test</b>
+                    <small>
+                      {!abTest || abTest.state === "cancelled"
+                        ? "YouTube. Upload two images to start"
+                        : abTest.state === "running"
+                          ? `Running, ${abTest.periodDays} days per variant`
+                          : abTest.state === "done"
+                            ? "Finished"
+                            : "Stopped"}
+                    </small>
+                  </span>
+                </summary>
+                <div className="pdab">{abBlock}</div>
+              </details>
+            )}
+
+            {error && <div className="mb-err">{error}</div>}
+
+            <div className="mb-danger">
+              {failure?.tiktokDailyCap && !retried && (
+                <button type="button" className="mb-lrow" disabled={busy} onClick={() => void retry(true)}>
+                  <span className="mb-lic n">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-send" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b>Send to TikTok inbox</b>
+                    <small>Finish it in the TikTok app</small>
+                  </span>
+                </button>
+              )}
+              {editable && multi && (
+                <button type="button" className="mb-lrow" disabled={busy} onClick={() => setAskRemove("one")}>
+                  <span className="mb-lic bad">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-x" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b className="mb-bad">Remove {PLATFORM_LABELS[target.platform]}</b>
+                    <small>The other platforms stay scheduled</small>
+                  </span>
+                </button>
+              )}
+              {movable.length > 0 && (
+                <button type="button" className="mb-lrow" disabled={busy} onClick={() => setAskRemove("all")}>
+                  <span className="mb-lic bad">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-trash" />
+                    </svg>
+                  </span>
+                  <span className="mb-lt">
+                    <b className="mb-bad">Remove from schedule</b>
+                    <small>Asks first.{platforms.some((t) => t.status === "posted") ? " Posted platforms stay posted." : ""}</small>
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="modal-foot">
+            <button type="button" className="mb-btn" onClick={guardedClose}>
+              {anyEditable ? "Cancel" : "Close"}
+            </button>
+            {canRetry && (
+              <button type="button" className="mb-btn mb-retry" disabled={busy} onClick={() => void retry()}>
+                {busy ? "Retrying" : failure?.outlook === "later" ? "Retry anyway" : "Retry now"}
+              </button>
+            )}
+            {anyEditable && (
+              <button
+                type="button"
+                className="mb-btn pri"
+                disabled={!anyDirty || busy || copyError !== null || timeError !== null}
+                onClick={() => void save()}
+                data-testid="post-details.save"
+              >
+                {busy ? "Saving" : anyDirty ? `Save ${dirtyCount} ${dirtyCount === 1 ? "change" : "changes"}` : "Save changes"}
+              </button>
+            )}
+          </div>
+        </Modal>
+        {pickT && (
+          <DateTimeSheet
+            title={`${PLATFORM_LABELS[pickT.platform]} time`}
+            icon={
+              <span className={`mb-pfm ${pickT.status}${pickT.trial ? " trial" : ""}`}>
+                <Pf p={PF_ID[pickT.platform]} size="lg" />
+              </span>
+            }
+            sub={[
+              pickT.accountHandle ? `@${pickT.accountHandle.replace(/^@/, "")}` : null,
+              pickT.trial ? "trial reel" : null,
+              pickT.scheduledAt ? `was ${fmtClock(toLocalValue(new Date(pickT.scheduledAt)))}` : null,
+              sameTime ? "moves every platform" : multi ? "only this platform moves" : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            value={whenOf(pickT)}
+            onSet={(v) => setWhen(pickT, v)}
+            onClose={() => setPickingId(null)}
+          />
+        )}
+        {askDiscard && (
+          <ConfirmSheet
+            title={`Discard ${dirtyCount} ${dirtyCount === 1 ? "change" : "changes"}?`}
+            body="Nothing has been saved yet. Close without saving?"
+            confirm="Discard"
+            danger
+            onConfirm={() => {
+              setAskDiscard(false);
+              onClose();
+            }}
+            onClose={() => setAskDiscard(false)}
+          />
+        )}
+        {askRemove && (
+          <ConfirmSheet
+            title={askRemove === "one" ? `Remove ${PLATFORM_LABELS[target.platform]}?` : "Remove from schedule?"}
+            body={
+              askRemove === "one"
+                ? "This platform will not post. The other platforms stay scheduled."
+                : `${movable.length === 1 ? "The scheduled platform" : `All ${movable.length} scheduled platforms`} will not post.${platforms.some((t) => t.status === "posted") ? " Posted platforms stay posted." : ""}`
+            }
+            confirm="Remove"
+            danger
+            busy={busy}
+            onConfirm={() => {
+              const which = askRemove;
+              setAskRemove(null);
+              void (which === "one" ? remove() : removeAll(movable));
+            }}
+            onClose={() => setAskRemove(null)}
+          />
+        )}
+        {askDay && (
+          <ConfirmSheet
+            title={`Replace ${sameDay.length} captions?`}
+            body={`Every scheduled post on ${dayLabel} gets this caption, on every platform.`}
+            confirm="Replace"
+            onConfirm={() => {
+              setAskDay(false);
+              void applyToDay();
+            }}
+            onClose={() => setAskDay(false)}
+          />
+        )}
+        {viewing === "preview" && videoSrc && <PreviewModal name={target.assetName} url={videoSrc} onClose={() => setViewing(null)} />}
+        {viewing === "cover" && asset && (
+          <CoverModal
+            asset={asset}
+            onClose={() => setViewing(null)}
+            onChanged={() => {
+              void loadAsset();
+              onChanged();
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -579,73 +1159,7 @@ export default function PostDetailModal({
         {canAbTest && (
           <div className="pdab">
             <div className="tt">Thumbnail A/B test</div>
-            {!abTest || abTest.state === "cancelled" ? (
-              <>
-                <p className="what">
-                  Two images, {abPeriod} days each, measured by this video's own daily view
-                  capture. Make variant A the image that is live today; swaps happen on the
-                  worker's daily pass. Views/day folds impressions in with click-through, so a
-                  narrow verdict is noise.
-                </p>
-                <div className="igrow">
-                  {(["a", "b"] as const).map((slot) => (
-                    <label key={slot} className={`revtoggle${abKeys[slot] ? " on" : ""}`} style={{ cursor: "pointer" }}>
-                      {abBusy === slot
-                        ? "Uploading…"
-                        : abKeys[slot]
-                          ? `Variant ${slot.toUpperCase()} ready`
-                          : `Upload variant ${slot.toUpperCase()}`}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void pickVariant(slot, f);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  ))}
-                  {([3, 5, 7] as const).map((d) => (
-                    <span
-                      key={d}
-                      className={`revtoggle${abPeriod === d ? " on" : ""}`}
-                      onClick={() => setAbPeriod(d)}
-                    >
-                      {d}d each
-                    </span>
-                  ))}
-                  <button
-                    className="btn"
-                    disabled={!abKeys.a || !abKeys.b || abBusy !== null}
-                    onClick={() => void startAb()}
-                  >
-                    {abBusy === "start" ? "Starting…" : "Start test"}
-                  </button>
-                </div>
-              </>
-            ) : abTest.state === "running" ? (
-              <div className="igrow" style={{ alignItems: "center" }}>
-                <span className="what" style={{ flex: 1 }}>
-                  Running: variant {(abTest.applied ?? "a").toUpperCase()} is
-                  {abTest.applied ? " live" : " queued for the next daily pass"} ·{" "}
-                  {abTest.periodDays} days per variant.
-                </span>
-                <button className="btn ghost" disabled={abBusy !== null} onClick={() => void cancelAb()}>
-                  {abBusy === "cancel" ? "Cancelling…" : "Cancel test"}
-                </button>
-              </div>
-            ) : abTest.state === "done" ? (
-              <p className="what">
-                {abTest.result?.winner
-                  ? `Winner: variant ${String(abTest.result.winner).toUpperCase()}, now live. `
-                  : ""}
-                {abTest.result?.note ?? "The test finished."}
-              </p>
-            ) : (
-              <p className="what">{abTest.note ?? "The test stopped."}</p>
-            )}
+            {abBlock}
           </div>
         )}
 
