@@ -226,6 +226,7 @@
   .mb-btn.text{background:transparent;color:var(--mb-acc);padding:0 8px}
   .mb-btn.danger{background:var(--mb-bad-soft);color:var(--c-bad)}
   .mb-btn.danger.solid{background:var(--c-bad);color:#fff}
+  .mb-btn.text.danger{background:transparent}
   .mb-btn.sm{min-height:44px;padding:0 16px;font-size:14.5px;border-radius:13px}
   .mb-btn.lg{min-height:54px;font-size:16.5px;border-radius:16px}
   .mb-btn.block{display:flex;width:100%}

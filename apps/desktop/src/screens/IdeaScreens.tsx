@@ -137,6 +137,7 @@ const STATE_TONE: Record<LinkState, "ok" | "warn" | "bad" | undefined> = {
 };
 
 export function ApprovalsScreen() {
+  const isPhone = useIsPhone();
   const { selectedClient } = useAppState();
   const toast = useToast();
   const videos = useBrandVideos(selectedClient?.id);
@@ -235,13 +236,47 @@ export function ApprovalsScreen() {
                   <input className="field-in" readOnly value={url || live.url} onFocus={(e) => e.currentTarget.select()} />
                 </label>
                 {!PUBLIC_APP_URL && <Note tone="warn">Set VITE_PUBLIC_APP_URL so the link opens the web app, not this desktop shell.</Note>}
-                <button type="button" className="btn pri id-full" onClick={() => void copy(url || live.url, toast)}>
-                  Copy link
-                </button>
-                <button type="button" className="btn ghost id-full" disabled={busy} onClick={() => void revoke(live.id)}>
-                  Turn this link off
-                </button>
-                <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                {isPhone ? (
+                  <>
+                    <div className="idr-acts">
+                      <button type="button" className="mb-btn ghost" onClick={() => void copy(url || live.url, toast)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-copy" />
+                        </svg>
+                        Copy link
+                      </button>
+                      <button
+                        type="button"
+                        className="mb-btn pri"
+                        onClick={() =>
+                          void shareLink(url || live.url, "Approval link").then((how) => {
+                            if (how === "copied") toast.success("Link copied");
+                            else if (how === "failed") toast.error("Could not share the link");
+                          })
+                        }
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <use href="#i-share" />
+                        </svg>
+                        Share link
+                      </button>
+                    </div>
+                    <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                    <button type="button" className="mb-btn text danger block" disabled={busy} onClick={() => void revoke(live.id)}>
+                      Turn this link off
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="btn pri id-full" onClick={() => void copy(url || live.url, toast)}>
+                      Copy link
+                    </button>
+                    <button type="button" className="btn ghost id-full" disabled={busy} onClick={() => void revoke(live.id)}>
+                      Turn this link off
+                    </button>
+                    <p className="id-note">Expires {fmtEt(live.expiresAt)}. Downloads are not offered on the client page.</p>
+                  </>
+                )}
               </>
             ) : (
               <>
