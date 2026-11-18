@@ -24,6 +24,7 @@ import { navigate } from "../lib/routes";
 import { dayKey, isOwnBrand, xPostedLabel } from "../lib/xPosted";
 import SwipeRow from "../components/mobile/SwipeRow";
 import ConfirmSheet from "../components/mobile/ConfirmSheet";
+import { usePullToRefresh } from "../components/analytics/phoneBits";
 
 interface CalendarScreenProps {
   onNewPost(): void;
@@ -228,6 +229,17 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedClient, view, anchor.getTime()],
+  );
+
+  // Pull down at the top of the phone calendar to load the range again.
+  const [pulling, setPulling] = useState(false);
+  const ptr = usePullToRefresh(
+    () => {
+      setPulling(true);
+      void load({ announce: true }).finally(() => setPulling(false));
+    },
+    pulling,
+    isPhone,
   );
 
   /*
@@ -805,6 +817,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
     };
     return (
       <section className="screen active mcal mb-page" data-screen="calendar" data-state={state}>
+        {ptr}
         <div className="mb-head">
           <div>
             <div className="mb-eyebrow">Calendar</div>
