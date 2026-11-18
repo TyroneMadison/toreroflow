@@ -50,6 +50,7 @@ import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
 import Select from "../components/Select";
 import { Badge, KillSwitch, Lbl, Note } from "../components/ideas/IdeaBits";
+import { Ic, PhoneHead, PickSheet, Sheet } from "../components/analytics/phoneBits";
 import "./IdeaScreens.css";
 
 /*
@@ -1041,6 +1042,9 @@ export function MonthlyReportScreen() {
   const [config, setConfig] = useState<ReportJobConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const posts = useBrandPosts(selectedClient?.id);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [allPlan, setAllPlan] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedClient) return;
@@ -1064,6 +1068,158 @@ export function MonthlyReportScreen() {
 
   const top = report?.topPostId ? posts?.find((p) => p.postId === report.topPostId)?.assetName : null;
   const state = !selectedClient ? "empty" : error ? "error" : report && config ? "ready" : "loading";
+
+  // Phone (mobile pass, mockup "monthly"): the preview reads like the report
+  // (three tiles, the top post), next month as a short list with See all, and
+  // the schedule as a two-column list with the send switch and its warning.
+  // The switch stays read-only, as on the desktop: sending is turned on at the server.
+  if (isPhone) {
+    const plan = (report?.nextMonthPlan ?? []).map((line) => {
+      // The API writes "Nov 17, instagram: first caption line"; anything else shows as written.
+      const m = /^([A-Z][a-z]{2} \d{1,2}), ([a-z]+)(?:: (.*))?$/.exec(line);
+      return m ? { day: m[1]!, platform: m[2]!, text: m[3] ?? "" } : { day: "", platform: "", text: line };
+    });
+    const topPost = report?.topPostId ? posts?.find((p) => p.postId === report.topPostId) : null;
+    const gained = report?.followersGained ?? 0;
+    return (
+      <section className="screen active mb-page rp-page" data-screen="monthly" data-state={state}>
+        <PhoneHead screen="monthly" sub="Preview first. The job builds every report on the 1st." />
+        {state === "empty" && NO_BRAND("monthly", "Pick a brand with the switcher at the top to preview its report.")}
+        {state === "error" && <ErrorState screen="monthly" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="monthly" label="Building the report" />}
+        {state === "ready" && report && config && (
+          <>
+            <section className="rp-hero" data-testid="report.preview">
+              <div className="rp-rowsb">
+                <span className="mb-lab">Preview · {selectedClient!.name}</span>
+                <button type="button" className="mb-btn sm ghost rp-monthbtn" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="report.month">
+                  {monthLabel(report.month)}
+                  <Ic name="i-chev" />
+                </button>
+              </div>
+              <div className="rp-stats three">
+                <div className="rp-stat">
+                  <div className="k">Views</div>
+                  <div className="v">{compact(report.views)}</div>
+                </div>
+                <div className="rp-stat">
+                  <div className="k">Followers</div>
+                  <div className={`v${gained > 0 ? " rp-ok" : ""}`}>
+                    {gained >= 0 ? "+" : ""}
+                    {gained.toLocaleString("en-US")}
+                  </div>
+                </div>
+                <div className="rp-stat">
+                  <div className="k">Posts</div>
+                  <div className="v">{report.posts}</div>
+                </div>
+              </div>
+              {report.views === 0 && report.posts === 0 ? (
+                <p className="rp-note">
+                  Nothing to report for {monthLabel(report.month)}.{" "}
+                  <a className="rp-a" {...linkProps("analytics")}>
+                    Open Analytics
+                  </a>
+                </p>
+              ) : (
+                <div className="rp-top1">
+                  <span className="rp-thumb">{topPost?.thumbUrl && <img src={fileUrl(topPost.thumbUrl)!} alt="" />}</span>
+                  <span className="rp-grow">
+                    <small>Top post</small>
+                    <b>{report.topPostId ? (topPost?.assetName ?? "a post from this month") : "none this month"}</b>
+                  </span>
+                </div>
+              )}
+              {report.sentAt && <p className="rp-note rp-ok">Sent {fmtEt(report.sentAt)}.</p>}
+            </section>
+
+            <section className="mb-card" data-testid="report.next">
+              <div className="rp-cardh row">
+                <h3>Next month in the report</h3>
+                <small>
+                  {plan.length} {plan.length === 1 ? "post" : "posts"} scheduled
+                </small>
+              </div>
+              {plan.length ? (
+                <div className="rp-list">
+                  {(allPlan ? plan : plan.slice(0, 4)).map((p, i) => (
+                    <div className="rp-nx" key={i}>
+                      <span className="rp-d">{p.day}</span>
+                      {p.platform in PF_ID && <Pf p={PF_ID[p.platform as Platform]} size="xs" />}
+                      <span className="rp-ell">{p.text || PLATFORM_LABELS[p.platform as Platform] || p.platform}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rp-empty">Nothing scheduled yet.</p>
+              )}
+              {plan.length > 4 && (
+                <button type="button" className="mb-btn text sm rp-more" aria-expanded={allPlan} onClick={() => setAllPlan((v) => !v)}>
+                  {allPlan ? "Show fewer" : `See all ${plan.length}`}
+                </button>
+              )}
+            </section>
+
+            <section className="mb-card" data-testid="report.schedule">
+              <div className="rp-cardh">
+                <h3>Schedule</h3>
+              </div>
+              <dl className="rp-kv">
+                <dt>Runs</dt>
+                <dd>The 1st of every month, ET. Next: {nextRunLabel()}</dd>
+                <dt>From</dt>
+                <dd>{REPORT_SENDER}</dd>
+                <dt>To</dt>
+                <dd>
+                  Every email on the client profile.{" "}
+                  {selectedClient!.contactEmail
+                    ? `For ${selectedClient!.name}: ${selectedClient!.contactEmail}`
+                    : `${selectedClient!.name} has no email on the profile yet.`}
+                </dd>
+                <dt>Covers</dt>
+                <dd>The month that just ended</dd>
+              </dl>
+              <div className="rp-send" data-testid="report.killswitch">
+                <span className="rp-grow">
+                  <b>Send emails</b>
+                  <small>
+                    {config.killSwitch
+                      ? "On. Reports go out on the 1st."
+                      : "Off: reports are built as previews and never emailed. Turning this on needs Tyrone's yes."}
+                  </small>
+                </span>
+                <span
+                  className={`mb-tog${config.killSwitch ? " on" : ""}`}
+                  role="switch"
+                  aria-checked={config.killSwitch}
+                  aria-disabled="true"
+                  aria-label="Send monthly report emails"
+                />
+              </div>
+              <div className={`mb-banner ${config.killSwitch ? "info" : "warn"} rp-okb`}>
+                <Ic name={config.killSwitch ? "i-check-circle" : "i-lock"} />
+                <span className="mb-bt">
+                  {config.killSwitch
+                    ? "Sending is on. Each brand gets one email per month."
+                    : "Sending is off. Nothing leaves this app until the kill switch is turned on at the server."}
+                </span>
+              </div>
+            </section>
+          </>
+        )}
+        {picking && (
+          <PickSheet
+            label="Report month"
+            value={month}
+            options={months.map((m) => ({ value: m, label: monthLabel(m) }))}
+            onPick={setMonth}
+            onClose={() => setPicking(false)}
+            testId="report.month-sheet"
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="monthly" state={state} title="Monthly client report" sub="Preview first. The job builds every report on the 1st.">
@@ -1144,6 +1300,10 @@ export function InsightsScreen() {
   const [postId, setPostId] = useState("");
   const [insights, setInsights] = useState<Insights | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [cell, setCell] = useState<{ d: number; b: number } | null>(null);
+  const [source, setSource] = useState<{ metric: string; platform: string; row: Insights["insights"][number] } | null>(null);
 
   useEffect(() => {
     setHistory(null);
@@ -1175,6 +1335,235 @@ export function InsightsScreen() {
   const table = insights ? insightTable(insights.insights) : [];
   const platforms = [...new Set(insights?.insights.map((i) => i.platform ?? "total"))].sort((a, b) => (a === "total" ? 1 : b === "total" ? -1 : a.localeCompare(b)));
   const state = !selectedClient ? "empty" : targets === null || history === null ? "loading" : "ready";
+
+  // Phone (mobile pass, mockup "insights"): the best time first, views by hour
+  // as a heat map that fits the screen, the post as a thumbnail row with a
+  // searchable sheet, and one compact table whose numbers open their source.
+  if (isPhone) {
+    const best = bt?.slots[0] ?? null;
+    const level = (v: number | null) => (v == null || !bt?.max ? 0 : Math.max(1, Math.ceil((v / bt.max) * 4)));
+    const band = (b: number) => hourLabel(b).replace(" AM", "a").replace(" PM", "p");
+    const post = posted.find((t) => t.postId === current);
+    const cols = platforms.filter((p) => p !== "total");
+    // Totals, and every number once four platform columns share 390px, as short numbers.
+    const num = (v: number, p: string) =>
+      (p !== "total" && cols.length <= 3) || v < 10_000 ? v.toLocaleString("en-US") : v < 100_000 ? `${+(v / 1000).toFixed(1)}K` : compact(v);
+    const ORDER = ["views", "reach", "impressions", "likes", "comments", "saves", "shares"];
+    const rank = (m: string) => (ORDER.includes(m) ? ORDER.indexOf(m) : ORDER.length);
+    const rows = [...table].sort((a, b) => rank(a.metric) - rank(b.metric));
+    const label = (p: string) => (p === "total" ? "Total" : ((PLATFORM_LABELS as Record<string, string>)[p] ?? p));
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const tapped = cell && bt ? bt.grid[cell.d]![cell.b] : null;
+    const thumbOf = (t: PostTargetInfo | undefined) => (
+      <span className="rp-thumb">{t?.thumbUrl && <img src={fileUrl(t.thumbUrl)!} alt="" />}</span>
+    );
+    return (
+      <section className="screen active mb-page rp-page" data-screen="insights" data-state={state}>
+        <PhoneHead screen="insights" sub="Every number from every source, merged once, with where it came from." />
+        {state === "empty" && NO_BRAND("insights", "Pick a brand with the switcher at the top to see its numbers.")}
+        {state === "loading" && <Loading screen="insights" label="Loading insights" />}
+        {state === "ready" && bt && (
+          <>
+            <div className="rp-best" data-testid="besttime.slots">
+              <Ic name="i-clock" />
+              <span className="rp-grow">
+                <span className="mb-lab">Best time to post</span>
+                <b>{best ? slotLabel(best) : "No slot beats the average yet"}</b>
+                <small>
+                  {best ? `+${best.uplift}% views vs average, ${best.posts} posts. ` : ""}
+                  {bt.enough
+                    ? `From ${bt.count} posts in the last 90 days.`
+                    : `Not enough data: ${bt.count} of ${ENOUGH_POSTS} posts in the last 90 days. Treat this as a hint.`}
+                </small>
+                {bt.slots.length > 1 && (
+                  <small>
+                    Also good: {bt.slots.slice(1).map((s) => `${slotLabel(s).replace(" ET", "")} (+${s.uplift}%)`).join(", ")}
+                  </small>
+                )}
+              </span>
+            </div>
+
+            <section className="mb-card" data-testid="besttime.heatmap">
+              <div className="rp-cardh row">
+                <h3>Views per post by hour</h3>
+                <small>ET</small>
+              </div>
+              <div className={`rp-heat${bt.enough ? "" : " thin"}`} role="group" aria-label={`Average views per post for ${selectedClient!.name}, by day and three-hour band, last 90 days`}>
+                <span />
+                {BANDS.map((b) => (
+                  <span className="hh" key={b}>
+                    {band(b)}
+                  </span>
+                ))}
+                {DAYS.flatMap((d, di) => [
+                  <span className="dd" key={d}>
+                    {d}
+                  </span>,
+                  ...BANDS.map((b, bi) => {
+                    const v = bt.grid[di]![bi] ?? null;
+                    return (
+                      <button
+                        type="button"
+                        key={`${d}${b}`}
+                        className={`l${level(v)}${cell?.d === di && cell?.b === bi ? " on" : ""}`}
+                        aria-label={`${d} ${hourLabel(b)}: ${v == null ? "no posts" : `${compact(v)} views per post`}`}
+                        aria-pressed={cell?.d === di && cell?.b === bi}
+                        onClick={() => setCell({ d: di, b: bi })}
+                      />
+                    );
+                  }),
+                ])}
+              </div>
+              <p className="rp-note" aria-live="polite">
+                {cell
+                  ? `${slotLabel({ day: cell.d, band: BANDS[cell.b]! })}: ${tapped == null ? "no posts" : `${compact(tapped)} views per post`}.`
+                  : bt.enough
+                    ? "Tap a cell to read it. Last 90 days, every platform."
+                    : `Needs about ${ENOUGH_POSTS} posts to be sure. Tap a cell to read it.`}
+              </p>
+              <div className="rp-legend">
+                <span>
+                  <i className="l0" />
+                  No posts
+                </span>
+                <span>
+                  <i className="l2" />
+                  Some views
+                </span>
+                <span>
+                  <i className="l4" />
+                  Most views
+                </span>
+              </div>
+            </section>
+          </>
+        )}
+        {state === "ready" && (
+          <div className="rp-grp" data-testid="insights.merged">
+            <div className="mb-lab">Merged insights, one post</div>
+            {posted.length === 0 ? (
+              <p className="rp-empty">Nothing has posted for {selectedClient!.name} yet.</p>
+            ) : (
+              <>
+                <button type="button" className="rp-vpick" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="insights.post">
+                  {thumbOf(post)}
+                  <span className="rp-grow">
+                    <b>{post?.assetName ?? "Pick a post"}</b>
+                    <small>{post?.publishedAt ? fmtEt(post.publishedAt) : ""}</small>
+                  </span>
+                  <Ic name="i-chev" />
+                </button>
+                {error ? (
+                  <div className="mb-banner bad rp-okb">
+                    <Ic name="i-alert" />
+                    <span className="mb-bt">{error}</span>
+                  </div>
+                ) : !insights ? (
+                  <Loading screen="insights-post" />
+                ) : table.length === 0 ? (
+                  <p className="rp-empty">No source has reported numbers for this post yet.</p>
+                ) : (
+                  <section className="mb-card">
+                    <table className="rp-mx mb-keep">
+                      <caption className="sr-only">Numbers by metric and platform; tap a number for its source</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">
+                            <span className="sr-only">Metric</span>
+                          </th>
+                          {platforms.map((p) => (
+                            <th scope="col" key={p}>
+                              {p in PF_ID ? <Pf p={PF_ID[p as Platform]} size="sm" /> : label(p)}
+                              {p in PF_ID && <span className="sr-only">{label(p)}</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r) => (
+                          <tr key={r.metric}>
+                            <th scope="row">{cap(r.metric)}</th>
+                            {platforms.map((p) => {
+                              const c = r.cells[p];
+                              return (
+                                <td key={p} className={!c ? "na" : p === "total" ? "tot" : undefined}>
+                                  {c ? (
+                                    <button
+                                      type="button"
+                                      className="rp-cell"
+                                      aria-label={`${cap(r.metric)}, ${label(p)}: ${c.value.toLocaleString("en-US")}, from ${SOURCE_LABEL[c.chosenSource]}`}
+                                      onClick={() => setSource({ metric: r.metric, platform: p, row: c })}
+                                    >
+                                      {num(c.value, p)}
+                                    </button>
+                                  ) : (
+                                    "n/a"
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="rp-help">Tap a number to see its source (Instagram API, YouTube API, Zernio or Toreroflow).</p>
+                  </section>
+                )}
+                {insights?.unavailable.map((u) => (
+                  <div className="mb-banner warn rp-okb" key={u.source}>
+                    <Ic name="i-alert" />
+                    <span className="mb-bt">
+                      {SOURCE_LABEL[u.source]} could not answer: {u.reason}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        {picking && (
+          <PickSheet
+            label="Post"
+            value={current}
+            search="Find a post"
+            onPick={setPostId}
+            onClose={() => setPicking(false)}
+            testId="insights.post-sheet"
+            options={posted.map((t) => ({ value: t.postId, label: t.assetName, hint: t.publishedAt ? fmtEt(t.publishedAt) : undefined, lead: thumbOf(t) }))}
+          />
+        )}
+        {source && (
+          <Sheet
+            label="Where this number came from"
+            title={`${cap(source.metric)}, ${label(source.platform)}`}
+            sub={source.row.day ? `Measured ${source.row.day}` : undefined}
+            onClose={() => setSource(null)}
+            testId="insights.source-sheet"
+          >
+            <div className="rp-stat">
+              <div className="k">Value</div>
+              <div className="v">{source.row.value.toLocaleString("en-US")}</div>
+            </div>
+            <div className="mb-card list">
+              {source.row.sources.map((s) => (
+                <div className="mb-lrow" key={s}>
+                  <span className="mb-lt">
+                    <b>{SOURCE_LABEL[s] ?? s}</b>
+                    <small>{s === source.row.chosenSource ? "Used for this number" : "Also reported it"}</small>
+                  </span>
+                  {s === source.row.chosenSource && (
+                    <span className="rp-ck">
+                      <Ic name="i-check" />
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Sheet>
+        )}
+      </section>
+    );
+  }
 
   return (
     <Screen id="insights" state={state} title="Insights" sub="Every number from every source, merged once, with where it came from.">

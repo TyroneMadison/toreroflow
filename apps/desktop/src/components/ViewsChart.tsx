@@ -11,11 +11,9 @@ const PLATFORM_COLOR: Record<string, string> = {
 };
 const color = (p: string): string => PLATFORM_COLOR[p] ?? "#FA614B";
 
-const W = 760;
-const H = 260;
-const PAD = { top: 14, right: 16, bottom: 26, left: 46 };
-const PLOT_W = W - PAD.left - PAD.right;
-const PLOT_H = H - PAD.top - PAD.bottom;
+const DESK = { W: 760, H: 260, PAD: { top: 14, right: 16, bottom: 26, left: 46 } };
+// Phone card width at 390px, drawn 1:1 so the 10px labels stay readable.
+const PHONE = { W: 326, H: 160, PAD: { top: 10, right: 6, bottom: 24, left: 34 } };
 
 function fmtAxis(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
@@ -47,10 +45,16 @@ interface Day {
 export default function ViewsChart({
   posts,
   platforms,
+  compact = false,
 }: {
   posts: ClientPost[];
   platforms: string[];
+  /** Phone layout: small viewBox, three gridlines, the total in ink, tap or drag to read a day. */
+  compact?: boolean;
 }) {
+  const { W, H, PAD } = compact ? PHONE : DESK;
+  const PLOT_W = W - PAD.left - PAD.right;
+  const PLOT_H = H - PAD.top - PAD.bottom;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hover, setHover] = useState<number | null>(null);
 
@@ -111,11 +115,12 @@ export default function ViewsChart({
   const linePath = (values: number[]) =>
     values.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
 
-  const gridValues = [0, 0.25, 0.5, 0.75, 1].map((f) => max * f);
+  const gridValues = (compact ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1]).map((f) => max * f);
   // Keep x labels readable regardless of how many days are in range.
-  const labelEvery = Math.max(1, Math.ceil(days.length / 7));
+  const labelEvery = Math.max(1, Math.ceil(days.length / (compact ? 4 : 7)));
+  const totalColor = compact ? "currentColor" : "#FA614B";
 
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const onMove = (e: { clientX: number }) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const px = ((e.clientX - rect.left) / rect.width) * W;
@@ -132,13 +137,14 @@ export default function ViewsChart({
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         className="vchart-svg"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
+        {...(compact
+          ? { onPointerDown: onMove, onPointerMove: onMove }
+          : { onMouseMove: onMove, onMouseLeave: () => setHover(null) })}
       >
         <defs>
           <linearGradient id="vc-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#FA614B" stopOpacity="0.28" />
-            <stop offset="1" stopColor="#FA614B" stopOpacity="0" />
+            <stop offset="0" stopColor={totalColor} stopOpacity={compact ? 0.16 : 0.28} />
+            <stop offset="1" stopColor={totalColor} stopOpacity="0" />
           </linearGradient>
         </defs>
 
@@ -152,8 +158,15 @@ export default function ViewsChart({
         ))}
 
         {days.map((d, i) =>
-          i % labelEvery === 0 || i === days.length - 1 ? (
-            <text key={d.key} className="vc-xlab" x={x(i)} y={H - 8} textAnchor="middle">
+          // On the phone a regular label too close to the last one is dropped, so the two never overlap.
+          (i % labelEvery === 0 && !(compact && i > 0 && days.length - 1 - i < labelEvery / 2)) || i === days.length - 1 ? (
+            <text
+              key={d.key}
+              className="vc-xlab"
+              x={x(i)}
+              y={H - 8}
+              textAnchor={compact && i === 0 ? "start" : compact && i === days.length - 1 ? "end" : "middle"}
+            >
               {d.label}
             </text>
           ) : null,
@@ -170,7 +183,7 @@ export default function ViewsChart({
             key={s.platform}
             d={linePath(s.values)}
             fill="none"
-            stroke={s.platform === "__total" ? "#FA614B" : color(s.platform)}
+            stroke={s.platform === "__total" ? totalColor : color(s.platform)}
             strokeWidth={s.platform === "__total" ? 2.6 : 1.8}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -193,7 +206,7 @@ export default function ViewsChart({
                 cx={x(hover!)}
                 cy={y(s.values[hover!]!)}
                 r={s.platform === "__total" ? 4 : 3}
-                fill={s.platform === "__total" ? "#FA614B" : color(s.platform)}
+                fill={s.platform === "__total" ? totalColor : color(s.platform)}
               />
             ))}
           </g>
@@ -216,8 +229,8 @@ export default function ViewsChart({
           <>
             {!single && (
               <span className="vc-key">
-                <i style={{ background: "#FA614B" }} />
-                All platforms
+                <i style={{ background: compact ? "var(--mb-ink)" : "#FA614B" }} />
+                {compact ? "Combined" : "All platforms"}
               </span>
             )}
             {platforms.map((p) => (
@@ -226,7 +239,7 @@ export default function ViewsChart({
                 {PLATFORM_LABELS[p as Platform] ?? p}
               </span>
             ))}
-            <span className="vc-hint">hover for a day</span>
+            <span className="vc-hint">{compact ? "Tap or drag to read a day" : "hover for a day"}</span>
           </>
         )}
       </div>

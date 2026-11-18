@@ -14,7 +14,8 @@ import {
   type Template,
   type WorkflowPlatform,
 } from "@toreroflow/contracts";
-import { api, ApiError, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
+import { api, ApiError, fileUrl, getToken, videoLabel, type MediaAssetInfo, type PostTargetInfo } from "../lib/api";
+import { Ic, PhoneHead, PickSheet } from "../components/analytics/phoneBits";
 import { navigatePath, pathLinkProps, setQuery, useRoute } from "../lib/routes";
 import { useIsPhone } from "../lib/phone";
 import Modal from "../modals/Modal";
@@ -778,6 +779,9 @@ export function RollupScreen() {
   const [rollup, setRollup] = useState<Rollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const isPhone = useIsPhone();
+  const [picking, setPicking] = useState(false);
+  const [swipe, setSwipe] = useState<{ x: number; y: number } | null>(null);
 
   const load = useCallback(async () => {
     setRollup(null);
@@ -803,6 +807,138 @@ export function RollupScreen() {
 
   const video = videos?.find((v) => v.id === videoId);
   const state = !selectedClient ? "empty" : error ? "error" : unavailable || (rollup && !rollupHasData(rollup)) ? "unavailable" : rollup ? "ready" : videos?.length === 0 ? "novideo" : "loading";
+
+  // Phone (mobile pass, mockup "rollup"): the video as a thumbnail row that
+  // opens a searchable sheet, one compact table (metrics down, platforms
+  // across) with the best platform per row in green, swipe for the next video.
+  if (isPhone) {
+    const at = videos?.findIndex((v) => v.id === videoId) ?? -1;
+    const step = (d: number) => {
+      const next = videos?.[at + d];
+      if (next) setQuery({ video: next.id });
+    };
+    const posted = rollup ? WORKFLOW_PLATFORMS.filter((p) => rollup.rows.some((r) => r[p] != null)) : [];
+    const dur = (s: number | null) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}` : null);
+    const thumbOf = (v: MediaAssetInfo | undefined) => (
+      <span className="rp-thumb">
+        {v?.thumbUrl && <img src={fileUrl(v.thumbUrl)!} alt="" />}
+        {dur(v?.durationSec ?? null) && <span className="rp-dur">{dur(v!.durationSec)}</span>}
+      </span>
+    );
+    return (
+      <section className="screen active mb-page rp-page wf" data-screen="rollup" data-state={state}>
+        <PhoneHead screen="rollup" sub="One video, every platform, side by side." />
+        {videos && videos.length > 0 && (
+          <button type="button" className="rp-vpick" aria-haspopup="dialog" onClick={() => setPicking(true)} data-testid="rollup.video">
+            {thumbOf(video)}
+            <span className="rp-grow">
+              <b>{video ? videoLabel(video) : "Pick a video"}</b>
+              <small>
+                {posted.length
+                  ? `Posted to ${posted.length} ${posted.length === 1 ? "platform" : "platforms"}`
+                  : video
+                    ? `Uploaded ${new Date(video.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}`
+                    : `${videos.length} videos`}
+              </small>
+            </span>
+            <small className="rp-muted">Change</small>
+            <Ic name="i-chev" />
+          </button>
+        )}
+        {state === "empty" && <Empty screen="rollup" title="No brand selected" hint="Pick a brand with the switcher at the top." />}
+        {state === "novideo" && <Empty screen="rollup" title="No videos yet" hint="A video shows here once it has posted." />}
+        {state === "error" && <ErrorState screen="rollup" message={error} onRetry={() => void load()} />}
+        {state === "loading" && <Loading screen="rollup" label="Loading the rollup" />}
+        {state === "unavailable" && (
+          <Empty
+            screen="rollup"
+            title="No numbers yet"
+            hint="Zernio analytics are not available for this video right now. They show here once a platform reports them. Per-post insights are unchanged."
+            action={
+              <button type="button" className="mb-btn" onClick={() => void load()}>
+                Check again
+              </button>
+            }
+          />
+        )}
+        {state === "ready" && rollup && (
+          <>
+            <section
+              className="mb-card rp-mxcard"
+              data-testid="rollup-table"
+              onTouchStart={(e) => setSwipe({ x: e.touches[0]!.clientX, y: e.touches[0]!.clientY })}
+              onTouchEnd={(e) => {
+                const t = e.changedTouches[0]!;
+                const dx = swipe ? t.clientX - swipe.x : 0;
+                const dy = swipe ? t.clientY - swipe.y : 0;
+                setSwipe(null);
+                if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+              }}
+            >
+              <table className="rp-mx mb-keep">
+                <caption className="sr-only">Metrics for {video ? videoLabel(video) : "this video"} by platform</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <span className="sr-only">Metric</span>
+                    </th>
+                    {WORKFLOW_PLATFORMS.map((p) => (
+                      <th scope="col" key={p}>
+                        <Pf p={PF_ID[p]} size="sm" />
+                        <span className="sr-only">{PLATFORM_LABEL[p]}</span>
+                      </th>
+                    ))}
+                    <th scope="col">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rollup.rows.map((r) => {
+                    // Green for the best platform, only when there is more than one to compare.
+                    const reported = WORKFLOW_PLATFORMS.filter((p) => r[p] != null);
+                    const best = reported.length > 1 ? reported.reduce((a, b) => (r[b]! > r[a]! ? b : a)) : null;
+                    return (
+                      <tr key={r.metric}>
+                        <th scope="row">{METRIC_LABEL[r.metric]}</th>
+                        {WORKFLOW_PLATFORMS.map((p) => (
+                          <td key={p} className={r[p] == null ? "na" : p === best ? "win" : undefined}>
+                            {fmtMetric(r.metric, r[p])}
+                          </td>
+                        ))}
+                        <td className="tot">{fmtMetric(r.metric, r.total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+            <p className="rp-help">
+              Green marks the best platform per row. Average watch is weighted by views; n/a means the platform has not reported
+              it. Per-post insight pages are unchanged.
+              {videos && videos.length > 1 ? " Swipe the table for the next or previous video." : ""}
+            </p>
+          </>
+        )}
+        {picking && videos && (
+          <PickSheet
+            label="Video"
+            value={videoId ?? ""}
+            search="Find a video"
+            onPick={(v) => setQuery({ video: v })}
+            onClose={() => setPicking(false)}
+            testId="rollup.video-sheet"
+            options={videos.map((v) => ({
+              value: v.id,
+              label: videoLabel(v),
+              hint: [dur(v.durationSec), `uploaded ${new Date(v.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}`]
+                .filter(Boolean)
+                .join(", "),
+              lead: thumbOf(v),
+            }))}
+          />
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className="screen active wf" data-screen="rollup" data-state={state}>
