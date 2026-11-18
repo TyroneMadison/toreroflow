@@ -12,7 +12,7 @@
 .exs-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .exs-chip{cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;padding:7px 14px;border-radius:20px;border:1px solid var(--brd-soft);background:var(--glass-2);color:var(--txt-2);transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
 .exs-chip:active{transform:scale(.97)}
-.exs-chip.on{background:rgba(255,111,97,.16);border-color:rgba(255,111,97,.55);color:var(--v)}
+.exs-chip.on{background:rgba(250,97,75,.16);border-color:rgba(250,97,75,.55);color:var(--v)}
 .exs-chip:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .exs-customwrap{display:inline-flex;align-items:center;gap:6px}
 .exs-custom{width:92px;padding:7px 11px;font-size:12.5px}

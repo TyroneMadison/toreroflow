@@ -199,7 +199,7 @@ export default function Sidebar({
                         overflow: "hidden",
                         background: avatar
                           ? "var(--glass-2)"
-                          : "linear-gradient(135deg,#FF6F61,#FF9A73)",
+                          : "linear-gradient(135deg,#FA614B,#FF9A73)",
                       }}
                     >
                       {avatar ? (
@@ -242,7 +242,7 @@ export default function Sidebar({
                     overflow: "hidden",
                     background: clientAvatarUrl(selectedClient)
                       ? "var(--glass-2)"
-                      : "linear-gradient(135deg,#FF6F61,#FF9A73)",
+                      : "linear-gradient(135deg,#FA614B,#FF9A73)",
                   }}
                 >
                   {clientAvatarUrl(selectedClient) ? (

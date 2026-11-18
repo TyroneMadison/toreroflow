@@ -5,8 +5,8 @@
    ============================================================================== */
 
 :root{
-  --accent:#FF7A66;
-  --accent-hi:#FF9A88;
+  --accent:#FA614B;
+  --accent-hi:#FF8A78;
   --accent-lo:#E2523E;
   --on-accent:#2A0C06;
 
@@ -55,7 +55,7 @@
 
   --bg-base:#0b0714;
   --bg-field:
-    radial-gradient(520px 420px at 12% 18%,#FF7A66 0%,transparent 70%),
+    radial-gradient(520px 420px at 12% 18%,#FA614B 0%,transparent 70%),
     radial-gradient(600px 500px at 38% 75%,#7a1d2e 0%,transparent 70%),
     radial-gradient(640px 520px at 85% 25%,#2448b8 0%,transparent 70%),
     radial-gradient(520px 460px at 72% 88%,#6a2fc0 0%,transparent 70%),

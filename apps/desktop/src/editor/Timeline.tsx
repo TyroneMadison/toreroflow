@@ -828,7 +828,7 @@ export default function Timeline() {
 
             <div className="tl-lane tl-lane-layout" style={{ height: 26 }}>
               <span className="tl-lanelab">
-                <i style={{ background: "#FF6F61" }} />Layout
+                <i style={{ background: "#FA614B" }} />Layout
               </span>
               {layoutChips.map((c, i) => (
                 <div

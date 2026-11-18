@@ -14,7 +14,7 @@ function eq(actual: unknown, expected: unknown, message: string) {
 
 // Every screen has a unique path that parses back to it.
 const screens = SECTIONS.flatMap((s) => s.pages.map((p) => p.id));
-eq(new Set(screens.map((s) => PATHS[s])).size, 24, "twenty-four screens, twenty-four paths");
+eq(new Set(screens.map((s) => PATHS[s])).size, 25, "twenty-five screens, twenty-five paths");
 for (const s of screens) eq(parseUrl(pathFor(s)).screen, s, `${PATHS[s]} round-trips to ${s}`);
 for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));

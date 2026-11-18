@@ -37,6 +37,7 @@ import {
   type LinkState,
 } from "../lib/ideas";
 import { linkProps, navigate } from "../lib/routes";
+import { FAILED_CHANGED, useFailedPosts } from "../lib/failedPosts";
 import { openExternal } from "../lib/external";
 import { PLATFORM_LABELS } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
@@ -1039,8 +1040,6 @@ function BestTimeCard({ bt, brand }: { bt: ReturnType<typeof bestTime>; brand: s
 
 // ------------------------------------------------------- 7. failed posts
 
-/** Fired after a retry or remove so the app-wide banner recounts now, not in two minutes. */
-const FAILED_CHANGED = "toreroflow:failed-posts-changed";
 
 export function FailedPostsScreen() {
   const { clients } = useAppState();
@@ -1233,32 +1232,23 @@ export function FailedPostsScreen() {
 
 /** The app-wide alert: a failed post shows on every screen until it is dealt with. */
 export function FailedPostBanner() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const poll = () =>
-      void api
-        .get<FailedList>("/failed-posts")
-        .then((l) => setCount(l.count))
-        .catch(() => {});
-    poll();
-    const t = setInterval(poll, 2 * 60 * 1000);
-    window.addEventListener(FAILED_CHANGED, poll);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener(FAILED_CHANGED, poll);
-    };
-  }, []);
+  // Shared with the phone's Calendar badge (lib/failedPosts.ts), so one poll.
+  const count = useFailedPosts()?.count ?? 0;
   if (!count) return null;
   return (
     <div className="id-alert id-alert-global" role="status" data-testid="failed.banner">
+      <svg className="id-alert-ic" viewBox="0 0 24 24" aria-hidden="true">
+        <use href="#i-alert" />
+      </svg>
       <span>
         <b>
           {count} {count === 1 ? "post" : "posts"} failed.
         </b>{" "}
-        Nothing retries on its own.
+        <span className="id-alert-more">Nothing retries on its own.</span>
       </span>
       <button type="button" className="btn ghost" onClick={() => navigate("failed")}>
-        See failed posts
+        <span className="id-alert-long">See failed posts</span>
+        <span className="id-alert-short">Review</span>
       </button>
     </div>
   );

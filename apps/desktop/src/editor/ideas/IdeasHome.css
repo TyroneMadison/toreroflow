@@ -31,7 +31,7 @@
   transition:transform var(--dur-tap) var(--ease-out),opacity var(--dur-tap) linear}
 .nchip:not(.on):not(.off):hover{color:var(--txt);background:var(--glass-2)}
 .nchip:active{transform:scale(.96)}
-.nchip.on{color:#000;background:var(--grad);border-color:transparent;box-shadow:0 6px 16px rgba(255,111,97,.3)}
+.nchip.on{color:#000;background:var(--grad);border-color:transparent;box-shadow:0 6px 16px rgba(250,97,75,.3)}
 /* At the voice cap the unpicked chips are disabled, so they have to look spent
    rather than merely unselected. */
 .nchip.off{opacity:.3;cursor:not-allowed}
@@ -62,7 +62,7 @@
 .fhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .fheadl{display:flex;align-items:center;flex-wrap:wrap;gap:9px;min-width:0}
 .fheadl b{font-size:13.5px;font-weight:620}
-.fcat{color:var(--v);background:rgba(255,111,97,.14);flex:0 0 auto}
+.fcat{color:var(--v);background:rgba(250,97,75,.14);flex:0 0 auto}
 .fdesc{font-size:12.5px;color:var(--txt-2);line-height:1.55;margin-top:10px}
 
 /* The hooks are the point of the card, so they get the room. */
@@ -98,7 +98,7 @@
 .ideafmt .ideaicon{width:13px;height:13px;stroke:var(--v);stroke-width:2;fill:none;flex:0 0 auto}
 .ideatext{font-size:13.5px;font-weight:620;line-height:1.45}
 .ideahook{font-size:12px;color:var(--txt-2);line-height:1.5;font-style:italic;margin-top:3px;
-  padding-left:10px;border-left:2px solid rgba(255,111,97,.45)}
+  padding-left:10px;border-left:2px solid rgba(250,97,75,.45)}
 .ideastatus{width:150px;font-size:12px;padding:8px 10px}
 
 /* ---- the two modals ---- */
@@ -135,7 +135,7 @@
 .pdot.youtube{background:#ff3b30}
 .pdot.instagram{background:linear-gradient(135deg,#f9a03f,#d62976,#7c3aed);height:12px;width:12px}
 .pdot.tiktok{background:transparent;border:1.5px solid #25f4ee;height:12px;width:12px}
-.sgbtn{background:linear-gradient(90deg,#8b5cf6,#ff6f61);color:#fff;border:0;box-shadow:0 6px 20px rgba(139,92,246,.35)}
+.sgbtn{background:linear-gradient(90deg,#8b5cf6,#FA614B);color:#fff;border:0;box-shadow:0 6px 20px rgba(139,92,246,.35)}
 .sgstart{align-items:center}
 .sgneedkey{margin-top:10px;padding:10px 12px;border-radius:var(--radius-sm);border:1px dashed var(--brd-soft);
   display:flex;flex-direction:column;gap:2px}
@@ -153,7 +153,7 @@
 .sgrow .sub{flex:1 1 auto;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sgstat{font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px;background:var(--glass);color:var(--txt-2)}
 .sgstat.done{background:rgba(87,214,160,.16);color:var(--green)}
-.sgstat.reading,.sgstat.analyzing{background:rgba(255,111,97,.16);color:var(--v)}
+.sgstat.reading,.sgstat.analyzing{background:rgba(250,97,75,.16);color:var(--v)}
 .sgstat.failed{background:rgba(255,80,80,.16);color:#ff7b7b}
 .sgerr{margin-top:8px;font-size:12px;color:#ff9b8f}
 .sglab{margin-top:10px;font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt-3);font-weight:600}

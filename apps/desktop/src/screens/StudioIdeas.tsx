@@ -127,7 +127,7 @@ export function BrandKitArea({ brandId, brandName }: { brandId: string; brandNam
 
   // The thumbnail preview is a 4:5 post cover; the logo sits where the thumbnail builder puts it.
   const box = logoSize ? logoBox(1080, 1350, logoSize.w, logoSize.h) : null;
-  const main = kit.colors[0] ?? "#FF7A66";
+  const main = kit.colors[0] ?? "#FA614B";
   const dark = kit.colors.find((c, i) => i > 0) ?? "#111111";
 
   return (
@@ -173,7 +173,7 @@ export function BrandKitArea({ brandId, brandName }: { brandId: string; brandNam
             </span>
           ))}
           {kit.colors.length < MAX_COLORS && (
-            <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => change({ colors: [...kit.colors, "#FF7A66"] })}>
+            <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => change({ colors: [...kit.colors, "#FA614B"] })}>
               Add color
             </button>
           )}

@@ -297,7 +297,7 @@ export default function AutoCutStep() {
   const dropZone = (big: boolean) => (
     <div
       className={`drop${big ? " acs-drop-big" : " acs-drop"}`}
-      style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+      style={dragOver ? { borderColor: "rgba(250,97,75,.65)" } : undefined}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);

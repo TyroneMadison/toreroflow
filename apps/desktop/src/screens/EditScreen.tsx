@@ -68,7 +68,7 @@ export default function EditScreen() {
         </div>
       </div>
       <div className="stage">
-        <div className="seg" style={{ display: "inline-flex", marginBottom: 16 }}>
+        <div className="seg areas" style={{ display: "inline-flex", marginBottom: 16 }}>
           {AREAS.map((a) => (
             <span
               key={a.id}

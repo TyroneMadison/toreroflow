@@ -34,7 +34,7 @@
 .acs-auto h3{margin:0}
 .acs-chips{display:flex;gap:8px;margin:12px 0 10px}
 .acs-toggle{cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;padding:7px 14px;border:1px solid var(--brd-soft);background:var(--glass-2);color:var(--txt-2)}
-.acs-toggle.on{background:rgba(255,111,97,.16);border-color:rgba(255,111,97,.55);color:var(--v)}
+.acs-toggle.on{background:rgba(250,97,75,.16);border-color:rgba(250,97,75,.55);color:var(--v)}
 
 .acs-actions{display:flex;gap:10px}
 .acs-actions .acs-continue{flex:1}

@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { openExternal } from "../lib/external";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
+import { useIsPhone } from "../lib/phone";
 
 interface ConnectClientModalProps {
   onClose: () => void;
@@ -23,6 +24,10 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
   const [error, setError] = useState<string | null>(null);
   const [awaitingAuth, setAwaitingAuth] = useState(false);
   const [welcomeUrl, setWelcomeUrl] = useState<string | null>(null);
+  /** The platform whose login was opened in the browser, shown as Pending. */
+  const [pending, setPending] = useState<Platform | null>(null);
+  const [copied, setCopied] = useState(false);
+  const isPhone = useIsPhone();
 
   // The focus listener and the manual button can both fire a sync; two
   // interleaved syncs can duplicate account rows server-side, so only one
@@ -129,6 +134,7 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
       if (res.authUrl) {
         await openExternal(res.authUrl);
         setAwaitingAuth(true);
+        setPending(platform);
       } else {
         setConnected((prev) => new Set(prev).add(platform));
         await refreshClients();
@@ -149,6 +155,7 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
       await api.post(`/clients/${clientId}/accounts/sync`, {});
       await refreshClients();
       setAwaitingAuth(false);
+      setPending(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "sync failed");
     } finally {
@@ -167,6 +174,198 @@ export default function ConnectClientModal({ onClose }: ConnectClientModalProps)
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [awaitingAuth, syncAccounts]);
+
+  if (isPhone) {
+    // Phone sheet (mobile pass): three visible steps, the link with Copy and
+    // the phone's share sheet, where each platform stands, and the actions
+    // in a sticky footer. Same state and calls as the desktop dialog.
+    const steps = [
+      { label: "Name", done: !!clientId },
+      { label: "Invite", done: !!welcomeUrl },
+      { label: "Connect", done: connected.size > 0 },
+    ];
+    const current = steps.findIndex((x) => !x.done);
+    const handleOf = (platform: Platform) =>
+      clients.find((c) => c.id === clientId)?.accounts.find((a) => a.platform === platform && a.status === "connected")?.handle;
+    const share = async () => {
+      if (!welcomeUrl) return;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "Your Torerone welcome link", url: welcomeUrl });
+        } catch {
+          // Closing the share sheet is not an error.
+        }
+      } else {
+        await navigator.clipboard.writeText(welcomeUrl);
+        setCopied(true);
+      }
+    };
+    return (
+      <Modal maxWidth={440} onClose={onClose} label="Add a client" testId="connect-client">
+        <div className="modal-head">
+          <div>
+            <h3>Add a client</h3>
+            <p>Name the brand, then connect their platforms.</p>
+          </div>
+          <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
+            <svg>
+              <use href="#i-x" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body mb-cc">
+          <ol className="mb-steps" aria-label="Steps">
+            {steps.map((x, i) => (
+              <li key={x.label} className={x.done ? "done" : i === current ? "on" : undefined}>
+                <i aria-hidden="true" />
+                <b>
+                  {i + 1} {x.label}
+                </b>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mb-field">
+            <label htmlFor="cc-name">Client name</label>
+            <div className="mb-inrow">
+              <input
+                id="cc-name"
+                className="mb-input"
+                placeholder="e.g. Bella Napoli"
+                value={name}
+                disabled={clientId !== null}
+                autoCapitalize="words"
+                enterKeyHint="done"
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !clientId) void createClient();
+                }}
+              />
+              {clientId ? (
+                <span className="mb-btn okd" role="status">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-check" />
+                  </svg>
+                  Enrolled
+                </span>
+              ) : (
+                <button type="button" className="mb-btn pri" disabled={busy === "create" || !name.trim()} onClick={() => void createClient()}>
+                  {busy === "create" ? "Saving" : "Enroll"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <section className={`mb-card${clientId ? "" : " dim"}`} aria-label="Their welcome link">
+            <div className="mb-cardh">
+              <h3>Their welcome link</h3>
+              <small>{clientId ? "One link, theirs for good" : "Enroll the client first"}</small>
+            </div>
+            <p className="mb-p muted">
+              Send it to the client so they fill in their details and connect their own accounts from their phone. It
+              lands here.
+            </p>
+            {welcomeUrl ? (
+              <>
+                <div className="mb-linkbox">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-link" />
+                  </svg>
+                  <span>{welcomeUrl.replace(/^https?:\/\//, "")}</span>
+                </div>
+                <div className="mb-btnrow">
+                  <button
+                    type="button"
+                    className="mb-btn ghost"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(welcomeUrl);
+                      setCopied(true);
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-copy" />
+                    </svg>
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                  <button type="button" className="mb-btn pri" onClick={() => void share()}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <use href="#i-share" />
+                    </svg>
+                    Share link
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="mb-btn block" disabled={!clientId || busy === "welcome"} onClick={() => void getWelcomeLink()}>
+                {busy === "welcome" ? "Making the link" : "Get the link"}
+              </button>
+            )}
+          </section>
+
+          <div className="mb-cardh flat">
+            <span className="mb-lab">Connect platforms</span>
+            <small>{clientId ? "Or connect them here yourself" : "Enroll the client first"}</small>
+          </div>
+          <section className={`mb-card list${clientId ? "" : " dim"}`} aria-label="Connect platforms">
+            {PLATFORMS.map((platform) => {
+              const isConnected = connected.has(platform);
+              const handle = handleOf(platform);
+              return (
+                <div className="mb-lrow" key={platform}>
+                  <Pf p={PF_ID[platform]} size="lg" />
+                  <span className="mb-lt">
+                    <b>{PLATFORM_LABELS[platform]}</b>
+                    <small>
+                      {isConnected
+                        ? handle
+                          ? `@${handle.replace(/^@/, "")} connected`
+                          : "Connected"
+                        : pending === platform
+                          ? "Waiting for the client"
+                          : SURFACE_LABEL[platform]}
+                    </small>
+                  </span>
+                  {isConnected ? (
+                    <span className="mb-pill ok">Connected</span>
+                  ) : pending === platform ? (
+                    <span className="mb-pill paused">Pending</span>
+                  ) : (
+                    <button type="button" className="mb-btn text" disabled={!clientId || busy === platform} onClick={() => void connect(platform)}>
+                      {busy === platform ? "Opening" : "Connect"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+          <p className="mb-p muted small">
+            The client can also connect from the welcome link. "Check for replies" pulls in whatever they filled in.
+          </p>
+          {error && (
+            <div className="mb-err" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="mb-btn ghost" disabled={busy === "replies"} onClick={() => void checkReplies()}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-refresh" />
+            </svg>
+            {busy === "replies" ? "Checking" : "Check for replies"}
+          </button>
+          {awaitingAuth && (
+            <button type="button" className="mb-btn ghost" disabled={busy === "sync"} onClick={() => void syncAccounts()}>
+              {busy === "sync" ? "Syncing" : "Sync connected"}
+            </button>
+          )}
+          <button type="button" className="mb-btn pri" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal maxWidth={440} onClose={onClose}>

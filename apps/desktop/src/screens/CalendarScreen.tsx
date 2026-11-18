@@ -456,7 +456,7 @@ export default function CalendarScreen({ onNewPost }: CalendarScreenProps) {
 
   const dropStyle = (day: Date) =>
     dropKey === day.toDateString()
-      ? { outline: "1.5px dashed rgba(255,111,97,.7)", outlineOffset: -2, borderRadius: 12 }
+      ? { outline: "1.5px dashed rgba(250,97,75,.7)", outlineOffset: -2, borderRadius: 12 }
       : undefined;
 
   /*

@@ -46,6 +46,7 @@ export const PATHS: Record<ScreenId, string> = {
   reports: "/reports",
   comments: "/comments",
   settings: "/settings",
+  more: "/more",
 };
 
 /** Settings' cards, each reachable as /settings/<id>. */

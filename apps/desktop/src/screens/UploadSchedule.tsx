@@ -552,7 +552,7 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
           {ctype === "reel" ? (
             <div
               className="drop"
-              style={dragOver ? { borderColor: "rgba(255,111,97,.65)" } : undefined}
+              style={dragOver ? { borderColor: "rgba(250,97,75,.65)" } : undefined}
               role="button"
               tabIndex={0}
               aria-label="Add videos"

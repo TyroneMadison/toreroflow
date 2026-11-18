@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { sectionOf, type ScreenId } from "../lib/nav";
 import { linkProps, SETTINGS_SECTIONS, useRoute } from "../lib/routes";
+import { useIsPhone } from "../lib/phone";
+import { useAppState } from "../state/AppState";
+
+/** Phone titles that differ from the page label (mobile pass mockups). */
+const PHONE_TITLE: Partial<Record<ScreenId, string>> = {
+  overview: "Accounts",
+  upload: "Upload and schedule",
+  reports: "Client reports",
+};
 
 /**
  * Every screen's one h1: logo and title on the left, the section's pages as
@@ -21,6 +30,8 @@ export default function PageHeader({
   controls?: ReactNode;
 }) {
   const { section: activeSection } = useRoute();
+  const isPhone = useIsPhone();
+  const { user } = useAppState();
   const section = sectionOf(screen);
   const page = section.pages.find((p) => p.id === screen)!;
   const tabs =
@@ -39,6 +50,38 @@ export default function PageHeader({
           link: linkProps(p.id),
           testid: `nav.page.${p.slug}`,
         }));
+  if (isPhone) {
+    // One head pattern on the phone: coral eyebrow, Fraunces title, and the
+    // page chips only for Reports (Overview and Create pages live in More).
+    const agency = user?.agencyName ?? "Torerone";
+    const eyebrow =
+      screen === "edit" ? "Studio"
+      : screen === "settings" ? agency
+      : screen === "financials" ? `Overview · ${agency}`
+      : section.label;
+    const chips = section.id === "reports" ? tabs : [];
+    return (
+      <header className="tf-head mb-phead" data-phone-head={screen}>
+        <div className="mb-ph">
+          <div>
+            <div className="mb-eyebrow">{eyebrow}</div>
+            <h1 className="mb-h1">{PHONE_TITLE[screen] ?? title ?? page.label}</h1>
+            {subtitle && <div className="mb-sub">{subtitle}</div>}
+          </div>
+        </div>
+        {chips.length > 1 && (
+          <nav className="tf-tabs mb-chips" aria-label={section.label}>
+            {chips.map((t) => (
+              <a key={t.key} aria-current={t.on ? "page" : undefined} className={t.on ? "a" : undefined} {...t.link} data-testid={t.testid}>
+                {t.label}
+              </a>
+            ))}
+          </nav>
+        )}
+        {controls && <div className="tf-ctr">{controls}</div>}
+      </header>
+    );
+  }
   return (
     <header className="tf-head">
       <div className="tf-logo">

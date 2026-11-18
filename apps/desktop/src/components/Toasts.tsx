@@ -12,18 +12,25 @@ import { ApiError } from "../lib/api";
 
 export type ToastKind = "error" | "success" | "info";
 
+/** One optional button on a toast, for Undo or View. */
+export interface ToastAction {
+  label: string;
+  run(): void;
+}
+
 interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+  action?: ToastAction;
   /** Repeats collapse into one row with a count rather than stacking. */
   count: number;
 }
 
 interface ToastApi {
-  error(message: string): void;
-  success(message: string): void;
-  info(message: string): void;
+  error(message: string, action?: ToastAction): void;
+  success(message: string, action?: ToastAction): void;
+  info(message: string, action?: ToastAction): void;
   /** Reports a caught value, turning API errors into something readable. */
   fail(what: string, error: unknown): void;
   dismiss(id: number): void;
@@ -74,7 +81,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const push = useCallback(
-    (kind: ToastKind, message: string) => {
+    (kind: ToastKind, message: string, action?: ToastAction) => {
       setToasts((list) => {
         // The same failure firing repeatedly (a poll that keeps missing) should
         // read as one problem, not a wall of identical rows.
@@ -85,7 +92,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         const id = nextId.current++;
         const timer = setTimeout(() => dismiss(id), LIFETIME[kind]);
         timers.current.set(id, timer);
-        return [...list, { id, kind, message, count: 1 }].slice(-MAX_VISIBLE);
+        return [...list, { id, kind, message, action, count: 1 }].slice(-MAX_VISIBLE);
       });
     },
     [dismiss],
@@ -102,9 +109,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ToastApi>(
     () => ({
-      error: (m) => push("error", m),
-      success: (m) => push("success", m),
-      info: (m) => push("info", m),
+      error: (m, a) => push("error", m, a),
+      success: (m, a) => push("success", m, a),
+      info: (m, a) => push("info", m, a),
       fail: (what, error) => push("error", describeError(what, error)),
       dismiss,
     }),
@@ -124,6 +131,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <span className="tdot" />
             <span className="tmsg">{t.message}</span>
             {t.count > 1 && <span className="tcount">{t.count}</span>}
+            {t.action && (
+              <button
+                type="button"
+                className="tact"
+                onClick={() => {
+                  t.action!.run();
+                  dismiss(t.id);
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
             <button className="tclose" aria-label="Dismiss" onClick={() => dismiss(t.id)}>
               <svg>
                 <use href="#i-x" />

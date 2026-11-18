@@ -3,22 +3,22 @@
    --co-* so nothing outside Ideas changes. Dark is the default theme;
    html[data-theme="light"] swaps the tokens. Phone layout below 640px. */
 
-.coral{--co-coral:#FF6F61;--co-r:22px;
+.coral{--co-coral:#FA614B;--co-r:22px;
   --co-disp:"Fraunces Variable",Fraunces,Georgia,"Times New Roman",serif;--co-body:Inter,"Segoe UI",system-ui,sans-serif;
   --co-bg:#0B0B0C;--co-surface:#151517;--co-raised:#1C1C1F;--co-chip:#1C1C1F;--co-ink:#F5F2EF;--co-muted:#A39C97;--co-hair:rgba(255,255,255,.08);
-  --co-acc:#FF6F61;--co-cdisp:#FF6F61;--co-oncoral:#1A0806;--co-meter-off:#2A2A2E;--co-cm:rgba(255,255,255,.32);--co-scrim:rgba(0,0,0,.72);
-  --co-ring:#FF6F61;
+  --co-acc:#FA614B;--co-cdisp:#FA614B;--co-oncoral:#1A0806;--co-meter-off:#2A2A2E;--co-cm:rgba(255,255,255,.32);--co-scrim:rgba(0,0,0,.72);
+  --co-ring:#FA614B;
   --co-sh:inset 0 1px 0 rgba(255,255,255,.05),0 1px 2px rgba(0,0,0,.6),0 14px 36px rgba(0,0,0,.55);
-  --co-sh-hi:inset 0 1px 0 rgba(255,255,255,.07),0 24px 60px rgba(0,0,0,.7),0 0 0 1px rgba(255,111,97,.14);
-  --co-glow:0 0 0 1px rgba(255,111,97,.45),0 8px 30px rgba(255,111,97,.38);--co-l1:#5E302B;--co-l2:#B5554B;--co-l3:#FF6F61;
-  --co-ft-bg:#2A1A19;--co-ft-fg:#FF8A7E;--co-fm-bg:transparent;--co-fm-fg:#FFB3A9;--co-fm-bd:rgba(255,111,97,.55);--co-fb-fg:#1A0806}
+  --co-sh-hi:inset 0 1px 0 rgba(255,255,255,.07),0 24px 60px rgba(0,0,0,.7),0 0 0 1px rgba(250,97,75,.14);
+  --co-glow:0 0 0 1px rgba(250,97,75,.45),0 8px 30px rgba(250,97,75,.38);--co-l1:#5E302B;--co-l2:#B5554B;--co-l3:#FA614B;
+  --co-ft-bg:#2A1A19;--co-ft-fg:#FF8A7E;--co-fm-bg:transparent;--co-fm-fg:#FFB3A9;--co-fm-bd:rgba(250,97,75,.55);--co-fb-fg:#1A0806}
 [data-theme="light"] .coral{
   --co-bg:#FBF8F4;--co-surface:#FFFFFF;--co-raised:#F5F0EA;--co-chip:#F3EEE8;--co-ink:#1A1614;--co-muted:#6B625C;--co-hair:rgba(26,22,20,.09);
   --co-acc:#C2412F;--co-cdisp:#E8503F;--co-oncoral:#2A0E0A;--co-meter-off:#EDE6DF;--co-cm:rgba(26,22,20,.38);--co-scrim:rgba(26,22,20,.55);
   --co-ring:#E8503F;
   --co-sh:0 1px 2px rgba(40,24,16,.04),0 10px 30px rgba(40,24,16,.07);
   --co-sh-hi:0 2px 4px rgba(40,24,16,.05),0 24px 60px rgba(40,24,16,.13);
-  --co-glow:0 8px 22px rgba(255,111,97,.35);--co-l1:#FFD9D3;--co-l2:#FF9F94;--co-l3:#FF6F61;
+  --co-glow:0 8px 22px rgba(250,97,75,.35);--co-l1:#FFD9D3;--co-l2:#FF9F94;--co-l3:#FA614B;
   --co-ft-bg:#FFEDEA;--co-ft-fg:#B4372B;--co-fm-bg:#FFFFFF;--co-fm-fg:#9C2D22;--co-fm-bd:rgba(156,45,34,.45);--co-fb-fg:#2A0E0A}
 
 .ideashome.coral{max-width:1168px;padding:6px 32px 96px;background:var(--co-bg);color:var(--co-ink);border-radius:var(--co-r);
@@ -298,7 +298,7 @@
 .co-hc.feat .co-fmt{background:transparent;color:var(--co-oncoral);box-shadow:inset 0 0 0 1px var(--co-oncoral)}
 .co-hc.feat .co-fmt svg{color:var(--co-oncoral)}
 .co-hc.feat .co-lab,.co-hc.feat .co-stat,.co-hc.feat .co-stat b,.co-hc.feat .co-hmeta,.co-hc.feat .co-orig,.co-hc.feat .co-lnk{color:var(--co-oncoral)}
-.co-hc.feat .co-badge.perf{background:var(--co-oncoral);color:#FF6F61}
+.co-hc.feat .co-badge.perf{background:var(--co-oncoral);color:#FA614B}
 .co-hc.feat .co-badge.insp{box-shadow:inset 0 0 0 1px var(--co-oncoral);color:var(--co-oncoral)}
 .co-hc.feat .co-badge.web{background:transparent;color:var(--co-oncoral);box-shadow:inset 0 0 0 1px var(--co-oncoral)}
 .co-hc.feat .co-hcf{box-shadow:inset 0 1px 0 rgba(26,8,6,.25)}

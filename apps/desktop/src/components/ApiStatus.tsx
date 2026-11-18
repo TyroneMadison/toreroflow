@@ -15,9 +15,24 @@ const REQUEST_TIMEOUT_MS = 3_000;
  * dead worker now says so here.
  */
 /** The polling, shared by this pill and the dock. */
-export function useApiStatus(): { online: boolean; color: string; label: string; title: string } {
+export function useApiStatus(): {
+  online: boolean;
+  /** False until the first answer, so nothing flashes "offline" at launch. */
+  checked: boolean;
+  workerUp: boolean;
+  /** The API's reported version, when it says one. */
+  version: string | null;
+  color: string;
+  label: string;
+  title: string;
+  /** Checks again now (the phone's Offline sheet "Try again"). */
+  recheck(): void;
+} {
   const [online, setOnline] = useState(false);
   const [workerUp, setWorkerUp] = useState(true);
+  const [checked, setChecked] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +40,7 @@ export function useApiStatus(): { online: boolean; color: string; label: string;
     async function check() {
       let ok = false;
       let worker = true;
+      let ver: string | null = null;
       try {
         const res = await fetch(`${API_URL}/health`, {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -37,6 +53,8 @@ export function useApiStatus(): { online: boolean; color: string; label: string;
             (data as { status?: unknown }).status === "ok";
           // An older API that does not report it is not a dead worker.
           worker = (data as { worker?: unknown })?.worker !== "down";
+          const v = (data as { version?: unknown })?.version;
+          ver = typeof v === "string" ? v : null;
         }
       } catch {
         ok = false;
@@ -44,6 +62,8 @@ export function useApiStatus(): { online: boolean; color: string; label: string;
       if (!cancelled) {
         setOnline(ok);
         setWorkerUp(worker);
+        setChecked(true);
+        if (ver) setVersion(ver);
       }
     }
 
@@ -53,7 +73,7 @@ export function useApiStatus(): { online: boolean; color: string; label: string;
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [tick]);
 
   // Amber, not red: the app works, but nothing is being processed behind it.
   const color = !online ? "var(--red)" : workerUp ? "var(--green)" : "var(--amber)";
@@ -62,7 +82,7 @@ export function useApiStatus(): { online: boolean; color: string; label: string;
     online && !workerUp
       ? "The background worker is not running, so uploads will not finish processing and scheduled posts will not go out. Start it with: pnpm --filter @toreroflow/worker dev"
       : label;
-  return { online, color, label, title };
+  return { online, checked, workerUp, version, color, label, title, recheck: () => setTick((t) => t + 1) };
 }
 
 export default function ApiStatus() {
