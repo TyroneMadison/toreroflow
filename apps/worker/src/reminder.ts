@@ -50,7 +50,7 @@ export function reminderHtml(input: ReminderInput, fileUrl: string | null): stri
   <p><b>${esc(input.videoName)}</b></p>
   ${
     fileUrl
-      ? `<p><a href="${fileUrl}" style="display:inline-block;background:#FF6F61;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold">Download the video</a><br>
+      ? `<p><a href="${fileUrl}" style="display:inline-block;background:#FA614B;color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:bold">Download the video</a><br>
          <span style="font-size:12px;color:#888">The link works for 7 days.</span></p>`
       : `<p style="color:#888">Ask for the video file if you do not have it already.</p>`
   }

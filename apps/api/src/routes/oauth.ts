@@ -54,7 +54,7 @@ function googleCreds(): GoogleCredentials | null {
  * anything else of ours.
  */
 function resultPage(ok: boolean, heading: string, detail: string): string {
-  const accent = ok ? "#3ddc97" : "#ff6f61";
+  const accent = ok ? "#3ddc97" : "#fa614b";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
