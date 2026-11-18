@@ -237,7 +237,7 @@
   :is(.overlay,.sdc) .sop-ack{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px;font-weight:600}
   :is(.overlay,.sdc) .modal-foot .sop-hint{flex-basis:100%;font-size:12.5px;font-weight:600;color:var(--c-warn)}
   :is(.overlay,.sdc) .modal-foot>.btn{flex:1 1 0;min-height:48px;border-radius:var(--mb-r-ctl);font-size:15.5px}
-  :is(.overlay,.sdc) [data-testid="schedule-form"] .modal-foot>.btn:last-child{flex-grow:1.4;white-space:nowrap}
+  :is(.overlay,.sdc) .modal-foot>.btn:last-child:not(:first-child){flex-grow:1.4;white-space:nowrap}
   .mb-schthumb{flex:none;width:44px;height:58px;border-radius:10px;object-fit:cover;background:var(--mb-raised2)}
   :is(.overlay,.sdc) .modal-head:has(.mb-schthumb){justify-content:flex-start;gap:12px}
   :is(.overlay,.sdc) .modal-head:has(.mb-schthumb)>div{flex:1;min-width:0}
@@ -461,6 +461,16 @@
   /* ---- two-column grids in sheets never push the page sideways ---- */
   .overlay .dmgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .overlay .dmgrid>*{min-width:0}
+
+  /* ---- long-form sheet: a progress bar in place of the phase chips ---- */
+  .overlay .lfsteps{display:none}
+  .lf-pstep{padding:2px 22px 4px}
+  .lf-pbar{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px}
+  .lf-pbar i{height:4px;border-radius:2px;background:var(--mb-raised2)}
+  .lf-pbar i.on{background:var(--mb-coral)}
+  .lf-plab{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:10px}
+  .lf-plab b{font-size:15.5px;font-weight:650;color:var(--mb-ink)}
+  .lf-plab span{font-size:12.5px;color:var(--mb-muted);white-space:nowrap}
 
   /* ---- trello upload sheet ---- */
   .overlay .modal[data-testid="trello-upload-modal"]{padding:8px 16px 0}
