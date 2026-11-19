@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { inflateSync } from "node:zlib";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 /**
@@ -33,7 +34,112 @@ export async function readPdf(bytes: Uint8Array): Promise<{ pageCount: number; s
 
 const isPngDataUrl = (v: string) => v.startsWith("data:image/png;base64,");
 
-function drawFittedText(page: PDFPage, font: PDFFont, text: string, box: { x: number; y: number; w: number; h: number }) {
+/**
+ * Whether a PNG has any pixel that is not fully transparent.
+ *
+ * A blank signature pad still produces a perfectly valid PNG, and a valid
+ * transparent PNG stamps onto the document without complaint: the contract
+ * comes back marked signed with an empty box. That is the one failure this
+ * feature must never have, so a signature is checked for ink before it counts.
+ *
+ * Only the alpha bytes of the compressed scanlines are read, and deliberately
+ * without un-filtering them. Every PNG filter is a difference between bytes of
+ * the same channel, so an image whose alpha is 0 everywhere filters to all
+ * zeroes under any filter type. One non-zero alpha byte therefore proves the
+ * image is not blank, which is the only direction that matters here. (An
+ * opaque image is safe too: on the first scanline there is nothing above or
+ * before to subtract, so its alpha bytes survive non-zero.)
+ */
+export function pngHasInk(dataUrl: string): boolean {
+  if (!isPngDataUrl(dataUrl)) return false;
+  let raw: Buffer;
+  try {
+    raw = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+  } catch {
+    return false;
+  }
+  if (raw.length < 8 || raw.readUInt32BE(0) !== 0x89504e47) return false;
+
+  let width = 0;
+  let channels = 0;
+  let bitDepth = 0;
+  const idat: Buffer[] = [];
+  for (let at = 8; at + 8 <= raw.length; ) {
+    const len = raw.readUInt32BE(at);
+    const type = raw.toString("latin1", at + 4, at + 8);
+    const body = raw.subarray(at + 8, at + 8 + len);
+    if (type === "IHDR") {
+      if (body.length < 10) return false;
+      width = body.readUInt32BE(0);
+      bitDepth = body[8]!;
+      const colorType = body[9]!;
+      // Only the two types a canvas produces carry alpha at all.
+      channels = colorType === 6 ? 4 : colorType === 4 ? 2 : 0;
+      // Interlaced data is laid out in passes, so scanline arithmetic below
+      // would read the wrong bytes. A canvas never produces one.
+      if (body.length > 12 && body[12] !== 0) return true;
+    } else if (type === "IDAT") {
+      idat.push(body);
+    } else if (type === "IEND") {
+      break;
+    }
+    at += 12 + len;
+  }
+  // No alpha channel means every pixel is opaque, so there is something there.
+  if (channels === 0) return true;
+  if (bitDepth !== 8 || width === 0 || !idat.length) return true;
+
+  let pixels: Buffer;
+  try {
+    pixels = inflateSync(Buffer.concat(idat));
+  } catch {
+    // Undecodable: let the stamping step be the one that rejects it.
+    return true;
+  }
+  const stride = width * channels + 1; // +1 for each scanline's filter byte
+  for (let row = 0; row + stride <= pixels.length; row += stride) {
+    for (let px = 1 + (channels - 1); px < stride; px += channels) {
+      if (pixels[row + px] !== 0) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The subset of characters the built-in Helvetica can actually draw.
+ *
+ * pdf-lib's standard fonts are WinAnsi-encoded and THROW on anything outside
+ * it. That throw lands after the signature has already been committed, which
+ * wedges a finished contract permanently. A signer called Nguyễn, a Polish
+ * surname, or an emoji typed into a text field is enough.
+ *
+ * So: decompose and drop combining marks, which turns most accented Latin into
+ * its base letter, and replace whatever is still unencodable. Losing a diacritic
+ * on the certificate is a blemish; losing the whole signed document is not.
+ *
+ * ponytail: embed a Unicode TTF with fontkit if non-Latin names ever need to
+ * render properly, which costs a font file in the repo and a dependency.
+ */
+export function toWinAnsi(text: string): string {
+  const stripped = text.normalize("NFKD").replace(/\p{M}/gu, "");
+  let out = "";
+  for (const ch of stripped) {
+    const code = ch.codePointAt(0)!;
+    // Printable ASCII, plus the Latin-1 range WinAnsi shares with Unicode.
+    if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff)) out += ch;
+    else if (code === 0x2018 || code === 0x2019) out += "'";
+    else if (code === 0x201c || code === 0x201d) out += '"';
+    else if (code === 0x2013 || code === 0x2014) out += "-";
+    else if (code === 0x20ac) out += ch; // the euro sign is in WinAnsi
+    else if (ch === "\t") out += " ";
+    else if (code > 0x7e) out += "?";
+  }
+  return out;
+}
+
+function drawFittedText(page: PDFPage, font: PDFFont, raw: string, box: { x: number; y: number; w: number; h: number }) {
+  const text = toWinAnsi(raw);
+  if (!text) return;
   // Shrink to fit rather than overflow the box the sender drew.
   let size = Math.min(box.h * 0.7, 14);
   while (size > 5 && font.widthOfTextAtSize(text, size) > box.w) size -= 0.5;
@@ -130,10 +236,13 @@ export async function appendCertificate(stampedBytes: Uint8Array, info: Certific
     page = doc.addPage([612, 792]);
     y = 742;
   };
-  const line = (text: string, opts: { size?: number; font?: PDFFont; color?: typeof ink; gap?: number } = {}) => {
+  const line = (raw: string, opts: { size?: number; font?: PDFFont; color?: typeof ink; gap?: number } = {}) => {
     const size = opts.size ?? 9.5;
     if (y < 56) nextPage();
-    page.drawText(text, { x: left, y, size, font: opts.font ?? font, color: opts.color ?? ink });
+    // Through toWinAnsi without exception: the title and the signer names come
+    // from a filename and a text box, and one unencodable character thrown here
+    // would lose the certificate for a document that is already signed.
+    page.drawText(toWinAnsi(raw), { x: left, y, size, font: opts.font ?? font, color: opts.color ?? ink });
     y -= opts.gap ?? size + 5;
   };
 

@@ -99,11 +99,18 @@ for (const model of MODELS) {
   }
 }
 
-// The migration must run after the latest one already applied.
+// The migration must sort after everything that existed when it was written,
+// so `migrate deploy` applies it last and its foreign keys find their tables.
+// Deliberately not "it is the newest on disk": that would turn the next
+// migration anyone adds into a failure of this check.
 const applied = fs
   .readdirSync(new URL("../prisma/migrations", import.meta.url))
   .filter((d) => /^\d{14}_/.test(d))
   .sort();
-assert.equal(applied[applied.length - 1], "20261118120000_signatures", "signatures is the newest migration");
+const self = applied.indexOf("20261118120000_signatures");
+assert.ok(self >= 0, "the signatures migration is on disk");
+for (const earlier of applied.slice(0, self)) {
+  assert.ok(earlier < "20261118120000_signatures", `${earlier} sorts before signatures`);
+}
 
 console.log(`signatureMigration ok (${checked} columns, ${MODELS.length} tables, ${ENUMS.length} enums)`);

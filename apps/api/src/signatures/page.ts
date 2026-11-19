@@ -241,14 +241,22 @@ export function signingPage(d: SigningPageData): string {
     var ctx = canvas.getContext("2d");
     ctx.scale(ratio, ratio);
     ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#13131a";
+    /* dirty flips only once ink has actually been laid down, NOT on
+       pointerdown. beginPath/moveTo paint nothing, so a signer who merely taps
+       the pad would otherwise arm the Sign button and submit a fully
+       transparent PNG: a contract that comes back marked signed with an empty
+       signature box. The server checks for ink too; this is the half that
+       stops an honest signer doing it by accident. */
     var drawing = false, dirty = false;
     function at(e) { var r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
     canvas.addEventListener("pointerdown", function (e) {
-      drawing = true; dirty = true; canvas.setPointerCapture(e.pointerId);
-      var p = at(e); ctx.beginPath(); ctx.moveTo(p[0], p[1]); refresh();
+      drawing = true; canvas.setPointerCapture(e.pointerId);
+      var p = at(e); ctx.beginPath(); ctx.moveTo(p[0], p[1]);
     });
     canvas.addEventListener("pointermove", function (e) {
-      if (!drawing) return; var p = at(e); ctx.lineTo(p[0], p[1]); ctx.stroke();
+      if (!drawing) return;
+      var p = at(e); ctx.lineTo(p[0], p[1]); ctx.stroke();
+      if (!dirty) { dirty = true; refresh(); }
     });
     canvas.addEventListener("pointerup", function () { drawing = false; });
     canvas.addEventListener("pointercancel", function () { drawing = false; });

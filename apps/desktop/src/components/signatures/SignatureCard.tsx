@@ -52,6 +52,17 @@ export default function SignatureCard() {
     }
   };
 
+  /** Finish or remind: both answer with the request, so the open card refreshes. */
+  const act = async (path: string, ok: string, fail: string) => {
+    try {
+      setOpen(await api.post<SignatureRequest>(path));
+      toast.success(ok);
+      await load();
+    } catch (err) {
+      toast.fail(fail, err);
+    }
+  };
+
   const voidRequest = async (id: string) => {
     try {
       await api.post<SignatureRequest>(`/signature-requests/${id}/void`, { reason: "" });
@@ -115,15 +126,39 @@ export default function SignatureCard() {
         />
       )}
 
-      {open && <RequestDetail r={open} onClose={() => setOpen(null)} onVoid={() => void voidRequest(open.id)} />}
+      {open && (
+        <RequestDetail
+          r={open}
+          onClose={() => setOpen(null)}
+          onVoid={() => void voidRequest(open.id)}
+          onAction={(path, ok, fail) => void act(path, ok, fail)}
+        />
+      )}
     </aside>
   );
 }
 
 /** One document: who has signed, who has not, and the signed copy once it exists. */
-function RequestDetail({ r, onClose, onVoid }: { r: SignatureRequest; onClose(): void; onVoid(): void }) {
+function RequestDetail({
+  r,
+  onClose,
+  onVoid,
+  onAction,
+}: {
+  r: SignatureRequest;
+  onClose(): void;
+  onVoid(): void;
+  onAction(path: string, ok: string, fail: string): void;
+}) {
   const toast = useToast();
   const view = r as unknown as RequestView;
+  /**
+   * Everyone signed but no signed copy exists: completion threw after the last
+   * signature was committed. The signers cannot retry, so without this the
+   * document would be stuck with no way out but cancelling something that is
+   * already signed.
+   */
+  const stuck = r.signers.length > 0 && r.signers.every((s) => s.status === "signed") && !r.signedUrl;
   const copy = async (url: string, who: string) => {
     try {
       await navigator.clipboard.writeText(`${API_URL}${url}`);
@@ -182,15 +217,41 @@ function RequestDetail({ r, onClose, onVoid }: { r: SignatureRequest; onClose():
             {r.signedSha256 ? ` · signed copy ${r.signedSha256.slice(0, 16)}…` : ""}
           </p>
         </div>
+        {stuck && (
+          <p className="sg-note sg-stuck">
+            Everyone has signed, but the signed copy was not built. Finish it to produce the signed
+            document and the certificate.
+          </p>
+        )}
         <div className="modal-foot">
           {r.status !== "completed" && r.status !== "voided" && (
             <button type="button" className="mb-btn ghost" onClick={onVoid} data-testid="signatures.void">
               Cancel document
             </button>
           )}
+          {r.status === "sent" && !stuck && (
+            <button
+              type="button"
+              className="mb-btn ghost"
+              onClick={() => onAction(`/signature-requests/${r.id}/remind`, "Reminder sent", "Could not send the reminder")}
+              data-testid="signatures.remind"
+            >
+              Send a reminder
+            </button>
+          )}
           <button type="button" className="mb-btn ghost" onClick={() => openExternal(`${API_URL}${r.documentUrl}`)}>
             Open original
           </button>
+          {stuck && (
+            <button
+              type="button"
+              className="mb-btn pri"
+              onClick={() => onAction(`/signature-requests/${r.id}/complete`, "Signed copy built", "Could not build the signed copy")}
+              data-testid="signatures.finish"
+            >
+              Finish it
+            </button>
+          )}
           {r.signedUrl && (
             <button type="button" className="mb-btn pri" onClick={() => openExternal(`${API_URL}${r.signedUrl}`)} data-testid="signatures.signed">
               Open signed copy

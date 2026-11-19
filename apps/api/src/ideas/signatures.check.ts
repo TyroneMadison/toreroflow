@@ -121,6 +121,23 @@ mock("signatureRequest", {
     const r = Object.assign(requests.find((x) => x.id === where.id)!, data, { updatedAt: new Date() });
     return hydrate(r, include);
   },
+  // Conditional update, which is how the real code claims a document
+  // exclusively: it only matches rows that still satisfy `where`, so a second
+  // caller that arrives after the first has flipped the column gets count 0.
+  updateMany: async ({ where, data }: Row) => {
+    const matches = requests.filter((r) => {
+      if (r.id !== where.id) return false;
+      for (const [field, want] of Object.entries(where)) {
+        if (field === "id") continue;
+        if (want !== null && typeof want === "object" && "not" in (want as Row)) {
+          if (r[field] === (want as Row).not) return false;
+        } else if (r[field] !== want) return false;
+      }
+      return true;
+    });
+    for (const r of matches) Object.assign(r, data);
+    return { count: matches.length };
+  },
 });
 mock("signatureSigner", {
   create: async ({ data }: Row) => {
@@ -309,9 +326,12 @@ assert.match(res.headers["content-type"] as string, /^application\/json/);
 
 // ---- consent is the gate ----
 const firstFields = fields.filter((f) => f.signerId === first.id);
-/** A 1x1 PNG: enough for pdf-lib to embed, which is what stamping needs. */
+/** A 1x1 opaque PNG: enough for pdf-lib to embed, which is what stamping needs. */
 const png =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==";
+/** A 1x1 FULLY TRANSPARENT PNG: what an untouched signature pad submits. */
+const blankPng =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const firstValues = {
   [firstFields.find((f) => f.type === "signature")!.id]: png,
   [firstFields.find((f) => f.type === "date")!.id]: "2026-11-18",
@@ -339,6 +359,14 @@ res = await sign(tokenOf(first), { values: { [firstFields[0]!.id]: png }, intent
 assert.equal(res.statusCode, 400, "a required field left empty");
 res = await sign(tokenOf(first), { values: firstValues });
 assert.equal(res.statusCode, 400, "intent is not optional");
+
+// A blank pad is a valid PNG and stamps without complaint, so the server has
+// to be the one that refuses it. Otherwise the contract comes back marked
+// signed with an empty signature box and nothing in the record to show it.
+res = await sign(tokenOf(first), { values: { ...firstValues, [firstFields.find((f) => f.type === "signature")!.id]: blankPng }, intent: true });
+assert.equal(res.statusCode, 400, "a fully transparent signature is refused");
+assert.match(res.json().error, /blank/);
+assert.equal(first.status, "viewed", "and nothing was recorded");
 
 // ---- first signature ----
 res = await sign(tokenOf(first), { values: firstValues, intent: true }, "203.0.113.7");
@@ -383,6 +411,22 @@ assert.equal(
   409,
   "a signed document cannot be cancelled",
 );
+
+// ---- completion is claimed exclusively ----
+// Two signers can share an order, so two requests can finish within
+// milliseconds, both see "everyone has signed", and both start building. Each
+// build makes different bytes (its own completedAt, a trail that has grown),
+// so two runs could leave signedSha256 describing one copy and signed.pdf
+// holding the other: the integrity check this feature exists for would then
+// fail on a valid contract.
+const completedEvents = () => events.filter((e) => e.requestId === requests[0]!.id && e.type === "completed").length;
+assert.equal(completedEvents(), 1, "exactly one completion");
+const sigBefore = requests[0]!.signedSha256;
+// Re-entering complete() on a finished document must be a no-op, not a rebuild.
+res = await ops.app.inject({ method: "POST", url: `/signature-requests/${doc.id}/complete`, headers: ops.operator });
+assert.equal(res.statusCode, 400, "already finished");
+assert.equal(completedEvents(), 1, "and no second completion was written");
+assert.equal(requests[0]!.signedSha256, sigBefore, "the stored hash was not rewritten");
 
 // ---- the Overview card ----
 res = await ops.app.inject({ method: "GET", url: "/signature-requests/summary", headers: ops.operator });
@@ -473,6 +517,117 @@ const s2 = SignatureSummarySchema.parse((await ops.app.inject({ method: "GET", u
 assert.equal(s2.completed, 1);
 assert.equal(s2.awaitingOthers, 0, "declined and voided are not waiting on anyone");
 assert.equal(s2.expiringSoon, 0);
+
+// ---- a signature that races the owner's cancel ----
+// open() reads the status when the handler starts; the owner can void between
+// that read and the write. Without an atomic guard the signature would land
+// anyway and resurrect a cancelled contract as completed.
+const four = SignatureRequestSchema.parse((await post("Lease.pdf", "application/pdf", pdf)).json());
+const draft4 = {
+  title: "Lease",
+  message: "",
+  clientId: null,
+  expiresInDays: 10,
+  signers: [{ email: "racer@example.com", name: "", order: 1 }],
+  fields: [{ signerIndex: 0, type: "signature", page: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.05, required: true }],
+};
+await patch(draft4, ops.operator, four.id);
+await ops.app.inject({ method: "POST", url: `/signature-requests/${four.id}/send`, headers: ops.operator });
+const row4 = requests.find((r) => r.id === four.id)!;
+const sgn4 = signers.find((s) => s.requestId === four.id)!;
+const token4 = signerToken(sgn4.id, row4.expiresAt);
+await pub.app.inject({ method: "POST", url: `/s/${token4}/consent`, payload: { agreed: true } });
+// The owner cancels after the signer has their page open.
+await ops.app.inject({ method: "POST", url: `/signature-requests/${four.id}/void`, headers: ops.operator, payload: { reason: "" } });
+res = await sign(token4, { values: { [fields.find((f) => f.requestId === four.id)!.id]: png }, intent: true });
+assert.equal(res.statusCode, 410, "a cancelled document cannot be signed");
+assert.equal(row4.status, "voided", "and it stays cancelled");
+assert.notEqual(sgn4.status, "signed", "the signature was not recorded");
+
+// ---- a completion that fails, and the owner's way out ----
+// complete() runs after the signature is committed, so a failure in it would
+// otherwise strand a fully signed contract: the signer cannot retry (409) and
+// the only other action would be cancelling something already signed.
+const five = SignatureRequestSchema.parse((await post("Addendum B.pdf", "application/pdf", pdf)).json());
+await patch(
+  {
+    title: "Addendum B",
+    message: "",
+    clientId: null,
+    expiresInDays: 10,
+    signers: [{ email: "solo@example.com", name: "Solo", order: 1 }],
+    fields: [{ signerIndex: 0, type: "signature", page: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.05, required: true }],
+  },
+  ops.operator,
+  five.id,
+);
+await ops.app.inject({ method: "POST", url: `/signature-requests/${five.id}/send`, headers: ops.operator });
+const row5 = requests.find((r) => r.id === five.id)!;
+const sgn5 = signers.find((s) => s.requestId === five.id)!;
+const token5 = signerToken(sgn5.id, row5.expiresAt);
+await pub.app.inject({ method: "POST", url: `/s/${token5}/consent`, payload: { agreed: true } });
+
+// Make the build fail the way a lost or moved storage volume would.
+const source5 = path.join(storageDir, row5.sourceFileKey);
+const keep = await fs.readFile(source5);
+await fs.rm(source5);
+const sentBefore = sent.length;
+res = await sign(token5, { values: { [fields.find((f) => f.requestId === five.id)!.id]: png }, intent: true });
+assert.equal(res.statusCode, 200, "the signature still goes through");
+assert.equal(sgn5.status, "signed", "and is recorded, because it happened");
+assert.equal(row5.signedSha256, null, "but no signed copy exists");
+assert.ok(events.some((e) => e.requestId === five.id && e.type === "finish_failed"), "the failure is on the record");
+assert.equal(sent.length, sentBefore, "and nobody was told it was finished");
+// The view must not offer a download of a file that was never written.
+let v5 = SignatureRequestSchema.parse((await ops.app.inject({ method: "GET", url: `/signature-requests/${five.id}`, headers: ops.operator })).json());
+assert.equal(v5.signedUrl, null, "no link to a signed copy that does not exist");
+// Signing again is refused, which is exactly why the owner needs a way out.
+assert.equal((await sign(token5, { values: {}, intent: true })).statusCode, 409);
+
+await fs.writeFile(source5, keep);
+assert.equal(
+  (await ops.app.inject({ method: "POST", url: `/signature-requests/${five.id}/complete`, headers: ops.nova })).statusCode,
+  403,
+  "viewers cannot",
+);
+res = await ops.app.inject({ method: "POST", url: `/signature-requests/${five.id}/complete`, headers: ops.operator });
+assert.equal(res.statusCode, 200, res.body);
+v5 = SignatureRequestSchema.parse(res.json());
+assert.ok(v5.signedUrl, "the signed copy is built on retry");
+assert.ok(v5.signedSha256);
+const onDisk5 = await fs.readFile(path.join(storageDir, row5.signedFileKey));
+assert.equal(sha256(onDisk5), row5.signedSha256, "and its hash matches the bytes written");
+assert.ok(sent.length > sentBefore, "and the signer finally gets their copy");
+
+// ---- reminding whoever it is waiting on ----
+const six = SignatureRequestSchema.parse((await post("MSA.pdf", "application/pdf", pdf)).json());
+await patch(
+  {
+    title: "MSA",
+    message: "",
+    clientId: null,
+    expiresInDays: 10,
+    signers: [{ email: "slow@example.com", name: "", order: 1 }],
+    fields: [{ signerIndex: 0, type: "signature", page: 0, x: 0.1, y: 0.1, width: 0.2, height: 0.05, required: true }],
+  },
+  ops.operator,
+  six.id,
+);
+await ops.app.inject({ method: "POST", url: `/signature-requests/${six.id}/send`, headers: ops.operator });
+const beforeRemind = sent.length;
+// A reminder must reach someone who already got the first email: that is the
+// whole point of the button, and the send path deliberately skips them.
+res = await ops.app.inject({ method: "POST", url: `/signature-requests/${six.id}/remind`, headers: ops.operator });
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(sent.length, beforeRemind + 1, "the signer is written to again");
+assert.equal(sent[sent.length - 1]!.to, "slow@example.com");
+assert.ok(events.some((e) => e.requestId === six.id && e.type === "reminded"));
+// Not out for signature: nothing to remind anyone about.
+await ops.app.inject({ method: "POST", url: `/signature-requests/${six.id}/void`, headers: ops.operator, payload: { reason: "" } });
+assert.equal(
+  (await ops.app.inject({ method: "POST", url: `/signature-requests/${six.id}/remind`, headers: ops.operator })).statusCode,
+  409,
+);
 
 await ops.app.close();
 await pub.app.close();

@@ -67,6 +67,8 @@ export const ENDPOINTS = {
   getSignatureRequest: { method: "GET", path: "/signature-requests/:id", response: S.SignatureRequestSchema },
   sendSignatureRequest: { method: "POST", path: "/signature-requests/:id/send", response: S.SignatureRequestSchema },
   voidSignatureRequest: { method: "POST", path: "/signature-requests/:id/void", request: S.SignatureVoidSchema, response: S.SignatureRequestSchema },
+  completeSignatureRequest: { method: "POST", path: "/signature-requests/:id/complete", response: S.SignatureRequestSchema },
+  remindSignatureRequest: { method: "POST", path: "/signature-requests/:id/remind", response: S.SignatureRequestSchema },
   publicSigning: { method: "GET", path: "/s/:token", response: S.PublicSigningSchema },
   publicSignConsent: { method: "POST", path: "/s/:token/consent", request: S.SignConsentSchema, response: S.PublicSigningSchema },
   publicSignSubmit: { method: "POST", path: "/s/:token/sign", request: S.SignSubmitSchema, response: S.PublicSigningSchema },

@@ -86,6 +86,20 @@ assert.ok(
 );
 assert.ok(/rect\.width \|\| \d+/.test(script), "and the pad has a size floor even so");
 
+/**
+ * The pad must only count as drawn once ink exists.
+ *
+ * beginPath/moveTo paint nothing and ctx.stroke() runs in pointermove, so
+ * setting the flag in pointerdown made a bare tap arm the Sign button and
+ * submit a fully transparent PNG: a contract returned marked signed with an
+ * empty box. Same failure as the 0x0 backing store, different cause.
+ */
+const down = script.slice(script.indexOf('addEventListener("pointerdown"'), script.indexOf('addEventListener("pointermove"'));
+const move = script.slice(script.indexOf('addEventListener("pointermove"'), script.indexOf('addEventListener("pointerup"'));
+assert.equal(/dirty\s*=\s*true/.test(down), false, "pointerdown must NOT mark the pad as drawn");
+assert.ok(/dirty\s*=\s*true/.test(move), "pointermove, which is where ink is actually laid down, must");
+assert.ok(move.indexOf("ctx.stroke()") < move.indexOf("dirty = true"), "and only after the stroke is painted");
+
 // The PDF viewer swallows the wheel, so a signer who scrolls inside the frame
 // never reaches the form. The way past it has to be on the page.
 assert.ok(html.includes('href="#f"'), "a way to reach the form without scrolling the PDF");

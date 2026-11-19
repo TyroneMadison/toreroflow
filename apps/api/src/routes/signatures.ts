@@ -16,7 +16,7 @@ import { gmailMailer } from "../mail/mailer";
 import { requireAuth } from "../plugins/requireAuth";
 import { clientIp, rateLimiter } from "../ideas/rateLimit";
 import { MAX_DOCUMENT_UPLOAD_BYTES } from "../uploadLimits";
-import { appendCertificate, readPdf, sha256, stampFields, type StampField } from "../signatures/pdf";
+import { appendCertificate, pngHasInk, readPdf, sha256, stampFields, type StampField } from "../signatures/pdf";
 import { signingPage } from "../signatures/page";
 
 /**
@@ -124,7 +124,10 @@ const ownerView = (r: RequestRow) => ({
   sourceSha256: r.sourceSha256,
   signedSha256: r.signedSha256,
   documentUrl: fileLink(r.sourceFileKey),
-  signedUrl: r.signedFileKey ? fileLink(r.signedFileKey) : null,
+  // The hash, not the key, is what says the signed copy finished being built.
+  // Between the claim and the final write the key is set and the file is not
+  // there yet; offering a link to it would 404 the one document that matters.
+  signedUrl: r.signedFileKey && r.signedSha256 ? fileLink(r.signedFileKey) : null,
   expiresAt: r.expiresAt.toISOString(),
   sentAt: iso(r.sentAt),
   completedAt: iso(r.completedAt),
@@ -190,8 +193,21 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
       file.file.resume();
       return reply.status(400).send({ error: "the document has to be a PDF" });
     }
-    const bytes = await file.toBuffer();
-    if (file.file.truncated) return reply.status(413).send({ error: "the document is over 25 MB" });
+    /*
+     * toBuffer() THROWS when the file hits the limit rather than returning a
+     * truncated buffer, so a `truncated` check after it is unreachable and the
+     * sender would get a bare 500 instead of being told the file is too big.
+     */
+    let bytes: Buffer;
+    try {
+      bytes = await file.toBuffer();
+    } catch (err) {
+      if (file.file.truncated || (err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
+        return reply.status(413).send({ error: "that document is over 25 MB" });
+      }
+      throw err;
+    }
+    if (file.file.truncated) return reply.status(413).send({ error: "that document is over 25 MB" });
 
     // Parse before storing: a file that pdf-lib cannot open would be a request
     // that can never be stamped, and finding that out at signing time is worse.
@@ -367,6 +383,62 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
     return ownerView((await own(request.user.agencyId, found.id))!);
   });
 
+  /**
+   * Finish a document whose signatures all landed but whose signed copy was
+   * never built.
+   *
+   * complete() runs after the last signature is committed, so anything that
+   * throws in it (an unreadable source file, a storage hiccup) leaves a fully
+   * signed contract with no signed copy, and the signers cannot retry: they are
+   * "signed" and get a 409. Without this route the only remaining action would
+   * be to void a document everybody has already signed.
+   */
+  app.post<{ Params: { id: string } }>("/signature-requests/:id/complete", async (request, reply) => {
+    if (isViewer(request)) return reply.status(403).send({ error: "viewers cannot change documents" });
+    const found = await own(request.user.agencyId, request.params.id);
+    if (!found) return reply.status(404).send({ error: "document not found" });
+    if (found.signedSha256) return reply.status(400).send({ error: "this document is already finished" });
+    if (!found.signers.length || !found.signers.every((s) => s.status === "signed")) {
+      return reply.status(409).send({ error: "not everyone has signed yet" });
+    }
+    try {
+      // ponytail: an owner double-click can start two builds; they write the
+      // same file and the same row, so the worst case is doing it twice. A
+      // lock column is the upgrade if that ever matters.
+      await complete(found as RequestRow, publicBase(request));
+    } catch (err) {
+      request.log.error({ err, requestId: found.id }, "retrying completion failed");
+      return reply.status(502).send({
+        error: "could not build the signed copy",
+        detail: String(err instanceof Error ? err.message : err).slice(0, 300),
+      });
+    }
+    return ownerView((await own(request.user.agencyId, found.id))!);
+  });
+
+  /**
+   * Email the signing link again to whoever it is currently waiting on.
+   *
+   * notifyTurn skips anyone already written to, so this picks up exactly the
+   * signers whose email bounced or never sent, which otherwise sit in the audit
+   * trail as "email_failed" with nothing ever retrying them.
+   */
+  app.post<{ Params: { id: string } }>("/signature-requests/:id/remind", async (request, reply) => {
+    if (isViewer(request)) return reply.status(403).send({ error: "viewers cannot send documents" });
+    const found = await own(request.user.agencyId, request.params.id);
+    if (!found) return reply.status(404).send({ error: "document not found" });
+    if (found.status !== "sent") return reply.status(409).send({ error: "this document is not out for signature" });
+    if (!gmailMailer()) {
+      return reply.status(503).send({ error: "email is not connected on this server, so nothing can be sent" });
+    }
+    const sent = await notifyTurn(found as RequestRow, publicBase(request), true);
+    if (!sent.length) {
+      return reply.status(409).send({ error: "there is nobody waiting to sign right now" });
+    }
+    await audit(found.id, "reminded", { ip: clientIp(request), detail: { to: sent } });
+    return ownerView((await own(request.user.agencyId, found.id))!);
+  });
+
   /** Cancel it. Open links stop working; the trail stays. */
   app.post<{ Params: { id: string } }>("/signature-requests/:id/void", async (request, reply) => {
     if (isViewer(request)) return reply.status(403).send({ error: "viewers cannot cancel documents" });
@@ -393,19 +465,24 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
  * signer: the trail is already append-only and is the thing a dispute reads, so
  * the record of what was sent to whom belongs there and nowhere else.
  */
-async function notifyTurn(req: RequestRow, base: string): Promise<string[]> {
+async function notifyTurn(req: RequestRow, base: string, force = false): Promise<string[]> {
   const prisma = getPrisma();
   const mailer = gmailMailer();
   if (!mailer) return [];
 
-  const already = new Set(
-    (
-      await prisma.signatureAuditEvent.findMany({
-        where: { requestId: req.id, type: "emailed" },
-        select: { signerId: true },
-      })
-    ).map((e) => e.signerId),
-  );
+  // force skips the dedupe: that is the owner pressing Remind, which has to
+  // work both for a signer whose email bounced and for one who simply has not
+  // got round to it.
+  const already = force
+    ? new Set<string | null>()
+    : new Set(
+        (
+          await prisma.signatureAuditEvent.findMany({
+            where: { requestId: req.id, type: "emailed" },
+            select: { signerId: true },
+          })
+        ).map((e) => e.signerId),
+      );
   // "viewed" counts as still to sign: a signer who opened the link early, out
   // of turn, has to be written to when their turn actually comes.
   const due = req.signers.filter(
@@ -453,10 +530,43 @@ async function notifyTurn(req: RequestRow, base: string): Promise<string[]> {
 /**
  * Builds the signed copy once the last signature lands, and emails it to
  * everyone involved.
+ *
+ * Claims the document before doing any of that. Two signers can share an
+ * order, which means two requests can finish within milliseconds of each
+ * other, both re-read "everyone has signed", and both start building. Each
+ * build produces different bytes (its own completedAt, and a trail that has
+ * grown since), so interleaved writes could leave signedSha256 describing one
+ * copy and signed.pdf holding the other: the integrity check this whole
+ * feature exists to support would then fail on a perfectly valid contract.
+ *
+ * The claim is a conditional updateMany, which is a single UPDATE ... WHERE in
+ * Postgres, so exactly one caller can win it. Returns true if it did the work.
  */
-async function complete(req: RequestRow, base: string): Promise<void> {
+async function complete(req: RequestRow, base: string): Promise<boolean> {
   const prisma = getPrisma();
   const completedAt = new Date();
+
+  /*
+   * The claim changes the very column it filters on, which is what makes it
+   * exclusive: the loser's UPDATE re-evaluates its WHERE after the winner
+   * commits, no longer matches, and reports zero rows. A filter on a column the
+   * UPDATE does not touch would match for both.
+   *
+   * Between here and the final write the row reads status "completed" with no
+   * signedSha256. That state means "finishing", and ownerView deliberately
+   * withholds signedUrl until the hash is there, so nothing ever offers a
+   * download of a file that does not exist yet.
+   */
+  const claim = await prisma.signatureRequest.updateMany({
+    where: { id: req.id, status: { not: "completed" } },
+    data: { status: "completed", completedAt },
+  });
+  if (claim.count === 0 && req.signedSha256 !== null) return false;
+  if (claim.count === 0) {
+    // Already claimed but never finished: this is the owner's retry.
+    await prisma.signatureRequest.update({ where: { id: req.id }, data: { completedAt } });
+  }
+
   const source = await fs.readFile(storagePath(req.sourceFileKey));
 
   const stamped = await stampFields(
@@ -503,14 +613,15 @@ async function complete(req: RequestRow, base: string): Promise<void> {
   const signedKey = key(req.id, "signed.pdf");
   await fs.mkdir(path.dirname(storagePath(signedKey)), { recursive: true });
   await fs.writeFile(storagePath(signedKey), final);
+  // Key and hash in one write, so the two can never describe different bytes.
   await prisma.signatureRequest.update({
     where: { id: req.id },
-    data: { status: "completed", completedAt, signedFileKey: signedKey, signedSha256: sha256(final) },
+    data: { signedFileKey: signedKey, signedSha256: sha256(final) },
   });
   await prisma.signatureAuditEvent.create({ data: { requestId: req.id, type: "completed" } });
 
   const mailer = gmailMailer();
-  if (!mailer) return;
+  if (!mailer) return true;
   const link = `${base}${fileLink(signedKey)}`;
   for (const s of req.signers) {
     try {
@@ -533,6 +644,7 @@ async function complete(req: RequestRow, base: string): Promise<void> {
       // not a reason to leave it looking unfinished.
     }
   }
+  return true;
 }
 
 /* ----------------------------------------------------------------- signer */
@@ -683,9 +795,41 @@ export async function publicSignatureRoutes(app: FastifyInstance): Promise<void>
     const tooBig = filled.find((x) => (x.value?.length ?? 0) > 400_000);
     if (tooBig) return reply.status(413).send({ error: "that signature image is too large" });
 
+    /*
+     * A signature has to contain ink.
+     *
+     * A blank pad still produces a valid PNG, and a valid transparent PNG
+     * stamps onto the page without complaint, so the contract would come back
+     * marked signed with an empty box and nothing in the record to show it.
+     * The page will not submit a blank pad either, but that is the client's
+     * copy of the rule and anyone can skip it.
+     */
+    const blank = filled.find(
+      (x) =>
+        (x.field.type === "signature" || x.field.type === "initials") &&
+        x.value !== null &&
+        !pngHasInk(x.value),
+    );
+    if (blank) {
+      return reply.status(400).send({ error: "that signature is blank. Draw your signature in the box and try again." });
+    }
+
     const ip = clientIp(request);
     const userAgent = String(request.headers["user-agent"] ?? "").slice(0, 400);
     const now = new Date();
+    /*
+     * The request's status is re-checked INSIDE the write, as an atomic
+     * updateMany rather than the read taken when this handler started: the
+     * owner can void a document between the two, and a signature landing after
+     * that would otherwise resurrect a cancelled contract as completed.
+     */
+    const claimed = await prisma.signatureRequest.updateMany({
+      where: { id: req.id, status: "sent" },
+      data: { updatedAt: now },
+    });
+    if (claimed.count === 0) {
+      return reply.status(409).send({ error: "this document is no longer open for signature" });
+    }
     await prisma.$transaction(async (tx) => {
       for (const { field, value } of filled) {
         if (value === null) continue;
@@ -709,10 +853,32 @@ export async function publicSignatureRoutes(app: FastifyInstance): Promise<void>
 
     // Re-read: another signer may have landed between the checks above and now.
     const after = (await prisma.signatureRequest.findUniqueOrThrow({ where: { id: req.id }, include })) as RequestRow;
-    if (after.signers.every((s) => s.status === "signed")) {
-      await complete(after, publicBase(request));
-    } else {
-      await notifyTurn(after, publicBase(request));
+    /*
+     * Everything from here on is after the signature is committed, so none of
+     * it may throw. A failure building the signed copy must not take the
+     * signature down with it: the signer cannot retry (they are "signed" now,
+     * and would get a 409), so an error escaping here would strand a finished
+     * contract with no signed copy and no way to produce one. The owner is
+     * given that way out by POST /signature-requests/:id/complete.
+     */
+    try {
+      if (after.signers.every((s) => s.status === "signed")) {
+        await complete(after, publicBase(request));
+      } else {
+        await notifyTurn(after, publicBase(request));
+      }
+    } catch (err) {
+      request.log.error({ err, requestId: req.id }, "signature recorded but finishing the document failed");
+      await prisma.signatureAuditEvent
+        .create({
+          data: {
+            requestId: req.id,
+            signerId: signer.id,
+            type: "finish_failed",
+            detail: { error: String(err instanceof Error ? err.message : err).slice(0, 300) },
+          },
+        })
+        .catch(() => undefined);
     }
     return page(signer.id);
   });
