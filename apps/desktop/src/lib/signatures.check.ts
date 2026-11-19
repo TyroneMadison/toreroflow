@@ -181,8 +181,8 @@ const base: RequestView = {
 assert.equal(daysLeft(base.expiresAt, now), 7);
 assert.equal(daysLeft("2026-11-18T23:00:00Z", now), 0, "later today is zero days, not one");
 assert.equal(daysLeft("2026-11-01T00:00:00Z", now), 0, "never negative");
-assert.equal(statusLine(base, now), "Waiting on B, C — 7 days left");
-assert.equal(statusLine({ ...base, expiresAt: "2026-11-19T06:00:00Z" }, now), "Waiting on B, C — expires today");
+assert.equal(statusLine(base, now), "Waiting on B, C · 7 days left");
+assert.equal(statusLine({ ...base, expiresAt: "2026-11-19T06:00:00Z" }, now), "Waiting on B, C · expires today");
 assert.equal(statusLine({ ...base, status: "draft" }, now), "Draft, not sent");
 assert.equal(statusLine({ ...base, status: "completed" }, now), "Signed by everyone");
 assert.equal(statusLine({ ...base, status: "voided" }, now), "Cancelled");

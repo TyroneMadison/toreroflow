@@ -37,6 +37,7 @@ export const PATHS: Record<ScreenId, string> = {
   queue: "/create/queue",
   rollup: "/rollup",
   templates: "/templates",
+  contracts: "/contracts",
   approvals: "/create/approvals",
   requests: "/create/requests",
   failed: "/failed-posts",

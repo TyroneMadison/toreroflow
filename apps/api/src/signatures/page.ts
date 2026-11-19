@@ -24,6 +24,8 @@ export interface SigningPageData {
   signer: { name: string; email: string; status: string; consentAt: string | null };
   fields: { id: string; type: string; page: number; required: boolean; value: string | null }[];
   yourTurn: boolean;
+  /** False when the server cannot send email: nothing on the page promises one. Missing reads as true. */
+  canEmail?: boolean;
 }
 
 /** HTML-escapes text. Covers attribute contexts too, hence the quotes. */
@@ -74,7 +76,10 @@ function headline(d: SigningPageData): string {
   if (d.status === "voided") return "The sender cancelled this document.";
   if (d.signer.status === "signed") return "You have signed. Waiting on the others.";
   if (d.signer.status === "declined") return "You declined this document.";
-  if (!d.yourTurn) return "Someone else has to sign before you. You will be emailed when it is your turn.";
+  if (!d.yourTurn)
+    return d.canEmail === false
+      ? "Someone else has to sign before you. Open this link again once they have."
+      : "Someone else has to sign before you. You will be emailed when it is your turn.";
   return "Read the document, then sign at the bottom.";
 }
 
@@ -165,7 +170,7 @@ export function signingPage(d: SigningPageData): string {
   <div id="msg"></div>
 </div>
 
-<script type="application/json" id="data">${jsonForScript({ token: d.token, fields: mine, labels: LABELS, done })}</script>
+<script type="application/json" id="data">${jsonForScript({ token: d.token, fields: mine, labels: LABELS, done, canEmail: d.canEmail !== false })}</script>
 <script>
 (function () {
   var D = JSON.parse(document.getElementById("data").textContent);
@@ -303,8 +308,8 @@ export function signingPage(d: SigningPageData): string {
       var out = await post("/sign", { values: values, intent: true });
       document.getElementById("f").classList.add("hide");
       say("ok", out.status === "completed"
-        ? "Signed. Everyone has now signed, and the completed copy is on its way to you by email."
-        : "Signed. We will email you the completed copy once everyone else has signed.");
+        ? (D.canEmail ? "Signed. Everyone has now signed, and the completed copy is on its way to you by email." : "Signed. Everyone has now signed. Reload this page for the completed copy.")
+        : (D.canEmail ? "Signed. We will email you the completed copy once everyone else has signed." : "Signed. Open this link again once everyone has signed for the completed copy."));
     } catch (err) {
       say("err", err.message);
       refresh();

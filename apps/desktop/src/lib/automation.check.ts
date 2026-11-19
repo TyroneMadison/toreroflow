@@ -32,7 +32,7 @@ eq(measure.pages === reports.pages, true, "Measure keeps the same pages as Repor
 eq(SECTIONS.map((s) => s.id), ["overview", "create", "measure", "reports", "settings"], "the Reports tab sits between Measure and Settings");
 eq([sectionHome(measure), sectionHome(reports)], ["analytics", "reports"], "Measure opens Analytics, Reports opens /reports");
 const pages = SECTIONS.filter((s) => s !== measure).flatMap((s) => s.pages);
-eq(new Set(pages.map((p) => p.id)).size, 25, "all twenty-five screens (the phone More page included) are mapped once");
+eq(new Set(pages.map((p) => p.id)).size, 26, "all twenty-six screens (the phone More page included) are mapped once");
 eq(new Set(pages.map((p) => p.slug)).size, pages.length, "slugs are unique");
 eq(sectionOf("calendar").id, "create", "calendar lives under Create");
 eq(pageOf("overview").slug, "account-overview", "Account Overview does not collide with the section");

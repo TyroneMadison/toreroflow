@@ -30,6 +30,12 @@
   gap: 8px;
 }
 
+/* The Overview card shows three stats. The Contracts screen shows four, and a
+   fourth dropped into a three-column grid wraps onto a lonely second row. */
+.sg-card-stats.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .sg-note {
   margin: 0;
   font-size: 12px;
@@ -108,6 +114,12 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
+}
+
+/* Status badges are one lowercase word, so capitalize suits them. A badge that
+   holds a phrase does not: it comes out as "Waiting On Sam". */
+.sg-badge.phrase {
+  text-transform: none;
 }
 
 .sg-badge.ok {
@@ -463,4 +475,12 @@
   .sg-card-stats {
     grid-template-columns: 1fr;
   }
+
+  /* Four full-width rows of one number each is most of a phone screen. */
+  .sg-card-stats.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
+
+/* The Contracts page: stats, filters and list need room between them. */
+.sg-stage{display:flex;flex-direction:column;gap:12px}

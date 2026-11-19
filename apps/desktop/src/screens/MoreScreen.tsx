@@ -65,6 +65,7 @@ export default function MoreScreen({
         { label: "Financials", icon: "#i-dollar", screen: "financials" },
         { label: "Account overview", icon: "#i-users", screen: "overview" },
         { label: "Templates", icon: "#i-copy", screen: "templates" },
+        { label: "Contracts", icon: "#i-pencil", screen: "contracts" },
       ],
     },
     {

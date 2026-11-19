@@ -16,6 +16,7 @@ import CarouselsScreen from "./screens/CarouselsScreen";
 import CommentsScreen from "./screens/CommentsScreen";
 import WorkflowsScreen from "./screens/WorkflowsScreen";
 import { FanoutScreen, PreflightScreen, QueueScreen, RollupScreen, TemplatesScreen } from "./screens/WorkflowScreens";
+import ContractsScreen from "./screens/ContractsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import MoreScreen from "./screens/MoreScreen";
 import ReadyQueueScreen from "./screens/ReadyQueueScreen";
@@ -276,6 +277,7 @@ function Shell() {
           {activeScreen === "queue" && <QueueScreen key="queue" />}
           {activeScreen === "rollup" && <RollupScreen key={`rollup-${selectedClientId ?? "none"}`} />}
           {activeScreen === "templates" && <TemplatesScreen key="templates" />}
+          {activeScreen === "contracts" && <ContractsScreen key="contracts" />}
           {activeScreen === "ready" && <ReadyQueueScreen key="ready" />}
           {activeScreen === "schedule" && <ScheduleScreen key="schedule" />}
           {activeScreen === "approvals" && <ApprovalsScreen key={`approvals-${selectedClientId ?? "none"}`} />}

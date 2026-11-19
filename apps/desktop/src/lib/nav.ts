@@ -23,6 +23,7 @@ export type ScreenId =
   | "queue"
   | "rollup"
   | "templates"
+  | "contracts"
   | "approvals"
   | "requests"
   | "failed"
@@ -71,6 +72,7 @@ export const SECTIONS: SectionDef[] = [
       { id: "financials", label: "Financials", slug: "financials" },
       { id: "overview", label: "Account Overview", slug: "account-overview" },
       { id: "templates", label: "Templates", slug: "templates" },
+      { id: "contracts", label: "Contracts", slug: "contracts" },
       { id: "failed", label: "Failed posts", slug: "failed-posts" },
     ],
   },

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Stat from "../glass/Stat";
 import SignatureBuilder from "./SignatureBuilder";
+import { useRequestActions } from "./useRequestActions";
 import { useToast } from "../Toasts";
 import { api, API_URL, type SignatureRequest, type SignatureSummary } from "../../lib/api";
 import { openExternal } from "../../lib/external";
-import { progress, statusLine, type RequestView } from "../../lib/signatures";
+import { progress, statusLine, TONE, waitingOn } from "../../lib/signatures";
 import "./signatures.css";
 
 /**
@@ -15,18 +16,9 @@ import "./signatures.css";
  * every contract ever sent.
  */
 
-const TONE: Record<string, "ok" | "bad" | "warn" | "info" | undefined> = {
-  completed: "ok",
-  sent: "info",
-  declined: "bad",
-  voided: undefined,
-  draft: "warn",
-};
-
 export default function SignatureCard() {
   const toast = useToast();
   const [summary, setSummary] = useState<SignatureSummary | null>(null);
-  const [open, setOpen] = useState<SignatureRequest | null>(null);
   const [building, setBuilding] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -44,35 +36,8 @@ export default function SignatureCard() {
     void load();
   }, [load]);
 
-  const openRequest = async (id: string) => {
-    try {
-      setOpen(await api.get<SignatureRequest>(`/signature-requests/${id}`));
-    } catch (err) {
-      toast.fail("Could not open that document", err);
-    }
-  };
-
-  /** Finish or remind: both answer with the request, so the open card refreshes. */
-  const act = async (path: string, ok: string, fail: string) => {
-    try {
-      setOpen(await api.post<SignatureRequest>(path));
-      toast.success(ok);
-      await load();
-    } catch (err) {
-      toast.fail(fail, err);
-    }
-  };
-
-  const voidRequest = async (id: string) => {
-    try {
-      await api.post<SignatureRequest>(`/signature-requests/${id}/void`, { reason: "" });
-      toast.success("Cancelled. The signing links no longer work.");
-      setOpen(null);
-      await load();
-    } catch (err) {
-      toast.fail("Could not cancel it", err);
-    }
-  };
+  // Opening and acting on one contract is shared with the Contracts screen.
+  const { open, setOpen, openRequest, act, voidRequest } = useRequestActions(load);
 
   return (
     <aside className="sg-card glass-z1" data-testid="signatures.card">
@@ -84,11 +49,11 @@ export default function SignatureCard() {
       </div>
 
       <div className="sg-card-stats">
-        <Stat label="Out for signature" value={summary?.awaitingOthers ?? "—"} tone={summary?.awaitingOthers ? "info" : undefined} />
-        <Stat label="Signed" value={summary?.completed ?? "—"} tone="ok" />
+        <Stat label="Out for signature" value={summary?.awaitingOthers ?? "-"} tone={summary?.awaitingOthers ? "info" : undefined} />
+        <Stat label="Signed" value={summary?.completed ?? "-"} tone="ok" />
         <Stat
           label="Expiring soon"
-          value={summary?.expiringSoon ?? "—"}
+          value={summary?.expiringSoon ?? "-"}
           sub="within 3 days"
           tone={summary?.expiringSoon ? "bad" : undefined}
         />
@@ -120,8 +85,10 @@ export default function SignatureCard() {
       {building && (
         <SignatureBuilder
           onClose={() => setBuilding(false)}
-          onSent={() => {
+          onSent={(r) => {
             void load();
+            // Straight into the contract, where the signing links are, as the Contracts page does.
+            setOpen(r);
           }}
         />
       )}
@@ -139,7 +106,7 @@ export default function SignatureCard() {
 }
 
 /** One document: who has signed, who has not, and the signed copy once it exists. */
-function RequestDetail({
+export function RequestDetail({
   r,
   onClose,
   onVoid,
@@ -151,7 +118,6 @@ function RequestDetail({
   onAction(path: string, ok: string, fail: string): void;
 }) {
   const toast = useToast();
-  const view = r as unknown as RequestView;
   /**
    * Everyone signed but no signed copy exists: completion threw after the last
    * signature was committed. The signers cannot retry, so without this the
@@ -159,9 +125,15 @@ function RequestDetail({
    * already signed.
    */
   const stuck = r.signers.length > 0 && r.signers.every((s) => s.status === "signed") && !r.signedUrl;
+  // Past its expiry the links refuse to open, so nothing offers one.
+  const expired = Date.parse(r.expiresAt) <= Date.now();
+  // Only whoever is up can sign; a later signer's link would just say "not your turn yet".
+  const upNow = new Set(waitingOn(r.signers).map((s) => s.id));
+  const byHand = r.emailed === false || r.emailConnected === false;
   const copy = async (url: string, who: string) => {
     try {
-      await navigator.clipboard.writeText(`${API_URL}${url}`);
+      // The server sends it absolute, on the address the signer can open. Older servers sent a path.
+      await navigator.clipboard.writeText(/^https?:\/\//.test(url) ? url : `${API_URL}${url}`);
       toast.success(`Signing link for ${who} copied`);
     } catch (err) {
       toast.fail("Could not copy the link", err);
@@ -178,7 +150,7 @@ function RequestDetail({
         <div className="modal-head">
           <div>
             <h3>{r.title}</h3>
-            <p>{statusLine(view)}</p>
+            <p>{statusLine(r)}</p>
           </div>
           <button type="button" className="modal-x" aria-label="Close" onClick={onClose}>
             <svg>
@@ -199,7 +171,7 @@ function RequestDetail({
                 <span className={`sg-badge ${s.status === "signed" ? "ok" : s.status === "declined" ? "bad" : "info"}`}>
                   {s.status === "signed" && s.signedAt ? `signed ${new Date(s.signedAt).toLocaleDateString()}` : s.status}
                 </span>
-                {s.status !== "signed" && s.status !== "declined" && s.signingUrl && r.status === "sent" && (
+                {upNow.has(s.id) && s.signingUrl && r.status === "sent" && !expired && (
                   <button type="button" className="tf-btn" onClick={() => void copy(s.signingUrl!, s.name || s.email)}>
                     Copy link
                   </button>
@@ -217,6 +189,16 @@ function RequestDetail({
             {r.signedSha256 ? ` · signed copy ${r.signedSha256.slice(0, 16)}…` : ""}
           </p>
         </div>
+        {byHand && r.status === "sent" && !expired && (
+          <p className="sg-note sg-stuck" data-testid="signatures.not-emailed">
+            Email is not connected on this server, so signers are not emailed. Copy the link for whoever
+            is up now and send it to them yourself. When they have signed, come back here for the next
+            person's link.
+          </p>
+        )}
+        {expired && r.status === "sent" && (
+          <p className="sg-note sg-stuck">This document has expired, so its links no longer open. Send it again.</p>
+        )}
         {stuck && (
           <p className="sg-note sg-stuck">
             Everyone has signed, but the signed copy was not built. Finish it to produce the signed
@@ -229,7 +211,7 @@ function RequestDetail({
               Cancel document
             </button>
           )}
-          {r.status === "sent" && !stuck && (
+          {r.status === "sent" && !stuck && !expired && r.emailConnected !== false && (
             <button
               type="button"
               className="mb-btn ghost"

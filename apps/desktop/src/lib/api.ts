@@ -1136,6 +1136,15 @@ export interface SignatureRequest {
   createdAt: string;
   signers: SignatureSigner[];
   fields: SignatureField[];
+  /**
+   * Set by /send and /remind only: whether that call actually emailed anyone.
+   * Absent on a fetched document, which cannot know. False means the links are
+   * valid but nobody was written to, so the owner has to pass them on.
+   */
+  emailed?: boolean;
+  emailedTo?: string[];
+  /** Whether the server can email signers at all. Missing from older servers. */
+  emailConnected?: boolean;
 }
 
 /** The Overview card's counts, so it does not pull every contract to show three numbers. */

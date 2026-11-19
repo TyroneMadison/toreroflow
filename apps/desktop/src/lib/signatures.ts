@@ -157,6 +157,15 @@ export interface RequestView {
   signers: SignerView[];
 }
 
+/** Badge colour per status. Shared, so the card and the screen cannot drift. */
+export const TONE: Record<RequestView["status"], "ok" | "bad" | "warn" | "info" | undefined> = {
+  completed: "ok",
+  sent: "info",
+  declined: "bad",
+  voided: undefined,
+  draft: "warn",
+};
+
 /**
  * "2 of 3 signed". Takes counts, not signers: the summary endpoint sends counts
  * so the Overview card does not have to pull every signer of every contract.
@@ -192,5 +201,5 @@ export function statusLine(r: RequestView, now = Date.now()): string {
   const next = waitingOn(r.signers);
   const d = daysLeft(r.expiresAt, now);
   const expiry = d === 0 ? "expires today" : `${d} day${d === 1 ? "" : "s"} left`;
-  return next.length ? `Waiting on ${next.map((s) => s.name || s.email).join(", ")} — ${expiry}` : expiry;
+  return next.length ? `Waiting on ${next.map((s) => s.name || s.email).join(", ")} · ${expiry}` : expiry;
 }

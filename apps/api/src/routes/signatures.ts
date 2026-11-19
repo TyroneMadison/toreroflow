@@ -44,10 +44,17 @@ export function signerToken(id: string, expiresAt: Date, secret = env.JWT_SECRET
 const key = (requestId: string, name: string) => `signatures/${requestId}/${name}`;
 const storagePath = (storageKey: string) => path.join(env.STORAGE_DIR, storageKey);
 
-/** Absolute, because this goes in an email to someone outside the app. The app's own address when there is one. */
+/**
+ * Where signing links live: the app's own address when there is one, else the
+ * API's public one. "" when neither is set (a laptop), and links stay relative.
+ * One rule for the emailed link and the one the owner copies, so the two match.
+ */
+const signingBase = () =>
+  env.APP_DOMAIN ? `https://${env.APP_DOMAIN}` : (env.OAUTH_REDIRECT_BASE || "").replace(/\/+$/, "");
+
+/** Absolute, because this goes in an email to someone outside the app. */
 function publicBase(request: FastifyRequest): string {
-  if (env.APP_DOMAIN) return `https://${env.APP_DOMAIN}`;
-  return (env.OAUTH_REDIRECT_BASE || `${request.protocol}://${request.hostname}`).replace(/\/+$/, "");
+  return signingBase() || `${request.protocol}://${request.hostname}`.replace(/\/+$/, "");
 }
 
 type SignerRow = {
@@ -135,6 +142,9 @@ const ownerView = (r: RequestRow) => ({
   voidedAt: iso(r.voidedAt),
   voidReason: r.voidReason,
   createdAt: r.createdAt.toISOString(),
+  // Whether this server can email signers at all. Without it the owner sends each
+  // link by hand, and the detail view says so on every open, not only after Send.
+  emailConnected: gmailMailer() !== null,
   // Already ordered by the query; see `include`.
   signers: r.signers.map((s) => ({
     id: s.id,
@@ -147,7 +157,8 @@ const ownerView = (r: RequestRow) => ({
     signedAt: iso(s.signedAt),
     declinedAt: iso(s.declinedAt),
     declineReason: s.declineReason,
-    signingUrl: `/s/${signerToken(s.id, r.expiresAt)}`,
+    // Absolute and on the same address the email uses, so a copied link opens for an outsider.
+    signingUrl: `${signingBase()}/s/${signerToken(s.id, r.expiresAt)}`,
   })),
   fields: r.fields.map(fieldView),
 });
@@ -318,7 +329,14 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
       include,
       orderBy: { createdAt: "desc" },
     });
-    return { requests: requests.map(ownerView) };
+    // The list never shows a filled box, so drawn signatures (PNG data) stay out of it.
+    // Opening one contract fetches it whole.
+    return {
+      requests: requests.map((r) => {
+        const v = ownerView(r);
+        return { ...v, fields: v.fields.map((f) => ({ ...f, value: null })) };
+      }),
+    };
   });
 
   /** The Overview tab's card: four counts and the latest handful. */
@@ -366,22 +384,17 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
     }
     if (found.expiresAt <= new Date()) return reply.status(400).send({ error: "the expiry is in the past" });
 
-    const mailer = gmailMailer();
-    if (!mailer) {
-      return reply.status(503).send({
-        error: "email is not connected on this server, so the signing links cannot be sent. Connect the Gmail account first.",
-      });
-    }
-
     const sent = await prisma.signatureRequest.update({
       where: { id: found.id },
       data: { status: "sent", sentAt: new Date() },
       include,
     });
     await audit(found.id, "sent", { ip: clientIp(request) });
-    await notifyTurn(sent as RequestRow, publicBase(request));
+    // No mailer is not a failure here: notifyTurn records the skip and reports
+    // it, and the owner gets the links to pass on. See notifyTurn.
+    const { emailed } = await notifyTurn(sent as RequestRow, publicBase(request));
 
-    return ownerView((await own(request.user.agencyId, found.id))!);
+    return { ...ownerView((await own(request.user.agencyId, found.id))!), emailed: emailed.length > 0, emailedTo: emailed };
   });
 
   /**
@@ -429,15 +442,21 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
     const found = await own(request.user.agencyId, request.params.id);
     if (!found) return reply.status(404).send({ error: "document not found" });
     if (found.status !== "sent") return reply.status(409).send({ error: "this document is not out for signature" });
-    if (!gmailMailer()) {
-      return reply.status(503).send({ error: "email is not connected on this server, so nothing can be sent" });
-    }
-    const sent = await notifyTurn(found as RequestRow, publicBase(request), true);
-    if (!sent.length) {
+    // Its links already refuse to open, so a reminder would hand out dead links.
+    if (found.expiresAt <= new Date()) return reply.status(409).send({ error: "this document has expired. Send it again." });
+    const { emailed, due } = await notifyTurn(found as RequestRow, publicBase(request), true);
+    // Gated on "due", not on "emailed". With no mailer nothing is sent but
+    // someone is still waiting, and telling the owner nobody is waiting is a
+    // lie they would act on by cancelling a live document.
+    if (!due.length) {
       return reply.status(409).send({ error: "there is nobody waiting to sign right now" });
     }
-    await audit(found.id, "reminded", { ip: clientIp(request), detail: { to: sent } });
-    return ownerView((await own(request.user.agencyId, found.id))!);
+    if (emailed.length) {
+      await audit(found.id, "reminded", { ip: clientIp(request), detail: { to: emailed } });
+    }
+    // emailedTo stays literally who was emailed. Who still has to be chased is
+    // already on each signer's own status, which the detail view reads.
+    return { ...ownerView((await own(request.user.agencyId, found.id))!), emailed: emailed.length > 0, emailedTo: emailed };
   });
 
   /** Cancel it. Open links stop working; the trail stays. */
@@ -466,10 +485,13 @@ export async function signatureRoutes(app: FastifyInstance): Promise<void> {
  * signer: the trail is already append-only and is the thing a dispute reads, so
  * the record of what was sent to whom belongs there and nowhere else.
  */
-async function notifyTurn(req: RequestRow, base: string, force = false): Promise<string[]> {
+async function notifyTurn(
+  req: RequestRow,
+  base: string,
+  force = false,
+): Promise<{ emailed: string[]; due: string[] }> {
   const prisma = getPrisma();
   const mailer = gmailMailer();
-  if (!mailer) return [];
 
   // force skips the dedupe: that is the owner pressing Remind, which has to
   // work both for a signer whose email bounced and for one who simply has not
@@ -489,6 +511,34 @@ async function notifyTurn(req: RequestRow, base: string, force = false): Promise
   const due = req.signers.filter(
     (s) => (s.status === "pending" || s.status === "viewed") && isTurn(req.signers, s) && !already.has(s.id),
   );
+
+  /*
+   * No mailer: the document still goes out, the owner just carries the links.
+   *
+   * Refusing to send without email would be the wrong call. Every signing link
+   * is already minted and valid without it (ownerView carries one per signer),
+   * and completion already behaves this way: complete() returns having stored a
+   * signed, hash-verified contract whether or not a copy could be emailed. A
+   * send that 503s on a server with no Gmail token leaves a document that can
+   * never leave draft, and a draft's links are deliberately 404, so the whole
+   * feature is unreachable rather than merely quieter.
+   *
+   * Recorded once, with who should have been written to, so the trail never
+   * has a silent gap where an "emailed" row would be. The caller is told as
+   * well, so nothing can claim an email went out when none did.
+   */
+  if (!mailer) {
+    if (due.length) {
+      await prisma.signatureAuditEvent.create({
+        data: {
+          requestId: req.id,
+          type: "email_skipped",
+          detail: { to: due.map((s) => s.email), reason: "email is not connected on this server" },
+        },
+      });
+    }
+    return { emailed: [], due: due.map((s) => s.email) };
+  }
 
   const sentTo: string[] = [];
   for (const s of due) {
@@ -525,7 +575,7 @@ async function notifyTurn(req: RequestRow, base: string, force = false): Promise
       });
     }
   }
-  return sentTo;
+  return { emailed: sentTo, due: due.map((s) => s.email) };
 }
 
 /**
@@ -696,6 +746,8 @@ export async function publicSignatureRoutes(app: FastifyInstance): Promise<void>
       // the unsigned original on the page they just finished.
       documentUrl: fileLink(req.signedFileKey ?? req.sourceFileKey),
       expiresAt: req.expiresAt.toISOString(),
+      // With no mailer the page never promises an email that will not come.
+      canEmail: gmailMailer() !== null,
       signer: {
         name: s.name,
         email: s.email,

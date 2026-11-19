@@ -172,7 +172,11 @@ export default function SignatureBuilder({ onClose, onSent }: { onClose(): void;
         })),
       });
       const sent = await api.post<SignatureRequest>(`/signature-requests/${uploaded.id}/send`);
-      toast.success(`Sent to ${signers.length === 1 ? signers[0]!.email.trim() : `${signers.length} people`}`);
+      toast.success(
+        sent.emailed === false
+          ? "Ready to sign. Email is off on this server, so copy the signing link and send it yourself."
+          : `Sent to ${signers.length === 1 ? signers[0]!.email.trim() : `${signers.length} people`}`,
+      );
       onSent(sent);
       onClose();
     } catch (err) {

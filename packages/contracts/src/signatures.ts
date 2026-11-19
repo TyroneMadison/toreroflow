@@ -99,6 +99,20 @@ export const SignatureRequestSchema = z.object({
   createdAt: z.string().datetime(),
   signers: z.array(SignerSchema),
   fields: z.array(SignatureFieldSchema),
+  /*
+   * Only /send and /remind set these: they are what that one call did, not
+   * state of the document, so a later GET cannot know them and leaves them out.
+   * Optional rather than defaulted for exactly that reason: `emailed: false`
+   * on a fetched document would read as "the email failed" when the truth is
+   * "this response is not about an email".
+   *
+   * A plain z.object strips unknown keys, so without these two lines the
+   * fields would vanish on parse and every caller would see undefined.
+   */
+  emailed: z.boolean().optional(),
+  emailedTo: z.array(z.string()).optional(),
+  /** Whether the server can email signers at all. Optional: servers before it never sent it. */
+  emailConnected: z.boolean().optional(),
 });
 
 export const SignatureRequestListSchema = z.object({
