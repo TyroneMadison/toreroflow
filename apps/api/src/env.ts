@@ -113,6 +113,12 @@ export interface Env {
    * test binding a real client's credential on the live server.
    */
   OAUTH_REDIRECT_BASE: string;
+  /**
+   * The web app's host, e.g. app.torerone.com. Signing links go here (Caddy
+   * hands /s/* and /files/* on it to this API), so a signer sees the app's
+   * own address. Empty on a server without one: links then use the API's.
+   */
+  APP_DOMAIN: string;
   /** Local disk object storage for dev; swaps to R2/S3 for cloud deploys. */
   STORAGE_DIR: string;
   /**
@@ -203,6 +209,8 @@ export const env: Env = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ?? "",
   GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN ?? "",
   OAUTH_REDIRECT_BASE: (process.env.OAUTH_REDIRECT_BASE ?? "").replace(/\/+$/, ""),
+  // app.localhost is compose's placeholder for "no app domain yet", never a real address.
+  APP_DOMAIN: /^[a-z0-9.-]+$/i.test(process.env.APP_DOMAIN ?? "") && process.env.APP_DOMAIN !== "app.localhost" ? process.env.APP_DOMAIN! : "",
   STORAGE_DIR: process.env.STORAGE_DIR ?? path.join(repoRoot, "storage"),
   CAPTIONS_URL: process.env.CAPTIONS_URL ?? "http://localhost:4710",
   REPO_ROOT: repoRoot,

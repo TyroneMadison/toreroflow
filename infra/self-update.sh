@@ -35,6 +35,13 @@ GIT_COMMIT="$(git -C "$APP_DIR" rev-parse --short HEAD)"
 export GIT_COMMIT
 docker compose -f "$COMPOSE" up -d --build --remove-orphans
 
+# Caddy reads its config through a single-file mount, which keeps showing the
+# old file after git replaces it. When the config changed, restart Caddy so the
+# new one loads; otherwise it is left alone.
+if [ "$FROM" != unknown ] && ! git -C "$APP_DIR" diff --quiet "$FROM" HEAD -- infra/Caddyfile; then
+  docker compose -f "$COMPOSE" restart caddy
+fi
+
 # Wait for the API to come back before calling it a success, or the operator
 # gets a green tick for a container that is crash-looping.
 i=0

@@ -1,11 +1,10 @@
 /**
  * The page a signer actually sees, served by the API itself.
  *
- * Not part of the React app on purpose. That app is only published to
- * APP_DOMAIN, which is unset on this server, so a link into it would 404 for
- * the one person it exists for. This page is served from the same origin the
- * link points at, so a signing link works the moment the API is up and needs
- * no second DNS record, container or deploy.
+ * Not part of the React app on purpose: the signer has no login, and this page
+ * needs none of the app. Served by the API, and reached on the app's own
+ * address (APP_DOMAIN), where Caddy passes /s/* and /files/* to the API, or on
+ * the API's when a server has no app domain.
  *
  * Every value here comes out of the database, and some of it was typed by
  * whoever uploaded the file or named the signer. So nothing is interpolated

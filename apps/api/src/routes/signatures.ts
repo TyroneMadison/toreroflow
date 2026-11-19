@@ -44,8 +44,9 @@ export function signerToken(id: string, expiresAt: Date, secret = env.JWT_SECRET
 const key = (requestId: string, name: string) => `signatures/${requestId}/${name}`;
 const storagePath = (storageKey: string) => path.join(env.STORAGE_DIR, storageKey);
 
-/** Absolute, because this goes in an email to someone outside the app. */
+/** Absolute, because this goes in an email to someone outside the app. The app's own address when there is one. */
 function publicBase(request: FastifyRequest): string {
+  if (env.APP_DOMAIN) return `https://${env.APP_DOMAIN}`;
   return (env.OAUTH_REDIRECT_BASE || `${request.protocol}://${request.hostname}`).replace(/\/+$/, "");
 }
 

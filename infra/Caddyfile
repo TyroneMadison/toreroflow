@@ -55,17 +55,28 @@
 }
 
 # The web-hosted app UI. Static files from the webapp container; the page
-# itself calls the API origin above, so nothing here proxies data.
+# itself calls the API origin above. The one exception is contract signing:
+# its links live on this address, so the signer page (/s/*) and the PDF it
+# shows (/files/*, signed links only) come from the API through here.
 {$APP_DOMAIN:app.localhost} {
-	reverse_proxy webapp:80
+	@api path /s/* /files/*
+	handle @api {
+		reverse_proxy api:4700
+	}
+	handle {
+		reverse_proxy webapp:80
+	}
 
 	header {
 		X-Content-Type-Options nosniff
-		# The app in a frame is a clickjacking surface for every schedule
-		# button in it.
-		X-Frame-Options DENY
 		Referrer-Policy no-referrer
 		Strict-Transport-Security "max-age=63072000; includeSubDomains"
 		-Server
 	}
+	# The app in a frame is a clickjacking surface for every schedule button
+	# in it. The signing page frames its own PDF from this same address, so
+	# files alone may be framed, and only here.
+	@notfiles not path /files/*
+	header @notfiles >X-Frame-Options DENY
+	header /files/* >X-Frame-Options SAMEORIGIN
 }
