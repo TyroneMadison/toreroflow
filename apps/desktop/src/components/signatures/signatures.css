@@ -1,0 +1,457 @@
+/*
+ * Document signing. Two surfaces: the Overview card, and the placement builder.
+ *
+ * The builder's page stack is the only part with real constraints. A page is a
+ * positioning context with a fixed aspect ratio, so the canvas can scale with
+ * the window while the field boxes, placed in percentages, stay exactly where
+ * they were dropped. Nothing here measures pixels.
+ */
+
+/* ---- the Overview card ---- */
+
+.sg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+}
+
+.sg-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sg-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sg-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted, rgba(255, 255, 255, 0.6));
+}
+
+.sg-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.sg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sg-item:hover,
+.sg-item:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sg-item-txt {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.sg-item-txt b {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sg-item-txt small {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.sg-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.sg-badge.ok {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+
+.sg-badge.bad {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
+.sg-badge.info {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+.sg-badge.warn {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.sg-signer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.sg-signer-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sg-signer-who {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.sg-signer-who small {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ---- the upload drop zone ---- */
+
+.sg-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 20px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  cursor: pointer;
+}
+
+.sg-drop:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.sg-drop svg {
+  width: 26px;
+  height: 26px;
+  opacity: 0.6;
+}
+
+.sg-drop small {
+  max-width: 34ch;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.6;
+}
+
+/* ---- the builder ---- */
+
+.sg-build {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  align-items: start;
+}
+
+.sg-doc {
+  max-height: min(72vh, 820px);
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.sg-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sg-loading {
+  padding: 40px;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.6;
+}
+
+/*
+ * A page: the positioning context every field box is placed against. The
+ * aspect-ratio is set per page from the PDF, so a landscape or A4 page is not
+ * forced into the shape of the first one.
+ */
+.sg-page {
+  position: relative;
+  width: 100%;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+  cursor: crosshair;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.sg-canvas-slot,
+.sg-canvas-slot > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.sg-pageno {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.sg-box {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  border: 2px solid currentColor;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  cursor: grab;
+  touch-action: none;
+}
+
+.sg-box.on {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.sg-box-tag {
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  pointer-events: none;
+  /* Never spill out of a small box onto the clause next to it. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sg-box-x {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sg-box-grip {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: currentColor;
+  cursor: nwse-resize;
+}
+
+/* ---- the builder's side column ---- */
+
+.sg-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sg-field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.sg-row2 {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.sg-signers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sg-signer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.sg-signer.on {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sg-signer-in {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sg-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.sg-order {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.sg-order input {
+  width: 38px;
+  padding: 2px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+}
+
+/* How many boxes this signer has. A zero is the thing that blocks Send. */
+.sg-count {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sg-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sg-tool {
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sg-tool.on {
+  border-color: transparent;
+  background: var(--accent, #7b2d8e);
+  color: #fff;
+}
+
+.sg-req {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.sg-blockers {
+  margin: 0;
+  padding: 10px 10px 10px 26px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sg-foot-note {
+  margin-right: auto;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* ---- phone ---- */
+
+@media (max-width: 860px) {
+  .sg-build {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sg-doc {
+    max-height: 46vh;
+  }
+
+  .sg-card-stats {
+    grid-template-columns: 1fr;
+  }
+}

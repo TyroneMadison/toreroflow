@@ -123,6 +123,8 @@ model Agency {
   bots            BotIdentity[]
   settings        AppSetting[]
   libraryAssets   LibraryAsset[]
+
+  signatureRequests SignatureRequest[]
 }
 
 /**
@@ -327,6 +329,7 @@ model Client {
   sunraQuotes      SunraQuote[]
   repurposeJobs    RepurposeJob[]
   xPostedDays      XPostedDay[]
+  signatureRequests SignatureRequest[]
 
   @@index([agencyId])
 }
@@ -2005,4 +2008,139 @@ model XPostedDay {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@id([clientId, date])
+}
+
+enum SignatureRequestStatus {
+  draft
+  sent
+  completed
+  declined
+  voided
+}
+
+enum SignerStatus {
+  pending
+  viewed
+  signed
+  declined
+}
+
+enum SignatureFieldType {
+  signature
+  initials
+  date
+  text
+  checkbox
+}
+
+/// One document out for signature. The source file is never modified; the
+/// signed copy is written separately so the original stays verifiable.
+model SignatureRequest {
+  id            String                 @id @default(cuid())
+  /// The tenant boundary. Deliberately not inferred through clientId, which is
+  /// nullable: a contract sent to someone who is not a client yet would
+  /// otherwise belong to no agency and be visible to every one of them.
+  agencyId      String
+  clientId      String?
+  createdById   String?
+  title         String
+  message       String                 @default("")
+  status        SignatureRequestStatus @default(draft)
+  sourceFileKey String
+  /// SHA-256 of the uploaded file, taken before anything is stamped on it.
+  sourceSha256  String
+  pageCount     Int                    @default(0)
+  /// Stamped copy with the certificate of completion appended. Null until everyone has signed.
+  signedFileKey String?
+  signedSha256  String?
+  expiresAt     DateTime
+  sentAt        DateTime?
+  completedAt   DateTime?
+  voidedAt      DateTime?
+  voidReason    String                 @default("")
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  agency  Agency                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  client  Client?               @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  signers SignatureSigner[]
+  fields  SignatureField[]
+  events  SignatureAuditEvent[]
+
+  @@index([agencyId])
+  @@index([clientId])
+  @@index([status])
+}
+
+/// A person who has to sign. The token is minted from the id and expiry, as
+/// approval links are, so it is unforgeable and never stored.
+model SignatureSigner {
+  id        String       @id @default(cuid())
+  requestId String
+  email     String
+  name      String       @default("")
+  /// 1-based. Signers with the same number are asked together.
+  order     Int          @default(1)
+  status    SignerStatus @default(pending)
+  /// ESIGN requires consent to transact electronically before any signature counts.
+  consentAt DateTime?
+  viewedAt  DateTime?
+  signedAt  DateTime?
+  declinedAt DateTime?
+  declineReason String    @default("")
+  /// Attribution evidence, captured at the moment of signing.
+  signedIp  String       @default("")
+  signedUserAgent String @default("")
+  createdAt DateTime     @default(now())
+
+  request SignatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  fields  SignatureField[]
+
+  @@index([requestId])
+  @@index([email])
+}
+
+/// A box placed on the document for one signer to fill.
+model SignatureField {
+  id        String             @id @default(cuid())
+  requestId String
+  signerId  String?
+  type      SignatureFieldType
+  /// 0-based page index.
+  page      Int
+  /// Fractions of page width and height, so placement survives any render scale.
+  x         Float
+  y         Float
+  width     Float
+  height    Float
+  required  Boolean            @default(true)
+  /// Typed text, an ISO date, "true", or a data URL for a drawn signature. Null until filled.
+  value     String?
+  filledAt  DateTime?
+  createdAt DateTime           @default(now())
+
+  request SignatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  signer  SignatureSigner? @relation(fields: [signerId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([signerId])
+}
+
+/// Append-only trail. This is what makes a signature defensible, so nothing
+/// here is ever updated or deleted.
+model SignatureAuditEvent {
+  id        String   @id @default(cuid())
+  requestId String
+  signerId  String?
+  /// created, sent, viewed, consented, field_filled, signed, declined, completed, voided, downloaded
+  type      String
+  ip        String   @default("")
+  userAgent String   @default("")
+  detail    Json?
+  at        DateTime @default(now())
+
+  request SignatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([at])
 }

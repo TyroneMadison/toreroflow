@@ -1,9 +1,11 @@
 import { z } from "zod";
 import * as W from "./workflow";
 import * as I from "./ideas";
+import * as S from "./signatures";
 
 export * from "./workflow";
 export * from "./ideas";
+export * from "./signatures";
 export * from "./permissions";
 
 interface Endpoint {
@@ -57,6 +59,18 @@ export const ENDPOINTS = {
   publicApproval: { method: "GET", path: "/a/:token", response: I.PublicApprovalSchema },
   publicApprovalComment: { method: "POST", path: "/a/:token/comments", request: I.ApprovalCommentCreateSchema, response: I.ApprovalCommentSchema },
   publicApprovalDecision: { method: "POST", path: "/a/:token/decision", request: I.ApprovalDecisionSchema, response: I.PublicApprovalSchema },
+  // Document signing
+  createSignatureRequest: { method: "POST", path: "/signature-requests", response: S.SignatureRequestSchema },
+  updateSignatureRequest: { method: "PATCH", path: "/signature-requests/:id", request: S.SignatureRequestCreateSchema, response: S.SignatureRequestSchema },
+  listSignatureRequests: { method: "GET", path: "/signature-requests", response: S.SignatureRequestListSchema },
+  signatureSummary: { method: "GET", path: "/signature-requests/summary", response: S.SignatureSummarySchema },
+  getSignatureRequest: { method: "GET", path: "/signature-requests/:id", response: S.SignatureRequestSchema },
+  sendSignatureRequest: { method: "POST", path: "/signature-requests/:id/send", response: S.SignatureRequestSchema },
+  voidSignatureRequest: { method: "POST", path: "/signature-requests/:id/void", request: S.SignatureVoidSchema, response: S.SignatureRequestSchema },
+  publicSigning: { method: "GET", path: "/s/:token", response: S.PublicSigningSchema },
+  publicSignConsent: { method: "POST", path: "/s/:token/consent", request: S.SignConsentSchema, response: S.PublicSigningSchema },
+  publicSignSubmit: { method: "POST", path: "/s/:token/sign", request: S.SignSubmitSchema, response: S.PublicSigningSchema },
+  publicSignDecline: { method: "POST", path: "/s/:token/decline", request: S.SignDeclineSchema, response: S.PublicSigningSchema },
   listFailedPosts: { method: "GET", path: "/failed-posts", response: I.FailedPostListSchema },
   retryFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/retry", response: I.FailedPostRetryResultSchema },
   dismissFailedPost: { method: "POST", path: "/failed-posts/:postTargetId/dismiss", response: I.FailedPostDismissResultSchema },

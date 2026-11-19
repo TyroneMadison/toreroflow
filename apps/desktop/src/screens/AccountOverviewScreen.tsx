@@ -3,6 +3,7 @@ import { isReady, isRunning } from "@toreroflow/core";
 import Pf from "../components/Pf";
 import Stat from "../components/glass/Stat";
 import DataProvenance from "../components/DataProvenance";
+import SignatureCard from "../components/signatures/SignatureCard";
 import { useToast } from "../components/Toasts";
 import { Empty, ErrorState, Loading } from "../components/states";
 import { useBrandKit } from "../editor/brandKit";
@@ -377,6 +378,10 @@ export default function AccountOverviewScreen({
             </button>
           </>
         )}
+        {/* Outside the brands branch on purpose: a contract still has to go
+            out on a day when no brand needs anything, and on the day the first
+            one is being signed up. */}
+        <SignatureCard />
         <DataProvenance platforms={overviewPlatforms} />
       </section>
     );
@@ -467,6 +472,7 @@ export default function AccountOverviewScreen({
             {current && <Profile key={current.id} c={current} color={colorOf(current)} onOpenInsights={onOpenInsights} />}
           </div>
         )}
+        <SignatureCard />
         <DataProvenance platforms={overviewPlatforms} />
       </div>
     </section>

@@ -1083,3 +1083,73 @@ export const saveDriveSource = (clientId: string, body: DriveSourceSave) =>
 /** Lists the folder once. Sends the pasted link when there is one, else the saved folder is checked. */
 export const checkDriveFolder = (clientId: string, link: string) =>
   api.post<DriveFolderCheck>(`/clients/${clientId}/drive-source/check`, link ? { link } : {});
+
+/* ---- document signing ---- */
+
+export interface SignatureSigner {
+  id: string;
+  email: string;
+  name: string;
+  order: number;
+  status: "pending" | "viewed" | "signed" | "declined";
+  consentAt: string | null;
+  viewedAt: string | null;
+  signedAt: string | null;
+  declinedAt: string | null;
+  declineReason: string;
+  /** This signer's own /s/<token> path. Sent to the owner only, never to another signer. */
+  signingUrl?: string;
+}
+
+export interface SignatureField {
+  id: string;
+  signerId: string | null;
+  type: "signature" | "initials" | "date" | "text" | "checkbox";
+  page: number;
+  /** Fractions of the page, 0-1, y from the top. Never pixels. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  required: boolean;
+  value: string | null;
+  filledAt: string | null;
+}
+
+export interface SignatureRequest {
+  id: string;
+  title: string;
+  message: string;
+  clientId: string | null;
+  status: "draft" | "sent" | "completed" | "declined" | "voided";
+  pageCount: number;
+  /** Of the uploaded file, taken before anything was stamped on it. */
+  sourceSha256: string;
+  signedSha256: string | null;
+  documentUrl: string;
+  signedUrl: string | null;
+  expiresAt: string;
+  sentAt: string | null;
+  completedAt: string | null;
+  voidedAt: string | null;
+  voidReason: string;
+  createdAt: string;
+  signers: SignatureSigner[];
+  fields: SignatureField[];
+}
+
+/** The Overview card's counts, so it does not pull every contract to show three numbers. */
+export interface SignatureSummary {
+  awaitingOthers: number;
+  completed: number;
+  drafts: number;
+  expiringSoon: number;
+  recent: {
+    id: string;
+    title: string;
+    status: SignatureRequest["status"];
+    signedCount: number;
+    signerCount: number;
+    updatedAt: string;
+  }[];
+}

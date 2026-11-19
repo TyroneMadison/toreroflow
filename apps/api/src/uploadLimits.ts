@@ -11,3 +11,12 @@
  * checked when a post is scheduled, see PLATFORM_MAX_UPLOAD_BYTES in core.
  */
 export const MAX_VIDEO_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+
+/**
+ * The largest document taken for signature. 25 MiB.
+ *
+ * Lower than the video cap on purpose: unlike a video, this file is read whole
+ * into memory to hash it and count its pages before anything is stored, and it
+ * is read again on every signature to stamp a copy.
+ */
+export const MAX_DOCUMENT_UPLOAD_BYTES = 25 * 1024 * 1024;
