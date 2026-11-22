@@ -402,6 +402,8 @@ export interface ClientQuota {
   short: QuotaSection;
   long: QuotaSection;
   carousel: QuotaSection;
+  /** Instagram trial reels. Missing from servers before they had their own counter. */
+  trial?: QuotaSection;
 }
 
 export interface ClientReport {
@@ -461,6 +463,7 @@ export interface OverviewClient {
   delivery: {
     short: { delivered: number; target: number | null };
     long: { delivered: number; target: number | null };
+    trial?: { delivered: number; target: number | null };
     behindBy: number;
   } | null;
   /** Null when nothing has ever been published. */

@@ -149,6 +149,10 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
   // never disagree about what counts as queued.
   const queued = queueRows(posts);
 
+  // Where a video is scheduled decides whether it counts as a trial reel or a
+  // short, so a change in the queue (a Drive post appearing, a platform removed)
+  // can move the period counter even when the video list did not change.
+  const postsSig = useRef("");
   const loadPosts = useCallback(
     async (opts?: { announce?: boolean }) => {
       if (!selectedClient) {
@@ -156,7 +160,13 @@ export default function UploadSchedule({ onPreview, onOpenConnect }: UploadSched
         return;
       }
       try {
-        setPosts(await api.get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`));
+        const next = await api.get<PostTargetInfo[]>(`/clients/${selectedClient.id}/posts`);
+        setPosts(next);
+        const sig = next.map((p) => `${p.id}:${p.status}`).join("|");
+        if (sig !== postsSig.current) {
+          if (postsSig.current) setQuotaKey((k) => k + 1);
+          postsSig.current = sig;
+        }
       } catch (err) {
         // Polls stay silent: the rows on screen are this brand's own. The
         // first load of a mount follows a switch or navigation, so that

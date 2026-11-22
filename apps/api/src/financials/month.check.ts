@@ -261,4 +261,16 @@ eq(
   "a client with no standing price is not billed, which is not an error",
 );
 
+// Trial reels are their own target: short-form work never fills it, and it blocks until met.
+eq(
+  quotaMetFor({ quotaShort: 10, quotaLong: null, quotaCarousel: null, quotaTrial: 5, billingMode: "on_fulfilment" }, { short: 15, long: 0, carousel: 0, trial: 4 }),
+  false,
+  "short-form over target does not make up for trial reels short of theirs",
+);
+eq(
+  quotaMetFor({ quotaShort: null, quotaLong: null, quotaCarousel: null, quotaTrial: 5, billingMode: "on_fulfilment" }, { short: 0, long: 0, carousel: 0, trial: 5 }),
+  true,
+  "a trial reel target alone counts as a target",
+);
+
 console.log("financials month: all checks passed");

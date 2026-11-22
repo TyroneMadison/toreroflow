@@ -2,15 +2,20 @@ import { useEffect, useState } from "react";
 import { useToast } from "./Toasts";
 import { api, type ClientQuota, type QuotaSection } from "../lib/api";
 
-/** The three countable kinds of work. Carousel is a kind, not a duration. */
-type CounterKey = "short_form" | "long_form" | "carousel";
+/**
+ * The countable kinds of work. Carousel is a kind, not a duration, and a trial
+ * reel is its own work: a video only ever posted as an Instagram trial reel
+ * counts here and never as short-form.
+ */
+type CounterKey = "short_form" | "long_form" | "carousel" | "trial";
 
 const FORMAT_LABEL: Record<CounterKey, string> = {
   short_form: "Short-form",
   long_form: "Long-form",
   carousel: "Carousels",
+  trial: "Trial reels",
 };
-const ALL_COUNTERS: CounterKey[] = ["short_form", "long_form", "carousel"];
+const ALL_COUNTERS: CounterKey[] = ["short_form", "long_form", "carousel", "trial"];
 
 /**
  * Videos delivered against this pay period's targets, split by format.
@@ -59,11 +64,13 @@ export default function QuotaCard({
 
   if (!quota) return null;
 
-  const sectionFor = (f: CounterKey): QuotaSection =>
-    f === "short_form" ? quota.short : f === "long_form" ? quota.long : quota.carousel;
+  const sectionFor = (f: CounterKey): QuotaSection | undefined =>
+    f === "short_form" ? quota.short : f === "long_form" ? quota.long : f === "carousel" ? quota.carousel : quota.trial;
 
-  const tracked = ALL_COUNTERS.filter((f) => sectionFor(f).target != null);
-  const untracked = ALL_COUNTERS.filter((f) => !tracked.includes(f));
+  // An older server has no trial counter to offer, so it is not shown at all.
+  const counters = ALL_COUNTERS.filter((f) => sectionFor(f) !== undefined);
+  const tracked = counters.filter((f) => sectionFor(f)!.target != null);
+  const untracked = counters.filter((f) => !tracked.includes(f));
 
   const setTarget = (f: CounterKey, value: number | null) =>
     void patch(
@@ -79,7 +86,7 @@ export default function QuotaCard({
     });
 
   const renderTracked = (f: CounterKey) => {
-    const s = sectionFor(f);
+    const s = sectionFor(f)!;
     const target = s.target ?? 0;
     const pct = target > 0 ? Math.min(100, (s.delivered / target) * 100) : 0;
     const remaining = Math.max(0, target - s.delivered);

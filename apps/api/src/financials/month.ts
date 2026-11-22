@@ -181,6 +181,8 @@ export interface QuotaMetInput {
   quotaShort: number | null;
   quotaLong: number | null;
   quotaCarousel: number | null;
+  /** Optional so callers from before trial reels had a counter read as untracked. */
+  quotaTrial?: number | null;
   billingMode: string;
 }
 
@@ -195,14 +197,15 @@ export interface QuotaMetInput {
  */
 export function quotaMetFor(
   input: QuotaMetInput,
-  delivered: { short: number; long: number; carousel: number },
+  delivered: { short: number; long: number; carousel: number; trial?: number },
 ): boolean {
   const hasTargets =
-    input.quotaShort != null || input.quotaLong != null || input.quotaCarousel != null;
+    input.quotaShort != null || input.quotaLong != null || input.quotaCarousel != null || input.quotaTrial != null;
   if (!hasTargets) return input.billingMode !== "on_fulfilment";
   return (
     (input.quotaShort == null || delivered.short >= input.quotaShort) &&
     (input.quotaLong == null || delivered.long >= input.quotaLong) &&
-    (input.quotaCarousel == null || delivered.carousel >= input.quotaCarousel)
+    (input.quotaCarousel == null || delivered.carousel >= input.quotaCarousel) &&
+    (input.quotaTrial == null || (delivered.trial ?? 0) >= input.quotaTrial)
   );
 }

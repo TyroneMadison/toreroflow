@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { countDelivered } from "../quota/delivered";
 import { fileLinkVersioned } from "../files/link";
 import { getPrisma } from "@toreroflow/db";
 import { requireAuth } from "../plugins/requireAuth";
@@ -61,6 +62,8 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
         quotaShort: true,
         quotaCarousel: true,
         adjustCarousel: true,
+        quotaTrial: true,
+        adjustTrial: true,
         quotaLong: true,
         quotaResetAt: true,
         adjustShort: true,
@@ -80,18 +83,14 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
     const rows = await Promise.all(
       clients.map(async (c) => {
         const since = c.quotaResetAt ?? new Date(0);
-        const inPeriod = { clientId: c.id, createdAt: { gte: since }, isRevision: false };
 
         // Two sources for "when did they last go out": what Toreroflow
         // published, and what the platform reports. A client posting outside
         // the app would otherwise look silent when they are not.
-        const [shortUploads, longUploads, carouselUploads, lastPublished, lastExternal, reportForMonth] =
+        const [delivered, lastPublished, lastExternal, reportForMonth] =
           await Promise.all([
-            prisma.mediaAsset.count({
-              where: { ...inPeriod, kind: "video", format: { in: ["short_form"] } },
-            }),
-            prisma.mediaAsset.count({ where: { ...inPeriod, kind: "video", format: "long_form" } }),
-            prisma.mediaAsset.count({ where: { ...inPeriod, kind: "carousel" } }),
+            // Counted exactly as the quota card counts them; see quota/delivered.
+            countDelivered(prisma, c.id, since),
             prisma.postTarget.findFirst({
               where: { post: { clientId: c.id }, publishedAt: { not: null } },
               orderBy: { publishedAt: "desc" },
@@ -112,16 +111,18 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
           .filter((d): d is Date => d !== null)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
-        const shortDelivered = Math.max(0, shortUploads + c.adjustShort);
-        const longDelivered = Math.max(0, longUploads + c.adjustLong);
-        const carouselDelivered = Math.max(0, carouselUploads + c.adjustCarousel);
+        const shortDelivered = Math.max(0, delivered.short.uploads + c.adjustShort);
+        const longDelivered = Math.max(0, delivered.long.uploads + c.adjustLong);
+        const carouselDelivered = Math.max(0, delivered.carousel.uploads + c.adjustCarousel);
+        const trialDelivered = Math.max(0, delivered.trial.uploads + c.adjustTrial);
         const shortShort = c.quotaShort != null ? Math.max(0, c.quotaShort - shortDelivered) : 0;
         const longShort = c.quotaLong != null ? Math.max(0, c.quotaLong - longDelivered) : 0;
         const carouselShort =
           c.quotaCarousel != null ? Math.max(0, c.quotaCarousel - carouselDelivered) : 0;
-        const behindBy = shortShort + longShort + carouselShort;
+        const trialShort = c.quotaTrial != null ? Math.max(0, c.quotaTrial - trialDelivered) : 0;
+        const behindBy = shortShort + longShort + carouselShort + trialShort;
         const tracked =
-          c.quotaShort != null || c.quotaLong != null || c.quotaCarousel != null;
+          c.quotaShort != null || c.quotaLong != null || c.quotaCarousel != null || c.quotaTrial != null;
 
         const quiet = daysSince(lastPostAt, now);
 
@@ -141,6 +142,7 @@ export async function overviewRoutes(app: FastifyInstance): Promise<void> {
                 short: { delivered: shortDelivered, target: c.quotaShort },
                 long: { delivered: longDelivered, target: c.quotaLong },
                 carousel: { delivered: carouselDelivered, target: c.quotaCarousel },
+                trial: { delivered: trialDelivered, target: c.quotaTrial },
                 behindBy,
               }
             : null,

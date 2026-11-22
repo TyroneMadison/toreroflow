@@ -198,12 +198,17 @@ model Client {
   /// Carousels owed this pay period; null means not tracked. A carousel is
   /// counted by kind rather than by duration, since it has none.
   quotaCarousel         Int?
+  /// Instagram trial reels owed this pay period; null means not tracked. A
+  /// video counts here, never as short-form, when every place it is scheduled
+  /// is a trial reel.
+  quotaTrial            Int?
   /// Start of the current pay period. Uploads after this count toward quota.
   quotaResetAt          DateTime?
   /// Manual corrections applied on top of the counted uploads, per format.
   adjustShort           Int            @default(0)
   adjustLong            Int            @default(0)
   adjustCarousel        Int            @default(0)
+  adjustTrial           Int            @default(0)
   /// Who to actually contact at this client, kept here rather than in a head.
   /// Separate from `name`, which is the brand: the brand is "CACV Motors" and
   /// the person answering the phone is someone else.

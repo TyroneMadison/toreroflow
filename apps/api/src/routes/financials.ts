@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { countDelivered } from "../quota/delivered";
 import { z } from "zod";
 import { fileLink } from "../files/link";
 import { promises as fsp } from "node:fs";
@@ -88,10 +89,12 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
         quotaShort: true,
         quotaLong: true,
         quotaCarousel: true,
+        quotaTrial: true,
         quotaResetAt: true,
         adjustShort: true,
         adjustLong: true,
         adjustCarousel: true,
+        adjustTrial: true,
         socialAccounts: {
           where: { deletedAt: null },
           select: { avatarUrl: true },
@@ -220,22 +223,15 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
     // screens cannot disagree about whether a cycle is finished.
     const deliveredByClient = new Map<
       string,
-      { short: number; long: number; carousel: number }
+      { short: number; long: number; carousel: number; trial: number }
     >();
     for (const c of clients) {
-      const since = c.quotaResetAt ?? new Date(0);
-      const base = { clientId: c.id, createdAt: { gte: since }, isRevision: false };
-      const [shortCount, longCount, carouselCount] = await Promise.all([
-        prisma.mediaAsset.count({
-          where: { ...base, kind: "video", format: { in: ["short_form"] } },
-        }),
-        prisma.mediaAsset.count({ where: { ...base, kind: "video", format: "long_form" } }),
-        prisma.mediaAsset.count({ where: { ...base, kind: "carousel" } }),
-      ]);
+      const d = await countDelivered(prisma, c.id, c.quotaResetAt ?? new Date(0));
       deliveredByClient.set(c.id, {
-        short: Math.max(0, shortCount + c.adjustShort),
-        long: Math.max(0, longCount + c.adjustLong),
-        carousel: Math.max(0, carouselCount + c.adjustCarousel),
+        short: Math.max(0, d.short.uploads + c.adjustShort),
+        long: Math.max(0, d.long.uploads + c.adjustLong),
+        carousel: Math.max(0, d.carousel.uploads + c.adjustCarousel),
+        trial: Math.max(0, d.trial.uploads + c.adjustTrial),
       });
     }
 
@@ -271,7 +267,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       // targets, the answer depends on billing: calendar owes by the month
       // regardless, but a fulfilment client with no targets has nothing
       // countable delivered, so its cycle is not met. See quotaMetFor.
-      const d = deliveredByClient.get(r.clientId) ?? { short: 0, long: 0, carousel: 0 };
+      const d = deliveredByClient.get(r.clientId) ?? { short: 0, long: 0, carousel: 0, trial: 0 };
       const quotaMet =
         !c ||
         quotaMetFor(
@@ -279,6 +275,7 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
             quotaShort: c.quotaShort,
             quotaLong: c.quotaLong,
             quotaCarousel: c.quotaCarousel,
+            quotaTrial: c.quotaTrial,
             billingMode: c.billingMode,
           },
           d,
@@ -288,14 +285,15 @@ export async function financialsRoutes(app: FastifyInstance): Promise<void> {
       // beside the row. Both null when nothing is tracked.
       const hasTargets =
         c != null &&
-        (c.quotaShort != null || c.quotaLong != null || c.quotaCarousel != null);
+        (c.quotaShort != null || c.quotaLong != null || c.quotaCarousel != null || c.quotaTrial != null);
       const quotaTarget = hasTargets
-        ? (c.quotaShort ?? 0) + (c.quotaLong ?? 0) + (c.quotaCarousel ?? 0)
+        ? (c.quotaShort ?? 0) + (c.quotaLong ?? 0) + (c.quotaCarousel ?? 0) + (c.quotaTrial ?? 0)
         : null;
       const quotaDelivered = hasTargets
         ? (c.quotaShort != null ? d.short : 0) +
           (c.quotaLong != null ? d.long : 0) +
-          (c.quotaCarousel != null ? d.carousel : 0)
+          (c.quotaCarousel != null ? d.carousel : 0) +
+          (c.quotaTrial != null ? d.trial : 0)
         : null;
       return {
         id: r.id,
