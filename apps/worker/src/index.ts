@@ -19,6 +19,7 @@ import {
   getPrisma,
   Prisma,
   persistProviderPosts,
+  rehomeTargets,
   reschedule,
   uploadPriority,
   scheduleCron,
@@ -347,6 +348,29 @@ async function publishTarget(targetId: string, attemptsMade: number): Promise<vo
   // Paused brand: held as scheduled, untouched. Resuming re-queues it.
   if (target.post.client.pausedAt) {
     console.log(`[worker] target ${target.id} held: ${target.post.client.name} uploads are paused`);
+    return;
+  }
+  /*
+   * A removed account is never posted to. Its replacement, when there is one,
+   * takes the post over (normally already done when the account changed; this
+   * catches anything that slipped past). With none, the post fails now,
+   * plainly, rather than three retries against a removed account.
+   */
+  if (target.socialAccount.deletedAt) {
+    await rehomeTargets(prisma, target.post.clientId);
+    const after = await prisma.postTarget.findUnique({ where: { id: target.id }, select: { socialAccountId: true } });
+    // Moved: run once more on the new account. It cannot loop, since it now points at a live one.
+    if (after && after.socialAccountId !== target.socialAccountId) return publishTarget(targetId, attemptsMade);
+    await prisma.postTarget.updateMany({
+      where: { id: target.id, status: "scheduled" },
+      data: {
+        status: "failed",
+        error: target.socialAccount.providerAccountId
+          ? `@${target.socialAccount.handle} was removed from this brand, so this was not posted. Connect its replacement and reschedule, or remove this post.`
+          : `@${target.socialAccount.handle} was removed from this brand, so this was not posted. Schedule it again on another account, or remove this post.`,
+      },
+    });
+    console.log(`[worker] target ${target.id} not posted: its account was removed`);
     return;
   }
 

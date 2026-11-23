@@ -17,6 +17,7 @@ import {
 } from "@toreroflow/core";
 import { z } from "zod";
 import { countDelivered } from "../quota/delivered";
+import { rehomeTargets } from "@toreroflow/db";
 import { getPrisma, enqueue } from "@toreroflow/db";
 import {
   DryRunPublisher,
@@ -498,11 +499,39 @@ export async function clientRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!account) return reply.status(404).send({ error: "account not found" });
 
+    /*
+     * Removed at the provider too. Only the app's row going meant the next
+     * sync (Settings syncs on open and on focus) found the account still
+     * connected there and brought it back as a new one, which is how a
+     * replaced TikTok kept reappearing. Best effort: a provider outage must
+     * not stop the operator removing it here; a later sync would then show it
+     * again, and removing it again retries.
+     */
+    let providerRemoved: boolean | null = null;
+    if (zernio && account.providerAccountId && account.tokensEncrypted === "provider:zernio") {
+      // Another live row on the same provider account (another brand, say) still posts through it.
+      const shared = await prisma.socialAccount.count({
+        where: { providerAccountId: account.providerAccountId, deletedAt: null, id: { not: account.id } },
+      });
+      if (!shared) {
+        try {
+          await zernio.disconnectAccount(account.providerAccountId);
+          providerRemoved = true;
+        } catch (err) {
+          providerRemoved = false;
+          app.log.error({ err, platform: account.platform }, "could not remove the account at the provider");
+        }
+      }
+    }
     await prisma.socialAccount.update({
       where: { id: account.id },
       data: { deletedAt: new Date(), tokensEncrypted: null, status: "error" },
     });
-    return { ok: true };
+    // Anything waiting on it moves to its replacement, when there is exactly one.
+    // Counted for this account alone, so the toast is about what was just removed.
+    const { moved, movedTo, stranded } = await rehomeTargets(prisma, account.clientId, account.id);
+    /** providerRemoved false: it will reappear on the next sync, and removing it again retries. */
+    return { ok: true, moved, movedTo, stranded, providerRemoved };
   });
 
   /**

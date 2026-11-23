@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { PLATFORMS, type Platform, fieldsToUpdate, mergeHandles, readWelcomeReply, type WelcomeReply } from "@toreroflow/core";
-import { getPrisma, enqueue } from "@toreroflow/db";
+import { getPrisma, enqueue, rehomeTargets } from "@toreroflow/db";
 import { ZernioProvider } from "@toreroflow/publishers";
 import { NetlifyPublisher } from "./reports/netlify";
 import { env } from "./env";
@@ -114,6 +114,9 @@ export async function importProviderAccounts(
       }
     }
   }
+  // A newly connected account may be the replacement for a removed one: what
+  // was waiting on the old one moves to it, and the calendar shows it now.
+  await rehomeTargets(prisma, client.id);
   return { seen: valid.length, created };
 }
 

@@ -481,6 +481,8 @@ function ProfileCard({
     }
   };
   const [confirming, setConfirming] = useState(false);
+  // Disconnect is two clicks: it also removes the account at the publishing service.
+  const [confirmOff, setConfirmOff] = useState<string | null>(null);
   const [welcomeUrl, setWelcomeUrl] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
   const toast = useToast();
@@ -805,7 +807,11 @@ function ProfileCard({
         {askOff && (
           <ConfirmSheet
             title={`Disconnect @${askOff.handle}?`}
-            body={`Toreroflow stops posting to this ${PLATFORM_LABELS[askOff.platform]} account until it is connected again.`}
+            body={
+              askOff.reminder
+                ? "It is a reminder account, so it is only removed from Toreroflow. Reminders already scheduled for it are not moved anywhere."
+                : `It is removed from the publishing service too, so connecting it again means authorizing it again. Anything scheduled for it moves to a new ${PLATFORM_LABELS[askOff.platform]} account you connect in its place.`
+            }
             confirm="Disconnect"
             danger
             onConfirm={() => {
@@ -1094,9 +1100,24 @@ function ProfileCard({
                     <button
                       className="dangerbtn"
                       disabled={busy}
-                      onClick={() => onDisconnect(account.id)}
+                      title={
+                        confirmOff !== account.id
+                          ? `Disconnect @${account.handle}`
+                          : account.reminder
+                            ? `Click again: removes the reminder account @${account.handle} from Toreroflow. Its reminders are not moved.`
+                            : `Click again: removes @${account.handle} here and at the publishing service. Its scheduled posts move to a new ${PLATFORM_LABELS[platform]} account you connect in its place.`
+                      }
+                      onClick={() => {
+                        if (confirmOff === account.id) {
+                          setConfirmOff(null);
+                          onDisconnect(account.id);
+                        } else {
+                          setConfirmOff(account.id);
+                          setTimeout(() => setConfirmOff((c) => (c === account.id ? null : c)), 4000);
+                        }
+                      }}
                     >
-                      {busy ? "…" : "Disconnect"}
+                      {busy ? "…" : confirmOff === account.id ? "Sure?" : "Disconnect"}
                     </button>
                   </div>
                   {/* YouTube only for now: it is the one platform whose direct
@@ -1382,8 +1403,30 @@ export default function SettingsScreen({ onOpenConnect }: SettingsScreenProps) {
   const disconnect = async (accountId: string) => {
     setBusyKey(accountId);
     try {
-      await api.del(`/accounts/${accountId}`);
+      const res = await api.del<{
+        ok: boolean;
+        moved?: number;
+        movedTo?: string[];
+        stranded?: number;
+        providerRemoved?: boolean | null;
+      }>(`/accounts/${accountId}`);
       await refreshClients();
+      const posts = (n: number) => `${n} scheduled ${n === 1 ? "post" : "posts"}`;
+      // Said plainly where its scheduled posts went, or that they wait for a replacement.
+      const where = [
+        res?.moved ? ` ${posts(res.moved)} now go to @${(res.movedTo ?? []).join(", @")}.` : "",
+        res?.stranded
+          ? ` ${posts(res.stranded)} wait for a new account on this platform; connect one and they move to it, or move them by hand.`
+          : "",
+      ].join("");
+      if (res?.providerRemoved === false) {
+        toast.fail(
+          "Disconnected here, but the publishing service did not confirm",
+          new Error(`It may come back on the next sync; disconnect it again then.${where}`),
+        );
+      } else if (where) {
+        toast.success(`Disconnected.${where}`);
+      }
     } catch (err) {
       toast.fail("Could not disconnect the account", err);
     } finally {
