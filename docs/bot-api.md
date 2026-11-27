@@ -11,7 +11,23 @@ anything, cannot touch financials, cannot read or send DMs, cannot retry or
 reschedule existing posts, and cannot mint more tokens. The whole list lives
 in `apps/api/src/auth/botAccess.ts`; anything not on it answers 403.
 
-Mint one (as the operator, with your normal app login token):
+## DMs: read-only for every bot
+
+- **Polly** (full access) can **read** DM threads, messages, contacts and
+  `/dm/status`. She can never send a DM, mark one read, tag, stage, pause or
+  change a conversation, start an Instagram connect, or create, edit or
+  delete a DM campaign: those answer `403 {"reason":"bot_read_only"}` for
+  every bot token, full access or not (`apps/api/src/dm/guard.ts`).
+- **Every other bot** cannot reach the DM routes at all: none of them is on
+  the whitelist, so they answer `403` like any route outside the job.
+- Viewers get the same read-only DMs (`403 {"reason":"viewer_read_only"}`
+  on any write).
+- `apps/api/src/dm/dm.check.ts` drives every DM write route with a viewer, a
+  Polly and a plain bot token and fails if any of them is not refused;
+  `botAccess.check.ts` pins that no DM route is on the whitelist.
+
+Mint one (as the operator, with your normal app login token; viewers are
+refused):
 
 ```bash
 curl -s -X POST https://api.torerone.com/auth/bot-token \
@@ -84,5 +100,7 @@ errors when opened - the server refuses, the browser only displays.
 - `401` - the token expired (or was replaced). Stop and ask the operator.
 - `403 bot tokens can upload, write copy and schedule...` - the bot tried a
   route outside its job. That is a bug in the bot's plan, not a retry.
+- `403 bot tokens can read DMs but cannot send or change them` - DMs are
+  read-only for bots, Polly included. Hand the reply to the operator.
 - `400 invalid scheduledAt` - the time was in the past. Pick a future time.
 - `409 asset is still processing` - poll `/media/<assetId>` until "ready".

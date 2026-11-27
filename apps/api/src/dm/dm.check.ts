@@ -1,0 +1,458 @@
+// DMs (F2) through the real auth hook and routes, Prisma and every outside
+// API faked: dark launch, the webhook HMAC, the role guard on every DM write
+// route, the Instagram connect (token stored encrypted), the 24h window, the
+// Zernio fallback for the old inbox, the media proxy and its refresh, and the
+// DM campaign post-scope check.
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+
+process.env.PUBLISH_PROVIDER = "zernio";
+process.env.PUBLISH_PROVIDER_API_KEY = "sk_agency";
+process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+process.env.JWT_SECRET = "dm-check-secret";
+
+const { default: Fastify } = await import("fastify");
+const { default: jwt } = await import("@fastify/jwt");
+const { decryptSecret, encryptSecret, getPrisma } = await import("@toreroflow/db");
+const { env } = await import("../env");
+const { signState } = await import("../oauth/state");
+const { dmCampaignRoutes } = await import("../routes/dmCampaigns");
+const { dmRoutes, publicDmRoutes } = await import("../routes/dm");
+const { metaWebhookRoutes } = await import("../routes/metaWebhook");
+
+// Dark launch first: nothing of Meta's is set.
+Object.assign(env, { META_IG_APP_ID: "", META_IG_APP_SECRET: "", META_VERIFY_TOKEN: "", META_APP_SECRET: "", OAUTH_REDIRECT_BASE: "", META_IG_HUMAN_AGENT: false });
+
+// ---------------------------------------------------------------------------
+// Fakes
+// ---------------------------------------------------------------------------
+
+type Row = Record<string, any>;
+const CLIENT = { id: "c1", agencyId: "A", providerProfileId: "prof1" };
+const SOCIALS: Row[] = [
+  { id: "sa-ig", clientId: "c1", platform: "instagram", handle: "sample.studio", status: "connected", providerAccountId: "z-ig" },
+  { id: "sa-fb", clientId: "c1", platform: "facebook", handle: "samplepage", status: "connected", providerAccountId: "z-fb" },
+];
+const dmAccounts = new Map<string, Row>();
+const events: Row[] = [];
+const messages: Row[] = [];
+const threadUpdates: Row[] = [];
+let thread: Row;
+
+const prisma = getPrisma() as unknown as Record<string, unknown>;
+const fake = (name: string, value: object) => Object.defineProperty(prisma, name, { value, configurable: true });
+fake("botIdentity", { findUnique: async () => null });
+// u1 is the owner; v1 a viewer whose token predates the role claim; v2 a viewer who logs in.
+const bcrypt = (await import("bcryptjs")).default;
+const USERS: Row[] = [
+  { id: "u1", agencyId: "A", role: "owner", email: "owner@x.test" },
+  { id: "v1", agencyId: "A", role: "viewer", email: "old-viewer@x.test" },
+  { id: "v2", agencyId: "A", role: "viewer", email: "viewer@x.test", passwordHash: await bcrypt.hash("viewer-pass", 4), agency: { name: "A" } },
+];
+fake("user", {
+  findFirst: async ({ where }: Row) => USERS.find((u) => u.id === where.id && u.agencyId === where.agencyId) ?? null,
+  findUnique: async ({ where }: Row) => USERS.find((u) => u.email === where.email || u.id === where.id) ?? null,
+});
+fake("client", {
+  findFirst: async ({ where }: Row) => (where.id === CLIENT.id && where.agencyId === CLIENT.agencyId ? CLIENT : null),
+  findUnique: async () => ({ agencyId: "A" }),
+});
+fake("socialAccount", {
+  findFirst: async ({ where }: Row) => {
+    const s = SOCIALS.find((x) => x.id === where.id && (!where.platform || x.platform === where.platform) && (!where.clientId || x.clientId === where.clientId));
+    const agency = where.client?.agencyId;
+    if (!s || (agency && agency !== "A")) return null;
+    return { ...s, platformConnection: null };
+  },
+  findMany: async () => SOCIALS.map((s) => ({ ...s, dmAccount: dmAccounts.get(s.id) ?? null })),
+  findUnique: async ({ where }: Row) => SOCIALS.find((s) => s.id === where.id) ?? null,
+});
+fake("dmAccount", {
+  findFirst: async ({ where }: Row) =>
+    [...dmAccounts.values()].find((a) => a.externalId === where.externalId && a.socialAccountId !== where.NOT?.socialAccountId) ?? null,
+  upsert: async ({ where, create, update }: Row) => {
+    const prev = dmAccounts.get(where.socialAccountId);
+    const row = prev ? { ...prev, ...update } : { id: `dm-${where.socialAccountId}`, ...create };
+    dmAccounts.set(where.socialAccountId, row);
+    return row;
+  },
+  updateMany: async ({ where, data }: Row) => {
+    let count = 0;
+    for (const [k, a] of dmAccounts) if (a.externalId === where.externalId) (dmAccounts.set(k, { ...a, ...data }), count++);
+    return { count };
+  },
+  deleteMany: async ({ where }: Row) => {
+    for (const [k, a] of dmAccounts) if (a.externalId === where.externalId) dmAccounts.delete(k);
+    return { count: 1 };
+  },
+  update: async ({ data }: Row) => data,
+});
+fake("dmWebhookEvent", {
+  create: async ({ data }: Row) => (events.push({ id: `ev${events.length}`, receivedAt: new Date(), ...data }), { id: `ev${events.length - 1}` }),
+  findFirst: async ({ where }: Row) => [...events].reverse().find((e) => e.signatureOk === where.signatureOk) ?? null,
+});
+fake("dmThread", {
+  findFirst: async ({ where }: Row) =>
+    where.id === thread.id && where.dmAccount.clientId === "c1" && where.dmAccount.client.agencyId === "A" ? thread : null,
+  update: async ({ data }: Row) => (threadUpdates.push(data), { ...thread, ...data }),
+  findMany: async () => [],
+  groupBy: async () => [],
+});
+fake("dmMessage", {
+  upsert: async ({ create }: Row) => {
+    const row = { id: `msg${messages.length}`, reactions: null, unsentAt: null, editedAt: null, transcript: null, ...create };
+    messages.push(row);
+    return row;
+  },
+  findUnique: async ({ where }: Row) => messages.find((m) => m.id === where.id) ?? null,
+  update: async ({ where, data }: Row) => Object.assign(messages.find((m) => m.id === where.id)!, data),
+});
+fake("dmTag", { findMany: async () => [] });
+fake("dmContact", { findMany: async () => [] });
+
+type Call = { url: string; method: string; auth: string; body: string };
+const calls: Call[] = [];
+const expired = new Set<string>();
+globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+  const url = String(input);
+  const headers = new Headers(init?.headers);
+  calls.push({ url, method: init?.method ?? "GET", auth: headers.get("authorization") ?? "", body: init?.body ? String(init.body) : "" });
+  const ok = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  if (/cdninstagram\.com|fbcdn\.net/.test(url)) {
+    if (expired.has(url)) return new Response("expired", { status: 403 });
+    return new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { "Content-Type": "image/jpeg", "Content-Length": "3" } });
+  }
+  if (url.startsWith("https://api.instagram.com/oauth/access_token")) return ok({ access_token: "SHORT", permissions: ["instagram_business_basic", "instagram_business_manage_messages"] });
+  if (url.startsWith("https://graph.instagram.com/access_token")) return ok({ access_token: "IG-LONG-TOKEN", expires_in: 5184000 });
+  if (url.includes("/me?fields=user_id")) return ok(meAnswer);
+  if (url.includes("/me/subscribed_apps")) return ok({ success: true });
+  if (url.endsWith("/me/messages")) return ok({ message_id: `mid.sent${calls.filter((c) => c.url.endsWith("/me/messages")).length}` });
+  if (url.includes("/mid.old?fields=")) return ok({ id: "mid.old", attachments: { data: [{ mime_type: "image/jpeg", image_data: { url: "https://scontent.cdninstagram.com/fresh.jpg" } }] } });
+  if (url.includes("zernio.com") && url.includes("/attachments/0")) return ok({ url: "https://scontent.cdninstagram.com/zernio-fresh.jpg" });
+  if (url.includes("zernio.com") && url.includes("/inbox/conversations/conv1/messages")) {
+    if (init?.method === "POST") return ok({ success: true });
+    return ok({ messages: [{ id: "m1", message: "look", direction: "incoming", createdAt: "2026-11-20T10:00:00Z", attachments: [{ type: "image", url: "https://scontent.cdninstagram.com/z-original.jpg" }] }] });
+  }
+  if (url.includes("zernio.com") && url.includes("/inbox/conversations?")) {
+    return ok({ conversations: [{ id: "conv1", platform: "instagram", accountId: "z-ig", participantId: "p1", participantName: "Jordan", unreadCount: 2, lastMessage: "hi", updatedTime: "2026-11-20T10:00:00Z" }] });
+  }
+  if (url.includes("zernio.com") && url.includes("/comment-automations")) return ok({ automation: { _id: "auto1", name: "x", platform: "instagram" } }, 201);
+  return ok({ error: { message: `unexpected ${url}` } }, 500);
+}) as typeof fetch;
+let meAnswer: Row = { user_id: "17841400000000001", username: "sample.studio" };
+
+// ---------------------------------------------------------------------------
+// The app, with every route recorded by the plugin that registered it
+// ---------------------------------------------------------------------------
+
+const app = Fastify();
+await app.register(jwt, { secret: env.JWT_SECRET });
+// The server's own mapping: a validation failure is the caller's 400.
+const { ZodError } = await import("zod");
+app.setErrorHandler((e, _req, reply) => reply.status(e instanceof ZodError ? 400 : 500).send({ error: e instanceof Error ? e.message : "failed" }));
+const routes: { method: string; url: string; plugin: string }[] = [];
+let plugin = "";
+app.addHook("onRoute", (r) => {
+  for (const method of [r.method].flat()) routes.push({ method: String(method), url: r.url, plugin });
+});
+const { authRoutes } = await import("../routes/auth");
+for (const [name, p] of [["auth", authRoutes], ["dmCampaigns", dmCampaignRoutes], ["dm", dmRoutes], ["publicDm", publicDmRoutes], ["metaWebhook", metaWebhookRoutes]] as const) {
+  plugin = name;
+  await app.register(p);
+}
+await app.ready();
+
+const sign = (claims: Row) => `Bearer ${app.jwt.sign({ sub: "u1", agencyId: "A", ...claims } as never)}`;
+const OWNER = sign({});
+const VIEWER = sign({ role: "viewer" });
+const POLLY = sign({ role: "bot", bot: "polly" });
+const NOVA = sign({ role: "bot", bot: "nova" });
+// A real viewer login: the token has to say so (it used to carry no role at all).
+const login = await app.inject({ method: "POST", url: "/auth/login", payload: { email: "viewer@x.test", password: "viewer-pass" } });
+assert.equal(login.statusCode, 200);
+const LOGGED_IN_VIEWER = `Bearer ${login.json().token}`;
+assert.equal((app.jwt.decode(login.json().token) as Row).role, "viewer", "login signs the viewer role into the token");
+// A viewer token from before that fix: no role claim, the user row decides.
+const OLD_VIEWER = `Bearer ${app.jwt.sign({ sub: "v1", agencyId: "A" } as never)}`;
+const call = (method: string, url: string, auth?: string, payload?: unknown, headers: Record<string, string> = {}) =>
+  app.inject({ method: method as "GET", url, payload: payload as string, headers: { ...(auth ? { authorization: auth } : {}), ...headers } });
+
+// ---------------------------------------------------------------------------
+// 1. Dark launch
+// ---------------------------------------------------------------------------
+
+let res = await call("GET", "/webhooks/meta?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=123");
+assert.equal(res.statusCode, 503, "webhook verify is dark");
+assert.equal(res.json().reason, "instagram_not_configured");
+assert.doesNotMatch(res.body, /META_|123/, "the public answer names no setting and echoes nothing");
+assert.equal((await call("POST", "/webhooks/meta", undefined, "{}", { "content-type": "application/json" })).statusCode, 503);
+assert.equal((await call("POST", "/webhooks/meta/deauthorize", undefined, "signed_request=x", { "content-type": "application/x-www-form-urlencoded" })).statusCode, 503);
+res = await call("POST", "/oauth/instagram/start/sa-ig", OWNER);
+assert.equal(res.statusCode, 503, "connect is dark");
+assert.ok(res.json().missing.includes("META_IG_APP_ID"), "the operator is told which names are missing");
+assert.equal((await call("GET", "/oauth/instagram/callback?code=x&state=y")).statusCode, 503);
+assert.equal((await call("GET", "/dm/status")).statusCode, 401, "status needs a session");
+res = await call("GET", "/dm/status?clientId=c1", VIEWER);
+assert.equal(res.statusCode, 200, "a viewer reads status");
+const status = res.json();
+assert.equal(status.native.configured, false);
+assert.deepEqual(status.native.missing, ["META_IG_APP_ID", "META_IG_APP_SECRET", "META_VERIFY_TOKEN", "OAUTH_REDIRECT_BASE"]);
+assert.equal(status.zernio.configured, true);
+assert.deepEqual(status.accounts.map((a: Row) => [a.handle, a.transport, a.state, a.canConnect, a.replyOnly]), [
+  ["sample.studio", "zernio", "zernio", false, false],
+  ["samplepage", "zernio", "zernio", false, true],
+]);
+
+// ---------------------------------------------------------------------------
+// 2. Every DM write route refuses viewers and bots (Polly included)
+// ---------------------------------------------------------------------------
+
+const writes = routes.filter((r) => (r.plugin === "dm" || r.plugin === "dmCampaigns") && r.method !== "GET" && r.method !== "HEAD");
+for (const expected of [
+  "POST /clients/:id/dm/threads/:threadId/reply",
+  "POST /clients/:id/dm/threads/:threadId/read",
+  "PATCH /clients/:id/dm/threads/:threadId",
+  "POST /clients/:id/dm/threads/:threadId/pause",
+  "POST /clients/:id/dm/threads/:threadId/resume",
+  "PATCH /clients/:id/dm/contacts/:contactId",
+  "POST /oauth/instagram/start/:accountId",
+  "POST /clients/:id/dm-campaigns",
+  "PATCH /clients/:id/dm-campaigns/:campaignId",
+  "DELETE /clients/:id/dm-campaigns/:campaignId",
+  "POST /clients/:id/inbox/:conversationId/reply",
+]) {
+  assert.ok(writes.some((r) => `${r.method} ${r.url}` === expected), `${expected} is registered and covered`);
+}
+const before = calls.length;
+for (const r of writes) {
+  const url = r.url.replace(/:\w+/g, "x1");
+  for (const [who, auth] of [["viewer", VIEWER], ["logged-in viewer", LOGGED_IN_VIEWER], ["pre-F2 viewer token", OLD_VIEWER], ["polly", POLLY], ["nova", NOVA]] as const) {
+    const out = await call(r.method, url, auth, { text: "hi", message: "hi", accountId: "sa-ig" });
+    assert.equal(out.statusCode, 403, `${who} ${r.method} ${r.url} must be 403`);
+  }
+}
+assert.equal(calls.length, before, "a refused write never reached Meta or Zernio");
+// A viewer cannot mint a bot token (a "polly" token would be full access).
+assert.equal((await call("POST", "/auth/bot-token", LOGGED_IN_VIEWER, { name: "polly" })).statusCode, 403, "viewers cannot mint tokens");
+assert.equal((await call("POST", "/auth/bot-token", OLD_VIEWER, { name: "polly" })).statusCode, 403, "nor with a pre-F2 token");
+// Reads stay open to viewers and Polly.
+assert.equal((await call("GET", "/clients/c1/dm/contacts", VIEWER)).statusCode, 200, "viewer reads contacts");
+assert.equal((await call("GET", "/clients/c1/dm/contacts", POLLY)).statusCode, 200, "Polly reads contacts");
+assert.equal((await call("GET", "/clients/c1/dm/contacts", NOVA)).statusCode, 403, "other bots keep the whitelist");
+
+// ---------------------------------------------------------------------------
+// 3. The webhook, configured
+// ---------------------------------------------------------------------------
+
+Object.assign(env, { META_IG_APP_ID: "123456", META_IG_APP_SECRET: "ig-app-secret", META_VERIFY_TOKEN: "verify-xyz", OAUTH_REDIRECT_BASE: "https://api.test" });
+
+res = await call("GET", "/webhooks/meta?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=777");
+assert.equal(res.statusCode, 403, "wrong verify token");
+assert.doesNotMatch(res.body, /777/, "the challenge is not echoed to a wrong token");
+res = await call("GET", "/webhooks/meta?hub.mode=subscribe&hub.verify_token=verify-xyz&hub.challenge=777");
+assert.equal(res.statusCode, 200);
+assert.equal(res.body, "777");
+
+// The raw bytes are signed: an escaped heart and a literal one are different bodies.
+const body = '{"object":"instagram","entry":[{"id":"17841400000000001","messaging":[{"sender":{"id":"999"},"recipient":{"id":"17841400000000001"},"timestamp":1764240000000,"message":{"mid":"mid.1","text":"\\u2764 hi"}}]}]}';
+const hub = (b: string, secret: string) => `sha256=${createHmac("sha256", secret).update(b).digest("hex")}`;
+const post = (b: string, sig?: string) =>
+  call("POST", "/webhooks/meta", undefined, b, { "content-type": "application/json", ...(sig ? { "x-hub-signature-256": sig } : {}) });
+res = await post(body, hub(body, "ig-app-secret"));
+assert.equal(res.statusCode, 200, "a valid delivery is accepted (enqueue failing is survivable)");
+assert.equal(events.at(-1)!.signatureOk, true);
+assert.equal(events.at(-1)!.object, "instagram");
+assert.equal((events.at(-1)!.payload as Row).entry[0].messaging[0].message.text, "❤ hi");
+res = await post(body.replace("hi", "hj"), hub(body, "ig-app-secret"));
+assert.equal(res.statusCode, 403, "tampered body");
+assert.equal(events.at(-1)!.signatureOk, false);
+assert.equal(events.at(-1)!.payload, undefined, "a refused body is not stored");
+assert.equal((await post(body)).statusCode, 403, "missing signature");
+assert.equal((await post(body, "sha256=00")).statusCode, 403, "short signature");
+assert.equal((await post(body, hub(body, "meta-app-secret"))).statusCode, 403, "the other app's secret is not accepted unless configured");
+env.META_APP_SECRET = "meta-app-secret";
+assert.equal((await post(body, hub(body, "meta-app-secret"))).statusCode, 200, "META_APP_SECRET is the second signing key");
+env.META_APP_SECRET = "";
+res = await call("GET", "/dm/status", OWNER);
+assert.ok(res.json().native.lastBadSignatureAt, "a wrong secret shows up on status");
+
+const signedRequest = (payload: object, secret: string) => {
+  const p = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${createHmac("sha256", secret).update(p).digest("base64url")}.${p}`;
+};
+dmAccounts.set("sa-old", { id: "dm-old", socialAccountId: "sa-old", externalId: "178000", transport: "native", status: "active", accessTokenEnc: "x" });
+res = await call("POST", "/webhooks/meta/deauthorize", undefined, `signed_request=${signedRequest({ user_id: "178000" }, "wrong")}`, { "content-type": "application/x-www-form-urlencoded" });
+assert.equal(res.statusCode, 403, "a forged deauthorize is refused");
+res = await call("POST", "/webhooks/meta/deauthorize", undefined, `signed_request=${signedRequest({ user_id: "178000" }, "ig-app-secret")}`, { "content-type": "application/x-www-form-urlencoded" });
+assert.equal(res.statusCode, 200);
+assert.equal(dmAccounts.get("sa-old")!.status, "revoked");
+assert.equal(dmAccounts.get("sa-old")!.accessTokenEnc, null, "the dead token is dropped");
+res = await call("POST", "/webhooks/meta/data-deletion", undefined, `signed_request=${signedRequest({ user_id: "178000" }, "ig-app-secret")}`, { "content-type": "application/x-www-form-urlencoded" });
+assert.equal(res.statusCode, 200);
+assert.ok(res.json().confirmation_code && res.json().url.startsWith("https://api.test/"));
+assert.equal(dmAccounts.has("sa-old"), false, "data deletion removes the account's DM data");
+
+// ---------------------------------------------------------------------------
+// 4. Connect Instagram
+// ---------------------------------------------------------------------------
+
+assert.equal((await call("POST", "/oauth/instagram/start/sa-ig", VIEWER)).statusCode, 403, "viewers cannot start a connect");
+res = await call("POST", "/oauth/instagram/start/sa-ig", OWNER);
+assert.equal(res.statusCode, 200);
+const auth = new URL(res.json().authUrl);
+assert.equal(auth.host, "www.instagram.com");
+assert.equal(auth.searchParams.get("client_id"), "123456");
+assert.equal(auth.searchParams.get("redirect_uri"), "https://api.test/oauth/instagram/callback");
+assert.equal(auth.searchParams.get("scope"), "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments");
+assert.equal((await call("POST", "/oauth/instagram/start/sa-fb", OWNER)).statusCode, 400, "Messenger does not connect natively");
+
+const state = signState({ agencyId: "A", socialAccountId: "sa-ig" }, env.JWT_SECRET);
+assert.equal((await call("GET", `/oauth/instagram/callback?code=c&state=${state}x`)).statusCode, 400, "a forged state is refused");
+meAnswer = { user_id: "17841400000000001", username: "<b>other</b>" };
+res = await call("GET", `/oauth/instagram/callback?code=c&state=${state}`);
+assert.equal(res.statusCode, 409, "the wrong Instagram account is named, not bound");
+assert.match(res.body, /&lt;b&gt;other&lt;\/b&gt;/, "Instagram's text is escaped into the page");
+assert.equal(dmAccounts.has("sa-ig"), false);
+meAnswer = { user_id: "17841400000000001", username: "sample.studio" };
+const sinceConnect = calls.length;
+res = await call("GET", `/oauth/instagram/callback?code=c&state=${state}`);
+assert.equal(res.statusCode, 200, res.body);
+assert.match(res.body, /Connected/);
+const connected = dmAccounts.get("sa-ig")!;
+assert.equal(connected.transport, "native");
+assert.equal(connected.externalId, "17841400000000001");
+assert.notEqual(connected.accessTokenEnc, "IG-LONG-TOKEN", "never stored in the clear");
+assert.doesNotMatch(connected.accessTokenEnc, /IG-LONG-TOKEN/);
+assert.equal(decryptSecret(connected.accessTokenEnc), "IG-LONG-TOKEN", "the stored token round-trips");
+assert.ok(connected.tokenExpiresAt.getTime() > Date.now() + 59 * 86400_000, "a 60-day token");
+for (const c of calls.slice(sinceConnect).filter((c) => c.url.includes("graph.instagram.com/v26.0"))) {
+  assert.doesNotMatch(c.url, /IG-LONG-TOKEN/, `the token rides in the header, not ${c.url}`);
+  assert.equal(c.auth, "Bearer IG-LONG-TOKEN");
+}
+assert.ok(calls.slice(sinceConnect).some((c) => c.url.includes("/me/subscribed_apps") && c.method === "POST"), "the account is subscribed to the webhook");
+res = await call("GET", "/dm/status?clientId=c1", OWNER);
+assert.equal(res.json().accounts[0].transport, "native", "status follows the connect");
+assert.equal(res.json().accounts[0].canConnect, true);
+
+// ---------------------------------------------------------------------------
+// 5. Replies and the 24h window
+// ---------------------------------------------------------------------------
+
+const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000);
+const nativeThread = (lastInboundAt: Date | null): Row => ({
+  id: "t1",
+  dmAccountId: "dm-sa-ig",
+  contactId: "ct1",
+  source: "native",
+  externalId: null,
+  status: "open",
+  unread: 1,
+  pausedAt: null,
+  lastMessageAt: lastInboundAt,
+  lastPreview: "hi",
+  lastDirection: "in",
+  lastInboundAt,
+  windowEndsAt: null,
+  contact: { id: "ct1", externalId: "999", displayName: "Jordan", handle: "jordan.sample", avatarUrl: null, stage: "new", notes: null, optIn: false, lastSeenAt: null, tags: [] },
+  dmAccount: {
+    clientId: "c1",
+    platform: "instagram",
+    transport: "native",
+    status: "active",
+    accessTokenEnc: encryptSecret("IG-LONG-TOKEN"),
+    socialAccount: { id: "sa-ig", handle: "sample.studio", providerAccountId: "z-ig" },
+    client: { providerProfileId: "prof1" },
+  },
+});
+const sends = () => calls.filter((c) => c.url.endsWith("/me/messages")).length;
+
+thread = nativeThread(hoursAgo(25));
+let sent = sends();
+res = await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, { text: "Thanks for writing" });
+assert.equal(res.statusCode, 409, "outside 24h");
+assert.equal(res.json().reason, "window_closed");
+assert.equal(sends(), sent, "nothing was sent to Meta");
+thread = nativeThread(null);
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, { text: "hi" })).json().reason, "window_closed", "never messaged");
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, {})).statusCode, 400, "an empty reply is refused");
+
+thread = nativeThread(hoursAgo(1));
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", VIEWER, { text: "hi" })).statusCode, 403, "the viewer send bug is closed");
+assert.equal(sends(), sent);
+res = await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, { text: "Thanks for writing", media: { type: "image", url: "https://files.test/a.jpg" } });
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(sends(), sent + 2, "text and image are two Instagram messages");
+assert.deepEqual(res.json().messages.map((m: Row) => [m.text, m.attachments.length]), [["Thanks for writing", 0], [null, 1]]);
+const lastSend = JSON.parse(calls.filter((c) => c.url.endsWith("/me/messages")).at(-1)!.body);
+assert.deepEqual(lastSend.recipient, { id: "999" });
+assert.equal(lastSend.messaging_type, undefined, "inside the window: a plain reply");
+assert.equal(messages.at(-1)!.sentByUserId, "u1", "who pressed Send is kept");
+
+env.META_IG_HUMAN_AGENT = true;
+thread = nativeThread(hoursAgo(30));
+res = await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, { text: "Following up" });
+assert.equal(res.statusCode, 200, "day 2 with the human agent feature");
+const tagged = JSON.parse(calls.filter((c) => c.url.endsWith("/me/messages")).at(-1)!.body);
+assert.equal(tagged.tag, "HUMAN_AGENT");
+assert.equal(tagged.messaging_type, "MESSAGE_TAG");
+env.META_IG_HUMAN_AGENT = false;
+
+// A revoked token never reaches Meta.
+thread = nativeThread(hoursAgo(1));
+thread.dmAccount.status = "revoked";
+sent = sends();
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", OWNER, { text: "hi" })).json().reason, "reconnect");
+assert.equal(sends(), sent);
+
+// ---------------------------------------------------------------------------
+// 6. The media proxy: a native attachment Meta expired is read again
+// ---------------------------------------------------------------------------
+
+thread = nativeThread(hoursAgo(1));
+messages.push({ id: "old1", externalId: "mid.old", direction: "in", unsentAt: null, attachments: [{ type: "image", url: "https://scontent.cdninstagram.com/old.jpg" }], thread: { dmAccount: { accessTokenEnc: encryptSecret("IG-LONG-TOKEN"), status: "active" } } });
+expired.add("https://scontent.cdninstagram.com/old.jpg");
+const { mediaLink } = await import("../routes/dm");
+const nativeLink = new URL(mediaLink("http://localhost:80", "n/old1/0"));
+res = await call("GET", nativeLink.pathname + nativeLink.search);
+assert.equal(res.statusCode, 200, "refreshed and served");
+assert.equal(res.headers["content-type"], "image/jpeg");
+assert.equal(messages.find((m) => m.id === "old1")!.attachments[0].url, "https://scontent.cdninstagram.com/fresh.jpg", "the fresh URL is saved");
+assert.equal((await call("GET", nativeLink.pathname + nativeLink.search.replace(/s=[^&]+/, "s=forged"))).statusCode, 404, "a forged link is not served");
+assert.equal((await call("GET", "/dm/media/n/old1/0")).statusCode, 404, "an unsigned link is not served");
+
+// ---------------------------------------------------------------------------
+// 7. The Zernio fallback still serves the old inbox, with refreshable images
+// ---------------------------------------------------------------------------
+
+res = await call("GET", "/clients/c1/inbox?accountId=sa-ig", VIEWER);
+assert.equal(res.statusCode, 200, "the old inbox list still works");
+assert.equal(res.json().conversations[0].id, "conv1");
+res = await call("GET", "/clients/c1/inbox/conv1?accountId=sa-ig", VIEWER);
+assert.equal(res.statusCode, 200);
+const att = res.json().messages[0].attachments[0];
+assert.equal(att.type, "image");
+assert.match(att.url, /^http:\/\/localhost:80\/dm\/media\/z\/sa-ig\/conv1\/m1\/0\?e=\d+&s=/, "absolute proxy link, old desktop builds draw it too");
+const zLink = new URL(att.url);
+res = await call("GET", zLink.pathname + zLink.search);
+assert.equal(res.statusCode, 200, "fresh image through the hint");
+assert.ok(calls.at(-1)!.url.endsWith("z-original.jpg"));
+expired.add("https://scontent.cdninstagram.com/z-original.jpg");
+res = await call("GET", zLink.pathname + zLink.search);
+assert.equal(res.statusCode, 200, "expired image refreshed through Zernio");
+assert.ok(calls.some((c) => c.url.includes("/attachments/0?accountId=z-ig")), "Zernio's attachment refresh is finally called");
+assert.equal((await call("POST", "/clients/c1/inbox/conv1/reply", VIEWER, { accountId: "sa-ig", message: "hi" })).statusCode, 403);
+assert.equal((await call("POST", "/clients/c1/inbox/conv1/reply", OWNER, { accountId: "sa-ig", message: "hi" })).statusCode, 200, "the operator still replies");
+
+// ---------------------------------------------------------------------------
+// 8. DM campaign post scope: YouTube ids are refused
+// ---------------------------------------------------------------------------
+
+const campaign = { accountId: "sa-ig", name: "Guide", dmMessage: "Here it is", keywords: ["guide"] };
+res = await call("POST", "/clients/c1/dm-campaigns", OWNER, { ...campaign, platformPostId: "dQw4w9WgXcQ" });
+assert.equal(res.statusCode, 400);
+assert.equal(res.json().reason, "bad_post_scope");
+res = await call("POST", "/clients/c1/dm-campaigns", OWNER, { ...campaign, platformPostId: "17895695668004550" });
+assert.equal(res.statusCode, 201, res.body);
+
+await app.close();
+console.log("dm.check: all checks passed");

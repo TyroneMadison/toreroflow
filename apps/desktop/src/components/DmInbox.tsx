@@ -5,9 +5,11 @@ import { PF_ID } from "../lib/platforms";
 import { useIsPhone } from "../lib/phone";
 import { Ic } from "./analytics/phoneBits";
 import Modal from "../modals/Modal";
+import DmConnect from "./DmConnect";
 import {
   api,
   type ClientSummary,
+  type DmStatus,
   type InboxConversation,
   type InboxMessage,
   type Platform,
@@ -49,6 +51,24 @@ export default function DmInbox({ client, onNew }: { client: ClientSummary; onNe
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dmStatus, setDmStatus] = useState<DmStatus | null>(null);
+
+  // Which accounts still read through Zernio, for the Connect Instagram card.
+  useEffect(() => {
+    let live = true;
+    api
+      .get<DmStatus>(`/dm/status?clientId=${client.id}`)
+      .then((s) => live && setDmStatus(s))
+      .catch(() => live && setDmStatus(null));
+    return () => {
+      live = false;
+    };
+  }, [client.id]);
+  const zernioIg = dmStatus?.accounts.filter((a) => a.platform === "instagram" && a.transport !== "native") ?? [];
+  const connectFor = zernioIg.find((a) => a.accountId === accountId) ?? zernioIg[0];
+  const connectCard = dmStatus && connectFor && (
+    <DmConnect clientName={client.name} status={dmStatus} accountId={connectFor.accountId} phone={isPhone} />
+  );
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -145,6 +165,7 @@ export default function DmInbox({ client, onNew }: { client: ClientSummary; onNe
           ))}
         </div>
         <p className="mb-sub fl-areasub">Replies go out as the client's account, to a real person. Nothing here sends on its own.</p>
+        {connectCard}
         {error && <div className="mb-err">{error}</div>}
         {threads === null && <p className="fl-help">Loading…</p>}
         {threads?.length === 0 && <p className="fl-help">No conversations on this account yet.</p>}
@@ -255,6 +276,7 @@ export default function DmInbox({ client, onNew }: { client: ClientSummary; onNe
       <p className="lnote">
         Replies go out as the client's account, to a real person. Nothing here sends on its own.
       </p>
+      {connectCard}
 
       {error && <p className="lnote">{error}</p>}
       {threads === null && <p className="lnote">Loading…</p>}

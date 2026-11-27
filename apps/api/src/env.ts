@@ -184,6 +184,26 @@ export interface Env {
   DRIVE_DOWNLOAD_BASE: string;
   /** The business's own day, for the Drive daily limit. The worker reads the same setting. */
   BUSINESS_TIMEZONE: string;
+  /**
+   * Instagram DMs through Torerone's own Meta app (Instagram API with
+   * Instagram Login). The Instagram app id and secret from Meta's dashboard
+   * (Instagram > API setup with Instagram login), NOT the Facebook Login app's
+   * META_APP_ID/META_APP_SECRET. All of these plus OAUTH_REDIRECT_BASE, or the
+   * native inbox stays dark: connect and webhooks answer 503 and the inbox
+   * keeps reading through Zernio. See docs/meta-instagram-setup.md.
+   */
+  META_IG_APP_ID: string;
+  META_IG_APP_SECRET: string;
+  /** The webhook handshake token typed into Meta's dashboard. Random, server-only. */
+  META_VERIFY_TOKEN: string;
+  /**
+   * The Facebook Login app's secret, already on the server for insights.
+   * Accepted as a second webhook signing key, because Meta's docs disagree on
+   * which secret signs Instagram Login webhooks. Never required.
+   */
+  META_APP_SECRET: string;
+  /** "1" once Meta approved the Human Agent feature: replies up to 7 days after a message. */
+  META_IG_HUMAN_AGENT: boolean;
 }
 
 export const env: Env = {
@@ -227,4 +247,22 @@ export const env: Env = {
   GIT_COMMIT: process.env.GIT_COMMIT ?? "",
   SUNRA_API_KEY: process.env.SUNRA_API_KEY ?? "",
   SUNRA_API_BASE: process.env.SUNRA_API_BASE ?? "",
+  META_IG_APP_ID: (process.env.META_IG_APP_ID ?? "").trim(),
+  META_IG_APP_SECRET: (process.env.META_IG_APP_SECRET ?? "").trim(),
+  META_VERIFY_TOKEN: (process.env.META_VERIFY_TOKEN ?? "").trim(),
+  META_APP_SECRET: (process.env.META_APP_SECRET ?? "").trim(),
+  META_IG_HUMAN_AGENT: process.env.META_IG_HUMAN_AGENT === "1",
 };
+
+/**
+ * Which native Instagram settings are missing, by name. Empty means the
+ * native inbox is on. Names only: this is shown on /dm/status.
+ */
+export function missingMetaConfig(): string[] {
+  const missing: string[] = [];
+  if (!env.META_IG_APP_ID) missing.push("META_IG_APP_ID");
+  if (!env.META_IG_APP_SECRET) missing.push("META_IG_APP_SECRET");
+  if (!env.META_VERIFY_TOKEN) missing.push("META_VERIFY_TOKEN");
+  if (!env.OAUTH_REDIRECT_BASE) missing.push("OAUTH_REDIRECT_BASE");
+  return missing;
+}

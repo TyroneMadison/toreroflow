@@ -111,3 +111,4 @@ export class DryRunPublisher implements Publisher {
   }
 }
 export * from "./youtubeEnrich";
+export * from "./instagram";

@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { dmCampaignSchema, inboxReplySchema, updateDmCampaignSchema } from "@toreroflow/core";
+import { dmCampaignSchema, inboxReplySchema, isPlatformPostId, updateDmCampaignSchema } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { ZernioError, ZernioProvider } from "@toreroflow/publishers";
 import { env } from "../env";
 import { requireAuth } from "../plugins/requireAuth";
+import { dmWriteGuard } from "../dm/guard";
+import { originOf, zernioMessageView } from "../dm/service";
 
 /**
  * Comment-to-DM campaigns.
@@ -23,6 +25,19 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
       : null;
 
   app.addHook("onRequest", requireAuth);
+  // Viewers and bots read campaigns and the inbox; creating, editing,
+  // deleting and replying are the operator's (F2: a viewer could send DMs).
+  app.addHook("onRequest", dmWriteGuard);
+
+  /**
+   * A post scope has to be a post on the campaign's own platform. The old
+   * picker sent YouTube video ids, which Zernio accepted and nothing ever
+   * matched, so the campaign sat Live and never fired.
+   */
+  const badScope = (platform: string, postId: string | undefined) =>
+    postId && !isPlatformPostId(platform, postId)
+      ? `That is not ${platform === "facebook" ? "a Facebook" : "an Instagram"} post id. Pick a post from this account (YouTube videos cannot scope a DM campaign).`
+      : null;
 
   /** A refusal carrying the status to send it with. */
   type Fail = { error: string; status: number };
@@ -53,7 +68,7 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
   const providerAccount = async (
     accountId: string,
     clientId: string,
-  ): Promise<Fail | { providerAccountId: string }> => {
+  ): Promise<Fail | { providerAccountId: string; platform: string }> => {
     const account = await prisma.socialAccount.findFirst({
       where: { id: accountId, clientId, deletedAt: null },
       select: { platform: true, providerAccountId: true },
@@ -68,7 +83,7 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
     if (!account.providerAccountId) {
       return { error: "account is not connected to the provider", status: 400 };
     }
-    return { providerAccountId: account.providerAccountId };
+    return { providerAccountId: account.providerAccountId, platform: account.platform };
   };
 
   app.get<{ Params: { id: string } }>(
@@ -97,6 +112,8 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
       if (failed(resolved)) {
         return reply.status(resolved.status).send({ error: resolved.error });
       }
+      const scopeError = badScope(resolved.platform, body.platformPostId);
+      if (scopeError) return reply.status(400).send({ error: scopeError, reason: "bad_post_scope" });
       try {
         const campaign = await ctx.zernio.createCommentAutomation({
           ...body,
@@ -124,14 +141,15 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
     clientId: string,
     agencyId: string,
     automationId: string,
-  ): Promise<Context> => {
+  ): Promise<Context | Fail> => {
     const ctx = await context(clientId, agencyId);
     if (failed(ctx)) return ctx;
     const list = await ctx.zernio.listCommentAutomations(ctx.profileId);
-    if (!list.some((c) => c.id === automationId)) {
+    const campaign = list.find((c) => c.id === automationId);
+    if (!campaign) {
       return { error: "campaign not found", status: 404 };
     }
-    return ctx;
+    return { ...ctx, platform: campaign.platform } as Context;
   };
 
   app.patch<{ Params: { id: string; campaignId: string } }>(
@@ -144,6 +162,8 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
       );
       if (failed(ctx)) return reply.status(ctx.status).send({ error: ctx.error });
       const body = updateDmCampaignSchema.parse(request.body ?? {});
+      const scopeError = badScope((ctx as { platform?: string }).platform ?? "instagram", body.platformPostId);
+      if (scopeError) return reply.status(400).send({ error: scopeError, reason: "bad_post_scope" });
       try {
         return await ctx.zernio.updateCommentAutomation(request.params.campaignId, body);
       } catch (error) {
@@ -255,11 +275,23 @@ export async function dmCampaignRoutes(app: FastifyInstance): Promise<void> {
     const resolved = await providerAccount(request.query.accountId, ctx.client.id);
     if (failed(resolved)) return reply.status(resolved.status).send({ error: resolved.error });
     try {
+      const messages = await ctx.zernio.conversationMessages(
+        request.params.conversationId,
+        resolved.providerAccountId,
+      );
+      /*
+       * Attachment URLs go out as signed links to our media proxy, which
+       * re-reads an expired one from Zernio (attachmentUrl). Meta's links die
+       * within days, which is why images in older threads used to break.
+       */
+      const origin = originOf(request);
       return {
-        messages: await ctx.zernio.conversationMessages(
-          request.params.conversationId,
-          resolved.providerAccountId,
-        ),
+        messages: messages.map((m) => ({
+          ...m,
+          attachments: zernioMessageView(origin, request.query.accountId!, request.params.conversationId, m).attachments.map(
+            (a, i) => ({ type: m.attachments[i]?.type ?? null, url: a.url }),
+          ),
+        })),
       };
     } catch (error) {
       if (error instanceof ZernioError) {

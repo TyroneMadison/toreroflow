@@ -77,6 +77,24 @@ for (const [method, path] of [
   assert.equal(botAllowed(method, path), false, `${method} ${path} must be refused`);
 }
 
+// DMs (F2): no DM route is on the whitelist, so only a full-access bot
+// (Polly) reaches them at all, and dm/guard.ts then holds even Polly to
+// reading (dm/dm.check.ts drives every DM write route with her token).
+for (const [method, path] of [
+  ["GET", "/dm/status"],
+  ["GET", "/clients/c1/dm/threads"],
+  ["GET", "/clients/c1/dm/threads/t1"],
+  ["POST", "/clients/c1/dm/threads/t1/reply"],
+  ["POST", "/clients/c1/dm/threads/t1/read"],
+  ["PATCH", "/clients/c1/dm/threads/t1"],
+  ["GET", "/clients/c1/dm/contacts"],
+  ["PATCH", "/clients/c1/dm/contacts/ct1"],
+  ["POST", "/oauth/instagram/start/a1"],
+  ["POST", "/clients/c1/inbox/conv1/reply"],
+] as const) {
+  assert.equal(botAllowed(method, path), false, `${method} ${path} is not on the bot whitelist`);
+}
+
 // The query string never changes the verdict.
 assert.equal(botAllowed("GET", "/financials/summary?x=1"), false, "query cannot smuggle");
 // Moderating comments is not on the whitelist; only a full-access bot gets it.

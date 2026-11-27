@@ -31,6 +31,11 @@ Settings sections: `general`, `accounts`, `business`, `updates`, `deploy`,
 Workflows areas: `inbox`, `automations`, `ai-replies`, `contacts`, `metrics`,
 `auto-post`. The area shows as `section` in the state below. AI replies,
 Contacts and Metrics are labelled placeholders until their screens ship.
+The Inbox area shows `dm-connect` (the "Connect Instagram for DMs" card)
+while an Instagram account still reads through Zernio; its button is off and
+`dm-connect-pending` explains why until Torerone's Meta app is set up
+(docs/meta-instagram-setup.md). `GET /dm/status?clientId=` says which
+transport each account uses.
 
 `/` and any unknown path are replaced with `/dashboard` (no history entry);
 an unknown Settings section opens `/settings`, an unknown Workflows area

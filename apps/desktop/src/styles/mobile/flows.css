@@ -274,4 +274,19 @@
   .overlay .fl-reply{flex-wrap:nowrap;align-items:center}
   .fl-reply>.mb-input{flex:1 1 auto;min-width:0}
   .fl-reply>.btn{flex:none}
+
+  /* ---- F2: Connect Instagram for DMs (mockup 10-states-mobile, state a) ---- */
+  .dmc-ph{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:18px 4px 8px;margin:12px 0}
+  .dmc-ph .dmc-ei{display:grid;place-items:center;width:72px;height:72px;border-radius:24px;background:var(--mb-raised);color:var(--mb-muted);margin-bottom:4px;box-shadow:none}
+  .dmc-ph .pf.lg{width:32px;height:32px;border-radius:10px}
+  .dmc-ph h3{margin:0;font-family:var(--mb-disp);font-size:22px;font-weight:700;color:var(--mb-ink)}
+  .dmc-ph>p{margin:0;font-size:14.5px;line-height:1.45;color:var(--mb-muted);max-width:280px}
+  .dmc-ph .dmc-why{display:flex;flex-direction:column;gap:8px;text-align:left;font-size:14px;color:var(--mb-muted);margin:2px 0 4px}
+  .dmc-ph .dmc-why span{display:flex;gap:10px;align-items:flex-start}
+  .dmc-ph .dmc-why svg{flex:none;width:18px;height:18px;margin-top:1px;stroke:currentColor;fill:none;stroke-width:2;color:var(--c-ok)}
+  .dmc-ph .dmc-why .info svg{color:var(--c-info)}
+  .dmc-ph .dmc-block{display:flex;width:100%}
+  .dmc-ph .dmc-block:disabled{opacity:.5}
+  .dmc-ph .dmc-link{background:none;border:0;padding:0;color:var(--mb-coral);font-size:14px;font-weight:600;min-height:44px;display:inline-flex;align-items:center}
+  .dmc-ph .dmc-note{font-size:13px;color:var(--mb-faint);max-width:300px}
 }

@@ -41,6 +41,7 @@ export const QUEUE_NAMES = [
   "clips",
   "ideagifs",
   "igcopy",
+  "dm",
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];

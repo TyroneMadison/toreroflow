@@ -944,6 +944,29 @@ export interface DmCampaignLog {
   createdAt: string | null;
 }
 
+/** GET /dm/status: which DM transport each account uses (F2). */
+export interface DmStatus {
+  native: {
+    configured: boolean;
+    /** Setting names only, never values. */
+    missing: string[];
+    humanAgent: boolean;
+    lastWebhookAt: string | null;
+    lastBadSignatureAt: string | null;
+  };
+  zernio: { configured: boolean };
+  accounts: Array<{
+    accountId: string;
+    platform: Platform;
+    handle: string;
+    transport: "native" | "zernio";
+    state: string;
+    error: string | null;
+    canConnect: boolean;
+    replyOnly: boolean;
+  }>;
+}
+
 export interface InboxConversation {
   id: string;
   platform: string;
