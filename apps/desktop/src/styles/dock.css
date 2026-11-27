@@ -1,0 +1,144 @@
+/* ============================ Dock drop-up menus ============================
+   Round 2 mockups (assets/dock.css, nav-prototype.html), desktop and web only:
+   the phone hides the Dock and keeps its tab bar (mobile.css). Hovering a
+   section opens its pages in a drop-up above it, so the page header no longer
+   carries pill tabs; a breadcrumb over the title says where you are.
+   Motion: slide up 10px plus fade, 200ms, cubic-bezier(.2,.7,.2,1), 22ms
+   stagger per page (capped after 8). Closing is a 140ms fade down. Tab to tab
+   is a 120ms fade. Reduced motion: a 120ms fade only. lib/dockMenu.ts holds
+   the same numbers (DOCK_TIMING) and dockMenu.check.ts keeps them in step.
+   Loaded after liquid.css and solid.css so the active tab is coral again.
+   ============================================================================ */
+
+.dock{gap:4px}
+.dock .dt{position:relative;display:flex}
+.dock .dt>.di{height:46px;padding:0 18px;gap:9px;outline:none;transition:color 120ms,background-color 120ms}
+.dock .dt>.di:hover,.dock .dt.open>.di{color:var(--text);background:var(--tint-2)}
+.dock .di.on,.dock .dt.open>.di.on{background:linear-gradient(180deg,#FF9682,#FA614B) !important;color:var(--on-accent) !important;font-weight:600;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.5),0 6px 20px rgba(250,97,75,.4) !important}
+.dock .di.on svg{color:currentColor}
+/* small up chevron: says "this tab has a menu" without a word */
+.dock .di svg.caret{width:12px;height:12px;margin:0 -6px 0 -3px;opacity:.55;transition:transform 200ms cubic-bezier(.2,.7,.2,1),opacity 120ms}
+.dock .dt.open>.di svg.caret{opacity:1;transform:translateY(-2px)}
+.dock .dt>.di:focus-visible{outline:2px solid var(--accent-hi);outline-offset:3px}
+.dock .di .tf-bell{top:7px;right:8px}
+
+/* ---- the drop-up ---- */
+.dock .dm{position:absolute;left:50%;bottom:calc(100% + 26px);z-index:3;min-width:244px;padding:6px;border-radius:22px;
+  background:var(--solid-panel-2);box-shadow:inset 0 0 0 1px var(--solid-border),0 26px 60px rgba(0,0,0,.7);
+  display:flex;flex-direction:column;gap:2px;
+  /* closed: 10px low and invisible; closing is quicker than opening */
+  opacity:0;visibility:hidden;transform:translate(calc(-50% + var(--dx,0px)),10px);
+  transition:opacity 140ms ease-in,transform 140ms ease-in,visibility 0s linear 140ms}
+.dock .dt.open>.dm{opacity:1;visibility:visible;transform:translate(calc(-50% + var(--dx,0px)),0);
+  transition:opacity 200ms cubic-bezier(.2,.7,.2,1),transform 200ms cubic-bezier(.2,.7,.2,1),visibility 0s}
+/* hover bridge: an invisible strip from the menu down to the tab, as wide as
+   the menu plus 14px each side, so a diagonal path up never leaves the zone */
+.dock .dm::after{content:"";position:absolute;left:-14px;right:-14px;top:100%;height:42px}
+.dock .dm .tip{position:absolute;left:calc(50% - var(--dx,0px));bottom:-6px;width:12px;height:12px;background:var(--solid-panel-2);
+  transform:translateX(-50%) rotate(45deg);box-shadow:inset -1px -1px 0 var(--solid-border);border-bottom-right-radius:3px}
+.dock .dm-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:8px 10px 7px 12px;margin-bottom:2px;border-bottom:1px solid var(--hair-soft)}
+.dock .dm-h span{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);font-weight:700}
+.dock .dm-h small{font-size:11px;color:var(--text-3)}
+
+.dock .mi{position:relative;display:flex;align-items:center;gap:10px;height:40px;padding:0 10px 0 11px;border-radius:14px;
+  color:var(--text-2);font-size:13.5px;font-weight:550;white-space:nowrap;outline:none;cursor:pointer;text-decoration:none;
+  opacity:0;transform:translateY(6px);
+  transition:opacity 120ms ease-in,transform 120ms ease-in,background-color 100ms,color 100ms}
+.dock .dt.open .mi{opacity:1;transform:none;
+  transition:opacity 180ms cubic-bezier(.2,.7,.2,1) calc(min(var(--i),8)*22ms),
+             transform 200ms cubic-bezier(.2,.7,.2,1) calc(min(var(--i),8)*22ms),
+             background-color 100ms,color 100ms}
+.dock .mi>svg{width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;color:var(--text-3);transition:color 100ms}
+.dock .mi .ml{flex:1}
+.dock .mi .def{font-size:11px;color:var(--text-3);font-weight:500;margin-left:6px}
+.dock .mi .cnt{margin-left:6px}
+.dock .mi:hover{background:var(--tint-2);color:var(--text)}
+.dock .mi:hover>svg{color:var(--text)}
+/* the page you are on: coral 28% fill and a coral inner ring, as the old pill tab */
+.dock .mi[aria-current="page"]{background:rgba(250,97,75,.28);color:var(--text);box-shadow:inset 0 0 0 1px rgba(255,160,140,.5)}
+.dock .mi[aria-current="page"]>svg{color:var(--accent-hi)}
+.dock .mi[aria-current="page"]:hover{background:rgba(250,97,75,.36)}
+.dock .mi[aria-current="page"] .def{color:var(--text-2)}
+.dock .mi:focus-visible{box-shadow:inset 0 0 0 2px var(--accent-hi);color:var(--text);background:var(--tint-2)}
+.dock .mi[aria-current="page"]:focus-visible{box-shadow:inset 0 0 0 2px var(--accent-hi)}
+
+/* swapping straight from one tab to the next: no slide, no stagger, a 120ms fade */
+.dock .dt.swap.open>.dm{transform:translate(calc(-50% + var(--dx,0px)),0);transition:opacity 120ms linear,visibility 0s}
+.dock .dt.swap.open .mi{transition:background-color 100ms,color 100ms}
+/* the menu being replaced disappears at once */
+.dock .dt.instant>.dm,.dock .dt.instant .mi{transition:none !important}
+
+/* count badges: coral = unread messages, red = failed, grey = waiting */
+.dock .cnt{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--on-accent);
+  font-size:10.5px;font-weight:800;line-height:1;letter-spacing:0}
+.dock .cnt.bad{background:var(--c-bad);color:#22040B}
+.dock .cnt.n{background:var(--tint-3);color:var(--text)}
+.dock .vh{position:absolute !important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+[data-theme="light"] .dock .dm{box-shadow:inset 0 0 0 1px var(--solid-border),0 18px 44px rgba(30,30,70,.18)}
+
+/* reduced motion: the OS setting and the app's own automation mode */
+@media (prefers-reduced-motion:reduce){
+  .dock .dm,.dock .dt.open>.dm{transform:translate(calc(-50% + var(--dx,0px)),0) !important;transition:opacity 120ms linear,visibility 0s linear 120ms !important}
+  .dock .dt.open>.dm{transition:opacity 120ms linear,visibility 0s !important}
+  .dock .mi,.dock .dt.open .mi{opacity:1;transform:none;transition:background-color 100ms,color 100ms !important}
+  .dock .di svg.caret{transition:none !important}
+}
+html[data-motion="reduced"] .dock .dm,html[data-motion="reduced"] .dock .dt.open>.dm{transform:translate(calc(-50% + var(--dx,0px)),0) !important;transition:opacity 120ms linear,visibility 0s linear 120ms !important}
+html[data-motion="reduced"] .dock .dt.open>.dm{transition:opacity 120ms linear,visibility 0s !important}
+html[data-motion="reduced"] .dock .mi,html[data-motion="reduced"] .dock .dt.open .mi{opacity:1;transform:none;transition:background-color 100ms,color 100ms !important}
+html[data-motion="reduced"] .dock .di svg.caret{transition:none !important}
+
+/* narrower windows (the Tauri minimum is 1080px): icons only, as before */
+@media (max-width:1100px){
+  .dock .dt>.di{padding:0 14px}
+}
+
+/* ---- page header without the pill tabs: a breadcrumb over the title ---- */
+.tf-head.r2{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:52px}
+.tf-head.r2 .tf-logo{min-width:0}
+.crumb{display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);font-weight:700;line-height:1.2;margin-bottom:3px}
+.crumb svg{width:10px;height:10px;opacity:.8;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.crumb b{color:var(--text-2);font-weight:700}
+.crumb a{color:inherit;text-decoration:none}
+.crumb a:hover{color:var(--text)}
+.tf-head.r2 .tf-ctr{flex-wrap:nowrap}
+@media (max-width:1280px){
+  .tf-head.r2{flex-wrap:wrap}
+  .tf-head.r2 .tf-ctr{flex-wrap:wrap}
+}
+
+/* ---- Workflows area rail: the third level, under Create > Workflows ----
+   Round 2 mockups (.wf/.rail/.ri in mock.css and r2.css), renamed wfr- here
+   because .wf already belongs to the Fan-out screens. */
+.wfr{display:grid;grid-template-columns:184px minmax(0,1fr);gap:22px;align-items:start;min-height:0}
+.wfr-rail{position:sticky;top:20px;display:flex;flex-direction:column;gap:1px;padding:8px;border-radius:22px;
+  background:var(--solid-panel);box-shadow:inset 0 0 0 1px var(--solid-border)}
+.wfr-rail .lbl{padding:10px 10px 6px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);font-weight:600}
+.wfr-ri{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border-radius:12px;color:var(--text-2);font-size:13.5px;font-weight:550;text-decoration:none;outline:none}
+.wfr-ri svg{width:18px;height:18px;flex:none;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.wfr-ri:hover{background:var(--tint-1);color:var(--text)}
+.wfr-ri.on{background:#1c1c1c;color:var(--text);box-shadow:inset 0 0 0 1px var(--solid-border)}
+[data-theme="light"] .wfr-ri.on{background:#ececf0}
+.wfr-ri:focus-visible{box-shadow:inset 0 0 0 2px var(--accent-hi);color:var(--text)}
+.wfr-ri .tail{margin-left:auto;font-size:11.5px;color:var(--text-3);font-weight:600}
+.wfr-ri .cnt{margin-left:auto;display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--on-accent);
+  font-size:10.5px;font-weight:800;line-height:1}
+.wfr-ri .vh{position:absolute !important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.wfr-foot{margin-top:6px;padding:10px 10px 6px;border-top:1px solid var(--hair-soft);font-size:11.5px;color:var(--text-3);line-height:1.4}
+.wfr-body{display:flex;flex-direction:column;gap:18px;min-width:0}
+.wfr-body>.topbar{padding:0 0 12px}
+.wfr-body>.topbar h2{display:none}
+.wfr-body>.stage{padding:4px 2px 12px}
+/* one-line notice (r2.css .notice.info) */
+.wfr-notice{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 14px;border-radius:14px;font-size:13px;color:var(--text-2);
+  background:linear-gradient(0deg,rgba(76,157,255,.14),rgba(76,157,255,.14)),var(--solid-bg);box-shadow:inset 0 0 0 1px rgba(76,157,255,.28)}
+.wfr-notice svg{width:16px;height:16px;flex:none;stroke:var(--c-info);stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.wfr-notice b{color:var(--text);font-weight:650}
+/* an area whose screen ships later in this update */
+.wfr-soon{display:flex;flex-direction:column;align-items:center;gap:8px;padding:48px 24px;text-align:center}
+.wfr-soon .eic{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--tint-1);box-shadow:inset 0 0 0 1px var(--solid-border)}
+.wfr-soon .eic svg{width:24px;height:24px;stroke:var(--text-2);stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.wfr-soon b{font-size:16px;font-weight:650;color:var(--text)}
+.wfr-soon p{max-width:460px;font-size:13px;color:var(--text-2)}

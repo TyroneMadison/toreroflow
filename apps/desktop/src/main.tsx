@@ -13,6 +13,8 @@ import "./styles/frame.css";
 import "./styles/liquid.css";
 import "./styles/glass-pages.css";
 import "./styles/solid.css";
+// The Dock's drop-up menus and the breadcrumb header; after solid.css so the active tab is coral.
+import "./styles/dock.css";
 // Phone widths only (lib/phone.ts); loaded last so it wins there and nowhere else.
 import "./styles/mobile.css";
 // Each screen group's phone rules (mobile pass), same phone query, loaded after.

@@ -32,7 +32,7 @@ export type ScreenId =
   | "settings"
   | "more";
 
-export type SectionId = "overview" | "create" | "measure" | "reports" | "settings";
+export type SectionId = "overview" | "create" | "reports" | "settings";
 
 export interface PageDef {
   id: ScreenId;
@@ -42,6 +42,8 @@ export interface PageDef {
   slug: string;
   /** Reached by deep link only (e.g. a card's schedule page); not a tab. */
   hidden?: boolean;
+  /** Icon in the Dock's drop-up menu (an IconDefs symbol). */
+  icon?: string;
 }
 
 export interface SectionDef {
@@ -49,17 +51,17 @@ export interface SectionDef {
   label: string;
   icon: string;
   pages: PageDef[];
-  /** The page the dock tab opens; defaults to the first. */
+  /** The page the dock tab opens when it has no remembered page; defaults to the first. */
   opens?: ScreenId;
 }
 
 const REPORT_PAGES: PageDef[] = [
-  { id: "analytics", label: "Analytics", slug: "analytics" },
-  { id: "reports", label: "Reports", slug: "reports" },
-  { id: "rollup", label: "Rollup", slug: "rollup" },
-  { id: "monthly", label: "Monthly report", slug: "monthly-report" },
-  { id: "insights", label: "Insights", slug: "insights" },
-  { id: "comments", label: "Comments", slug: "comments" },
+  { id: "analytics", label: "Analytics", slug: "analytics", icon: "#i-chart" },
+  { id: "reports", label: "Reports", slug: "reports", icon: "#i-report" },
+  { id: "rollup", label: "Rollup", slug: "rollup", icon: "#i-layers" },
+  { id: "monthly", label: "Monthly report", slug: "monthly-report", icon: "#i-cal" },
+  { id: "insights", label: "Insights", slug: "insights", icon: "#i-bulb" },
+  { id: "comments", label: "Comments", slug: "comments", icon: "#i-comment" },
 ];
 
 export const SECTIONS: SectionDef[] = [
@@ -68,12 +70,12 @@ export const SECTIONS: SectionDef[] = [
     label: "Overview",
     icon: "#i-dash",
     pages: [
-      { id: "dashboard", label: "Dashboard", slug: "dashboard" },
-      { id: "financials", label: "Financials", slug: "financials" },
-      { id: "overview", label: "Account Overview", slug: "account-overview" },
-      { id: "templates", label: "Templates", slug: "templates" },
-      { id: "contracts", label: "Contracts", slug: "contracts" },
-      { id: "failed", label: "Failed posts", slug: "failed-posts" },
+      { id: "dashboard", label: "Dashboard", slug: "dashboard", icon: "#i-dash" },
+      { id: "financials", label: "Financials", slug: "financials", icon: "#i-dollar" },
+      { id: "overview", label: "Account Overview", slug: "account-overview", icon: "#i-users" },
+      { id: "templates", label: "Templates", slug: "templates", icon: "#i-copy" },
+      { id: "contracts", label: "Contracts", slug: "contracts", icon: "#i-pencil" },
+      { id: "failed", label: "Failed posts", slug: "failed-posts", icon: "#i-alert" },
     ],
   },
   {
@@ -81,54 +83,47 @@ export const SECTIONS: SectionDef[] = [
     label: "Create",
     icon: "#i-upload",
     pages: [
-      { id: "upload", label: "Upload & Schedule", slug: "upload" },
-      { id: "fanout", label: "Fan-out", slug: "fanout" },
+      { id: "upload", label: "Upload & Schedule", slug: "upload", icon: "#i-upload" },
+      { id: "fanout", label: "Fan-out", slug: "fanout", icon: "#i-shuffle" },
       { id: "preflight", label: "Preflight", slug: "preflight", hidden: true },
-      { id: "queue", label: "Upload queue", slug: "queue" },
-      { id: "ready", label: "Ready queue", slug: "ready" },
-      { id: "approvals", label: "Approvals", slug: "approvals" },
+      { id: "queue", label: "Upload queue", slug: "queue", icon: "#i-up" },
+      { id: "ready", label: "Ready queue", slug: "ready", icon: "#i-trello" },
+      { id: "approvals", label: "Approvals", slug: "approvals", icon: "#i-check-circle" },
       { id: "schedule", label: "Schedule card", slug: "schedule", hidden: true },
-      { id: "edit", label: "Studio", slug: "edit" },
-      { id: "calendar", label: "Calendar", slug: "calendar" },
-      { id: "carousels", label: "Carousels", slug: "carousels" },
-      { id: "workflows", label: "Workflows", slug: "workflows" },
-      { id: "requests", label: "Requests", slug: "requests" },
+      { id: "edit", label: "Studio", slug: "edit", icon: "#i-film" },
+      { id: "calendar", label: "Calendar", slug: "calendar", icon: "#i-cal" },
+      { id: "carousels", label: "Carousels", slug: "carousels", icon: "#i-layers" },
+      { id: "workflows", label: "Workflows", slug: "workflows", icon: "#i-repeat" },
+      { id: "requests", label: "Requests", slug: "requests", icon: "#i-inbox" },
     ],
   },
-  // Measure and Reports share one page list. Measure opens Analytics, the
-  // Reports tab opens /reports, and sectionOf() names Reports for all six so
-  // the Reports tab is the one lit and the sub-nav reads "Reports".
-  { id: "measure", label: "Measure", icon: "#i-chart", pages: REPORT_PAGES },
-  { id: "reports", label: "Reports", icon: "#i-report", pages: REPORT_PAGES, opens: "reports" },
+  // One Reports tab (Tyrone, 2026-11-27): Measure and Reports opened the same
+  // six pages, so they merged, Analytics first.
+  { id: "reports", label: "Reports", icon: "#i-report", pages: REPORT_PAGES },
   {
     id: "settings",
     label: "Settings",
     icon: "#i-gear",
     pages: [
-      { id: "settings", label: "Settings", slug: "settings" },
+      { id: "settings", label: "Settings", slug: "settings", icon: "#i-gear" },
       // The phone's More tab (mobile pass): every other page in one list.
       { id: "more", label: "More", slug: "more", hidden: true },
     ],
   },
 ];
 
-/** Measure mirrors Reports' pages, so a screen belongs to the other section. */
 export function sectionOf(screen: ScreenId): SectionDef {
-  return SECTIONS.find((s) => s.id !== "measure" && s.pages.some((p) => p.id === screen))!;
+  return SECTIONS.find((s) => s.pages.some((p) => p.id === screen))!;
 }
 
-/** Where a section's dock tab goes. */
+/** Where a section's dock tab goes when nothing is remembered for it. */
 export function sectionHome(s: SectionDef): ScreenId {
   return s.opens ?? s.pages[0]!.id;
 }
 
-/**
- * The dock tab lit on a screen: the tab that opens it, else its section. So
- * Analytics lights Measure (the tab that went there) while every other
- * Reports page lights Reports; sectionOf alone never names Measure.
- */
-export function dockSection(screen: ScreenId): SectionDef["id"] {
-  return SECTIONS.find((s) => sectionHome(s) === screen)?.id ?? sectionOf(screen).id;
+/** The dock tab lit on a screen. */
+export function dockSection(screen: ScreenId): SectionId {
+  return sectionOf(screen).id;
 }
 
 export function pageOf(screen: ScreenId): PageDef {

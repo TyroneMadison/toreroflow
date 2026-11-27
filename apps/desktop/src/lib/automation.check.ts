@@ -24,15 +24,16 @@ eq(
 );
 eq(automationAttributes(false), {}, "off sets neither");
 
-// Every screen sits in exactly one section, with a unique slug. Measure mirrors
-// Reports' page list, so it is left out of the count.
-const measure = SECTIONS.find((s) => s.id === "measure")!;
+// Every screen sits in exactly one section, with a unique slug. Measure and
+// Reports merged into one Reports tab (2026-11-27), Analytics first.
 const reports = SECTIONS.find((s) => s.id === "reports")!;
-eq(measure.pages === reports.pages, true, "Measure keeps the same pages as Reports");
-eq(SECTIONS.map((s) => s.id), ["overview", "create", "measure", "reports", "settings"], "the Reports tab sits between Measure and Settings");
-eq([sectionHome(measure), sectionHome(reports)], ["analytics", "reports"], "Measure opens Analytics, Reports opens /reports");
-const pages = SECTIONS.filter((s) => s !== measure).flatMap((s) => s.pages);
+eq(SECTIONS.map((s) => s.id), ["overview", "create", "reports", "settings"], "four Dock tabs: Measure merged into Reports");
+eq(reports.label, "Reports", "the merged tab is called Reports");
+eq(sectionHome(reports), "analytics", "the Reports tab opens Analytics first");
+eq(reports.pages.map((p) => p.slug), ["analytics", "reports", "rollup", "monthly-report", "insights", "comments"], "the same six pages, Analytics first");
+const pages = SECTIONS.flatMap((s) => s.pages);
 eq(new Set(pages.map((p) => p.id)).size, 26, "all twenty-six screens (the phone More page included) are mapped once");
+eq(pages.length, 26, "no page is listed under two tabs");
 eq(new Set(pages.map((p) => p.slug)).size, pages.length, "slugs are unique");
 eq(sectionOf("calendar").id, "create", "calendar lives under Create");
 eq(pageOf("overview").slug, "account-overview", "Account Overview does not collide with the section");
@@ -47,8 +48,8 @@ eq([sectionOf("approvals").id, sectionOf("requests").id, sectionOf("failed").id,
 
 eq(
   [dockSection("analytics"), dockSection("reports"), dockSection("comments"), dockSection("calendar"), dockSection("dashboard")],
-  ["measure", "reports", "reports", "create", "overview"],
-  "the Measure tab lights on Analytics, where it goes; Reports on its own pages",
+  ["reports", "reports", "reports", "create", "overview"],
+  "every Reports page, Analytics included, lights the one Reports tab",
 );
 
 console.log("automation: all checks passed");

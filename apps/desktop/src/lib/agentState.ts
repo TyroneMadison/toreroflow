@@ -1,5 +1,5 @@
 import { pageOf, type ScreenId } from "./nav";
-import type { Range, SettingsSection } from "./routes";
+import type { PageSection, Range } from "./routes";
 
 /*
  * What an agent driving the app can read without parsing the page: html
@@ -15,7 +15,7 @@ export interface AgentState {
   route: string;
   /** The page slug from lib/nav.ts, e.g. "upload" or "account-overview". */
   screen: string;
-  section: SettingsSection | null;
+  section: PageSection | null;
   clientId: string | null;
   clientName: string | null;
   range: Range | null;
@@ -28,7 +28,7 @@ export interface AgentState {
 export interface AgentStateInput {
   route: string;
   screen: ScreenId;
-  section: SettingsSection | null;
+  section: PageSection | null;
   clientId: string | null;
   clientName: string | null;
   range: Range | null;

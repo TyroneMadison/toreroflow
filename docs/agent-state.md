@@ -18,7 +18,8 @@ directly, the browser's back and forward, and a copied link all work.
 | `/create/edit` | Edit | `edit` |
 | `/calendar` | Calendar | `calendar` |
 | `/create/carousels` | Carousels | `carousels` |
-| `/create/workflows` | Workflows | `workflows` |
+| `/create/workflows` | Workflows (its Overview area) | `workflows` |
+| `/create/workflows/<area>` | Workflows, one area (desktop and web) | `workflows` |
 | `/analytics` | Analytics | `analytics` |
 | `/reports` | Reports | `reports` |
 | `/settings` | Settings | `settings` |
@@ -27,8 +28,14 @@ directly, the browser's back and forward, and a copied link all work.
 Settings sections: `general`, `accounts`, `business`, `updates`, `deploy`,
 `operator`.
 
+Workflows areas: `inbox`, `automations`, `ai-replies`, `contacts`, `metrics`,
+`auto-post`. The area shows as `section` in the state below. AI replies,
+Contacts and Metrics are labelled placeholders until their screens ship.
+
 `/` and any unknown path are replaced with `/dashboard` (no history entry);
-an unknown Settings section opens `/settings`.
+an unknown Settings section opens `/settings`, an unknown Workflows area
+`/create/workflows`. `/measure` (the old Measure tab, merged into Reports)
+opens `/analytics`.
 
 Query parameters, kept when you move between screens:
 
@@ -109,9 +116,15 @@ on their own (Workflows' DM sections, Upload's drop zones).
 
 `data-testid` follows `area.thing[.id]`:
 
-- `nav.section.<overview|create|measure|settings>` - dock sections (links)
-- `nav.page.<slug>` - page tabs (links)
-- `settings.section.<section>` - Settings section tabs (links)
+- `nav.section.<overview|create|reports|settings>` - dock tabs (links). A
+  click reopens the last page used in that tab (else its first page); hover
+  or keyboard focus opens its drop-up menu `nav.menu.<tab>`
+- `nav.page.<slug>` - pages in the dock menus (links, hidden until the menu
+  opens; opening the page's URL directly is the reliable route)
+- `settings.section.<section>` - Settings cards in the Settings dock menu (links)
+- `workflows.area.<overview|inbox|automations|ai-replies|contacts|metrics|auto-post>` -
+  the Workflows rail (desktop and web)
+- `page.crumb` - the breadcrumb over each desktop page title
 - `nav.alerts`, `nav.api-status`, `theme.toggle`
 - `brand-switcher.open`, `brand-switcher.option.<clientId>`, `brand-switcher.add-client`
 - per screen: `dashboard.range.<30|60|90>`, `analytics.range.<7|30|60|90|all>`,

@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.64] - 2026-11-27
+
+### Changed - Dock menus, breadcrumb, one Reports tab (desktop and web)
+
+- Each **Dock tab has a drop-up menu** of its pages: it opens after the pointer rests 80 ms, slides up over 200 ms with the pages 22 ms apart, and stays open across a safe bridge and while the pointer heads up to it (aim check), closing 250 ms after the pointer leaves. Full keyboard support (focus opens it, arrows, Home, End, Enter, Escape), touch (first tap opens the menu, second opens the page) and a reduced-motion fade
+- The **pill tabs under the page title are gone** on desktop and web; a breadcrumb over the title names the Dock tab (and Workflows for its areas). Settings' cards moved into the Settings menu
+- **Measure and Reports are one Reports tab**, Analytics first, with the same six pages. `/measure` opens Analytics; every other address is unchanged
+- **A click on a Dock tab reopens the last page used in it**, remembered per tab across reloads and checked against today's pages (a page that no longer exists falls back to the tab's first page)
+- **Workflows has a rail** with its seven areas (Overview, Inbox, Automations, AI replies, Contacts, Metrics, Auto-post), each with its own address `/create/workflows/<area>`. Inbox shows the DM inbox, Automations the DM campaigns, Auto-post Drive auto-post and the fan-out rules; AI replies, Contacts and Metrics are marked as coming soon in this update. Overview keeps everything the page had
+- The active Dock tab is solid coral again, as in the approved mockups; the Failed posts page shows its count in the Overview menu
+- The phone keeps its tab bar, header and page chips exactly as before
+
 ## [0.3.25] - 2026-10-14
 
 ### Added - per-client caption block
