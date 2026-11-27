@@ -5,6 +5,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.65] - 2026-11-27
+
+### Added - DM backend foundation: Instagram through our own Meta app (F2)
+
+- **Instagram DMs through Torerone's own Meta app** (Instagram API with Instagram Login), built and **dark-launched**: until `META_IG_APP_ID` and `META_IG_APP_SECRET` are on the server, `GET/POST /webhooks/meta`, the deauthorize and data-deletion callbacks and the Instagram connect answer `503 {"reason":"instagram_not_configured"}` and every inbox keeps reading through Zernio. Setup steps for Meta's dashboard: `docs/meta-instagram-setup.md`
+- **Webhook**: the handshake checks `META_VERIFY_TOKEN`; deliveries are verified with an HMAC of the raw body (constant time, Instagram app secret or the existing Meta app secret), stored first and processed by the worker, so a redelivery, the sync and our own echo land on one message. Bad signatures are refused and show on `/dm/status`
+- **Connect Instagram** (`POST /oauth/instagram/start/:accountId`, callback `/oauth/instagram/callback`): signed state, 60-day token stored encrypted (`TOKEN_ENCRYPTION_KEY`), the wrong Instagram account refused by name, the account subscribed to messages, reactions, seen, postbacks and comments, recent conversations imported at once
+- **Worker**: webhook ingest (text, photos, video, voice notes, story replies and mentions, shared posts and reels, reactions, edits, unsends), a missed-DM sync every 5 minutes, daily token refresh (alert and "Reconnect" when Instagram refuses it), a sweep for deliveries the queue missed, and webhook-log pruning
+- **Unified inbox API** under `/clients/:id/dm/...`: threads (status, stage, tag, search and account filters, paging, counts), one thread with its messages, reply (text and media; the 24h window enforced with a clear 409, `HUMAN_AGENT` up to 7 days when `META_IG_HUMAN_AGENT=1`), mark read, stage, status, tags, notes, pause and resume, and contacts. Native Instagram and Zernio (Instagram before connecting, Facebook Messenger always, reply only) come back in one shape; `GET /dm/status` says which transport each account uses
+- **Media proxy** `/dm/media/...`: signed links, Meta and Zernio hosts only, Range passthrough, nothing stored. An expired attachment is read again on demand (Instagram's message API, or Zernio's attachment refresh, which was built and never called), so images in old threads draw again, in the current inbox too
+- **Workflows, Inbox**: a "Connect Instagram for DMs" card (mockup 10, state a) while an Instagram account still reads through Zernio; its button stays off with a note until the Meta app is set up
+
+### Fixed
+
+- **Viewers could send DMs, and every other viewer check was dead.** Login tokens never carried the role, so `role === "viewer"` was never true for a real viewer login. The role is now signed in at login, and DM writes check the user row for tokens issued before this release. Every DM send or change answers 403 for viewers and for all bot tokens (Polly reads only), guarded once for the whole DM plugin and checked route by route
+- **A viewer could mint a bot token**, including a full-access "polly" one. `/auth/bot-token` now refuses viewers
+- **DM campaign post scope** rejects ids that are not Instagram or Facebook posts (the old picker sent YouTube video ids, so scoped campaigns never fired). The picker itself is replaced with the Automations screen (F4)
+
+### Database
+
+- Migration `20261127120000_dm_core`: `DmAccount`, `DmContact`, `DmThread`, `DmMessage`, `DmWebhookEvent`, `DmTag`, `DmContactTag`. New tables only
+
 ## [0.3.64] - 2026-11-27
 
 ### Changed - Dock menus, breadcrumb, one Reports tab (desktop and web)

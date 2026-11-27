@@ -59,3 +59,4 @@ export * from "./polish";
 export * from "./collab";
 export * from "./drive";
 export * from "./pauseShift";
+export * from "./dm";

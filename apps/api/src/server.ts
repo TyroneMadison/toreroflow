@@ -28,6 +28,8 @@ import { researchRoutes } from "./routes/research";
 import { workflowRoutes } from "./routes/workflows";
 import { commentRoutes } from "./routes/comments";
 import { dmCampaignRoutes } from "./routes/dmCampaigns";
+import { dmRoutes, publicDmRoutes } from "./routes/dm";
+import { metaWebhookRoutes } from "./routes/metaWebhook";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
 import { reportRoutes } from "./routes/reports";
@@ -63,8 +65,9 @@ declare module "@fastify/jwt" {
   interface FastifyJWT {
     /** role "bot" narrows the token to the whitelist in auth/botAccess.ts. */
     /** `bot` names a bot token (e.g. "polly"); its BotIdentity (auth/botAccess.ts) decides full access. */
-    payload: { sub: string; agencyId: string; role?: "bot"; bot?: string };
-    user: { sub: string; agencyId: string; role?: "bot"; bot?: string };
+    /** role "viewer" is signed in at login since F2; older viewer tokens lack it (see auth/actingUser.ts). */
+    payload: { sub: string; agencyId: string; role?: "bot" | "viewer"; bot?: string };
+    user: { sub: string; agencyId: string; role?: "bot" | "viewer"; bot?: string };
   }
 }
 
@@ -195,6 +198,9 @@ export async function buildServer(
   await app.register(researchRoutes);
   await app.register(workflowRoutes);
   await app.register(dmCampaignRoutes);
+  await app.register(dmRoutes);
+  await app.register(publicDmRoutes);
+  await app.register(metaWebhookRoutes);
   await app.register(commentRoutes);
   await app.register(mediaRoutes);
   await app.register(postRoutes);

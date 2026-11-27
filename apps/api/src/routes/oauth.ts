@@ -53,7 +53,7 @@ function googleCreds(): GoogleCredentials | null {
  * contained: this page renders on a phone, in a browser that has never loaded
  * anything else of ours.
  */
-function resultPage(ok: boolean, heading: string, detail: string): string {
+export function resultPage(ok: boolean, heading: string, detail: string): string {
   const accent = ok ? "#3ddc97" : "#fa614b";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">

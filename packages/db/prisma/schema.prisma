@@ -335,6 +335,8 @@ model Client {
   repurposeJobs    RepurposeJob[]
   xPostedDays      XPostedDay[]
   signatureRequests SignatureRequest[]
+  dmAccounts        DmAccount[]
+  dmTags            DmTag[]
 
   @@index([agencyId])
 }
@@ -385,6 +387,7 @@ model SocialAccount {
   metricSnapshots    MetricSnapshot[]
   externalVideos     ExternalVideo[]
   platformConnection PlatformConnection?
+  dmAccount          DmAccount?
 
   @@index([clientId, platform])
 }
@@ -427,6 +430,7 @@ model PlatformConnection {
   updatedAt       DateTime  @updatedAt
 
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  dmAccounts    DmAccount[]
 
   @@index([platform, status])
 }
@@ -2148,4 +2152,197 @@ model SignatureAuditEvent {
 
   @@index([requestId])
   @@index([at])
+}
+
+// ---------------------------------------------------------------------------
+// DMs (F2). Instagram through Torerone's own Meta app (Instagram API with
+// Instagram Login), Facebook Messenger read through Zernio, reply only.
+// Ported from fewchat (MIT, Copyright (c) 2026 Jason Cooperson); see
+// THIRD_PARTY_NOTICES.md.
+// ---------------------------------------------------------------------------
+
+/// One DM inbox: a client's Instagram or Facebook account.
+///
+/// transport says who carries the messages. "native" is our Meta app: the
+/// token lives here, encrypted, and the webhook writes threads and messages.
+/// "zernio" is the read-through fallback: Zernio holds the messages and only
+/// the thread list, contacts, stage, tags and notes are kept here. A row is
+/// created the first time an account's inbox is read, so every thread has an
+/// account to hang from whichever way it arrived.
+model DmAccount {
+  id                   String    @id @default(cuid())
+  clientId             String
+  socialAccountId      String    @unique
+  /// instagram | facebook (the Platform enum, narrowed by the API).
+  platform             Platform
+  /// native | zernio
+  transport            String    @default("zernio")
+  /// The platform's id for the account. Native Instagram: the professional
+  /// account id (17841...), which is what every webhook entry.id carries.
+  externalId           String?
+  username             String?
+  /// The account's direct read credential, when it also has one.
+  platformConnectionId String?
+  /// The 60-day Instagram Login token, AES-256-GCM via secrets.ts. Null on
+  /// zernio rows and after a deauthorize.
+  accessTokenEnc       String?
+  tokenExpiresAt       DateTime?
+  tokenRefreshedAt     DateTime?
+  scopes               String[]  @default([])
+  /// active | revoked | error
+  status               String    @default("active")
+  error                String?
+  /// Watermark of the missed-DM sync: conversations updated after this are re-read.
+  lastSyncAt           DateTime?
+  lastWebhookAt        DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  socialAccount      SocialAccount       @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platformConnection PlatformConnection? @relation(fields: [platformConnectionId], references: [id], onDelete: SetNull)
+  contacts           DmContact[]
+  threads            DmThread[]
+
+  @@unique([platform, externalId])
+  @@index([clientId])
+  @@index([transport, status])
+}
+
+/// A person who has messaged one of the accounts. Stage, tags and notes are
+/// the agency's own, so they live here for both transports.
+model DmContact {
+  id          String    @id @default(cuid())
+  dmAccountId String
+  /// IGSID (native), or the participant id Zernio reports.
+  externalId  String
+  displayName String?
+  handle      String?
+  avatarUrl   String?
+  /// new | engaged | qualify | offer | link | won (packages/core/src/dm.ts)
+  stage       String    @default("new")
+  notes       String?
+  /// Said yes to follow-ups (Messenger/Instagram opt-in or by hand).
+  optIn       Boolean   @default(false)
+  /// Their last message to us.
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  dmAccount DmAccount      @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
+  tags      DmContactTag[]
+  threads   DmThread[]
+
+  @@unique([dmAccountId, externalId])
+  @@index([dmAccountId, lastSeenAt])
+}
+
+/// A conversation. One per contact per account.
+model DmThread {
+  id            String    @id @default(cuid())
+  dmAccountId   String
+  contactId     String
+  /// native | zernio
+  source        String
+  /// The conversation id the transport knows it by (Zernio's, or Instagram's
+  /// once the sync has seen it). Null for a native thread only seen by webhook.
+  externalId    String?
+  /// open | waiting | done
+  status        String    @default("open")
+  unread        Int       @default(0)
+  /// Automations and AI leave a paused thread alone.
+  pausedAt      DateTime?
+  lastMessageAt DateTime?
+  lastPreview   String?
+  /// in | out, for the "You:" prefix.
+  lastDirection String?
+  lastInboundAt DateTime?
+  /// lastInboundAt + 24h: Meta's standard messaging window.
+  windowEndsAt  DateTime?
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  dmAccount DmAccount   @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
+  contact   DmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages  DmMessage[]
+
+  @@unique([dmAccountId, contactId])
+  @@unique([dmAccountId, externalId])
+  @@index([dmAccountId, lastMessageAt])
+  @@index([dmAccountId, status])
+}
+
+/// One message on a native thread. Zernio threads keep theirs at Zernio.
+model DmMessage {
+  id                String    @id @default(cuid())
+  threadId          String
+  /// The platform message id (mid). Unique per thread, which is what makes a
+  /// redelivered webhook, the sync and our own echo land on one row.
+  externalId        String
+  /// in | out
+  direction         String
+  text              String?
+  /// [{ type: image|video|audio|story|post|share|sticker|file|..., url, ... }]
+  attachments       Json?
+  replyToExternalId String?
+  /// { contact?: emoji, you?: emoji }
+  reactions         Json?
+  unsentAt          DateTime?
+  editedAt          DateTime?
+  transcript        String?
+  /// sent | failed
+  status            String    @default("sent")
+  error             String?
+  /// Who pressed Send. Null for inbound, and for echoes typed in the Instagram app.
+  sentByUserId      String?
+  sentAt            DateTime
+  createdAt         DateTime  @default(now())
+
+  thread DmThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, externalId])
+  @@index([threadId, sentAt])
+  @@index([externalId])
+}
+
+/// A webhook delivery, stored before anything reads it so a processing
+/// failure loses nothing. Bad signatures are kept without their payload, so a
+/// wrong app secret shows up on /dm/status instead of as silence.
+model DmWebhookEvent {
+  id          String    @id @default(cuid())
+  object      String?
+  payload     Json?
+  signatureOk Boolean
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  error       String?
+
+  @@index([signatureOk, receivedAt])
+  @@index([processedAt])
+}
+
+/// A label the agency puts on contacts, per client.
+model DmTag {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contacts DmContactTag[]
+
+  @@unique([clientId, name])
+}
+
+model DmContactTag {
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  contact DmContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     DmTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tagId])
 }

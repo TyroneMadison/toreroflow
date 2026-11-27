@@ -24,3 +24,18 @@ export async function actingUserId(request: FastifyRequest): Promise<string | nu
   });
   return owner?.id ?? null;
 }
+
+/**
+ * Whether the caller is a viewer, for actions a viewer must never take.
+ *
+ * Login tokens carry role "viewer" since F2. Tokens issued before that (30
+ * days) carry no role at all, so a claim-free human token is checked against
+ * the user row: one indexed read, only on the writes that call this.
+ */
+export async function isViewer(request: FastifyRequest): Promise<boolean> {
+  const { role, sub, agencyId } = request.user as { role?: string; sub: string; agencyId: string };
+  if (role === "viewer") return true;
+  if (role) return false;
+  const user = await getPrisma().user.findFirst({ where: { id: sub, agencyId }, select: { role: true } });
+  return user?.role === "viewer";
+}

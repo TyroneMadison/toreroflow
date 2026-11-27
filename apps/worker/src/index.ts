@@ -42,6 +42,7 @@ import { checkFilingReminders } from "./filing";
 import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 import { syncDmStats } from "./dmStats";
+import { runDmJob, syncAll as syncDms, type DmJob } from "./dm";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
@@ -1221,6 +1222,27 @@ setInterval(() => void refreshAllTrends().catch((e: unknown) => console.error("[
 const driveTick = () => void driveAll().catch((e: unknown) => console.error("[drive]", e instanceof Error ? e.message : e));
 setTimeout(driveTick, 60_000).unref();
 setInterval(driveTick, DRIVE_CHECK_MINUTES * 60_000).unref();
+
+/*
+ * Native Instagram DMs (F2): webhook deliveries one at a time in arrival
+ * order, so a message and its edit or unsend never race. The missed-DM sync
+ * every 5 minutes on a timer (skipping a tick while one is running), token
+ * refresh and webhook-log pruning once a day.
+ */
+void work<DmJob>("dm", { concurrency: 1 }, async (job) => runDmJob(job));
+void scheduleCron("dm", "30 3 * * *", { kind: "refresh" });
+let dmSyncing = false;
+const dmTick = () => {
+  if (dmSyncing) return;
+  dmSyncing = true;
+  void syncDms()
+    .catch((e: unknown) => console.error("[dm] sync", e instanceof Error ? e.message : e))
+    .finally(() => {
+      dmSyncing = false;
+    });
+};
+setTimeout(dmTick, 90_000).unref();
+setInterval(dmTick, 5 * 60_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);

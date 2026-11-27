@@ -8,7 +8,7 @@ import {
 } from "@toreroflow/core";
 import { getPrisma } from "@toreroflow/db";
 import { requireAuth } from "../plugins/requireAuth";
-import { actingUserId } from "../auth/actingUser";
+import { actingUserId, isViewer } from "../auth/actingUser";
 
 /** Uniform body for wrong email OR wrong password - never reveal which. */
 const INVALID_CREDENTIALS = { error: "invalid credentials" } as const;
@@ -43,6 +43,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (request.user.role === "bot") {
         return reply.status(403).send({ error: "a bot cannot mint tokens" });
       }
+      // A viewer minting "polly" would hand itself full access.
+      if (await isViewer(request)) {
+        return reply.status(403).send({ error: "viewers cannot mint tokens" });
+      }
       // A real user id, so whatever the bot creates has a real creator.
       const sub = await actingUserId(request);
       if (!sub) return reply.status(401).send({ error: "unknown user" });
@@ -61,8 +65,17 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  const signToken = (user: { id: string; agencyId: string }): string =>
-    app.jwt.sign({ sub: user.id, agencyId: user.agencyId }, { expiresIn: TOKEN_TTL });
+  /*
+   * The role rides in the token. It used to be left out, so request.user.role
+   * was never "viewer" for a real viewer login and every viewer check in the
+   * API waved them through (the recon's "a viewer can send DMs"). Owners keep
+   * the claim-free token they always had.
+   */
+  const signToken = (user: { id: string; agencyId: string; role?: string }): string =>
+    app.jwt.sign(
+      { sub: user.id, agencyId: user.agencyId, ...(user.role === "viewer" ? { role: "viewer" as const } : {}) },
+      { expiresIn: TOKEN_TTL },
+    );
 
   app.post("/auth/register", async (request, reply) => {
     const body = registerSchema.parse(request.body);
