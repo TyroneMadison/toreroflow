@@ -64,8 +64,8 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
 
 /**
  * Workflows' areas, each reachable as /create/workflows/<id>; the Workflows
- * page itself is the Overview area. Desktop and web show them in a rail; the
- * phone keeps its one Workflows page.
+ * page itself is the Overview area. Desktop and web show them in a rail, the
+ * phone in a row of chips under the title (F3).
  */
 export const WORKFLOW_AREAS = [
   { id: "inbox", label: "Inbox" },

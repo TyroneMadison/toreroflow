@@ -29,13 +29,32 @@ Settings sections: `general`, `accounts`, `business`, `updates`, `deploy`,
 `operator`.
 
 Workflows areas: `inbox`, `automations`, `ai-replies`, `contacts`, `metrics`,
-`auto-post`. The area shows as `section` in the state below. AI replies,
-Contacts and Metrics are labelled placeholders until their screens ship.
-The Inbox area shows `dm-connect` (the "Connect Instagram for DMs" card)
-while an Instagram account still reads through Zernio; its button is off and
-`dm-connect-pending` explains why until Torerone's Meta app is set up
-(docs/meta-instagram-setup.md). `GET /dm/status?clientId=` says which
-transport each account uses.
+`auto-post`. The area shows as `section` in the state below; the same paths
+work on the phone, which shows the areas as chips under the title. AI replies
+and Metrics are labelled placeholders until their screens ship.
+
+The Inbox area (`dm-inbox`, with `data-state` loading, error, empty or ready)
+lists Instagram and Messenger threads (`dm-thread-<threadId>`) and polls every
+4 seconds while the page is visible. The open conversation is `dm-thread`
+(messages `dm-message`, composer `dm-composer`, send `dm-send`, photo
+`dm-attach`); a closed 24 hour window shows `dm-window-closed` and a viewer
+sees `dm-readonly` instead of the composer. Details are `dm-details` (on the
+phone in the sheet `dm-details-sheet`). Filters: `dm-tab-<all|active|paused|flagged|done>`,
+`dm-search`, `dm-account-<accountId>`, `dm-unread`, `dm-stage-filter`,
+`dm-tag-filter` (phone: `dm-filter` opens `dm-filter-sheet`). States:
+`dm-connect` (the "Connect Instagram for DMs" card, whole area while there is
+no conversation, one line above the list while an Instagram account still
+reads through Zernio; `dm-connect-pending` while Torerone's Meta app is not
+set up, docs/meta-instagram-setup.md), `dm-reconnect` (Instagram refused the
+token), `dm-empty`, `dm-inbox.error` with `dm-retry`. `GET /dm/status?clientId=`
+says which transport each account uses.
+
+The Contacts area is `contacts` (rows `contact-<contactId>`, `contacts-search`,
+`contacts-unread`, `contacts-stage-filter`, `contacts-account`,
+`contacts-export`, the person panel `contacts-person` with `contacts-open`,
+select mode `contacts-bulk` on desktop and `contacts-select` /
+`contacts-selbar` on the phone, sheets `contacts-filter-sheet`,
+`contacts-actions`, `contacts-tags`, `contacts-stage`).
 
 `/` and any unknown path are replaced with `/dashboard` (no history entry);
 an unknown Settings section opens `/settings`, an unknown Workflows area

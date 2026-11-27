@@ -14,7 +14,8 @@ in `apps/api/src/auth/botAccess.ts`; anything not on it answers 403.
 ## DMs: read-only for every bot
 
 - **Polly** (full access) can **read** DM threads, messages, contacts and
-  `/dm/status`. She can never send a DM, mark one read, tag, stage, pause or
+  `/dm/status`. She can never send a DM, upload a reply photo, mark one read,
+  tag, stage, bulk-edit contacts, pause or
   change a conversation, start an Instagram connect, or create, edit or
   delete a DM campaign: those answer `403 {"reason":"bot_read_only"}` for
   every bot token, full access or not (`apps/api/src/dm/guard.ts`).

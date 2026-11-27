@@ -109,6 +109,18 @@ export const dmContactPatchSchema = z
   .strict();
 export type DmContactPatch = z.infer<typeof dmContactPatchSchema>;
 
+/** Contacts select mode (F3): one stage and tag change for many people at once. */
+export const dmContactBulkSchema = z
+  .object({
+    ids: z.array(z.string().min(1).max(64)).min(1).max(500),
+    stage: z.enum(DM_STAGES).optional(),
+    addTags: z.array(tagName).max(20).optional(),
+    removeTags: z.array(tagName).max(20).optional(),
+  })
+  .strict()
+  .refine((b) => !!b.stage || !!b.addTags?.length || !!b.removeTags?.length, { message: "nothing to change" });
+export type DmContactBulk = z.infer<typeof dmContactBulkSchema>;
+
 /** One attachment as the screen draws it. url is our media proxy, never the CDN. */
 export interface DmAttachmentView {
   type: string;
@@ -149,6 +161,30 @@ export interface DmThreadView {
   /** Can a reply go out from here at all. Messenger: only in an existing thread. */
   canReply: boolean;
   contact: DmContactView;
+}
+
+/** GET /clients/:id/dm/threads/:threadId: the details pane's Activity. */
+export interface DmThreadActivity {
+  /** Messages in the thread, both ways. */
+  messages: number;
+  /** When the person first reached the account here. */
+  firstSeenAt: string | null;
+  /** What started it: "Story reply", "Story mention", "Direct message". Null when unknown (Zernio). */
+  cameFrom: string | null;
+}
+
+/** One row of the Contacts list: the person, their account and their thread's last line. */
+export interface DmContactRow extends DmContactView {
+  platform: "instagram" | "facebook";
+  accountId: string;
+  accountHandle: string;
+  threadId: string | null;
+  firstSeenAt: string;
+  lastPreview: string | null;
+  lastMessageAt: string | null;
+  lastDirection: "in" | "out" | null;
+  unread: number;
+  windowEndsAt: string | null;
 }
 
 export interface DmMessageView {

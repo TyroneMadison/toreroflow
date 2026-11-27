@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.66] - 2026-11-27
+
+### Added - Inbox and Contacts (F3)
+
+- **Inbox** (Workflows > Inbox, desktop, web and phone), replacing the old DM inbox: one list of Instagram (through Torerone's Meta app, or Zernio until connected) and Facebook Messenger conversations with a channel badge, status tabs (All, Active, Paused, Flagged, Done), search, account chips, stage, tag, channel and unread filters, and unread counts. Desktop shows list, conversation and details side by side; the phone opens the conversation full screen with the tab bar hidden, details and the press-and-hold actions in sheets. It checks for new messages every 4 seconds while the page is visible and stops while the tab is hidden
+- **Messages drawn as they are**: text, photos, video, voice notes with a player and the transcript, story replies and mentions, shared posts and reels, stickers, hearts, unsent and edited messages, reactions and replied-to quotes, grouped into runs with day lines. A photo Meta has expired is fetched again through the media proxy; if even that fails the box says so and offers to load it again instead of a broken image
+- **Composer**: text (Enter sends, Shift+Enter for a new line), emoji, a photo (JPG, PNG or GIF up to 8 MB, Instagram through our Meta app only), replying to one message, and "14h 12m left in the reply window" under it. When the 24 hour window has closed the composer locks with the reason and when it opens again; Messenger says it is reply only; a refused token shows the Reconnect banner
+- **Details**: stage, auto replies on or paused, conversation state, reply window, tags, notes and activity (messages, how it started, last message, first seen)
+- **Contacts** (Workflows > Contacts): everyone who has messaged the brand, with All, Unread and per-tag views, search, stage, channel and account filters, a person panel with Open conversation, select mode for one stage or tag change on many people (desktop and phone), and Export CSV
+- **Viewers** see the Inbox and Contacts read-only: no composer (a read-only notice instead), no tag, stage, pause or select controls, and nothing is marked read on their behalf. The server refuses their writes either way
+- **Phone**: Workflows shows its seven areas as chips under the title, the Inbox chip with the unread count (it replaces the "DM inbox N new" jump chip). Every sheet fits a 360 px screen
+
+### API
+
+- `GET /clients/:id/dm/threads` takes `platform`, `paused` and `unread`, and counts paused threads. The list asks Zernio at most every 15 seconds per brand, so the 4 second poll reads the mirror in between
+- `GET /clients/:id/dm/threads/:threadId` adds `activity` (message count, first seen, how it started)
+- `GET /clients/:id/dm/contacts` takes `unread`, `platform`, several stages and `sort`, returns each person's last message, unread count and reply window, and the totals for the All and Unread views
+- New `POST /clients/:id/dm/contacts/bulk` (one stage, tags to add, tags to remove, every id must be the brand's) and `POST /clients/:id/dm/upload` (the photo for a reply, stored and handed back as a signed public link Instagram can fetch). Both are operator only like every DM write: viewers and bots get 403
+
+### Removed
+
+- The old DM inbox component and its styles. `/clients/:id/inbox` stays for desktop builds older than this one until they update
+
 ## [0.3.65] - 2026-11-27
 
 ### Added - DM backend foundation: Instagram through our own Meta app (F2)

@@ -967,35 +967,6 @@ export interface DmStatus {
   }>;
 }
 
-export interface InboxConversation {
-  id: string;
-  platform: string;
-  accountId: string;
-  accountUsername: string | null;
-  participantId: string | null;
-  participantName: string | null;
-  participantPicture: string | null;
-  lastMessage: string | null;
-  updatedTime: string | null;
-  unreadCount: number;
-  instagramProfile: {
-    isFollower?: boolean;
-    isFollowing?: boolean;
-    followerCount?: number;
-    isVerified?: boolean;
-  } | null;
-}
-
-export interface InboxMessage {
-  id: string;
-  message: string;
-  senderId: string | null;
-  senderName: string | null;
-  direction: "incoming" | "outgoing";
-  createdAt: string | null;
-  attachments: Array<{ type: string | null; url: string | null }>;
-}
-
 /** One card in the Trello "Ready for posting" list, routed to a client by label. */
 export interface ReadyCard {
   id: string;

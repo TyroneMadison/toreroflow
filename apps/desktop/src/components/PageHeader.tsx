@@ -21,6 +21,12 @@ const PHONE_SUB: Partial<Record<ScreenId, string>> = {
   requests: "Clients ask. A Trello card lands in the editor pipeline.",
 };
 
+/** Desktop subtitles for the Workflows areas that have their own screen (mockups round 1 02, round 2 04). */
+const AREA_SUB: Partial<Record<string, (brand: string) => string>> = {
+  inbox: (b) => `Instagram and Messenger conversations for ${b}, in one list.`,
+  contacts: (b) => `Everyone who has messaged ${b} on Instagram or Messenger.`,
+};
+
 /** Phone titles that differ from the page label (mobile pass mockups). */
 const PHONE_TITLE: Partial<Record<ScreenId, string>> = {
   overview: "Accounts",
@@ -49,7 +55,7 @@ export default function PageHeader({
 }) {
   const { section: activeSection } = useRoute();
   const isPhone = useIsPhone();
-  const { user } = useAppState();
+  const { user, selectedClient } = useAppState();
   const section = sectionOf(screen);
   const page = section.pages.find((p) => p.id === screen)!;
   const tabs =
@@ -133,7 +139,7 @@ export default function PageHeader({
             ))}
           </div>
           <h1>{title ?? area?.label ?? page.label}</h1>
-          <div className="tf-sub">{subtitle ?? "Toreroflow by Torerone"}</div>
+          <div className="tf-sub">{subtitle ?? (area && AREA_SUB[area.id]?.(selectedClient?.name ?? "this brand")) ?? "Toreroflow by Torerone"}</div>
         </div>
       </div>
       <div className="tf-ctr">{controls}</div>

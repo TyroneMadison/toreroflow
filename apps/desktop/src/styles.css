@@ -1807,24 +1807,6 @@
 .dmlogs{margin-top:10px;max-height:230px;overflow-y:auto}
 .dmlogs .v.bad{color:#ff8080}
 
-/* ---- DM inbox ---- */
-.dmav{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:0 0 auto;
-  border:1px solid var(--brd-soft)}
-.dmav-blank{background:var(--glass-2)}
-.dmlast{margin-top:8px;font-size:12px;color:var(--txt-3);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.dmthread{margin-top:12px;max-height:300px;overflow-y:auto;display:flex;
-  flex-direction:column;gap:7px}
-.dmmsg{max-width:78%;padding:8px 12px;border-radius:14px;font-size:12.5px;
-  line-height:1.45;word-break:break-word}
-.dmmsg.incoming{align-self:flex-start;background:var(--glass-2);
-  border:1px solid var(--brd-soft);border-bottom-left-radius:5px}
-.dmmsg.outgoing{align-self:flex-end;color:#1a1205;background:#ffc46b;
-  border-bottom-right-radius:5px;font-weight:600}
-.dmmsg .dmatt{display:block;max-width:100%;border-radius:10px;margin-top:6px}
-.dmreply{display:flex;gap:8px;margin-top:10px}
-.dmreply .field-in{flex:1}
-
 /* ---- Publish failure, explained ---- */
 .pdfail{margin-top:10px;padding:11px 13px;border-radius:12px;
   background:rgba(250,97,75,.09);border:1px solid rgba(250,97,75,.32)}

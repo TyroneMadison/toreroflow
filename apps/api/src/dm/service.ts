@@ -90,11 +90,33 @@ export function accountToken(account: Pick<DmAccount, "accessTokenEnc" | "status
  * one account Zernio cannot read must not blank the others, so failures come
  * back as warnings beside whatever the mirror already has.
  */
+/**
+ * The Inbox polls the list every 4 seconds while it is on screen (F3). Zernio
+ * is asked at most once per ZERNIO_SYNC_MS per client and account set; polls in
+ * between read the mirror and repeat the last warnings.
+ * ponytail: per-process; a shared cache if the API ever runs as more than one process.
+ */
+const ZERNIO_SYNC_MS = 15_000;
+const lastZernioSync = new Map<string, { at: number; warnings: string[] }>();
+/** Checks reset it between cases. */
+export const resetZernioSync = (): void => lastZernioSync.clear();
+
 export async function syncZernioThreads(client: ClientRow, socials: DmSocial[]): Promise<string[]> {
   const z = zernio();
   const targets = socials.filter((s) => transportOf(s) === "zernio" && s.providerAccountId && s.status === "connected");
   if (!targets.length) return [];
   if (!z || !client.providerProfileId) return ["Zernio is not connected for this client, so its DMs cannot be read."];
+  const key = `${client.id}:${targets.map((s) => s.id).sort().join(",")}`;
+  const last = lastZernioSync.get(key);
+  if (last && Date.now() - last.at < ZERNIO_SYNC_MS) return last.warnings;
+  const warnings = await pullZernio(z, client, targets);
+  lastZernioSync.set(key, { at: Date.now(), warnings });
+  if (lastZernioSync.size > 2000) lastZernioSync.delete(lastZernioSync.keys().next().value!);
+  return warnings;
+}
+
+async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocial[]): Promise<string[]> {
+  if (!client.providerProfileId) return [];
   const prisma = getPrisma();
   const warnings: string[] = [];
   for (const s of targets) {
