@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { sectionOf, type ScreenId } from "../lib/nav";
 import { linkProps, SETTINGS_SECTIONS, useRoute, WORKFLOW_AREAS } from "../lib/routes";
 import { useIsPhone } from "../lib/phone";
+import { usePageHeadState } from "../lib/pageHead";
 import { useAppState } from "../state/AppState";
 
 /** Screens that draw their own phone head (eyebrow, title, one line and an
@@ -24,6 +25,7 @@ const PHONE_SUB: Partial<Record<ScreenId, string>> = {
 /** Desktop subtitles for the Workflows areas that have their own screen (mockups round 1 02, round 2 04). */
 const AREA_SUB: Partial<Record<string, (brand: string) => string>> = {
   inbox: (b) => `Instagram and Messenger conversations for ${b}, in one list.`,
+  automations: (b) => `${b}. Each automation is a trigger plus the messages it sends.`,
   contacts: (b) => `Everyone who has messaged ${b} on Instagram or Messenger.`,
 };
 
@@ -56,6 +58,7 @@ export default function PageHeader({
   const { section: activeSection } = useRoute();
   const isPhone = useIsPhone();
   const { user, selectedClient } = useAppState();
+  const head = usePageHeadState();
   const section = sectionOf(screen);
   const page = section.pages.find((p) => p.id === screen)!;
   const tabs =
@@ -92,12 +95,14 @@ export default function PageHeader({
       : screen === "financials" ? `Overview · ${agency}`
       : section.label;
     const chips = section.id === "reports" || CREATE_CHIPS.has(screen) ? tabs : [];
+    // A deeper Workflows page (the automation editor) names itself: eyebrow "Automations", its own title.
+    const own = screen === "workflows" ? head : null;
     return (
       <header className="tf-head mb-phead" data-phone-head={screen}>
         <div className="mb-ph">
           <div>
-            <div className="mb-eyebrow">{eyebrow}</div>
-            <h1 className="mb-h1">{PHONE_TITLE[screen] ?? title ?? page.label}</h1>
+            <div className="mb-eyebrow">{own?.crumb ?? eyebrow}</div>
+            <h1 className="mb-h1">{own?.title ?? PHONE_TITLE[screen] ?? title ?? page.label}</h1>
             {(subtitle ?? PHONE_SUB[screen]) && <div className="mb-sub">{subtitle ?? PHONE_SUB[screen]}</div>}
           </div>
         </div>
@@ -115,7 +120,8 @@ export default function PageHeader({
     );
   }
   const area = screen === "workflows" ? WORKFLOW_AREAS.find((a) => a.id === activeSection) : undefined;
-  const crumbs = area ? [section.label, page.label] : [section.label];
+  const own = screen === "workflows" ? head : null;
+  const crumbs = [...(area ? [section.label, page.label] : [section.label]), ...(own?.crumb ? [own.crumb] : [])];
   return (
     <header className="tf-head r2">
       <div className="tf-logo">
@@ -134,15 +140,15 @@ export default function PageHeader({
                   </svg>
                 )}
                 {i > 0 && " "}
-                {c}
+                {own?.crumb && i === crumbs.length - 1 ? <b>{c}</b> : c}
               </span>
             ))}
           </div>
-          <h1>{title ?? area?.label ?? page.label}</h1>
-          <div className="tf-sub">{subtitle ?? (area && AREA_SUB[area.id]?.(selectedClient?.name ?? "this brand")) ?? "Toreroflow by Torerone"}</div>
+          <h1>{own?.title ?? title ?? area?.label ?? page.label}</h1>
+          <div className="tf-sub">{own?.sub ?? subtitle ?? (area && AREA_SUB[area.id]?.(selectedClient?.name ?? "this brand")) ?? "Toreroflow by Torerone"}</div>
         </div>
       </div>
-      <div className="tf-ctr">{controls}</div>
+      <div className="tf-ctr">{own?.controls ?? controls}</div>
     </header>
   );
 }

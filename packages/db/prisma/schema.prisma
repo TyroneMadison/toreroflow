@@ -337,6 +337,7 @@ model Client {
   signatureRequests SignatureRequest[]
   dmAccounts        DmAccount[]
   dmTags            DmTag[]
+  dmAutomations     DmAutomation[]
 
   @@index([agencyId])
 }
@@ -388,6 +389,7 @@ model SocialAccount {
   externalVideos     ExternalVideo[]
   platformConnection PlatformConnection?
   dmAccount          DmAccount?
+  dmAutomations      DmAutomation[]
 
   @@index([clientId, platform])
 }
@@ -2195,6 +2197,9 @@ model DmAccount {
   /// Watermark of the missed-DM sync: conversations updated after this are re-read.
   lastSyncAt           DateTime?
   lastWebhookAt        DateTime?
+  /// The per-account kill switch (F4): set, and no automation on this
+  /// account sends anything until it is cleared.
+  automationsPausedAt  DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -2203,6 +2208,7 @@ model DmAccount {
   platformConnection PlatformConnection? @relation(fields: [platformConnectionId], references: [id], onDelete: SetNull)
   contacts           DmContact[]
   threads            DmThread[]
+  automationRuns     DmAutomationRun[]
 
   @@unique([platform, externalId])
   @@index([clientId])
@@ -2345,4 +2351,112 @@ model DmContactTag {
 
   @@id([contactId, tagId])
   @@index([tagId])
+}
+
+/// A DM automation (F4): a trigger plus what it sends. The config columns are
+/// the working copy the editor saves; `published` is the snapshot the worker
+/// runs, so editing a live automation changes nothing for people until
+/// Publish. Hangs on the social account, so one can be drafted before the
+/// account is connected through our Meta app; nothing sends until it is.
+model DmAutomation {
+  id                String    @id @default(cuid())
+  clientId          String
+  socialAccountId   String
+  name              String
+  /// draft (never published) | live | paused
+  status            String    @default("draft")
+  /// comment | story_reply | story_mention | dm_keyword | welcome
+  trigger           String
+  keywords          String[]  @default([])
+  /// contains | word | exact | any
+  matchMode         String    @default("contains")
+  excludeKeywords   String[]  @default([])
+  /// all | next | posts
+  scope             String    @default("all")
+  /// Instagram media ids: the picked posts, or the one "next" locked onto.
+  postIds           String[]  @default([])
+  /// [{ type: "message", text, button?: { title, url } }]. One message today;
+  /// delays and conditions join the array with the flow builder (phase 2).
+  steps             Json      @default("[]")
+  publicReplyOn     Boolean   @default(false)
+  /// Variants, one picked at random per comment.
+  publicReplies     String[]  @default([])
+  oncePerContact    Boolean   @default(true)
+  followersOnly     Boolean   @default(false)
+  trackLinks        Boolean   @default(true)
+  alsoDmKeyword     Boolean   @default(false)
+  folder            String?
+  /// The live version: the config fields above as they were at Publish.
+  published         Json?
+  publishedAt       DateTime?
+  /// Three digits. Whoever DMs it gets the working copy, as a test.
+  testCode          String?
+  testCodeExpiresAt DateTime?
+  lastTestAt        DateTime?
+  /// Real runs only; tests and dry runs are not counted.
+  runCount          Int       @default(0)
+  sentCount         Int       @default(0)
+  failedCount       Int       @default(0)
+  clickCount        Int       @default(0)
+  lastRunAt         DateTime?
+  createdById       String?
+  /// In the trash.
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  client        Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount     @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  runs          DmAutomationRun[]
+
+  @@unique([socialAccountId, testCode])
+  @@index([clientId, deletedAt])
+  @@index([socialAccountId, status])
+}
+
+/// One trigger event on a native account and what became of it: every comment
+/// (most are "ignored": no keyword), and every DM an automation answered.
+/// Unique per account and event, so a redelivered webhook never sends twice.
+model DmAutomationRun {
+  id                String    @id @default(cuid())
+  dmAccountId       String
+  automationId      String?
+  /// comment:<comment id> | message:<mid>
+  eventKey          String
+  /// comment | story_reply | story_mention | dm_keyword | welcome | test
+  trigger           String
+  /// The person's IGSID.
+  contactExternalId String
+  username          String?
+  text              String?
+  mediaId           String?
+  /// For a comment: the one private reply goes to it, the public reply under it.
+  commentId         String?
+  /// queued | sent | failed | skipped | repeat | gated | expired | ignored | dry_run
+  status            String
+  reason            String?
+  test              Boolean   @default(false)
+  attempts          Int       @default(0)
+  retryAt           DateTime?
+  /// When the comment or message happened: the 7 day and 24h rules count from here.
+  eventAt           DateTime
+  sentAt            DateTime?
+  messageId         String?
+  publicReplyAt     DateTime?
+  /// The button's real link, behind our /dm/l/<id> redirect when tracked.
+  linkUrl           String?
+  clicks            Int       @default(0)
+  clickedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  dmAccount  DmAccount     @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
+  automation DmAutomation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+
+  @@unique([dmAccountId, eventKey])
+  @@index([automationId, createdAt])
+  @@index([automationId, contactExternalId])
+  @@index([dmAccountId, sentAt])
+  @@index([dmAccountId, createdAt])
+  @@index([status, retryAt])
 }

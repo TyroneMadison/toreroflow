@@ -114,9 +114,15 @@ export interface Route {
   draft: string | null;
   /** The source video a Rollup shows (?video=). */
   video: string | null;
+  /** The automation open in the editor: /create/workflows/automations/<id> (F4). */
+  item: string | null;
 }
 
 const SEG = "([A-Za-z0-9_-]+)";
+/** /create/workflows/automations/<id>: the automation editor, deep-linkable (F4). */
+const AUTOMATION_ITEM = new RegExp(`^/create/workflows/automations/${SEG}$`);
+/** The editor's own address. */
+export const automationPath = (id: string): string => `${PATHS.workflows}/automations/${id}`;
 const CLIENT_READY = new RegExp(`^/clients/${SEG}/ready$`);
 const CLIENT_SCHEDULE = new RegExp(`^/clients/${SEG}/schedule/${SEG}$`);
 /** A preflight fix link: /create/<draft id>, or /create/new for an unsaved draft. */
@@ -155,9 +161,15 @@ export function parseUrl(url: string): Route {
   let slug: string | null = null;
   let cardId: string | null = null;
   let draft: string | null = null;
+  let item: string | null = null;
   const ready = CLIENT_READY.exec(path);
   const sched = CLIENT_SCHEDULE.exec(path);
-  if (ready) {
+  const auto = AUTOMATION_ITEM.exec(path);
+  if (auto) {
+    screen = "workflows";
+    section = "automations";
+    item = auto[1]!;
+  } else if (ready) {
     screen = "ready";
     slug = ready[1]!;
   } else if (sched) {
@@ -194,6 +206,7 @@ export function parseUrl(url: string): Route {
     area: u.searchParams.get("area") || null,
     draft: draft ?? (u.searchParams.get("draft") || null),
     video: u.searchParams.get("video") || null,
+    item,
   };
 }
 
@@ -218,7 +231,9 @@ export function canonicalUrl(url: string): string {
       ? clientPath(r.slug, r.cardId)
       : r.screen === "schedule"
         ? PATHS.ready // a schedule page with no card has nothing to show
-        : pathFor(r.screen, r.section);
+        : r.item
+          ? automationPath(r.item)
+          : pathFor(r.screen, r.section);
   return path + new URL(url, BASE).search;
 }
 

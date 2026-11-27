@@ -4,7 +4,7 @@ import { useToast } from "../components/Toasts";
 import { api, type WorkflowInfo } from "../lib/api";
 import { PF_ID, PLATFORMS, PLATFORM_LABELS, SURFACE_LABEL, type Platform } from "../lib/platforms";
 import { useAppState } from "../state/AppState";
-import DmCampaigns from "../components/DmCampaigns";
+import Automations from "../components/automations/Automations";
 import Inbox from "../components/inbox/Inbox";
 import Contacts from "../components/inbox/Contacts";
 import DriveAutoPost from "../components/DriveAutoPost";
@@ -33,13 +33,13 @@ const SOON_LINE: Partial<Record<WorkflowArea, (brand: string) => string>> = {
   metrics: () => "How DMs and automations did: runs, replies, click-throughs and where people drop off.",
 };
 
-function WorkflowRail({ area, client, inboxNew }: { area: WorkflowArea | null; client: ClientSummary | null; inboxNew: number | null }) {
+function WorkflowRail({ area, client, inboxNew, mini = false }: { area: WorkflowArea | null; client: ClientSummary | null; inboxNew: number | null; mini?: boolean }) {
   const dm = (client?.accounts ?? []).filter((a) => a.status === "connected" && (a.platform === "instagram" || a.platform === "facebook"));
   const names = dm.map((a) => (a.platform === "instagram" ? `@${a.handle.replace(/^@/, "")}` : "Messenger"));
   const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
   const rows: Array<{ id: WorkflowArea | null; label: string }> = [{ id: null, label: "Overview" }, ...WORKFLOW_AREAS];
   return (
-    <nav className="wfr-rail" aria-label="Workflows">
+    <nav className={`wfr-rail${mini ? " slim" : ""}`} aria-label="Workflows">
       <div className="lbl">Workflows</div>
       {rows.map((r) => {
         const on = r.id === area;
@@ -48,6 +48,8 @@ function WorkflowRail({ area, client, inboxNew }: { area: WorkflowArea | null; c
             key={r.id ?? "overview"}
             className={`wfr-ri${on ? " on" : ""}`}
             aria-current={on ? "page" : undefined}
+            aria-label={mini ? r.label : undefined}
+            title={mini ? r.label : undefined}
             {...linkProps("workflows", r.id)}
             data-testid={`workflows.area.${r.id ?? "overview"}`}
           >
@@ -87,9 +89,8 @@ export default function WorkflowsScreen() {
   const isPhone = useIsPhone();
   // Phone: the New workflow sheet, and the counts the area chips show.
   const [newOpen, setNewOpen] = useState(false);
-  const [dmCount, setDmCount] = useState<number | null>(null);
   const [inboxNew, setInboxNew] = useState<number | null>(null);
-  const { section } = useRoute();
+  const { section, item } = useRoute();
   const area = WORKFLOW_AREAS.find((a) => a.id === section)?.id ?? null;
   // The phone chip row scrolls to the area it is on, the one before peeking (as PageHeader does).
   const areaRow = useRef<HTMLElement>(null);
@@ -207,17 +208,17 @@ export default function WorkflowsScreen() {
   if (isPhone) {
     // Phone: the area chips under the title (mockups 02a, 04), with the Inbox
     // chip carrying the unread count. Overview is the mobile-pass page: Drive
-    // auto-post, the workflows as rows with a switch (swipe left to delete,
+    // auto-post and the workflows as rows with a switch (swipe left to delete,
     // with Undo) under the "saved, not running" banner, New workflow in a
-    // sheet, then the DM campaigns. Inbox and Contacts are their own screens.
+    // sheet. Inbox, Automations and Contacts are their own screens; the
+    // automation editor is a deeper page (Back in the app bar, no chips).
     const shown = (workflows ?? []).filter((w) => !hidden.has(w.id));
     const showDrive = area === null || area === "auto-post";
-    const showDm = area === null || area === "automations";
     const areaRows: Array<{ id: WorkflowArea | null; label: string }> = [{ id: null, label: "Overview" }, ...WORKFLOW_AREAS];
     return (
       <section className="screen active mb-page fl-page" data-screen="workflows" data-state={state} data-area={area ?? "overview"}>
         {area === null && <p className="mb-sub mb-subonly">Automations for {selectedClient?.name ?? "this brand"}. Drive auto-post runs on its own.</p>}
-        <nav className="mb-chips wf-areas" aria-label="Workflow areas" ref={areaRow}>
+        {!item && <nav className="mb-chips wf-areas" aria-label="Workflow areas" ref={areaRow}>
           {areaRows.map((r) => (
             <a
               key={r.id ?? "overview"}
@@ -235,13 +236,15 @@ export default function WorkflowsScreen() {
               )}
             </a>
           ))}
-        </nav>
+        </nav>}
         {!selectedClient ? (
           <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to manage its workflows." />
         ) : area === "inbox" ? (
           <Inbox client={selectedClient} onUnread={setInboxNew} initialThreadId={openThread} />
         ) : area === "contacts" ? (
           <Contacts client={selectedClient} onOpenThread={openFromContacts} />
+        ) : area === "automations" ? (
+          <Automations client={selectedClient} />
         ) : area && SOON.has(area) ? (
           <section className="mb-card wf-soon-ph" data-testid={"workflows.soon." + area}>
             <b>{WORKFLOW_AREAS.find((a) => a.id === area)!.label}: coming soon</b>
@@ -255,7 +258,6 @@ export default function WorkflowsScreen() {
                 items={[
                   { id: "fl-drive", label: "Drive auto-post" },
                   { id: "fl-wf", label: <>Workflows {workflows && <small>{shown.length}</small>}</> },
-                  { id: "fl-dm", label: <>DM campaigns {dmCount !== null && <small>{dmCount}</small>}</> },
                 ]}
               />
             )}
@@ -329,8 +331,6 @@ export default function WorkflowsScreen() {
               </>
             )}
             </>}
-
-            {showDm && <DmCampaigns client={selectedClient} onCount={setDmCount} />}
           </>
         )}
 
@@ -582,8 +582,8 @@ export default function WorkflowsScreen() {
   const brand = selectedClient?.name ?? "this brand";
   return (
     <section className="screen active" data-screen="workflows" data-state={state} data-area={area ?? "overview"}>
-      <div className="wfr">
-        <WorkflowRail area={area} client={selectedClient} inboxNew={inboxNew} />
+      <div className={`wfr${item ? " slim" : ""}`}>
+        <WorkflowRail area={area} client={selectedClient} inboxNew={inboxNew} mini={!!item} />
         <div className="wfr-body">
           {area === null && (
             <>
@@ -600,7 +600,6 @@ export default function WorkflowsScreen() {
               <div className="stage">
                 {selectedClient && <DriveAutoPost client={selectedClient} />}
                 {rules}
-                {selectedClient && <DmCampaigns client={selectedClient} onCount={setDmCount} />}
               </div>
             </>
           )}
@@ -616,24 +615,12 @@ export default function WorkflowsScreen() {
             ) : (
               <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to see its contacts." />
             ))}
-          {area === "automations" && (
-            <>
-              <div className="wfr-notice" data-testid="workflows.automations.notice">
-                <svg aria-hidden="true">
-                  <use href="#i-info" />
-                </svg>
-                <span>
-                  <b>Comment-to-DM automations built here are coming soon in this update.</b> Until then your DM
-                  campaigns below keep running at Zernio.
-                </span>
-              </div>
-              {selectedClient ? (
-                <DmCampaigns client={selectedClient} onCount={setDmCount} />
-              ) : (
-                <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to see its DM campaigns." />
-              )}
-            </>
-          )}
+          {area === "automations" &&
+            (selectedClient ? (
+              <Automations client={selectedClient} />
+            ) : (
+              <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to see its automations." />
+            ))}
           {area === "auto-post" && (
             <>
               {selectedClient && <DriveAutoPost client={selectedClient} />}

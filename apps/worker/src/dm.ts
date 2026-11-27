@@ -5,11 +5,13 @@ import {
   igProfile,
   igRefreshToken,
   InstagramError,
+  parseComments,
   parseWebhook,
   partsFromApi,
   previewOf,
   type IgEvent,
 } from "@toreroflow/publishers";
+import { handleMessage, onTokenRefused, pruneRuns, runCommentAutomations, type InboundMessage } from "./automations";
 
 /**
  * Native Instagram DMs, the worker half (F2): webhook deliveries into threads
@@ -38,8 +40,8 @@ function tokenOf(account: Pick<DmAccount, "accessTokenEnc" | "status">): string 
   }
 }
 
-/** One message into its contact, thread and row. True when the row is new. */
-async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string | null, conversationId?: string): Promise<boolean> {
+/** One message into its contact, thread and row. The new inbound message, for the automations, or null. */
+async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string | null, conversationId?: string): Promise<InboundMessage | false | null> {
   let contact = await prisma.dmContact.findUnique({
     where: { dmAccountId_externalId: { dmAccountId: account.id, externalId: ev.contactId } },
   });
@@ -75,6 +77,9 @@ async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string
     select: { id: true },
   });
   if (known) return false;
+  // Their first message ever here: no earlier inbound row (an echo of a private reply does not count).
+  const firstMessage =
+    ev.direction === "in" && !(await prisma.dmMessage.findFirst({ where: { threadId: thread.id, direction: "in" }, select: { id: true } }));
   try {
     await prisma.dmMessage.create({
       data: {
@@ -111,7 +116,9 @@ async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string
   if (inbound && (!contact.lastSeenAt || ev.at > contact.lastSeenAt)) {
     await prisma.dmContact.update({ where: { id: contact.id }, data: { lastSeenAt: ev.at } });
   }
-  return true;
+  return inbound
+    ? { mid: ev.mid, contactId: ev.contactId, username: contact.handle, text: ev.text, parts: ev.parts, firstMessage, at: ev.at }
+    : null;
 }
 
 /** A change to a message we already have. Unknown mids are ignored, as fewchat does. */
@@ -145,8 +152,12 @@ async function applyUpdate(account: DmAccount, ev: Exclude<IgEvent, MessageEvent
  * skipped: Meta delivers for every account subscribed to the app, and an
  * account that disconnected has no business collecting new messages here.
  */
-export async function ingest(events: IgEvent[], opts: { conversationId?: string } = {}): Promise<{ added: number }> {
+export async function ingest(
+  events: IgEvent[],
+  opts: { conversationId?: string } = {},
+): Promise<{ added: number; inbound: Array<{ account: DmAccount; message: InboundMessage }> }> {
   let added = 0;
+  const inbound: Array<{ account: DmAccount; message: InboundMessage }> = [];
   const accounts = new Map<string, DmAccount | null>();
   for (const ev of events) {
     if (!accounts.has(ev.accountId)) {
@@ -160,7 +171,9 @@ export async function ingest(events: IgEvent[], opts: { conversationId?: string 
     const account = accounts.get(ev.accountId);
     if (!account) continue;
     if (ev.kind === "message") {
-      if (await ingestMessage(account, ev, tokenOf(account), opts.conversationId)) added++;
+      const got = await ingestMessage(account, ev, tokenOf(account), opts.conversationId);
+      if (got !== false) added++;
+      if (got) inbound.push({ account, message: got });
     } else {
       await applyUpdate(account, ev);
     }
@@ -168,15 +181,22 @@ export async function ingest(events: IgEvent[], opts: { conversationId?: string 
   for (const account of accounts.values()) {
     if (account) await prisma.dmAccount.update({ where: { id: account.id }, data: { lastWebhookAt: new Date() } });
   }
-  return { added };
+  return { added, inbound };
 }
 
-/** The queued half of POST /webhooks/meta. */
+/**
+ * The queued half of POST /webhooks/meta: messages into threads, then the
+ * automations (F4) for the new inbound messages and the comments. Only the
+ * webhook runs automations: the missed-DM sync finds old messages, and
+ * answering those late would be a surprise, not a reply.
+ */
 export async function processWebhookEvent(eventId: string): Promise<void> {
   const row = await prisma.dmWebhookEvent.findUnique({ where: { id: eventId } });
   if (!row || row.processedAt || !row.signatureOk) return;
   try {
-    await ingest(parseWebhook(row.payload));
+    const { inbound } = await ingest(parseWebhook(row.payload));
+    for (const { account, message } of inbound) await handleMessage(account, message);
+    await runCommentAutomations(parseComments(row.payload));
     await prisma.dmWebhookEvent.update({ where: { id: eventId }, data: { processedAt: new Date(), error: null } });
   } catch (e) {
     await prisma.dmWebhookEvent.update({
@@ -243,7 +263,7 @@ export async function syncAccount(account: DmAccount, now = new Date()): Promise
 }
 
 /** A token Instagram refused: stop using it, say so where the operator looks. */
-async function markRevoked(account: DmAccount, why: string): Promise<void> {
+export async function markRevoked(account: DmAccount, why: string): Promise<void> {
   await prisma.dmAccount.update({ where: { id: account.id }, data: { status: "revoked", error: why } });
   const client = await prisma.client.findUnique({ where: { id: account.clientId }, select: { agencyId: true } });
   if (!client) return;
@@ -349,6 +369,8 @@ export async function pruneWebhookEvents(now = new Date()): Promise<void> {
   });
 }
 
+onTokenRefused(markRevoked);
+
 export type DmJob = { kind: "ingest"; eventId: string } | { kind: "sync" } | { kind: "refresh" };
 
 export async function runDmJob(job: DmJob): Promise<void> {
@@ -357,5 +379,6 @@ export async function runDmJob(job: DmJob): Promise<void> {
   else if (job.kind === "refresh") {
     await refreshTokens();
     await pruneWebhookEvents();
+    await pruneRuns();
   }
 }

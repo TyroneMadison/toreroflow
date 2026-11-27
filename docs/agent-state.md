@@ -20,6 +20,7 @@ directly, the browser's back and forward, and a copied link all work.
 | `/create/carousels` | Carousels | `carousels` |
 | `/create/workflows` | Workflows (its Overview area) | `workflows` |
 | `/create/workflows/<area>` | Workflows, one area (desktop and web) | `workflows` |
+| `/create/workflows/automations/<id>` | One automation in the editor | `workflows` |
 | `/analytics` | Analytics | `analytics` |
 | `/reports` | Reports | `reports` |
 | `/settings` | Settings | `settings` |
@@ -32,6 +33,23 @@ Workflows areas: `inbox`, `automations`, `ai-replies`, `contacts`, `metrics`,
 `auto-post`. The area shows as `section` in the state below; the same paths
 work on the phone, which shows the areas as chips under the title. AI replies
 and Metrics are labelled placeholders until their screens ship.
+
+The Automations area is `automations` (`data-state` loading, error, empty or
+ready): rows `automations.row.<id>` (native automations by id, Zernio
+campaigns by their Zernio id, under "Still at Zernio"), state tabs
+`automations.tab.<all|live|draft|off>`, `automations.filter` (popover on
+desktop, sheet on the phone), `automations.account`, `automations.new` (the
+template picker `automations.new-modal` / `automations.new-sheet`, templates
+`automations.template.<id>`, `automations.use-template`), `automations.trash`,
+notices `automations.zernio-notice`, `automations.overlap` and
+`automations.connect`, recent comments `automations.run`, the kill switch
+`automations.kill`, Zernio leads `automations.leads`. One automation opens at
+`/create/workflows/automations/<id>` (`automation-editor`): steps
+`automation.step.<1-4>`, `automation.more`, `automation.publish` (dialog
+`automation.publish-dialog`, `automation.pause-zernio`,
+`automation.publish-confirm`), the post picker `automation.change-posts` /
+`automations.posts` / `automations.post`, Test it `automation.test`,
+`automation.get-code`, `automation.dry-run`, preview `automation.preview`.
 
 The Inbox area (`dm-inbox`, with `data-state` loading, error, empty or ready)
 lists Instagram and Messenger threads (`dm-thread-<threadId>`) and polls every

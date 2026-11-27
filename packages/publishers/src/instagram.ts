@@ -276,7 +276,7 @@ export type IgEvent =
  * Instagram app on a phone, or by another tool. Its "other person" is the
  * recipient, not the sender. A sender equal to the account itself on a
  * non-echo is the account messaging itself and is dropped, as fewchat does.
- * Comments (changes) are not messages and are left for the automations PR.
+ * Comments (changes) are not messages: parseComments reads those (F4).
  */
 export function parseWebhook(payload: unknown): IgEvent[] {
   const p = payload as RawPayload;
@@ -317,6 +317,53 @@ export function parseWebhook(payload: unknown): IgEvent[] {
         parts,
         replyTo: typeof to === "string" && to && to !== m.mid ? to : null,
         at: new Date(ev.timestamp ?? Date.now()),
+      });
+    }
+  }
+  return out;
+}
+
+/** A comment on one of the account's posts (F4), from the comments and live_comments fields. */
+export interface IgComment {
+  accountId: string;
+  commentId: string;
+  /** The commenter's IGSID. */
+  contactId: string;
+  username: string | null;
+  mediaId: string | null;
+  text: string;
+  at: Date;
+}
+
+interface RawChange {
+  field?: string;
+  value?: { id?: string; text?: string; from?: { id?: string; username?: string }; media?: { id?: string }; created_time?: number | string };
+}
+
+/**
+ * Comments in a delivery. The account's own comments (our public replies
+ * included) are skipped, as fewchat does, so a public reply never triggers
+ * another automation.
+ */
+export function parseComments(payload: unknown): IgComment[] {
+  const p = payload as { object?: string; entry?: { id?: string; time?: number; changes?: RawChange[] }[] };
+  if (p?.object !== "instagram" || !Array.isArray(p.entry)) return [];
+  const out: IgComment[] = [];
+  for (const entry of p.entry) {
+    const accountId = entry.id ? String(entry.id) : "";
+    for (const ch of entry.changes ?? []) {
+      const v = ch.value;
+      if ((ch.field !== "comments" && ch.field !== "live_comments") || !v?.id || !v.from?.id || !v.text) continue;
+      if (!accountId || String(v.from.id) === accountId) continue;
+      const t = typeof v.created_time === "number" ? v.created_time * 1000 : v.created_time ? Date.parse(v.created_time) : (entry.time ?? 0) * 1000;
+      out.push({
+        accountId,
+        commentId: String(v.id),
+        contactId: String(v.from.id),
+        username: v.from.username ?? null,
+        mediaId: v.media?.id ? String(v.media.id) : null,
+        text: v.text,
+        at: new Date(Number.isFinite(t) && t > 0 ? t : Date.now()),
       });
     }
   }
@@ -536,6 +583,84 @@ export async function igSend(
   );
   if (!body.message_id) throw new InstagramError("Instagram: the send returned no message id", 502, null);
   return body.message_id;
+}
+
+/**
+ * An automation's message (F4): to a comment (a private reply, one per
+ * comment, within 7 days) or to a person in an open window. A link button is
+ * a button template. Meta only documents text for private replies, so a
+ * refused template is retried once as text with the link inline: a failed
+ * call does not use up the comment's one reply (fewchat learned this).
+ */
+export async function igAutomationSend(
+  token: string,
+  to: { commentId: string } | { recipientId: string },
+  text: string,
+  button?: { title: string; url: string } | null,
+): Promise<{ messageId: string; recipientId: string | null; asText: boolean }> {
+  const recipient = "commentId" in to ? { comment_id: to.commentId } : { id: to.recipientId };
+  const post = (message: object) =>
+    graph<{ message_id?: string; recipient_id?: string }>("/me/messages", token, json({ recipient, message }));
+  let body: { message_id?: string; recipient_id?: string };
+  let asText = !button;
+  try {
+    body = await post(
+      button
+        ? { attachment: { type: "template", payload: { template_type: "button", text, buttons: [{ type: "web_url", url: button.url, title: button.title }] } } }
+        : { text },
+    );
+  } catch (e) {
+    // Only a refused template falls back; a rate limit or an outage is retried later as it was.
+    const throttled = e instanceof InstagramError && (e.status === 429 || e.status >= 500 || [1, 2, 4, 17, 32, 613].includes(e.code ?? -1));
+    if (!button || !(e instanceof InstagramError) || e.tokenInvalid || throttled) throw e;
+    body = await post({ text: `${text}\n${button.url}` });
+    asText = true;
+  }
+  if (!body.message_id) throw new InstagramError("Instagram: the send returned no message id", 502, null);
+  return { messageId: body.message_id, recipientId: body.recipient_id ?? null, asText };
+}
+
+/** A public reply under a comment. */
+export async function igCommentReply(token: string, commentId: string, text: string): Promise<string | null> {
+  const body = await graph<{ id?: string }>(`/${encodeURIComponent(commentId)}/replies?${new URLSearchParams({ message: text })}`, token, { method: "POST" });
+  return body.id ?? null;
+}
+
+export interface IgMedia {
+  id: string;
+  caption: string | null;
+  permalink: string | null;
+  thumbnail: string | null;
+  mediaType: string | null;
+  productType: string | null;
+  at: Date | null;
+}
+
+/** The account's newest posts and reels: the post picker, and what "next post" locks onto. Ads are left out. */
+export async function igRecentMedia(token: string, limit = 24): Promise<IgMedia[]> {
+  const q = new URLSearchParams({ fields: "id,caption,permalink,timestamp,media_type,media_product_type,thumbnail_url,media_url", limit: String(limit) });
+  const page = await graph<{ data?: Array<Record<string, string | undefined>> }>(`/me/media?${q}`, token);
+  return (page.data ?? [])
+    .filter((m) => m.id && m.media_product_type !== "AD")
+    .map((m) => ({
+      id: String(m.id),
+      caption: m.caption ?? null,
+      permalink: m.permalink ?? null,
+      thumbnail: m.thumbnail_url ?? (m.media_type === "VIDEO" ? null : (m.media_url ?? null)),
+      mediaType: m.media_type ?? null,
+      productType: m.media_product_type ?? null,
+      at: m.timestamp ? new Date(m.timestamp) : null,
+    }));
+}
+
+/** Whether this person follows the account, for followers-only links. Null when Instagram will not say. */
+export async function igFollowsBusiness(token: string, igsid: string): Promise<boolean | null> {
+  try {
+    const p = await graph<{ is_user_follow_business?: boolean }>(`/${encodeURIComponent(igsid)}?fields=is_user_follow_business`, token);
+    return typeof p.is_user_follow_business === "boolean" ? p.is_user_follow_business : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function igMarkSeen(token: string, recipientId: string): Promise<void> {

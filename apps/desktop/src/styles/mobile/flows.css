@@ -39,7 +39,7 @@
   .fl-stepper input.fl-num::placeholder{color:var(--mb-faint)}
 
   /* ---- switches and pills that are buttons: the button is the 44px target ---- */
-  .fl-sw,.fl-pillbtn{flex:none;display:grid;place-items:center;padding:0;border:0;background:none;color:inherit;cursor:pointer}
+  .fl-sw{flex:none;display:grid;place-items:center;padding:0;border:0;background:none;color:inherit;cursor:pointer}
   .fl-swlab{display:flex;align-items:center;gap:6px;margin:-8px -4px -8px 0;font-size:13px;font-weight:650;color:var(--mb-muted)}
 
   /* ---- big icon tiles (two or three in a row) ---- */
@@ -214,40 +214,6 @@
   .fl-flow small{margin-left:4px;font-size:12px;color:var(--mb-muted)}
   .fl-srcpick{display:flex;flex-wrap:wrap;gap:8px}
   .fl-srcpick small{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
-
-  /* DM campaigns */
-  .fl-dmc{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
-  .fl-dmtop{display:flex;align-items:center;gap:10px;margin:-6px 0 -8px}
-  .fl-dmtop>b{flex:1;min-width:0;font-size:15.5px;font-weight:650;color:var(--mb-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fl-dmtop>.fl-pillbtn{margin-right:-2px}
-  .fl-kws{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;color:var(--mb-muted)}
-  .fl-kw{padding:3px 8px;border-radius:7px;background:var(--mb-warn-soft);color:var(--c-warn);font-size:11.5px;font-weight:800;letter-spacing:.06em}
-  .fl-dms{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 4px}
-  .fl-dms>div{display:flex;flex-direction:column;min-width:0}
-  .fl-dms b{font-family:var(--mb-disp);font-size:19px;font-weight:700;line-height:1.1;color:var(--mb-ink)}
-  .fl-dms span{font-size:11.5px;color:var(--mb-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fl-dms .bad b,.fl-dms .bad span{color:var(--c-bad)}
-  .fl-dmf{display:flex;align-items:center;justify-content:space-between;margin:-4px -8px -8px}
-  .fl-dmf .mb-btn svg{width:16px;height:16px;margin-left:-4px}
-  .fl-logs{display:flex;flex-direction:column;border-top:1px solid var(--mb-hair)}
-  .fl-logrow{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 0;border-bottom:1px solid var(--mb-hair);font-size:13px;color:var(--mb-muted)}
-  .fl-logrow:last-child{border-bottom:0}
-  .fl-logrow .mb-grow b{display:block;font-size:14.5px;font-weight:620;color:var(--mb-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fl-logrow .mb-grow small{display:block;margin-top:2px;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fl-logrow .fl-bad{color:var(--c-bad);font-weight:650}
-  /* the New campaign fields in their sheet */
-  .fl-dmsheet{display:flex;flex-direction:column}
-  .fl-dmsheet .flabel .hint{display:block;margin:2px 0 0}
-  .fl-dmsheet .dmgrid{align-items:end}
-  .fl-dmsheet textarea.field-in{line-height:1.45}
-  .fl-dmsheet .igrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
-  .fl-dmsheet .revtoggle{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:0;border-radius:999px;background:var(--mb-raised2);
-    background-image:none;box-shadow:none;color:var(--mb-ink);font-size:14px;font-weight:650;cursor:pointer}
-  .fl-dmsheet .revtoggle.on{background:var(--mb-ink);color:var(--mb-bg)}
-  .fl-dmsheet .revtoggle .knob{width:10px;height:10px;border-radius:50%;background:var(--mb-faint);box-shadow:none}
-  .fl-dmsheet .revtoggle.on .knob{background:var(--mb-coral);box-shadow:none}
-  .fl-dmsheet .rrow{min-height:44px;margin-top:6px;padding:0 12px;border:0;border-radius:12px;background:var(--mb-raised2);box-shadow:none}
-  .fl-dmsheet .rrow .t{font-size:14px}
 
   /* ---- F2: Connect Instagram for DMs (mockup 10-states-mobile, state a) ---- */
   .dmc-ph{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:18px 4px 8px;margin:12px 0}
