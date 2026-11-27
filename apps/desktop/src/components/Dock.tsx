@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { dockSection, SECTIONS, type ScreenId, type SectionId } from "../lib/nav";
 import { linkProps, useRoute } from "../lib/routes";
 import { aiming, defaultPlace, DOCK_TIMING as T, itemFor, menuItems, menuShift, rememberPage, tabTarget, type Pt } from "../lib/dockMenu";
+import { api as http } from "../lib/api";
 import { useFailedPosts } from "../lib/failedPosts";
 import type { Theme } from "../lib/theme";
 import { useAppState } from "../state/AppState";
@@ -67,6 +68,26 @@ export default function Dock({
   const here = { screen: activeScreen, section };
   const selectedIndex = clients.findIndex((c) => c.id === selectedClient?.id);
   const failedCount = failed?.count ?? 0;
+  // Unread DMs for the brand (the mockup's coral count on Create and Workflows),
+  // reread on every page change so reading the Inbox clears it on the way out.
+  const [unread, setUnread] = useState(0);
+  const clientId = selectedClient?.id;
+  useEffect(() => {
+    setUnread(0);
+    if (!clientId) return;
+    let live = true;
+    const read = () =>
+      void http
+        .get<{ unread: number }>(`/clients/${clientId}/dm/summary`)
+        .then((r) => live && setUnread(r.unread))
+        .catch(() => undefined);
+    read();
+    const t = window.setInterval(read, 2 * 60 * 1000);
+    return () => {
+      live = false;
+      window.clearInterval(t);
+    };
+  }, [clientId, activeScreen, section]);
 
   // Hover intent lives in refs: timers and the pointer trail change far more
   // often than anything on screen.
@@ -306,6 +327,12 @@ export default function Dock({
                 <use href={s.icon} />
               </svg>
               <span className="di-lbl">{s.label}</span>
+              {s.id === "create" && unread > 0 && (
+                <span className="cnt" data-testid="nav.unread">
+                  {unread}
+                  <span className="vh"> unread messages</span>
+                </span>
+              )}
               {bell && <span className="tf-bell" aria-hidden="true" />}
               <svg className="caret" aria-hidden="true">
                 <use href="#i-chev-u" />
@@ -349,6 +376,12 @@ export default function Dock({
                       <span className="cnt bad">
                         {count}
                         <span className="vh"> failed</span>
+                      </span>
+                    )}
+                    {it.key === "workflows" && unread > 0 && (
+                      <span className="cnt">
+                        {unread}
+                        <span className="vh"> unread messages</span>
                       </span>
                     )}
                     {tag && it.key === opensKey && <small className="def">{tag}</small>}

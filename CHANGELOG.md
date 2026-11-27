@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.69] - 2026-11-27
+
+### Changed - Workflow redesign, final pass (F6)
+
+- **Dock** (desktop and web): the brand's unread DMs show as a coral count on the Create tab and on its Workflows item, white on the coral active tab, as in the round 2 mockup. Real data only (`/dm/summary` for the active brand), reread on every page change and every 2 minutes. The phone tab bar is unchanged
+- **Phone automation editor**: Test it and Publish stay pinned above the tab bar while the steps scroll, as in mockup 02, instead of sitting at the end of the page
+
 ## [0.3.68] - 2026-11-27
 
 ### Added - AI replies, Metrics, Auto-post (F5)

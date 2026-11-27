@@ -152,4 +152,11 @@ eq(tabTarget("create", junk), defaultPlace("create"), "broken JSON falls back");
 const full = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); } };
 rememberPage({ screen: "calendar", section: null }, full); // must not throw
 
+// The mockup's unread count on Create and on its Workflows item: real data only.
+const dock = readFileSync(`${process.cwd()}/src/components/Dock.tsx`, "utf8") as string;
+if (!dock.includes("/dm/summary") || !/it\.key === "workflows" && unread > 0/.test(dock) || !/s\.id === "create" && unread > 0/.test(dock)) {
+  throw new Error("the Dock lost the unread count on Create and Workflows");
+}
+if (!/\.dock \.di\.on \.cnt\{background:#fff/.test(css)) throw new Error("the count on the coral Create tab must be white (mockup dock.css)");
+
 console.log("dockMenu: all checks passed");

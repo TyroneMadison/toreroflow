@@ -150,6 +150,7 @@ for (const sel of [".au-toolrow .ibx-input input", ".au-kwbox.ph input"]) {
   if (!rule || !/font-size:16px/.test(rule[1]!)) throw new Error(`${sel} must be 16px so iOS does not zoom`);
 }
 if (!/\.au-ar\{[^}]*min-height:68px/.test(phoneCss)) throw new Error("phone rows lost their height");
+if (!/\.au-actionbar\{[^}]*position:sticky/.test(phoneCss)) throw new Error("the phone editor's Test it / Publish bar must stick above the tab bar (mockup 02)");
 const css = read("src/components/automations/automations.css");
 if (!/prefers-reduced-motion:reduce/.test(css) || !/data-motion="reduced"/.test(css)) throw new Error("automations.css lacks the reduced motion fallback");
 if (/#FA614B|var\(--accent\)/.test(css.replace(/\.au-hbtn\.pri\{[^}]*\}|\.au-tpl\[aria-checked="true"\]\{[^}]*\}|\.au-tpl \.ck\{[^}]*\}/g, ""))) {
