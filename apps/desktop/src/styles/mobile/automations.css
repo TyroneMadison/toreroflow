@@ -166,7 +166,12 @@
   .au-pvb{align-self:flex-start;max-width:88%;border-radius:20px;background:var(--mb-raised2);overflow:hidden}
   .au-pvb p{margin:0;padding:10px 14px;font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
   .au-pvb span{display:block;text-align:center;padding:10px;border-top:1px solid var(--mb-hair2);font-size:15px;font-weight:650}
-  .au-actionbar{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px -16px 0;padding:14px 16px 4px;border-top:1px solid var(--mb-hair)}
+  /* Sticks above the tab bar as in the mockup (mobile.css .actionbar).
+     bottom:-32px cancels the scroller's 32px end padding (sticky insets by
+     it); 14px here plus the 8px between the scroller and the tab bar is the
+     mockup's 22px, which clears the Create button. */
+  .au-actionbar{position:sticky;bottom:-32px;z-index:6;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px -16px -32px;padding:12px 16px 14px;
+    background:var(--mb-bg);box-shadow:0 -1px 0 var(--mb-hair)}
   .au-actionbar .mb-btn{min-height:52px}
   .au-problems{font-size:13.5px;border-radius:16px}
   .au-sheet .au-card{background:transparent;box-shadow:none;padding:0}

@@ -22,6 +22,9 @@
 .dock .dt.open>.di svg.caret{opacity:1;transform:translateY(-2px)}
 .dock .dt>.di:focus-visible{outline:2px solid var(--accent-hi);outline-offset:3px}
 .dock .di .tf-bell{top:7px;right:8px}
+/* the tab's unread count (mockup dock.css): white on the coral active tab */
+.dock .di .cnt{margin-left:-2px}
+.dock .di.on .cnt{background:#fff;color:var(--on-accent)}
 
 /* ---- the drop-up ---- */
 .dock .dm{position:absolute;left:50%;bottom:calc(100% + 26px);z-index:3;min-width:244px;padding:6px;border-radius:22px;
