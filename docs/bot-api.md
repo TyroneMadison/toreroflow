@@ -22,7 +22,12 @@ in `apps/api/src/auth/botAccess.ts`; anything not on it answers 403.
 - **Every other bot** cannot reach the DM routes at all: none of them is on
   the whitelist, so they answer `403` like any route outside the job.
 - Viewers get the same read-only DMs (`403 {"reason":"viewer_read_only"}`
-  on any write).
+  on any write), with one exception since F7: a viewer may mark read
+  (`POST /clients/:id/dm/threads/:threadId/read` and
+  `POST /clients/:id/dm/threads/read-all`, the list `VIEWER_MAY` in
+  `apps/api/src/dm/guard.ts`). It only clears the team's unread counts, for a
+  brand of the viewer's own agency; a viewer's read sends Instagram no "Seen".
+  Bots still get `403 {"reason":"bot_read_only"}` there.
 - `apps/api/src/dm/dm.check.ts` drives every DM write route with a viewer, a
   Polly and a plain bot token and fails if any of them is not refused;
   `botAccess.check.ts` pins that no DM route is on the whitelist.

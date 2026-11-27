@@ -16,6 +16,7 @@ import {
   contactQuery,
   convoState,
   csvField,
+  markedRead,
   NO_CONTACT_FILTERS,
   NO_FILTERS,
   previewLine,
@@ -83,6 +84,20 @@ const items = threadItems(
 );
 eq(items.map((i) => (i.kind === "sep" ? "|" : `${i.key}:${i.pos}${i.avatar ? "*" : ""}`)), ["|", "a:first", "b:last*", "c:single", "|", "d:single*"], "runs and day lines");
 
+// F7: marking read clears at once, before the server answers.
+const lst = { threads: [{ id: "a", unread: 2 }, { id: "b", unread: 0 }, { id: "c", unread: 3 }], counts: { all: 3, unread: 9 }, warnings: ["w"] };
+const one = markedRead(lst, "a");
+eq(one.threads.map((t) => t.unread), [0, 0, 3], "opening one clears only its dot");
+eq(one.counts, { all: 3, unread: 7 }, "and takes its messages off the count (the rest may be on later pages)");
+eq(one.warnings, ["w"], "the rest of the list is kept");
+eq(markedRead(lst, "b").threads[1], lst.threads[1], "an already read row is left as it is");
+eq(markedRead({ ...lst, counts: { all: 3, unread: 1 } }, "c").counts.unread, 0, "never below zero");
+eq(markedRead(lst, "zz").counts.unread, 9, "a row not in the list changes nothing");
+const all = markedRead(lst);
+eq(all.threads.map((t) => t.unread), [0, 0, 0], "Mark all as read clears every row");
+eq(all.counts.unread, 0, "and the count, rows on later pages included");
+eq(lst.threads[0]!.unread, 2, "the old list is not changed in place");
+
 // CSV: quoted when needed, never a formula.
 eq(csvField('Maya "R."'), '"Maya ""R."""', "quotes");
 eq(csvField("=HYPERLINK(1)"), "'=HYPERLINK(1)", "formula injection");
@@ -96,6 +111,17 @@ const wf = read("src/screens/WorkflowsScreen.tsx");
 for (const want of ["<Inbox ", "<Contacts ", 'className="mb-chips wf-areas"']) if (!wf.includes(want)) throw new Error(`WorkflowsScreen lacks ${want}`);
 if (/SOON = new Set<WorkflowArea>\([^)]*contacts/.test(wf)) throw new Error("Contacts is still a placeholder");
 if (/DmInbox/.test(wf)) throw new Error("WorkflowsScreen still mounts DmInbox");
+// F7: Mark all as read lives in the Workflows Inbox only, and opening a conversation marks it read.
+const inbox = read("src/components/inbox/Inbox.tsx");
+for (const want of ['data-testid="dm-mark-all-read"', "Mark all as read", '"read-all"', "/read`", "markedRead(l, threadId)", "void markRead(openShown.id)", 'new Event("toreroflow:dm-read")']) {
+  if (!inbox.includes(want)) throw new Error(`Inbox.tsx lacks ${want}`);
+}
+if (/unread > 0 && !viewer/.test(inbox)) throw new Error("mark read on open must work for viewers too");
+if (/\u2014/.test(inbox)) throw new Error("no em dashes in Inbox copy");
+if (!read("src/components/Dock.tsx").includes('addEventListener("toreroflow:dm-read"')) throw new Error("the Dock count must follow a mark read");
+for (const f of ["src/components/inbox/Contacts.tsx", "src/screens/WorkflowsScreen.tsx", "src/components/Dock.tsx"]) {
+  if (/Mark all as read|dm-mark-all-read/.test(read(f))) throw new Error(`${f}: Mark all as read belongs to the Inbox only`);
+}
 // Every phone sheet and bar in the Inbox is sized to the screen, never a fixed width over 360px.
 const phoneCss = read("src/styles/mobile/inbox.css").replace(/\/\*[\s\S]*?\*\//g, "");
 for (const [, px] of phoneCss.matchAll(/(?:^|[;{])\s*(?:min-)?width:(\d+)px/g)) if (Number(px) > 360) throw new Error(`a phone rule is ${px}px wide`);

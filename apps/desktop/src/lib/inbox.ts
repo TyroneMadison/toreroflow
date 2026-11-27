@@ -81,6 +81,21 @@ export function previewLine(t: Pick<DmThreadView, "lastPreview" | "lastDirection
   return t.lastDirection === "out" && t.lastPreview ? `You: ${p}` : p;
 }
 
+/**
+ * The list once a conversation (or, with no id, every one) is marked read
+ * (F7), drawn before the server answers: its dot goes and its messages leave
+ * the unread count. The next list read reconciles either way.
+ */
+export function markedRead<L extends { threads: Array<{ id: string; unread: number }>; counts: { unread: number } }>(list: L, threadId?: string): L {
+  const hit = (t: { id: string }) => !threadId || t.id === threadId;
+  const cleared = list.threads.reduce((n, t) => n + (hit(t) ? t.unread : 0), 0);
+  return {
+    ...list,
+    threads: list.threads.map((t) => (hit(t) && t.unread ? { ...t, unread: 0 } : t)),
+    counts: { ...list.counts, unread: threadId ? Math.max(0, list.counts.unread - cleared) : 0 },
+  };
+}
+
 /** "now", "4m", "2h", "3d", then "Nov 12". */
 export function ago(iso: string | null, now = Date.now()): string {
   if (!iso) return "";

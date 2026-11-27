@@ -32,7 +32,7 @@ import {
   ZernioError,
   type IgAppCreds,
 } from "@toreroflow/publishers";
-import { actingUserId } from "../auth/actingUser";
+import { actingUserId, isViewer } from "../auth/actingUser";
 import { dmWriteGuard } from "../dm/guard";
 import { draftView } from "./dmAi";
 import {
@@ -64,7 +64,7 @@ import { resultPage } from "./oauth";
  * DMs (F2): status, the Instagram connect, the unified inbox and contacts.
  *
  * Everything under requireAuth and dmWriteGuard: anyone signed in reads,
- * only an operator sends or changes. The two routes a browser reaches without
+ * only an operator sends or changes (a viewer may mark read, F7). The two routes a browser reaches without
  * our token (the Instagram OAuth callback and the media proxy) are in
  * publicDmRoutes below, each with its own proof.
  */
@@ -512,10 +512,28 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
     const t = await ownedThread(request.params.threadId, request.params.id, request.user.agencyId);
     if (!t) return reply.status(404).send({ error: "thread not found" });
     await prisma.dmThread.update({ where: { id: t.id }, data: { unread: 0, readAt: new Date() } });
-    const token = t.source === "native" ? accountToken(t.dmAccount) : null;
+    // A viewer's read clears the count but tells Instagram nothing: "Seen" is
+    // a message to the person, and viewers never message anyone.
+    const token = t.source === "native" && !(await isViewer(request)) ? accountToken(t.dmAccount) : null;
     // Their "Seen" is a courtesy: a failure here is not worth failing the click.
     if (token) await igMarkSeen(token, t.contact.externalId).catch(() => undefined);
     return { ok: true };
+  });
+
+  /**
+   * Mark all as read (F7): every conversation of the brand, in one write, so
+   * the Inbox, the rail and the Dock all read 0 on every device. readAt keeps
+   * Zernio's own unread count from bringing them back on the next poll. No
+   * "Seen" goes to Instagram: nobody opened these chats.
+   */
+  app.post<{ Params: { id: string } }>("/clients/:id/dm/threads/read-all", async (request, reply) => {
+    const client = await ownedClient(request.params.id, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "client not found" });
+    const { count } = await prisma.dmThread.updateMany({
+      where: { dmAccount: { clientId: client.id }, unread: { gt: 0 } },
+      data: { unread: 0, readAt: new Date() },
+    });
+    return { ok: true, updated: count };
   });
 
   app.patch<{ Params: { id: string; threadId: string } }>("/clients/:id/dm/threads/:threadId", async (request, reply) => {

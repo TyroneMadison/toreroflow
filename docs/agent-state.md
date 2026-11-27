@@ -89,7 +89,9 @@ lists Instagram and Messenger threads (`dm-thread-<threadId>`) and polls every
 `dm-attach`); a closed 24 hour window shows `dm-window-closed` and a viewer
 sees `dm-readonly` instead of the composer. Details are `dm-details` (on the
 phone in the sheet `dm-details-sheet`). Filters: `dm-tab-<all|active|paused|flagged|done>`,
-`dm-search`, `dm-account-<accountId>`, `dm-unread`, `dm-stage-filter`,
+`dm-search`, `dm-account-<accountId>`, `dm-unread`, `dm-mark-all-read` (Mark all
+as read, the whole brand; on the phone in the count row while anything is
+unread; opening a conversation marks it read on its own), `dm-stage-filter`,
 `dm-tag-filter` (phone: `dm-filter` opens `dm-filter-sheet`). States:
 `dm-connect` (the "Connect Instagram for DMs" card, whole area while there is
 no conversation, one line above the list while an Instagram account still
