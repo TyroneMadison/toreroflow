@@ -5,6 +5,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.68] - 2026-11-27
+
+### Added - AI replies, Metrics, Auto-post (F5)
+
+- **AI replies** (Workflows > AI replies, desktop, web and phone): a status band with one switch per account (OFF for every account until a person turns one on), Needs you (chats nobody answered for 30 minutes and chats the AI handed to the team, with the reason; Open, and on the phone Mark as done, Let the AI answer again in this chat only, Tag as friend), the period's numbers (chats answered without help, handed to the team, AI spend; Today, 7 days or 30 days) with where people are in the funnel, and How it answers: What the AI knows (instructions, up to 5 links it may send, lessons from handoffs), Reply timing (leave a draft or send it on its own, a random wait of at once, 20 to 90 seconds or 2 to 5 minutes, typing dots, pause when your team replies and when to turn back on, quiet hours, most replies a day), Never auto-reply to (friends and per-chat offs) and When it hands off (prices, refunds, complaints, asking for a person, plus your own words). Try a test message shows what it would answer without sending. Stop all AI sending is a kill switch for every account. If asked, it says it is an assistant for the brand and never pretends to be a person
+- **In the Inbox**: an AI draft waits above the composer with Edit, Send and Discard (an autopilot reply shows when it will go out); "Draft with AI" asks for one in any chat whose account has AI replies on, Messenger included; Details shows AI replies for this chat with its switch (or Let it answer after a handoff) and the AI's note about the person
+- **Metrics** (Workflows > Metrics): the six numbers (messages received, people who messaged, new contacts, automation reach, reply rate after an automation DM, CTR) with their change against the period before are tabs over a 30 to 90 day chart; delivery problems at the chart's foot (outside the 24 hour window, person cannot get messages, hourly limit); where people drop off (triggered, got the DM, opened the link, replied); what started conversations; top automations with runs, CTR and a trend line; replies (median reply time, AI drafts sent as written, edited, sent by the AI, handed off, AI spend). 7, 30, 90 days or all time, per account; Export CSV. Computed from the DM tables; Messenger and Instagram read through Zernio count as people only, and the page says so
+- **Auto-post** (Workflows > Auto-post): Drive auto-post as one status band (Running, today X of Y, next post, waiting in the folder, scheduled so far) with Open Drive folder, Check folder now and a "..." for Connect another Instagram account, Copy connect link, Sync accounts and Stop; the recent videos as the main list (All or Needs a look); the settings as a summary with Edit; the fan-out rules as compact rows under "Saved, not running yet" with New rule. Nothing runs the fan-out rules yet, as before. Everything the old Drive card did is still there
+- **Overview** (Workflows): the week's six numbers and one card per area, instead of the Drive card and the rule form. The desktop rail shows live counts: unread, live automations, AI On, Drafts or Off, contacts, Auto-post Running
+
+### Engine (worker)
+
+- Every 15 seconds: autopilot replies whose wait is over, then a draft for each native Instagram chat that went quiet (45 seconds after their last message) on an account with AI replies on, with Claude (`SUGGESTIONS_MODEL`, the captions model) reading the chat, the account's notes, links and lessons. One draft per inbound message, never twice
+- Never written for: paused chats, chats with AI off, handed-off chats, chats paused after a team reply, friends, chats where they did not write last, closed 24 hour windows, and messages an automation already answered. A handoff rule match hands the chat to the team before the model is asked; the model hands off anything it is not sure of
+- Autopilot sends only on Instagram connected through Torerone's Meta app, only when a person chose "Send it on its own" for that account, and re-checks everything at send time: the kill switch, the window (not in its last 10 minutes), a team reply or a new message in the meantime, paused, handed off, quiet hours and the daily cap (those two keep it as a draft). Typing dots first, up to three short messages, no em dashes, no link that is not one of the account's own. Messenger and Instagram through Zernio are never answered on their own and never sent by the AI: a person asks for a draft and sends it, inside the window
+- A reply by the team in Toreroflow counts the AI draft it came from (as written or edited), drops any other waiting draft and pauses the AI in that chat for the hours set
+
+### API
+
+- `GET /clients/:id/dm/ai`, `PUT /clients/:id/dm/ai/:accountId` (autopilot refused where the AI cannot send), `POST /clients/:id/dm/ai/kill`, `POST /clients/:id/dm/ai/test`, `POST /clients/:id/dm/ai/drafts/:draftId/discard`, `POST /clients/:id/dm/threads/:threadId/ai` (per-chat switch, Let the AI answer again), `POST /clients/:id/dm/threads/:threadId/ai-draft`; `GET /clients/:id/dm/metrics?range=&accounts=`; `GET /clients/:id/dm/summary`. The thread read carries the waiting draft and the AI note; the reply takes `draftId`. Reads for anyone signed in; every write is operator only: viewers and every bot token, Polly included, get 403
+
+### Removed
+
+- The Workflows "coming soon" placeholders and the old Drive auto-post card (`DriveAutoPost.tsx`): Auto-post covers all of it
+
+### Database
+
+- `DmAiSettings` (one row per DM account; `enabled` defaults to false and `mode` to drafts, and no row means the same), `DmAiDraft`, and four columns on `DmThread` (`aiOff` default false, `aiHandoffAt`, `aiHandoffReason`, `aiPausedUntil`). Migration `20261127210000_dm_ai_replies`: new tables and new columns only. `packages/core/src/dmAi.check.ts` fails if any default ever turns the AI on
+
 ## [0.3.67] - 2026-11-27
 
 ### Added - Automations (F4)

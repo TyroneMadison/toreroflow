@@ -157,9 +157,6 @@
 
   /* Workflows area chips (mockups 02a, 04-contacts-phone): the Inbox chip carries the unread count */
   .wf-areas .cnt{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:6px;padding:0 6px;border-radius:10px;background:var(--mb-coral);color:var(--mb-oncoral);font-size:12px;font-weight:800}
-  .wf-soon-ph{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:28px 20px}
-  .wf-soon-ph b{font-family:var(--mb-disp);font-size:22px}
-  .wf-soon-ph p{margin:0;font-size:14.5px;color:var(--mb-muted);max-width:300px}
 
   /* Contacts */
   .cts-wrap.ph .cts-tagchips .ibx-chip{background:var(--mb-raised);box-shadow:none}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { DM_STAGE_LABEL, type DmMessageView, type DmStage, type DmThreadActivity, type DmThreadView } from "@toreroflow/core";
+import { DM_STAGE_LABEL, type DmAiDraftView, type DmMessageView, type DmStage, type DmThreadActivity, type DmThreadView } from "@toreroflow/core";
 import { api, ApiError, type ClientSummary, type DmStatus } from "../../lib/api";
 import {
   atHandle,
@@ -63,6 +63,14 @@ interface Detail {
   thread: DmThreadView;
   messages: DmMessageView[];
   activity: DmThreadActivity;
+  /** AI replies (F5): on for this account, the draft waiting, the AI's note. Missing on older servers. */
+  ai?: ThreadAi;
+}
+interface ThreadAi {
+  enabled: boolean;
+  mode: string;
+  draft: DmAiDraftView | null;
+  note: string | null;
 }
 
 const errText = (e: unknown, fallback: string) =>
@@ -260,6 +268,19 @@ export default function Inbox({
     [client.id, applyThread, toast],
   );
 
+  /** AI replies in this one chat (F5): off, or "Let the AI answer again". */
+  const setAi = useCallback(
+    async (t: DmThreadView, body: { off?: boolean; resume?: true }) => {
+      try {
+        const r = await api.post<{ thread: DmThreadView }>(`/clients/${client.id}/dm/threads/${t.id}/ai`, body);
+        applyThread(r.thread);
+      } catch (e) {
+        toast.fail("Could not change AI replies for this chat", e);
+      }
+    },
+    [client.id, applyThread, toast],
+  );
+
   const setConvo = useCallback(
     async (t: DmThreadView, to: ConvoState) => {
       const c = stateChange(t, to);
@@ -418,7 +439,7 @@ export default function Inbox({
               )
             }
           >
-            <Details phone thread={shown} activity={detail?.thread.id === shown.id ? detail.activity : null} viewer={viewer} knownTags={knownTags} onPatch={(b) => void patch(shown, b)} onPause={(p) => void setPause(shown, p)} onConvo={(s) => void setConvo(shown, s)} />
+            <Details phone thread={shown} activity={detail?.thread.id === shown.id ? detail.activity : null} ai={detail?.thread.id === shown.id ? (detail.ai ?? null) : null} onAi={(b) => void setAi(shown, b)} viewer={viewer} knownTags={knownTags} onPatch={(b) => void patch(shown, b)} onPause={(p) => void setPause(shown, p)} onConvo={(s) => void setConvo(shown, s)} />
           </Sheet>
         )}
       </div>
@@ -444,6 +465,8 @@ export default function Inbox({
             <Details
               thread={shown}
               activity={detail?.thread.id === shown.id ? detail.activity : null}
+              ai={detail?.thread.id === shown.id ? (detail.ai ?? null) : null}
+              onAi={(b) => void setAi(shown, b)}
               viewer={viewer}
               knownTags={knownTags}
               onPatch={(b) => void patch(shown, b)}
@@ -934,6 +957,8 @@ function Conversation({
         thread={thread}
         state={state}
         replyTo={replyTo}
+        ai={detail?.ai ?? null}
+        onReload={onReload}
         onCancelReply={() => setReplyTo(null)}
         onSent={() => (setReplyTo(null), onSent())}
       />
@@ -998,6 +1023,8 @@ function Composer({
   thread,
   state,
   replyTo,
+  ai,
+  onReload,
   onCancelReply,
   onSent,
 }: {
@@ -1006,6 +1033,8 @@ function Composer({
   thread: DmThreadView;
   state: ReplyState;
   replyTo: DmMessageView | null;
+  ai: ThreadAi | null;
+  onReload(): void;
   onCancelReply(): void;
   onSent(): void;
 }) {
@@ -1014,6 +1043,9 @@ function Composer({
   const [photo, setPhoto] = useState<{ url: string; name: string; preview: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [emoji, setEmoji] = useState(false);
+  // The AI draft the text was taken from (F5): sent as is or edited, it counts as that draft.
+  const [fromDraft, setFromDraft] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const name = who(thread.contact);
@@ -1035,16 +1067,20 @@ function Composer({
     if (el) (el.style.height = "auto"), (el.style.height = `${Math.min(el.scrollHeight, 140)}px`);
   };
 
-  const send = async () => {
-    if (busy || (!text.trim() && !photo)) return;
+  const send = async (direct?: { text: string; draftId: string }) => {
+    const body = direct?.text ?? text.trim();
+    if (busy || (!body && !photo)) return;
     setBusy(true);
     try {
+      const draftId = direct?.draftId ?? fromDraft;
       await api.post(`/clients/${clientId}/dm/threads/${thread.id}/reply`, {
-        ...(text.trim() ? { text: text.trim() } : {}),
-        ...(photo ? { media: { type: "image", url: photo.url } } : {}),
+        ...(body ? { text: body } : {}),
+        ...(photo && !direct ? { media: { type: "image", url: photo.url } } : {}),
         ...(replyTo && native ? { replyTo: replyTo.externalId } : {}),
+        ...(draftId ? { draftId } : {}),
       });
-      setText("");
+      if (!direct) setText("");
+      setFromDraft(null);
       setPhoto(null);
       requestAnimationFrame(grow);
       onSent();
@@ -1055,6 +1091,63 @@ function Composer({
       setBusy(false);
     }
   };
+
+  const draft = ai?.draft ?? null;
+  const askAi = async () => {
+    setAsking(true);
+    try {
+      await api.post(`/clients/${clientId}/dm/threads/${thread.id}/ai-draft`);
+      // The worker writes it in a few seconds; look again until it is there.
+      for (const ms of [2500, 4000, 6000, 9000]) window.setTimeout(onReload, ms);
+    } catch (e) {
+      toast.fail("Could not ask the AI for a draft", e);
+    } finally {
+      window.setTimeout(() => setAsking(false), 2500);
+    }
+  };
+  const discard = async (id: string) => {
+    try {
+      await api.post(`/clients/${clientId}/dm/ai/drafts/${id}/discard`);
+      if (fromDraft === id) setFromDraft(null);
+      onReload();
+    } catch (e) {
+      toast.fail("Could not discard the draft", e);
+    }
+  };
+  const ready = draft && (draft.status === "draft" || draft.status === "queued");
+  const aiCard = draft && (
+    <div className={`ibx-repl ai${ready || draft.status === "writing" ? "" : " note"}`} data-testid="dm-ai-draft">
+      <I name="i-spark" />
+      <span className="grow">
+        {draft.status === "writing" ? (
+          <b>The AI is writing a draft...</b>
+        ) : ready ? (
+          <>
+            <b>{draft.status === "queued" && draft.sendAt ? `AI reply, sends on its own at ${new Date(draft.sendAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : "AI draft"}</b>
+            <span>{draft.bubbles.join(" / ")}</span>
+          </>
+        ) : (
+          <>
+            <b>{draft.status === "handoff" ? "The AI handed this to you" : draft.status === "skipped" ? "No reply needed" : "No draft"}</b>
+            <span>{draft.reason ?? ""}</span>
+          </>
+        )}
+      </span>
+      {ready && (
+        <>
+          <button type="button" className="ibx-btn ghost" onClick={() => (setText(draft.bubbles.join("\n")), setFromDraft(draft.id), requestAnimationFrame(() => (grow(), box.current?.focus())))} data-testid="dm-ai-use">
+            Edit
+          </button>
+          <button type="button" className="ibx-btn on" disabled={busy} onClick={() => void send({ text: draft.bubbles.join("\n"), draftId: draft.id })} data-testid="dm-ai-send">
+            Send
+          </button>
+          <button type="button" className="ibx-ib sm ghost" aria-label="Discard the draft" onClick={() => void discard(draft.id)}>
+            <I name="i-x" />
+          </button>
+        </>
+      )}
+    </div>
+  );
 
   const attach = async (f: File) => {
     if (!/^image\/(jpeg|png|gif)$/.test(f.type)) return toast.error("Instagram takes a JPG, PNG or GIF in a DM.");
@@ -1138,6 +1231,7 @@ function Composer({
 
   return (
     <div className={phone ? "ibx-pcomp" : "ibx-comp"}>
+      {aiCard}
       {replyTo && (
         <div className="ibx-repl">
           <span className="grow">
@@ -1190,6 +1284,11 @@ function Composer({
         >
           <I name="i-image" />
         </button>
+        {ai?.enabled && !ready && draft?.status !== "writing" && (
+          <button type="button" className="ibx-ib" aria-label="Draft with AI" title="Draft with AI" disabled={asking || busy} onClick={() => void askAi()} data-testid="dm-ai-ask">
+            <I name="i-spark" />
+          </button>
+        )}
         <input ref={file} type="file" accept="image/jpeg,image/png,image/gif" hidden onChange={(e) => (e.target.files?.[0] && void attach(e.target.files[0]), (e.target.value = ""))} />
         <textarea
           ref={box}
@@ -1200,7 +1299,7 @@ function Composer({
           placeholder={`Message ${name}`}
           aria-label={`Message ${name}`}
           enterKeyHint="send"
-          onChange={(e) => (setText(e.target.value), grow())}
+          onChange={(e) => (setText(e.target.value), !e.target.value && setFromDraft(null), grow())}
           onKeyDown={onKey}
           data-testid="dm-composer"
         />
@@ -1244,6 +1343,8 @@ function Details({
   onPatch,
   onPause,
   onConvo,
+  ai = null,
+  onAi,
 }: {
   phone?: boolean;
   thread: DmThreadView;
@@ -1253,8 +1354,22 @@ function Details({
   onPatch(body: Record<string, unknown>): void;
   onPause(pause: boolean): void;
   onConvo(s: ConvoState): void;
+  ai?: ThreadAi | null;
+  onAi?(body: { off?: boolean; resume?: true }): void;
 }) {
   const c = thread.contact;
+  // AI replies in this chat (F5): off for the account, off here, handed off, paused after a team reply, or on.
+  const tai = thread.ai ?? { off: false, handoffAt: null, handoffReason: null, pausedUntil: null };
+  const aiPaused = !!tai.pausedUntil && Date.parse(tai.pausedUntil) > Date.now();
+  const aiState = !ai?.enabled
+    ? { text: "Off for this account", short: "Off", cls: "t3" }
+    : tai.off
+      ? { text: "Off in this chat", short: "Off here", cls: "warnc" }
+      : tai.handoffAt
+        ? { text: "Handed to you", short: "Handed off", cls: "warnc" }
+        : aiPaused
+          ? { text: "Paused after your reply", short: "Paused", cls: "warnc" }
+          : { text: ai.mode === "autopilot" ? "Answers on its own" : "Writes drafts", short: ai.mode === "autopilot" ? "On" : "Drafts", cls: "okc" };
   const [adding, setAdding] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [notes, setNotes] = useState(c.notes ?? "");
@@ -1408,6 +1523,34 @@ function Details({
             )}
             <b className={rs.kind === "open" && rs.left ? "okc" : rs.kind === "closed" ? "badc" : undefined}>{win}</b>
           </div>
+          {ai && (
+            <div className={phone ? "ibx-optrow" : "kv"} data-testid="dm-ai-row">
+              {phone ? (
+                <span className="lt">
+                  <b>AI replies</b>
+                  <small>{aiState.text}{tai.handoffReason && tai.handoffAt ? `: ${tai.handoffReason}` : ""}</small>
+                </span>
+              ) : (
+                <span>AI replies</span>
+              )}
+              <span className="row">
+                {!phone && <b className={aiState.cls} title={[aiState.text, tai.handoffAt ? tai.handoffReason : null].filter(Boolean).join(": ")}>{aiState.short}</b>}
+                {!viewer && ai.enabled && (tai.handoffAt || aiPaused) && onAi ? (
+                  <button type="button" className="ibx-btn sm" onClick={() => onAi({ resume: true })} data-testid="dm-ai-resume">
+                    {phone ? "Answer again" : "Resume"}
+                  </button>
+                ) : (
+                  !viewer &&
+                  ai.enabled &&
+                  onAi && (
+                    <button type="button" role="switch" aria-checked={!tai.off} aria-label="AI replies in this chat" className="ibx-togbtn" onClick={() => onAi({ off: !tai.off })} data-testid="dm-ai-toggle">
+                      <span className={`ibx-tog${tai.off ? "" : " on"}`} aria-hidden="true" />
+                    </button>
+                  )
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </>)}
 
@@ -1474,6 +1617,12 @@ function Details({
 
       {sec("Activity", <>
         <div className={phone ? "mb-card list ibx-act" : "ibx-act"}>
+          {ai?.note && (
+            <div className={phone ? "mb-lrow" : "kv"}>
+              <span>AI note</span>
+              <b>{ai.note}</b>
+            </div>
+          )}
           <div className={phone ? "mb-lrow" : "kv"}>
             <span>Messages</span>
             <b>{activity ? activity.messages : "…"}</b>

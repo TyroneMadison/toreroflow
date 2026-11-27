@@ -27,6 +27,9 @@ const AREA_SUB: Partial<Record<string, (brand: string) => string>> = {
   inbox: (b) => `Instagram and Messenger conversations for ${b}, in one list.`,
   automations: (b) => `${b}. Each automation is a trigger plus the messages it sends.`,
   contacts: (b) => `Everyone who has messaged ${b} on Instagram or Messenger.`,
+  "ai-replies": (b) => `Answers DMs for ${b} and hands the chat to your team when it is not sure.`,
+  metrics: (b) => `How DMs and automations did for ${b}.`,
+  "auto-post": () => "Videos that post on their own: Drive auto-post, plus the fan-out rules you have saved.",
 };
 
 /** Phone titles that differ from the page label (mobile pass mockups). */

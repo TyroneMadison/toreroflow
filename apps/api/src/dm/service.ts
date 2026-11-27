@@ -245,6 +245,7 @@ export function threadView(t: ThreadRow): DmThreadView {
     // A thread only exists once they wrote, so a reply is always into an existing conversation.
     canReply: native ? t.dmAccount.status === "active" && t.dmAccount.transport === "native" : !!t.externalId,
     contact: contactView(t.contact),
+    ai: { off: t.aiOff, handoffAt: iso(t.aiHandoffAt), handoffReason: t.aiHandoffReason, pausedUntil: iso(t.aiPausedUntil) },
   };
 }
 

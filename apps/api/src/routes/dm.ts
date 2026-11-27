@@ -12,6 +12,7 @@ import {
   dmThreadPatchSchema,
   DM_STAGES,
   DM_STATUSES,
+  dmAiSettingsOf,
   replyWindow,
   type DmContactRow,
 } from "@toreroflow/core";
@@ -33,6 +34,7 @@ import {
 } from "@toreroflow/publishers";
 import { actingUserId } from "../auth/actingUser";
 import { dmWriteGuard } from "../dm/guard";
+import { draftView } from "./dmAi";
 import {
   accountToken,
   contactView,
@@ -269,6 +271,57 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
+  /**
+   * The thread's AI side (F5): whether AI replies are on for its account, the
+   * draft waiting in the composer (or what became of a draft someone just
+   * asked for), and the AI's latest note about the person.
+   */
+  async function aiOfThread(threadId: string, dmAccountId: string) {
+    const recent = new Date(Date.now() - 2 * 60_000);
+    const [settings, draft, noted] = await Promise.all([
+      prisma.dmAiSettings.findUnique({ where: { dmAccountId } }),
+      prisma.dmAiDraft.findFirst({
+        where: {
+          threadId,
+          OR: [
+            { status: { in: ["draft", "queued"] } },
+            { status: "writing", createdAt: { gt: recent } },
+            { origin: "request", status: { in: ["failed", "handoff", "skipped"] }, updatedAt: { gt: recent } },
+          ],
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.dmAiDraft.findFirst({ where: { threadId, note: { not: null } }, orderBy: { createdAt: "desc" }, select: { note: true } }),
+    ]);
+    const s = dmAiSettingsOf(settings as unknown as Record<string, unknown> | null);
+    return { enabled: s.enabled, mode: s.mode, draft: draft ? draftView(draft) : null, note: noted?.note ?? null };
+  }
+
+  /**
+   * A reply by the team (F5): the AI draft it came from counts as sent (as is
+   * or edited), any other waiting draft is dropped, and with "Pause when your
+   * team replies" on the AI waits in this chat for the hours set.
+   */
+  async function teamReplied(t: { id: string; dmAccountId: string }, text: string | null, draftId: string | undefined, userId: string | null, now: Date) {
+    if (draftId) {
+      const d = await prisma.dmAiDraft.findFirst({ where: { id: draftId, threadId: t.id, status: { in: ["draft", "queued"] } } });
+      if (d) {
+        const same = (text ?? "").trim() === d.bubbles.join("\n").trim();
+        await prisma.dmAiDraft.update({ where: { id: d.id }, data: { status: "sent", sentHow: same ? "as_is" : "edited", sentAt: now, sentByUserId: userId, sendAt: null } });
+        if (d.stage && (DM_STAGES as readonly string[]).includes(d.stage)) {
+          await prisma.dmContact.updateMany({ where: { threads: { some: { id: t.id } } }, data: { stage: d.stage } });
+        }
+      }
+    }
+    await prisma.dmAiDraft.updateMany({ where: { threadId: t.id, status: { in: ["draft", "queued"] } }, data: { status: "discarded", reason: "The team replied", sendAt: null } });
+    const s = dmAiSettingsOf((await prisma.dmAiSettings.findUnique({ where: { dmAccountId: t.dmAccountId } })) as unknown as Record<string, unknown> | null);
+    if (s.enabled && s.pauseOnTeamReply) {
+      // 0 hours: until someone presses "Let the AI answer again".
+      const until = s.resumeAfterHours ? new Date(now.getTime() + s.resumeAfterHours * 3600_000) : new Date(Date.UTC(9999, 0, 1));
+      await prisma.dmThread.update({ where: { id: t.id }, data: { aiPausedUntil: until } });
+    }
+  }
+
   app.get<{ Params: { id: string; threadId: string }; Querystring: { before?: string } }>(
     "/clients/:id/dm/threads/:threadId",
     async (request, reply) => {
@@ -276,6 +329,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       if (!t) return reply.status(404).send({ error: "thread not found" });
       const origin = originOf(request);
       const firstSeenAt = t.contact.createdAt.toISOString();
+      const ai = await aiOfThread(t.id, t.dmAccountId);
       if (t.source === "native") {
         const [rows, count, first] = await Promise.all([
           prisma.dmMessage.findMany({
@@ -293,6 +347,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
           messages: page.reverse().map((m) => nativeMessageView(origin, m)),
           nextCursor: rows.length > 50 ? page[0]!.id : null,
           activity: { messages: count, firstSeenAt, cameFrom: first ? cameFrom(first.attachments) : null },
+          ai,
         };
       }
       const z = zernio();
@@ -307,6 +362,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
           messages: messages.map((m) => zernioMessageView(origin, t.dmAccount.socialAccount.id, t.externalId!, m)),
           nextCursor: null,
           activity: { messages: messages.length, firstSeenAt, cameFrom: null },
+          ai,
         };
       } catch (e) {
         if (e instanceof ZernioError) return reply.status(502).send({ error: `Zernio: ${e.message}` });
@@ -344,6 +400,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
         where: { id: t.id },
         data: { lastMessageAt: now, lastPreview: body.text!.slice(0, 200), lastDirection: "out", unread: 0, readAt: now },
       });
+      await teamReplied(t, body.text ?? null, body.draftId, userId, now);
       return { ok: true, messages: [] };
     }
 
@@ -409,6 +466,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
           readAt: now,
         },
       });
+      await teamReplied(t, body.text ?? null, body.draftId, userId, now);
       const origin = originOf(request);
       return { ok: true, messages: saved.map((m) => nativeMessageView(origin, m)) };
     } catch (e) {

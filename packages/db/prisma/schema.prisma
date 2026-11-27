@@ -2209,6 +2209,8 @@ model DmAccount {
   contacts           DmContact[]
   threads            DmThread[]
   automationRuns     DmAutomationRun[]
+  aiSettings         DmAiSettings?
+  aiDrafts           DmAiDraft[]
 
   @@unique([platform, externalId])
   @@index([clientId])
@@ -2266,12 +2268,21 @@ model DmThread {
   /// lastInboundAt + 24h: Meta's standard messaging window.
   windowEndsAt  DateTime?
   readAt        DateTime?
+  /// AI replies (F5): a person turned the AI off for this one chat.
+  aiOff           Boolean   @default(false)
+  /// The AI stepped back (a handoff rule matched, or it was not sure) and
+  /// stays out of this chat until someone presses "Let the AI answer again".
+  aiHandoffAt     DateTime?
+  aiHandoffReason String?
+  /// The team replied by hand: the AI waits until then (pause on team reply).
+  aiPausedUntil   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   dmAccount DmAccount   @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
   contact   DmContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
   messages  DmMessage[]
+  aiDrafts  DmAiDraft[]
 
   @@unique([dmAccountId, contactId])
   @@unique([dmAccountId, externalId])
@@ -2459,4 +2470,88 @@ model DmAutomationRun {
   @@index([dmAccountId, sentAt])
   @@index([dmAccountId, createdAt])
   @@index([status, retryAt])
+}
+
+/// AI replies (F5) for one DM account. OFF until a person turns it on: every
+/// default here is the safe one (enabled false, drafts only), and
+/// packages/core/src/dmAi.check.ts fails if a default ever turns it on.
+/// No row means the defaults. Ported in idea from fewchat's AI setter (MIT,
+/// Copyright (c) 2026 Jason Cooperson), generalised away from one offer.
+model DmAiSettings {
+  id               String   @id @default(cuid())
+  dmAccountId      String   @unique
+  enabled          Boolean  @default(false)
+  /// drafts (a person sends each one) | autopilot (sends on its own)
+  mode             String   @default("drafts")
+  /// About the business and how to answer: the persona and instructions.
+  instructions     String   @default("")
+  /// Links it may send: [{ label, url }]
+  links            Json     @default("[]")
+  /// What it learned from handoffs, the knowledge notes: [{ id, text, from, at }]
+  lessons          Json     @default("[]")
+  /// A random wait before an autopilot reply, in seconds, capped at 5 minutes.
+  replyDelayMinSec Int      @default(20)
+  replyDelayMaxSec Int      @default(90)
+  /// The typing dots in their chat while it "writes".
+  typing           Boolean  @default(true)
+  /// A reply by the team pauses the AI in that chat...
+  pauseOnTeamReply Boolean  @default(true)
+  /// ...for this many hours (0: until someone turns it back on).
+  resumeAfterHours Int      @default(12)
+  /// No autopilot sends between these hours (BUSINESS_TIMEZONE); null is none.
+  quietStartHour   Int?
+  quietEndHour     Int?
+  /// Handoff rules: topics (price | refund | complaint | person) and own words.
+  handoffTopics    String[] @default(["price", "refund", "complaint", "person"])
+  handoffWords     String[] @default([])
+  /// Most AI replies sent per account per day; past it they stay drafts.
+  dailyCap         Int      @default(50)
+  updatedById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  dmAccount DmAccount @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
+}
+
+/// One AI reply (F5): written for the newest message of a chat, then either
+/// left as a draft for the composer, queued and sent by autopilot, or handed
+/// to the team. One per inbound message, so a retry never writes or sends twice.
+model DmAiDraft {
+  id                String    @id @default(cuid())
+  dmAccountId       String
+  threadId          String
+  /// The platform id of the message it answers.
+  forExternalId     String
+  /// draft | queued | sent | discarded | handoff | skipped | failed
+  status            String
+  /// auto (the thread went quiet) | request (a person asked in the Inbox)
+  origin            String    @default("auto")
+  bubbles           String[]  @default([])
+  /// The AI's own note about the person, for the details pane.
+  note              String?
+  stage             String?
+  /// Why it handed off, skipped or failed.
+  reason            String?
+  /// Autopilot: when it goes out.
+  sendAt            DateTime?
+  sentAt            DateTime?
+  /// as_is | edited (a person pressed Send) | auto (autopilot)
+  sentHow           String?
+  messageExternalId String?
+  sentByUserId      String?
+  model             String?
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  /// Integer cents, rounded up (core costCents): the spend meter.
+  costCents         Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  dmAccount DmAccount @relation(fields: [dmAccountId], references: [id], onDelete: Cascade)
+  thread    DmThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, forExternalId])
+  @@index([dmAccountId, createdAt])
+  @@index([threadId, createdAt])
+  @@index([status, sendAt])
 }
