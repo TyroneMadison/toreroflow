@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { createWriteStream, promises as fs } from "node:fs";
+import path from "node:path";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { FastifyInstance } from "fastify";
 import {
+  dmContactBulkSchema,
   dmContactPatchSchema,
   dmReplySchema,
   dmThreadPatchSchema,
   DM_STAGES,
   DM_STATUSES,
   replyWindow,
+  type DmContactRow,
 } from "@toreroflow/core";
 import { encryptSecret, enqueue, getPrisma, Prisma, verifyFileLink } from "@toreroflow/db";
 import {
@@ -47,6 +52,7 @@ import {
   zernioMessageView,
 } from "../dm/service";
 import { env, missingMetaConfig } from "../env";
+import { fileLink } from "../files/link";
 import { signState, STATE_TTL_MS, verifyState } from "../oauth/state";
 import { requireAuth } from "../plugins/requireAuth";
 import { esc } from "../signatures/page";
@@ -78,6 +84,19 @@ const NOT_CONFIGURED = {
 } as const;
 
 const PAGE = 30;
+
+/** What their first message was, for the details pane's "Came from". */
+function cameFrom(attachments: Prisma.JsonValue): string {
+  const types = (Array.isArray(attachments) ? attachments : []).map((p) => (p as { type?: string } | null)?.type);
+  if (types.includes("story_reply")) return "Story reply";
+  if (types.includes("story_mention")) return "Story mention";
+  return "Direct message";
+}
+
+/** Images Instagram takes in a DM, by what the browser says they are. */
+const DM_IMAGE: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif" };
+/** Instagram's own cap for an image in a DM. */
+const DM_IMAGE_MAX = 8 * 1024 * 1024;
 
 export async function dmRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
@@ -161,12 +180,28 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{
     Params: { id: string };
-    Querystring: { status?: string; stage?: string; tag?: string; search?: string; accountId?: string; cursor?: string; limit?: string };
+    Querystring: {
+      status?: string;
+      stage?: string;
+      tag?: string;
+      search?: string;
+      accountId?: string;
+      /** instagram | facebook: the channel, across all of that platform's accounts. */
+      platform?: string;
+      /** 1: only paused threads; 0: only threads automations may answer. */
+      paused?: string;
+      /** 1: only threads with unread messages. */
+      unread?: string;
+      cursor?: string;
+      limit?: string;
+    };
   }>("/clients/:id/dm/threads", async (request, reply) => {
     const client = await ownedClient(request.params.id, request.user.agencyId);
     if (!client) return reply.status(404).send({ error: "client not found" });
     const q = request.query;
-    const socials = (await dmSocialAccounts(client.id)).filter((s) => !q.accountId || s.id === q.accountId);
+    const socials = (await dmSocialAccounts(client.id)).filter(
+      (s) => (!q.accountId || s.id === q.accountId) && (!q.platform || s.platform === q.platform),
+    );
     if (q.accountId && !socials.length) return reply.status(404).send({ error: "account not found" });
     const warnings = await syncZernioThreads(client, socials);
 
@@ -187,6 +222,8 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       ...scope,
       ...(Object.keys(contact).length ? { contact } : {}),
       ...(q.status && (DM_STATUSES as readonly string[]).includes(q.status) ? { status: q.status } : {}),
+      ...(q.paused === "1" ? { pausedAt: { not: null } } : q.paused === "0" ? { pausedAt: null } : {}),
+      ...(q.unread === "1" ? { unread: { gt: 0 } } : {}),
     };
     const limit = Math.min(Math.max(Number(q.limit) || PAGE, 1), 100);
     const rows = await prisma.dmThread.findMany({
@@ -202,12 +239,15 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       _count: { _all: true },
       _sum: { unread: true },
     });
-    const counts = { all: 0, open: 0, waiting: 0, done: 0, unread: 0 };
+    const counts = { all: 0, open: 0, waiting: 0, done: 0, unread: 0, paused: 0 };
     for (const g of groups) {
       counts.all += g._count._all;
       if (g.status in counts) counts[g.status as "open" | "waiting" | "done"] += g._count._all;
       counts.unread += g._sum.unread ?? 0;
     }
+    counts.paused = await prisma.dmThread.count({
+      where: { ...scope, ...(Object.keys(contact).length ? { contact } : {}), pausedAt: { not: null } },
+    });
     const page = rows.slice(0, limit);
     return {
       threads: page.map(threadView),
@@ -235,18 +275,24 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       const t = await ownedThread(request.params.threadId, request.params.id, request.user.agencyId);
       if (!t) return reply.status(404).send({ error: "thread not found" });
       const origin = originOf(request);
+      const firstSeenAt = t.contact.createdAt.toISOString();
       if (t.source === "native") {
-        const rows = await prisma.dmMessage.findMany({
-          where: { threadId: t.id },
-          orderBy: [{ sentAt: "desc" }, { id: "desc" }],
-          take: 51,
-          ...(request.query.before ? { cursor: { id: request.query.before }, skip: 1 } : {}),
-        });
+        const [rows, count, first] = await Promise.all([
+          prisma.dmMessage.findMany({
+            where: { threadId: t.id },
+            orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+            take: 51,
+            ...(request.query.before ? { cursor: { id: request.query.before }, skip: 1 } : {}),
+          }),
+          prisma.dmMessage.count({ where: { threadId: t.id } }),
+          prisma.dmMessage.findFirst({ where: { threadId: t.id, direction: "in" }, orderBy: { sentAt: "asc" }, select: { attachments: true } }),
+        ]);
         const page = rows.slice(0, 50);
         return {
           thread: threadView(t),
           messages: page.reverse().map((m) => nativeMessageView(origin, m)),
           nextCursor: rows.length > 50 ? page[0]!.id : null,
+          activity: { messages: count, firstSeenAt, cameFrom: first ? cameFrom(first.attachments) : null },
         };
       }
       const z = zernio();
@@ -260,6 +306,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
           thread: threadView(t),
           messages: messages.map((m) => zernioMessageView(origin, t.dmAccount.socialAccount.id, t.externalId!, m)),
           nextCursor: null,
+          activity: { messages: messages.length, firstSeenAt, cameFrom: null },
         };
       } catch (e) {
         if (e instanceof ZernioError) return reply.status(502).send({ error: `Zernio: ${e.message}` });
@@ -377,6 +424,32 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  /**
+   * A photo for a reply. Instagram fetches the image itself, so it goes into
+   * storage and comes back as a signed public link, which the reply then sends
+   * as its media. Operators only, like every other write here (dmWriteGuard).
+   */
+  app.post<{ Params: { id: string } }>("/clients/:id/dm/upload", async (request, reply) => {
+    const client = await ownedClient(request.params.id, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "client not found" });
+    const file = await request.file({ limits: { fileSize: DM_IMAGE_MAX + 1 } }).catch(() => undefined);
+    if (!file) return reply.status(400).send({ error: "no file uploaded" });
+    const ext = DM_IMAGE[file.mimetype];
+    if (!ext) {
+      file.file.resume();
+      return reply.status(400).send({ error: "Instagram takes a JPG, PNG or GIF in a DM." });
+    }
+    const storageKey = `${client.id}/dm/${randomUUID()}.${ext}`;
+    const full = path.join(env.STORAGE_DIR, storageKey);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await pipeline(file.file, createWriteStream(full));
+    if (file.file.truncated) {
+      await fs.rm(full, { force: true });
+      return reply.status(413).send({ error: "Instagram takes images up to 8 MB in a DM." });
+    }
+    return reply.status(201).send({ url: originOf(request) + fileLink(storageKey), type: "image" as const });
+  });
+
   app.post<{ Params: { id: string; threadId: string } }>("/clients/:id/dm/threads/:threadId/read", async (request, reply) => {
     const t = await ownedThread(request.params.threadId, request.params.id, request.user.agencyId);
     if (!t) return reply.status(404).send({ error: "thread not found" });
@@ -419,26 +492,64 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
   const contactInclude = {
     tags: { include: { tag: { select: { name: true } } } },
     dmAccount: { select: { platform: true, socialAccount: { select: { id: true, handle: true } } } },
-    threads: { select: { id: true } },
+    threads: {
+      select: { id: true, lastPreview: true, lastMessageAt: true, lastDirection: true, unread: true, windowEndsAt: true, source: true },
+      take: 1,
+    },
   } satisfies Prisma.DmContactInclude;
-  const contactRow = (c: Prisma.DmContactGetPayload<{ include: typeof contactInclude }>) => ({
-    ...contactView(c),
-    platform: c.dmAccount.platform,
-    accountId: c.dmAccount.socialAccount.id,
-    accountHandle: c.dmAccount.socialAccount.handle,
-    threadId: c.threads[0]?.id ?? null,
-    firstSeenAt: c.createdAt.toISOString(),
-  });
+  const contactRow = (c: Prisma.DmContactGetPayload<{ include: typeof contactInclude }>): DmContactRow => {
+    const t = c.threads[0];
+    return {
+      ...contactView(c),
+      platform: c.dmAccount.platform === "facebook" ? "facebook" : "instagram",
+      accountId: c.dmAccount.socialAccount.id,
+      accountHandle: c.dmAccount.socialAccount.handle,
+      threadId: t?.id ?? null,
+      firstSeenAt: c.createdAt.toISOString(),
+      lastPreview: t?.lastPreview ?? null,
+      lastMessageAt: t?.lastMessageAt?.toISOString() ?? null,
+      lastDirection: t?.lastDirection === "in" || t?.lastDirection === "out" ? t.lastDirection : null,
+      unread: t?.unread ?? 0,
+      windowEndsAt: t?.source === "native" ? (t.windowEndsAt?.toISOString() ?? null) : null,
+    };
+  };
 
-  app.get<{ Params: { id: string }; Querystring: { search?: string; tag?: string; stage?: string; accountId?: string; cursor?: string } }>(
+  /** Sort orders the Contacts filter offers. Last message is the default. */
+  const CONTACT_SORT = {
+    last: [{ lastSeenAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+    first: [{ createdAt: "desc" }, { id: "desc" }],
+    name: [{ displayName: { sort: "asc", nulls: "last" } }, { handle: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+  } satisfies Record<string, Prisma.DmContactOrderByWithRelationInput[]>;
+
+  app.get<{
+    Params: { id: string };
+    Querystring: {
+      search?: string;
+      tag?: string;
+      stage?: string;
+      accountId?: string;
+      platform?: string;
+      unread?: string;
+      sort?: string;
+      cursor?: string;
+    };
+  }>(
     "/clients/:id/dm/contacts",
     async (request, reply) => {
       const client = await ownedClient(request.params.id, request.user.agencyId);
       if (!client) return reply.status(404).send({ error: "client not found" });
       const q = request.query;
+      const base: Prisma.DmContactWhereInput = { dmAccount: { clientId: client.id } };
+      // Stage takes one or several (?stage=engaged,qualify), as the phone filter sheet ticks.
+      const stages = (q.stage ?? "").split(",").filter((s) => (DM_STAGES as readonly string[]).includes(s));
       const where: Prisma.DmContactWhereInput = {
-        dmAccount: { clientId: client.id, ...(q.accountId ? { socialAccountId: q.accountId } : {}) },
-        ...(q.stage && (DM_STAGES as readonly string[]).includes(q.stage) ? { stage: q.stage } : {}),
+        dmAccount: {
+          clientId: client.id,
+          ...(q.accountId ? { socialAccountId: q.accountId } : {}),
+          ...(q.platform === "instagram" || q.platform === "facebook" ? { platform: q.platform } : {}),
+        },
+        ...(stages.length ? { stage: { in: stages } } : {}),
+        ...(q.unread === "1" ? { threads: { some: { unread: { gt: 0 } } } } : {}),
         ...(q.tag ? { tags: { some: { tag: { name: q.tag } } } } : {}),
         ...(q.search?.trim()
           ? {
@@ -449,22 +560,31 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
             }
           : {}),
       };
-      const rows = await prisma.dmContact.findMany({
-        where,
-        include: contactInclude,
-        orderBy: [{ lastSeenAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
-        take: 51,
-        ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
-      });
-      const tags = await prisma.dmTag.findMany({
-        where: { clientId: client.id },
-        select: { name: true, _count: { select: { contacts: true } } },
-        orderBy: { name: "asc" },
-      });
+      const sort = CONTACT_SORT[(q.sort ?? "last") as keyof typeof CONTACT_SORT] ?? CONTACT_SORT.last;
+      const [rows, tags, total, all, unread] = await Promise.all([
+        prisma.dmContact.findMany({
+          where,
+          include: contactInclude,
+          orderBy: sort,
+          take: 51,
+          ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+        }),
+        prisma.dmTag.findMany({
+          where: { clientId: client.id },
+          select: { name: true, _count: { select: { contacts: true } } },
+          orderBy: { name: "asc" },
+        }),
+        prisma.dmContact.count({ where }),
+        prisma.dmContact.count({ where: base }),
+        prisma.dmContact.count({ where: { ...base, threads: { some: { unread: { gt: 0 } } } } }),
+      ]);
       const page = rows.slice(0, 50);
       return {
         contacts: page.map(contactRow),
         nextCursor: rows.length > 50 ? page[page.length - 1]!.id : null,
+        /** Matching the filters; counts are the whole client, for the All and Unread chips. */
+        total,
+        counts: { all, unread },
         tags: tags.map((t) => ({ name: t.name, count: t._count.contacts })),
       };
     },
@@ -480,6 +600,38 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
     const c = await ownedContact(request.params.contactId, request.params.id, request.user.agencyId);
     if (!c) return reply.status(404).send({ error: "contact not found" });
     return { contact: contactRow(c) };
+  });
+
+  /**
+   * Select mode: set one stage, add tags and remove tags on many contacts.
+   * Every id must be this client's; one stranger fails the whole call, so a
+   * crafted list cannot touch another brand's people.
+   */
+  app.post<{ Params: { id: string } }>("/clients/:id/dm/contacts/bulk", async (request, reply) => {
+    const body = dmContactBulkSchema.parse(request.body ?? {});
+    const client = await ownedClient(request.params.id, request.user.agencyId);
+    if (!client) return reply.status(404).send({ error: "client not found" });
+    const ids = [...new Set(body.ids)];
+    const owned = await prisma.dmContact.count({ where: { id: { in: ids }, dmAccount: { clientId: client.id } } });
+    if (owned !== ids.length) return reply.status(404).send({ error: "contact not found" });
+    // ponytail: three plain writes, no transaction; each is idempotent, so a
+    // failure halfway is fixed by pressing the button again.
+    if (body.stage) await prisma.dmContact.updateMany({ where: { id: { in: ids } }, data: { stage: body.stage } });
+    const add = [...new Set((body.addTags ?? []).map((n) => n.trim()))];
+    if (add.length) {
+      const tags = await Promise.all(
+        add.map((name) => prisma.dmTag.upsert({ where: { clientId_name: { clientId: client.id, name } }, create: { clientId: client.id, name }, update: {} })),
+      );
+      await prisma.dmContactTag.createMany({
+        data: ids.flatMap((contactId) => tags.map((t) => ({ contactId, tagId: t.id }))),
+        skipDuplicates: true,
+      });
+    }
+    const remove = (body.removeTags ?? []).map((n) => n.trim());
+    if (remove.length) {
+      await prisma.dmContactTag.deleteMany({ where: { contactId: { in: ids }, tag: { clientId: client.id, name: { in: remove } } } });
+    }
+    return { updated: ids.length };
   });
 
   app.patch<{ Params: { id: string; contactId: string } }>("/clients/:id/dm/contacts/:contactId", async (request, reply) => {

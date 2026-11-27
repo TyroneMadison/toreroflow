@@ -2,7 +2,8 @@
 // API faked: dark launch, the webhook HMAC, the role guard on every DM write
 // route, the Instagram connect (token stored encrypted), the 24h window, the
 // Zernio fallback for the old inbox, the media proxy and its refresh, and the
-// DM campaign post-scope check.
+// DM campaign post-scope check. F3: the Inbox list filters, the Zernio poll
+// throttle, the reply photo upload and the contacts bulk edit.
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -95,8 +96,10 @@ fake("dmThread", {
   findFirst: async ({ where }: Row) =>
     where.id === thread.id && where.dmAccount.clientId === "c1" && where.dmAccount.client.agencyId === "A" ? thread : null,
   update: async ({ data }: Row) => (threadUpdates.push(data), { ...thread, ...data }),
-  findMany: async () => [],
+  findMany: async (q: Row) => (threadQueries.push(q.where), []),
   groupBy: async () => [],
+  count: async () => 0,
+  upsert: async () => ({}),
 });
 fake("dmMessage", {
   upsert: async ({ create }: Row) => {
@@ -107,8 +110,23 @@ fake("dmMessage", {
   findUnique: async ({ where }: Row) => messages.find((m) => m.id === where.id) ?? null,
   update: async ({ where, data }: Row) => Object.assign(messages.find((m) => m.id === where.id)!, data),
 });
-fake("dmTag", { findMany: async () => [] });
-fake("dmContact", { findMany: async () => [] });
+fake("dmTag", {
+  findMany: async () => [],
+  upsert: async ({ create }: Row) => ({ id: `tag-${create.name}`, ...create }),
+});
+// c1's contacts are ct1 and ct2; anything else belongs to someone else.
+const bulkWrites: Row[] = [];
+fake("dmContact", {
+  findMany: async () => [],
+  count: async ({ where }: Row) => (where.id?.in ? where.id.in.filter((id: string) => id === "ct1" || id === "ct2").length : 0),
+  updateMany: async (q: Row) => (bulkWrites.push({ op: "stage", ...q }), { count: q.where.id.in.length }),
+  upsert: async ({ create }: Row) => ({ id: "ct-z", ...create }),
+});
+fake("dmContactTag", {
+  createMany: async (q: Row) => (bulkWrites.push({ op: "add", ...q }), { count: q.data.length }),
+  deleteMany: async (q: Row) => (bulkWrites.push({ op: "remove", ...q }), { count: 1 }),
+});
+const threadQueries: Row[] = [];
 
 type Call = { url: string; method: string; auth: string; body: string };
 const calls: Call[] = [];
@@ -155,6 +173,8 @@ let plugin = "";
 app.addHook("onRoute", (r) => {
   for (const method of [r.method].flat()) routes.push({ method: String(method), url: r.url, plugin });
 });
+const { default: multipart } = await import("@fastify/multipart");
+await app.register(multipart, { limits: { fileSize: 16 * 1024 * 1024 } });
 const { authRoutes } = await import("../routes/auth");
 for (const [name, p] of [["auth", authRoutes], ["dmCampaigns", dmCampaignRoutes], ["dm", dmRoutes], ["publicDm", publicDmRoutes], ["metaWebhook", metaWebhookRoutes]] as const) {
   plugin = name;
@@ -215,6 +235,8 @@ for (const expected of [
   "POST /clients/:id/dm/threads/:threadId/pause",
   "POST /clients/:id/dm/threads/:threadId/resume",
   "PATCH /clients/:id/dm/contacts/:contactId",
+  "POST /clients/:id/dm/contacts/bulk",
+  "POST /clients/:id/dm/upload",
   "POST /oauth/instagram/start/:accountId",
   "POST /clients/:id/dm-campaigns",
   "PATCH /clients/:id/dm-campaigns/:campaignId",
@@ -453,6 +475,65 @@ assert.equal(res.statusCode, 400);
 assert.equal(res.json().reason, "bad_post_scope");
 res = await call("POST", "/clients/c1/dm-campaigns", OWNER, { ...campaign, platformPostId: "17895695668004550" });
 assert.equal(res.statusCode, 201, res.body);
+
+// ---------------------------------------------------------------------------
+// 9. F3: Inbox filters, the Zernio poll throttle, photo upload, contacts bulk
+// ---------------------------------------------------------------------------
+
+const zernioLists = () => calls.filter((c) => c.url.includes("zernio.com") && c.url.includes("/inbox/conversations?")).length;
+const { resetZernioSync } = await import("./service");
+resetZernioSync();
+let lists = zernioLists();
+res = await call("GET", "/clients/c1/dm/threads?platform=facebook&paused=1&unread=1&status=waiting", VIEWER);
+assert.equal(res.statusCode, 200, res.body);
+const listWhere = threadQueries.at(-1)!;
+assert.deepEqual(listWhere.dmAccount.socialAccountId.in, ["sa-fb"], "platform picks that channel's accounts");
+assert.deepEqual(listWhere.pausedAt, { not: null }, "paused=1");
+assert.deepEqual(listWhere.unread, { gt: 0 }, "unread=1");
+assert.equal(listWhere.status, "waiting");
+assert.equal(typeof res.json().counts.paused, "number", "the Paused tab has a count");
+assert.equal(zernioLists(), lists + 1, "the first poll reads Zernio");
+await call("GET", "/clients/c1/dm/threads?platform=facebook", VIEWER);
+await call("GET", "/clients/c1/dm/threads?platform=facebook&paused=0", VIEWER);
+assert.equal(zernioLists(), lists + 1, "4-second polls inside 15 seconds read the mirror, not Zernio");
+assert.deepEqual(threadQueries.at(-1)!.pausedAt, null, "paused=0");
+
+// A photo for a reply: stored, and handed back as a signed public link Instagram can fetch.
+const { mkdtempSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+env.STORAGE_DIR = mkdtempSync(`${tmpdir()}/dm-upload-`);
+const form = (type: string, name: string, bytes: Buffer) => {
+  const b = "----dmcheck";
+  const crlf = String.fromCharCode(13, 10);
+  const payload = Buffer.concat([
+    Buffer.from(`--${b}${crlf}Content-Disposition: form-data; name="file"; filename="${name}"${crlf}Content-Type: ${type}${crlf}${crlf}`),
+    bytes,
+    Buffer.from(`${crlf}--${b}--${crlf}`),
+  ]);
+  return { payload, headers: { "content-type": `multipart/form-data; boundary=${b}` } };
+};
+const png = form("image/png", "a.png", Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+res = await app.inject({ method: "POST", url: "/clients/c1/dm/upload", headers: { authorization: OWNER, ...png.headers }, payload: png.payload });
+assert.equal(res.statusCode, 201, res.body);
+assert.match(res.json().url, /^http:\/\/localhost:80\/files\/c1\/dm\/[0-9a-f-]+\.png\?e=\d+&s=/, "absolute signed link");
+const txt = form("text/plain", "a.txt", Buffer.from("hi"));
+res = await app.inject({ method: "POST", url: "/clients/c1/dm/upload", headers: { authorization: OWNER, ...txt.headers }, payload: txt.payload });
+assert.equal(res.statusCode, 400, "only images Instagram takes");
+res = await app.inject({ method: "POST", url: "/clients/c1/dm/upload", headers: { authorization: VIEWER, ...png.headers }, payload: png.payload });
+assert.equal(res.statusCode, 403, "a viewer cannot upload");
+
+// Contacts select mode.
+res = await call("POST", "/clients/c1/dm/contacts/bulk", OWNER, { ids: ["ct1", "ct9"], stage: "won" });
+assert.equal(res.statusCode, 404, "one contact of another brand fails the whole call");
+assert.equal(bulkWrites.length, 0, "and changes nothing");
+assert.equal((await call("POST", "/clients/c1/dm/contacts/bulk", OWNER, { ids: ["ct1"] })).statusCode, 400, "nothing to change");
+res = await call("POST", "/clients/c1/dm/contacts/bulk", OWNER, { ids: ["ct1", "ct2", "ct1"], stage: "won", addTags: ["vip"], removeTags: ["lead"] });
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(res.json().updated, 2);
+assert.deepEqual(bulkWrites.map((w) => w.op), ["stage", "add", "remove"]);
+assert.deepEqual(bulkWrites[1]!.data, [{ contactId: "ct1", tagId: "tag-vip" }, { contactId: "ct2", tagId: "tag-vip" }]);
+assert.deepEqual(bulkWrites[2]!.where.tag, { clientId: "c1", name: { in: ["lead"] } }, "only this client's tag is removed");
+assert.equal((await call("POST", "/clients/c1/dm/contacts/bulk", POLLY, { ids: ["ct1"], stage: "won" })).statusCode, 403, "Polly reads, never edits");
 
 await app.close();
 console.log("dm.check: all checks passed");
