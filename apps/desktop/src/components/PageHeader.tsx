@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { sectionOf, type ScreenId } from "../lib/nav";
-import { linkProps, SETTINGS_SECTIONS, useRoute } from "../lib/routes";
+import { linkProps, SETTINGS_SECTIONS, useRoute, WORKFLOW_AREAS } from "../lib/routes";
 import { useIsPhone } from "../lib/phone";
 import { useAppState } from "../state/AppState";
 
@@ -29,10 +29,11 @@ const PHONE_TITLE: Partial<Record<ScreenId, string>> = {
 };
 
 /**
- * Every screen's one h1: logo and title on the left, the section's pages as
- * tabs in the middle, the screen's own controls on the right. The tabs are
- * links, so each page has a URL that can be opened in a new tab or copied.
- * Settings has one page, so its tabs are its sections instead.
+ * Every screen's one h1. Desktop and web: logo, a breadcrumb naming the Dock
+ * tab (and Workflows for its areas) over the title, the screen's own controls
+ * on the right; the section's pages live in the Dock's drop-up menus now.
+ * Phone: the eyebrow head with the page chips for Reports and the Create
+ * queues (Settings shows its sections), unchanged.
  */
 export default function PageHeader({
   screen,
@@ -107,8 +108,10 @@ export default function PageHeader({
       </header>
     );
   }
+  const area = screen === "workflows" ? WORKFLOW_AREAS.find((a) => a.id === activeSection) : undefined;
+  const crumbs = area ? [section.label, page.label] : [section.label];
   return (
-    <header className="tf-head">
+    <header className="tf-head r2">
       <div className="tf-logo">
         <div className="tf-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24">
@@ -116,25 +119,23 @@ export default function PageHeader({
           </svg>
         </div>
         <div>
-          <h1>{title ?? page.label}</h1>
+          <div className="crumb" data-testid="page.crumb">
+            {crumbs.map((c, i) => (
+              <span key={c} style={{ display: "contents" }}>
+                {i > 0 && (
+                  <svg aria-hidden="true">
+                    <use href="#i-chev-r" />
+                  </svg>
+                )}
+                {i > 0 && " "}
+                {c}
+              </span>
+            ))}
+          </div>
+          <h1>{title ?? area?.label ?? page.label}</h1>
           <div className="tf-sub">{subtitle ?? "Toreroflow by Torerone"}</div>
         </div>
       </div>
-      {tabs.length > 1 && (
-        <nav className="tf-tabs glass-z1" aria-label={section.label}>
-          {tabs.map((t) => (
-            <a
-              key={t.key}
-              aria-current={t.on ? "page" : undefined}
-              className={t.on ? "a" : undefined}
-              {...t.link}
-              data-testid={t.testid}
-            >
-              {t.label}
-            </a>
-          ))}
-        </nav>
-      )}
       <div className="tf-ctr">{controls}</div>
     </header>
   );

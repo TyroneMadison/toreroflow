@@ -4,7 +4,7 @@
  * deep link.
  */
 import { SECTIONS } from "./nav";
-import { canonicalUrl, clientPath, parseUrl, pathFor, PATHS, publicRoute, SETTINGS_SECTIONS, scrubToken } from "./routes";
+import { canonicalUrl, clientPath, parseUrl, pathFor, PATHS, publicRoute, SETTINGS_SECTIONS, scrubToken, WORKFLOW_AREAS } from "./routes";
 
 function eq(actual: unknown, expected: unknown, message: string) {
   const a = JSON.stringify(actual);
@@ -20,6 +20,16 @@ for (const { id } of SETTINGS_SECTIONS) {
   const r = parseUrl(pathFor("settings", id));
   eq([r.screen, r.section], ["settings", id], `/settings/${id} round-trips`);
 }
+for (const { id } of WORKFLOW_AREAS) {
+  const r = parseUrl(pathFor("workflows", id));
+  eq([r.screen, r.section], ["workflows", id], `/create/workflows/${id} round-trips`);
+}
+eq(pathFor("workflows", "ai-replies"), "/create/workflows/ai-replies", "a Workflows area has its own address");
+eq(canonicalUrl("/create/workflows/nope?client=c_1"), "/create/workflows?client=c_1", "an unknown Workflows area opens Workflows");
+eq(parseUrl("/create/workflows").section, null, "Workflows itself is the Overview area");
+// The Measure tab merged into Reports: its old address still opens Analytics.
+eq(parseUrl("/measure").screen, "analytics", "/measure opens Analytics");
+eq(canonicalUrl("/measure?range=90"), "/analytics?range=90", "/measure is rewritten to /analytics, query kept");
 eq(parseUrl("/create/upload/").screen, "upload", "a trailing slash is the same page");
 eq(parseUrl("/accounts").screen, "overview", "/accounts is Account Overview");
 

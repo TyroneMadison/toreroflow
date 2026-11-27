@@ -12,6 +12,65 @@ import { useIsPhone } from "../lib/phone";
 import { Ic, Sheet } from "../components/analytics/phoneBits";
 import { JumpChips, SwipeDel, useSoftDelete } from "../components/mobile/FlowBits";
 import SwipeRow from "../components/mobile/SwipeRow";
+import { linkProps, useRoute, WORKFLOW_AREAS, type WorkflowArea } from "../lib/routes";
+import type { ClientSummary } from "../lib/api";
+
+/** Desktop and web: Workflows' seven areas in a slim rail (round 2 mockups).
+ *  Areas whose screens ship later in this update show a labelled placeholder. */
+const AREA_ICON: Record<WorkflowArea | "overview", string> = {
+  overview: "#i-dash",
+  inbox: "#i-inbox",
+  automations: "#i-bolt",
+  "ai-replies": "#i-spark",
+  contacts: "#i-users",
+  metrics: "#i-chart",
+  "auto-post": "#i-drive",
+};
+const SOON = new Set<WorkflowArea>(["ai-replies", "contacts", "metrics"]);
+const SOON_LINE: Partial<Record<WorkflowArea, (brand: string) => string>> = {
+  "ai-replies": (b) => `Answers DMs for ${b} and hands the chat to your team when it is not sure. Off until you turn it on.`,
+  contacts: (b) => `Everyone who has messaged ${b} on Instagram or Messenger, with tags and a person panel.`,
+  metrics: () => "How DMs and automations did: runs, replies, click-throughs and where people drop off.",
+};
+
+function WorkflowRail({ area, client, inboxNew }: { area: WorkflowArea | null; client: ClientSummary | null; inboxNew: number | null }) {
+  const dm = (client?.accounts ?? []).filter((a) => a.status === "connected" && (a.platform === "instagram" || a.platform === "facebook"));
+  const names = dm.map((a) => (a.platform === "instagram" ? `@${a.handle.replace(/^@/, "")}` : "Facebook"));
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  const rows: Array<{ id: WorkflowArea | null; label: string }> = [{ id: null, label: "Overview" }, ...WORKFLOW_AREAS];
+  return (
+    <nav className="wfr-rail" aria-label="Workflows">
+      <div className="lbl">Workflows</div>
+      {rows.map((r) => {
+        const on = r.id === area;
+        return (
+          <a
+            key={r.id ?? "overview"}
+            className={`wfr-ri${on ? " on" : ""}`}
+            aria-current={on ? "page" : undefined}
+            {...linkProps("workflows", r.id)}
+            data-testid={`workflows.area.${r.id ?? "overview"}`}
+          >
+            <svg aria-hidden="true">
+              <use href={AREA_ICON[r.id ?? "overview"]} />
+            </svg>
+            <span>{r.label}</span>
+            {r.id === "inbox" && !!inboxNew && (
+              <span className="cnt">
+                {inboxNew}
+                <span className="vh"> new</span>
+              </span>
+            )}
+            {r.id && SOON.has(r.id) && <span className="tail">Soon</span>}
+          </a>
+        );
+      })}
+      <div className="wfr-foot">
+        {dm.length ? `${dm.length} ${dm.length === 1 ? "account" : "accounts"} connected: ${list}` : "No Instagram or Facebook account connected yet"}
+      </div>
+    </nav>
+  );
+}
 
 export default function WorkflowsScreen() {
   const { selectedClient } = useAppState();
@@ -30,6 +89,8 @@ export default function WorkflowsScreen() {
   const [newOpen, setNewOpen] = useState(false);
   const [dmCount, setDmCount] = useState<number | null>(null);
   const [inboxNew, setInboxNew] = useState<number | null>(null);
+  const { section } = useRoute();
+  const area = WORKFLOW_AREAS.find((a) => a.id === section)?.id ?? null;
 
   // Keyed on the id, so a client-list refresh (Sync accounts in Drive auto-post)
   // does not blank and reload the rules below.
@@ -297,186 +358,236 @@ export default function WorkflowsScreen() {
     );
   }
 
-  return (
-    <section className="screen active" data-screen="workflows" data-state={state}>
-      <div className="topbar">
-        <div className="h">
-          <h2>Workflows</h2>
-          <p>
-            Automations for this brand. Drive auto-post runs on its own. The fan-out rules
-            below are saved but nothing runs them yet, so a scheduled video only goes to the
-            platforms you tick.
-          </p>
+  // Fan-out rules: the new-rule form and the saved rules. Overview and Auto-post both show them.
+  const rules = !selectedClient ? (
+    <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to manage its workflows." />
+  ) : workflows === null ? (
+    loadError ? (
+      <ErrorState screen="workflows" message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
+    ) : (
+      <Loading screen="workflows" />
+    )
+  ) : (
+    <div className="split">
+      <div>
+        <div className="card glass">
+          <h3>New workflow for {selectedClient.name}</h3>
+          <div className="sub" style={{ marginBottom: 14 }}>
+            Describes what should happen when a video is posted to the source. Kept
+            for when fan-out is built; it does not repost anything today.
+          </div>
+
+          <label className="flabel">Workflow name</label>
+          <input
+            className="field-in"
+            placeholder="e.g. TikTok everywhere"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <label className="flabel" style={{ marginTop: 16 }}>
+            Source platform
+          </label>
+          <div className="ptabs">
+            {PLATFORMS.map((p) => (
+              <div
+                key={p}
+                className={`ptab${source === p ? " on src" : ""}`}
+                onClick={() => {
+                  setSource(p);
+                  setDestinations((prev) => prev.filter((d) => d !== p));
+                }}
+              >
+                <Pf p={PF_ID[p]} size="sm" /> {SURFACE_LABEL[p]}
+                {source === p && <span className="srctag">SOURCE</span>}
+              </div>
+            ))}
+          </div>
+
+          <label className="flabel" style={{ marginTop: 12 }}>
+            Auto-publish to
+          </label>
+          <div className="toggles" style={{ marginTop: 8 }}>
+            {PLATFORMS.filter((p) => p !== source).map((p) => {
+              const on = destinations.includes(p);
+              return (
+                <div
+                  key={p}
+                  className={`pt${on ? " on" : ""}`}
+                  role="switch"
+                  aria-checked={on}
+                  aria-label={`Auto-publish to ${PLATFORM_LABELS[p]}`}
+                  tabIndex={0}
+                  data-testid={`workflow-dest-${p}`}
+                  onClick={() => toggleDestination(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      toggleDestination(p);
+                    }
+                  }}
+                >
+                  <Pf p={PF_ID[p]} />
+                  <div className="info">
+                    <b>{SURFACE_LABEL[p]}</b>
+                    <span>{PLATFORM_LABELS[p]}</span>
+                  </div>
+                  <div className="switch" />
+                </div>
+              );
+            })}
+          </div>
+
+          {error && <div className="autherr">{error}</div>}
+
+          <div className="schedrow">
+            <button
+              className="btn"
+              data-testid="workflow-create"
+              style={{ marginLeft: "auto" }}
+              disabled={busy || !name.trim() || destinations.length === 0}
+              onClick={() => void create()}
+            >
+              <svg>
+                <use href="#i-bolt" />
+              </svg>{" "}
+              {busy ? "Creating…" : "Create workflow"}
+            </button>
+          </div>
         </div>
       </div>
-      <div className="stage">
-        {selectedClient && <DriveAutoPost client={selectedClient} />}
-        {!selectedClient ? (
-          <Empty
-            screen="workflows"
-            title="No brand selected"
-            hint="Pick a brand in the dock to manage its workflows."
-          />
-        ) : workflows === null ? (
-          loadError ? (
-            <ErrorState screen="workflows" message={loadError} onRetry={() => setReloadKey((k) => k + 1)} />
+
+      <div>
+        <div className="card glass">
+          <div className="rowhead">
+            <h3>Active workflows</h3>
+          </div>
+          {workflows.length === 0 ? (
+            <div className="empty">
+              <div className="eic">
+                <svg>
+                  <use href="#i-bolt" />
+                </svg>
+              </div>
+              <b>No workflows yet</b>
+              <p>Create one to fan a single upload out across platforms.</p>
+            </div>
           ) : (
-            <Loading screen="workflows" />
-          )
-        ) : (
-          <div className="split">
-            <div>
-              <div className="card glass">
-                <h3>New workflow for {selectedClient.name}</h3>
-                <div className="sub" style={{ marginBottom: 14 }}>
-                  Describes what should happen when a video is posted to the source. Kept
-                  for when fan-out is built; it does not repost anything today.
-                </div>
-
-                <label className="flabel">Workflow name</label>
-                <input
-                  className="field-in"
-                  placeholder="e.g. TikTok everywhere"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-
-                <label className="flabel" style={{ marginTop: 16 }}>
-                  Source platform
-                </label>
-                <div className="ptabs">
-                  {PLATFORMS.map((p) => (
-                    <div
-                      key={p}
-                      className={`ptab${source === p ? " on src" : ""}`}
-                      onClick={() => {
-                        setSource(p);
-                        setDestinations((prev) => prev.filter((d) => d !== p));
-                      }}
-                    >
-                      <Pf p={PF_ID[p]} size="sm" /> {SURFACE_LABEL[p]}
-                      {source === p && <span className="srctag">SOURCE</span>}
-                    </div>
+            workflows.map((w) => (
+              <div className="best" key={w.id} style={{ alignItems: "center" }} data-testid={`workflow-${w.id}`}>
+                <div className="l" style={{ flexWrap: "wrap" }}>
+                  <Pf p={PF_ID[w.sourcePlatform]} size="sm" />
+                  <span style={{ color: "var(--txt-3)" }}>→</span>
+                  {w.destinations.map((d) => (
+                    <Pf key={d} p={PF_ID[d]} size="sm" />
                   ))}
+                  <span style={{ fontWeight: 600 }}>{w.name}</span>
                 </div>
-
-                <label className="flabel" style={{ marginTop: 12 }}>
-                  Auto-publish to
-                </label>
-                <div className="toggles" style={{ marginTop: 8 }}>
-                  {PLATFORMS.filter((p) => p !== source).map((p) => {
-                    const on = destinations.includes(p);
-                    return (
-                      <div
-                        key={p}
-                        className={`pt${on ? " on" : ""}`}
-                        role="switch"
-                        aria-checked={on}
-                        aria-label={`Auto-publish to ${PLATFORM_LABELS[p]}`}
-                        tabIndex={0}
-                        data-testid={`workflow-dest-${p}`}
-                        onClick={() => toggleDestination(p)}
-                        onKeyDown={(e) => {
-                          if (e.key === " " || e.key === "Enter") {
-                            e.preventDefault();
-                            toggleDestination(p);
-                          }
-                        }}
-                      >
-                        <Pf p={PF_ID[p]} />
-                        <div className="info">
-                          <b>{SURFACE_LABEL[p]}</b>
-                          <span>{PLATFORM_LABELS[p]}</span>
-                        </div>
-                        <div className="switch" />
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {error && <div className="autherr">{error}</div>}
-
-                <div className="schedrow">
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div
+                    className={`switch${w.enabled ? " on" : ""}`}
+                    style={{ cursor: "pointer" }}
+                    title={w.enabled ? "Enabled - click to pause" : "Paused - click to enable"}
+                    role="switch"
+                    aria-checked={w.enabled}
+                    aria-label={`${w.name} enabled`}
+                    tabIndex={0}
+                    data-testid={`workflow-toggle-${w.id}`}
+                    onClick={() => void toggleEnabled(w)}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        void toggleEnabled(w);
+                      }
+                    }}
+                  />
                   <button
-                    className="btn"
-                    data-testid="workflow-create"
-                    style={{ marginLeft: "auto" }}
-                    disabled={busy || !name.trim() || destinations.length === 0}
-                    onClick={() => void create()}
+                    type="button"
+                    className="link"
+                    style={{ color: "var(--red)", background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}
+                    aria-label={`Delete workflow ${w.name}`}
+                    data-testid={`workflow-delete-${w.id}`}
+                    onClick={() => void remove(w)}
                   >
-                    <svg>
-                      <use href="#i-bolt" />
-                    </svg>{" "}
-                    {busy ? "Creating…" : "Create workflow"}
+                    Delete
                   </button>
                 </div>
               </div>
-            </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
-            <div>
-              <div className="card glass">
-                <div className="rowhead">
-                  <h3>Active workflows</h3>
+  const brand = selectedClient?.name ?? "this brand";
+  return (
+    <section className="screen active" data-screen="workflows" data-state={state} data-area={area ?? "overview"}>
+      <div className="wfr">
+        <WorkflowRail area={area} client={selectedClient} inboxNew={inboxNew} />
+        <div className="wfr-body">
+          {area === null && (
+            <>
+              <div className="topbar">
+                <div className="h">
+                  <h2>Workflows</h2>
+                  <p>
+                    Automations for this brand. Drive auto-post runs on its own. The fan-out rules
+                    below are saved but nothing runs them yet, so a scheduled video only goes to the
+                    platforms you tick.
+                  </p>
                 </div>
-                {workflows.length === 0 ? (
-                  <div className="empty">
-                    <div className="eic">
-                      <svg>
-                        <use href="#i-bolt" />
-                      </svg>
-                    </div>
-                    <b>No workflows yet</b>
-                    <p>Create one to fan a single upload out across platforms.</p>
-                  </div>
-                ) : (
-                  workflows.map((w) => (
-                    <div className="best" key={w.id} style={{ alignItems: "center" }} data-testid={`workflow-${w.id}`}>
-                      <div className="l" style={{ flexWrap: "wrap" }}>
-                        <Pf p={PF_ID[w.sourcePlatform]} size="sm" />
-                        <span style={{ color: "var(--txt-3)" }}>→</span>
-                        {w.destinations.map((d) => (
-                          <Pf key={d} p={PF_ID[d]} size="sm" />
-                        ))}
-                        <span style={{ fontWeight: 600 }}>{w.name}</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <div
-                          className={`switch${w.enabled ? " on" : ""}`}
-                          style={{ cursor: "pointer" }}
-                          title={w.enabled ? "Enabled - click to pause" : "Paused - click to enable"}
-                          role="switch"
-                          aria-checked={w.enabled}
-                          aria-label={`${w.name} enabled`}
-                          tabIndex={0}
-                          data-testid={`workflow-toggle-${w.id}`}
-                          onClick={() => void toggleEnabled(w)}
-                          onKeyDown={(e) => {
-                            if (e.key === " " || e.key === "Enter") {
-                              e.preventDefault();
-                              void toggleEnabled(w);
-                            }
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="link"
-                          style={{ color: "var(--red)", background: "none", border: 0, padding: 0, font: "inherit", cursor: "pointer" }}
-                          aria-label={`Delete workflow ${w.name}`}
-                          data-testid={`workflow-delete-${w.id}`}
-                          onClick={() => void remove(w)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
               </div>
-            </div>
-          </div>
-        )}
-        {selectedClient && <DmCampaigns client={selectedClient} />}
-        {selectedClient && <DmInbox client={selectedClient} />}
+              <div className="stage">
+                {selectedClient && <DriveAutoPost client={selectedClient} />}
+                {rules}
+                {selectedClient && <DmCampaigns client={selectedClient} onCount={setDmCount} />}
+                {selectedClient && <DmInbox client={selectedClient} onNew={setInboxNew} />}
+              </div>
+            </>
+          )}
+          {area === "inbox" &&
+            (selectedClient ? (
+              <DmInbox client={selectedClient} onNew={setInboxNew} />
+            ) : (
+              <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to see its DMs." />
+            ))}
+          {area === "automations" && (
+            <>
+              <div className="wfr-notice" data-testid="workflows.automations.notice">
+                <svg aria-hidden="true">
+                  <use href="#i-info" />
+                </svg>
+                <span>
+                  <b>Comment-to-DM automations built here are coming soon in this update.</b> Until then your DM
+                  campaigns below keep running at Zernio.
+                </span>
+              </div>
+              {selectedClient ? (
+                <DmCampaigns client={selectedClient} onCount={setDmCount} />
+              ) : (
+                <Empty screen="workflows" title="No brand selected" hint="Pick a brand in the dock to see its DM campaigns." />
+              )}
+            </>
+          )}
+          {area === "auto-post" && (
+            <>
+              {selectedClient && <DriveAutoPost client={selectedClient} />}
+              {rules}
+            </>
+          )}
+          {area && SOON.has(area) && (
+            <section className="card glass wfr-soon" data-testid={`workflows.soon.${area}`}>
+              <div className="eic">
+                <svg aria-hidden="true">
+                  <use href={AREA_ICON[area]} />
+                </svg>
+              </div>
+              <b>{WORKFLOW_AREAS.find((a) => a.id === area)!.label}: coming soon in this update</b>
+              <p>{SOON_LINE[area]!(brand)}</p>
+            </section>
+          )}
+        </div>
       </div>
     </section>
   );

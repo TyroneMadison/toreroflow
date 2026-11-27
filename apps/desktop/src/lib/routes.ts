@@ -62,6 +62,31 @@ export const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
 
+/**
+ * Workflows' areas, each reachable as /create/workflows/<id>; the Workflows
+ * page itself is the Overview area. Desktop and web show them in a rail; the
+ * phone keeps its one Workflows page.
+ */
+export const WORKFLOW_AREAS = [
+  { id: "inbox", label: "Inbox" },
+  { id: "automations", label: "Automations" },
+  { id: "ai-replies", label: "AI replies" },
+  { id: "contacts", label: "Contacts" },
+  { id: "metrics", label: "Metrics" },
+  { id: "auto-post", label: "Auto-post" },
+] as const;
+export type WorkflowArea = (typeof WORKFLOW_AREAS)[number]["id"];
+
+/** The part of a page below the screen: a Settings card or a Workflows area. */
+export type PageSection = SettingsSection | WorkflowArea;
+
+/**
+ * Old addresses that still open the right page. Measure was its own Dock tab
+ * until it merged into Reports (2026-11-27); a bot or bookmark naming it
+ * lands on Analytics, the page that tab opened.
+ */
+const ALIASES: Record<string, string> = { "/measure": "/analytics" };
+
 /** Periods a range control can show. Dashboard offers 30/60/90; Analytics
  *  adds 7 and all. A screen falls back to 30 for one it does not offer. */
 export const RANGES = [7, 30, 60, 90, "all"] as const;
@@ -69,7 +94,8 @@ export type Range = (typeof RANGES)[number];
 
 export interface Route {
   screen: ScreenId;
-  section: SettingsSection | null;
+  /** The Settings card (/settings/<id>) or Workflows area (/create/workflows/<id>). */
+  section: PageSection | null;
   clientId: string | null;
   range: Range | null;
   /** Client handle from /clients/:slug/ready or /clients/:slug/schedule/:card. */
@@ -122,9 +148,10 @@ export function publicRoute(url: string): PublicRoute | null {
 /** Reads "/path?query". Unknown paths land on the dashboard. */
 export function parseUrl(url: string): Route {
   const u = new URL(url, BASE);
-  const path = u.pathname.replace(/\/+$/, "") || "/";
+  const own = u.pathname.replace(/\/+$/, "") || "/";
+  const path = ALIASES[own] ?? own;
   let screen: ScreenId = "dashboard";
-  let section: SettingsSection | null = null;
+  let section: PageSection | null = null;
   let slug: string | null = null;
   let cardId: string | null = null;
   let draft: string | null = null;
@@ -143,6 +170,10 @@ export function parseUrl(url: string): Route {
     // An unknown section still opens Settings, at the top.
     screen = "settings";
     section = SETTINGS_SECTIONS.find((s) => `/settings/${s.id}` === path)?.id ?? null;
+  } else if (path.startsWith(`${PATHS.workflows}/`)) {
+    // An unknown area still opens Workflows, on its Overview.
+    screen = "workflows";
+    section = WORKFLOW_AREAS.find((a) => `${PATHS.workflows}/${a.id}` === path)?.id ?? null;
   } else {
     const known = (Object.keys(PATHS) as ScreenId[]).find((s) => PATHS[s] === path);
     const fix = known ? null : CREATE_DRAFT.exec(path);
@@ -172,7 +203,7 @@ export function clientPath(slug: string | null, cardId?: string | null): string 
   return cardId ? `/clients/${slug}/schedule/${cardId}` : `/clients/${slug}/ready`;
 }
 
-export function pathFor(screen: ScreenId, section?: SettingsSection | null): string {
+export function pathFor(screen: ScreenId, section?: PageSection | null): string {
   return section ? `${PATHS[screen]}/${section}` : PATHS[screen];
 }
 
@@ -250,7 +281,7 @@ function carriedQuery(screen: ScreenId): string {
 }
 
 /** Opens a screen as a new history entry, keeping ?client and ?range. */
-export function navigate(screen: ScreenId, section?: SettingsSection | null): void {
+export function navigate(screen: ScreenId, section?: PageSection | null): void {
   const next = pathFor(screen, section) + carriedQuery(screen);
   if (next !== readUrl()) writeUrl(next, false);
 }
@@ -280,7 +311,7 @@ export function setQuery(patch: {
  * middle, ctrl, cmd and shift clicks fall through to the browser, so opening
  * in a new tab and copying the link both work.
  */
-export function linkProps(screen: ScreenId, section?: SettingsSection | null) {
+export function linkProps(screen: ScreenId, section?: PageSection | null) {
   const path = pathFor(screen, section) + carriedQuery(screen);
   return {
     href: HASH_ROUTES ? `#${path}` : path,
