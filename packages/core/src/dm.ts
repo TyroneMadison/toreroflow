@@ -82,6 +82,8 @@ export const dmReplySchema = z
       .optional(),
     /** Quote one of the thread's messages (its platform id). */
     replyTo: z.string().max(200).optional(),
+    /** The AI draft this reply came from (F5), for the as-is or edited count. */
+    draftId: z.string().max(40).optional(),
   })
   .refine((b) => !!b.text || !!b.media, { message: "a reply needs text or media" });
 export type DmReplyInput = z.infer<typeof dmReplySchema>;
@@ -161,6 +163,8 @@ export interface DmThreadView {
   /** Can a reply go out from here at all. Messenger: only in an existing thread. */
   canReply: boolean;
   contact: DmContactView;
+  /** AI replies (F5) in this one chat. */
+  ai: { off: boolean; handoffAt: string | null; handoffReason: string | null; pausedUntil: string | null };
 }
 
 /** GET /clients/:id/dm/threads/:threadId: the details pane's Activity. */

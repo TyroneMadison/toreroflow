@@ -33,6 +33,14 @@ in `apps/api/src/auth/botAccess.ts`; anything not on it answers 403.
   `403 {"reason":"bot_read_only"}` for every bot and
   `403 {"reason":"viewer_read_only"}` for viewers
   (`apps/api/src/dm/automations.check.ts` walks every write route).
+- **AI replies and Metrics** (`/clients/:id/dm/ai...`, `/dm/metrics`,
+  `/dm/summary`, F5) follow the same rule: Polly can read the AI replies page,
+  the metrics and the rail summary; turning AI replies on or off, any
+  setting, the kill switch, Try a test message, a draft on request, the
+  per-chat switch and discarding a draft answer `403 {"reason":"bot_read_only"}`
+  for every bot and `403 {"reason":"viewer_read_only"}` for viewers
+  (`apps/api/src/dm/ai.check.ts` walks every write route). No bot can turn the
+  AI on: it is off for every account until a person does.
 
 Mint one (as the operator, with your normal app login token; viewers are
 refused):

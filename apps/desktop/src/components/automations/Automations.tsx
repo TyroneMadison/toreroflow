@@ -7,7 +7,7 @@ import { useToast } from "../Toasts";
 import { api, type ClientSummary, type DmCampaignLog } from "../../lib/api";
 import { useIsPhone } from "../../lib/phone";
 import { usePageHead } from "../../lib/pageHead";
-import { automationPath, navigatePath, useRoute } from "../../lib/routes";
+import { automationPath, navigate, navigatePath, useRoute } from "../../lib/routes";
 import { PF_ID } from "../../lib/platforms";
 import { since } from "../../lib/automations";
 import {
@@ -285,7 +285,7 @@ export default function Automations({ client }: { client: ClientSummary }) {
     return {
       on: [w, m].filter((a) => a && rowState(a) === "live").length,
       rows: [
-        { icon: "i-spark", label: "Default reply", status: "AI replies", ok: false, note: "Comes with AI replies", run: null },
+        { icon: "i-spark", label: "Default reply", status: "AI replies", ok: false, note: "Set up in AI replies", run: () => navigate("workflows", "ai-replies") },
         { icon: "i-hand", label: "Welcome message", status: s(w), ok: !!w && rowState(w) === "live", run: () => (w ? open(w) : void create(firstIg?.accountId ?? "", "welcome")) },
         { icon: "i-help", label: "Conversation starters", status: "Later", ok: false, run: null },
         { icon: "i-menu", label: "Main menu", status: "Not set up", ok: false, run: null },

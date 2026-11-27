@@ -44,6 +44,7 @@ import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 import { syncDmStats } from "./dmStats";
 import { runDmJob, syncAll as syncDms, type DmJob } from "./dm";
 import { drainAutomations } from "./automations";
+import { aiTick, draftThread } from "./aiReplies";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
@@ -1230,7 +1231,11 @@ setInterval(driveTick, DRIVE_CHECK_MINUTES * 60_000).unref();
  * every 5 minutes on a timer (skipping a tick while one is running), token
  * refresh and webhook-log pruning once a day.
  */
-void work<DmJob>("dm", { concurrency: 1 }, async (job) => runDmJob(job));
+void work<DmJob | { kind: "ai-draft"; threadId: string; by?: string | null }>("dm", { concurrency: 1 }, async (job) => {
+  // A person pressed "Draft with AI" in the Inbox (F5).
+  if (job.kind === "ai-draft") await draftThread(job.threadId, "request", new Date(), job.by ?? null);
+  else await runDmJob(job);
+});
 void scheduleCron("dm", "30 3 * * *", { kind: "refresh" });
 let dmSyncing = false;
 const dmTick = () => {
@@ -1255,6 +1260,20 @@ setInterval(() => {
       draining = false;
     });
 }, 60_000).unref();
+
+// AI replies (F5): autopilot sends that are due, then drafts for chats that
+// went quiet, every 15 seconds, one beat at a time. Nothing runs for an
+// account until a person turns AI replies on.
+let aiBusy = false;
+setInterval(() => {
+  if (aiBusy) return;
+  aiBusy = true;
+  void aiTick()
+    .catch((e: unknown) => console.error("[ai] tick", e instanceof Error ? e.message : e))
+    .finally(() => {
+      aiBusy = false;
+    });
+}, 15_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);

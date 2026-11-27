@@ -667,6 +667,11 @@ export async function igMarkSeen(token: string, recipientId: string): Promise<vo
   await graph("/me/messages", token, json({ recipient: { id: recipientId }, sender_action: "mark_seen" }));
 }
 
+/** The typing dots in their chat (AI replies, F5). Instagram clears them on the next message. */
+export async function igTyping(token: string, recipientId: string, on = true): Promise<void> {
+  await graph("/me/messages", token, json({ recipient: { id: recipientId }, sender_action: on ? "typing_on" : "typing_off" }));
+}
+
 export async function igProfile(
   token: string,
   igsid: string,

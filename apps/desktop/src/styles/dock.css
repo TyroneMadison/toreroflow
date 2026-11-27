@@ -137,8 +137,3 @@ html[data-motion="reduced"] .dock .di svg.caret{transition:none !important}
 .wfr-notice svg{width:16px;height:16px;flex:none;stroke:var(--c-info);stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .wfr-notice b{color:var(--text);font-weight:650}
 /* an area whose screen ships later in this update */
-.wfr-soon{display:flex;flex-direction:column;align-items:center;gap:8px;padding:48px 24px;text-align:center}
-.wfr-soon .eic{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--tint-1);box-shadow:inset 0 0 0 1px var(--solid-border)}
-.wfr-soon .eic svg{width:24px;height:24px;stroke:var(--text-2);stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.wfr-soon b{font-size:16px;font-weight:650;color:var(--text)}
-.wfr-soon p{max-width:460px;font-size:13px;color:var(--text-2)}

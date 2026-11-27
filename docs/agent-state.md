@@ -31,8 +31,39 @@ Settings sections: `general`, `accounts`, `business`, `updates`, `deploy`,
 
 Workflows areas: `inbox`, `automations`, `ai-replies`, `contacts`, `metrics`,
 `auto-post`. The area shows as `section` in the state below; the same paths
-work on the phone, which shows the areas as chips under the title. AI replies
-and Metrics are labelled placeholders until their screens ship.
+work on the phone, which shows the areas as chips under the title. The
+Overview area (`workflows.overview`) shows the week's six Metrics numbers and
+one card per area. The desktop rail's tails are live (`GET
+/clients/:id/dm/summary`): unread, live automations, AI On / Drafts / Off,
+contacts, Auto-post Running.
+
+The AI replies area is `ai-replies` (`data-state` loading, error, empty or
+ready; `data-ai` off, drafts, on or stopped): one switch per account in the
+band (phone: `ai.accounts` opens `ai.accounts-sheet`), Needs you rows
+`ai.queue.row` (phone "..." opens `ai.queue.menu`), the editors
+`ai.edit.<knows|timing|never|handoff>` (dialogs `ai.knows`, `ai.timing` with
+`ai.autopilot`, `ai.never`, `ai.handoff`, Save `ai.save`), `ai.test` (Try a
+test message, `ai.test-dialog`, `ai.test.ask`) and the kill switch `ai.kill`.
+AI replies are OFF for every account until a person turns one on, and drafts
+only until someone picks "Send it on its own" in Reply timing (Instagram
+through Torerone's Meta app only). In the Inbox an AI draft shows above the
+composer (`dm-ai-draft`, `dm-ai-use`, `dm-ai-send`), "Draft with AI" is
+`dm-ai-ask`, and Details has the per-chat switch `dm-ai-toggle` or
+`dm-ai-resume` after a handoff (row `dm-ai-row`).
+
+The Metrics area is `metrics` (`data-state` loading, error, empty or ready):
+the six numbers `metrics.kpi.<received|people|contacts|reach|replyRate|ctr>`
+pick what the chart shows, ranges `metrics.range.<7|30|90|all>`,
+`metrics.account`; phone `metrics.filter-open` (sheet `metrics.filter`) and
+`metrics.actions-open` (Export CSV, `metrics.actions`). `metrics.partial`
+says when Zernio accounts count people only.
+
+The Auto-post area is `auto-post`: the Drive band `drive-auto-post` (status
+line `drive-auto-post.status`), `autopost.check`, `autopost.more` (connect,
+copy link, sync, Stop), `autopost.edit` (dialog `autopost.settings`, Save
+`autopost.save`), the fan-out rules (`workflow-new` opens `autopost.rules`;
+rows `workflow-<id>`, `workflow-delete-<id>`, destinations
+`workflow-dest-<platform>`, `workflow-create`). The rules are saved, not run.
 
 The Automations area is `automations` (`data-state` loading, error, empty or
 ready): rows `automations.row.<id>` (native automations by id, Zernio

@@ -97,6 +97,16 @@ for (const [method, path] of [
   ["POST", "/clients/c1/dm/automations/a1/publish"],
   ["POST", "/clients/c1/dm/automations/kill"],
   ["DELETE", "/clients/c1/dm/automations/a1"],
+  // AI replies and Metrics (F5): the same, and dm/ai.check.ts drives the writes with Polly's token.
+  ["GET", "/clients/c1/dm/ai"],
+  ["PUT", "/clients/c1/dm/ai/a1"],
+  ["POST", "/clients/c1/dm/ai/kill"],
+  ["POST", "/clients/c1/dm/ai/test"],
+  ["POST", "/clients/c1/dm/ai/drafts/d1/discard"],
+  ["POST", "/clients/c1/dm/threads/t1/ai"],
+  ["POST", "/clients/c1/dm/threads/t1/ai-draft"],
+  ["GET", "/clients/c1/dm/metrics"],
+  ["GET", "/clients/c1/dm/summary"],
 ] as const) {
   assert.equal(botAllowed(method, path), false, `${method} ${path} is not on the bot whitelist`);
 }

@@ -126,6 +126,9 @@ fake("dmContactTag", {
   createMany: async (q: Row) => (bulkWrites.push({ op: "add", ...q }), { count: q.data.length }),
   deleteMany: async (q: Row) => (bulkWrites.push({ op: "remove", ...q }), { count: 1 }),
 });
+// AI replies (F5): off for these accounts (no row), no drafts.
+fake("dmAiSettings", { findUnique: async () => null });
+fake("dmAiDraft", { findFirst: async () => null, updateMany: async () => ({ count: 0 }) });
 const threadQueries: Row[] = [];
 
 type Call = { url: string; method: string; auth: string; body: string };
