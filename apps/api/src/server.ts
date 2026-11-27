@@ -29,6 +29,7 @@ import { workflowRoutes } from "./routes/workflows";
 import { commentRoutes } from "./routes/comments";
 import { dmCampaignRoutes } from "./routes/dmCampaigns";
 import { dmRoutes, publicDmRoutes } from "./routes/dm";
+import { dmAutomationRoutes, publicAutomationRoutes } from "./routes/dmAutomations";
 import { metaWebhookRoutes } from "./routes/metaWebhook";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
@@ -199,7 +200,9 @@ export async function buildServer(
   await app.register(workflowRoutes);
   await app.register(dmCampaignRoutes);
   await app.register(dmRoutes);
+  await app.register(dmAutomationRoutes);
   await app.register(publicDmRoutes);
+  await app.register(publicAutomationRoutes);
   await app.register(metaWebhookRoutes);
   await app.register(commentRoutes);
   await app.register(mediaRoutes);

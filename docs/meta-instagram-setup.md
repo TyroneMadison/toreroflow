@@ -133,3 +133,32 @@ days of expiry.
   are not subscribed (step 5), or "Allow access to messages" is off.
 - A token Instagram stops accepting (password change, app removed) marks the
   account revoked, raises an alert and the card asks to reconnect.
+
+## Automations (F4)
+
+Comment-to-DM, story reply, story mention, DM keyword and welcome
+automations run on the same connection: nothing more to set up in Meta's
+dashboard once the steps above are done, as long as the `comments` and
+`live_comments` webhook fields are subscribed (step 5) and the account
+granted `instagram_business_manage_comments` (step 3; the private reply to a
+comment and the public reply under it both need it).
+
+What to know before turning one on:
+
+- Nothing sends until the account is connected here (transport `native`) and
+  the automation is Live. Drafts and Live automations on an account still on
+  Zernio show "Waits for Instagram" and wait.
+- Meta's rules the server applies: one private reply per comment, within 7
+  days of it; a DM answer only inside the 24 hour window; no HUMAN_AGENT tag
+  on an automated message; about 700 automated sends an hour per account
+  (Meta allows 750 private replies), the rest wait in a queue.
+- Each account has a kill switch (Automations > Recent comments > Pause all):
+  while it is on, nothing on that account sends.
+- `DM_AUTOMATIONS_DRY_RUN=1` in `infra/.env` (worker) makes every automation
+  match and record what it would have sent ("Dry run" in Recent comments)
+  without calling Instagram. Leave it unset for real sends.
+- A Zernio campaign answering the same keyword on the same account would send
+  a second DM. The Automations list warns about each overlap, and Publish
+  offers to pause the Zernio campaign; nothing at Zernio is paused unless you
+  tick it. Move to native recreates a Zernio campaign here as a draft once its
+  Instagram account is connected; Messenger campaigns stay at Zernio.

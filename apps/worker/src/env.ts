@@ -63,6 +63,11 @@ export const env = {
    * emails go out without a download link and say to ask for the file.
    */
   PUBLIC_API_URL: (process.env.PUBLIC_API_URL ?? process.env.VITE_API_URL ?? "").replace(/\/+$/, ""),
+  /**
+   * DM automations (F4) match and record what they would send, without
+   * calling Instagram. For trying a setup safely; off unless set to 1.
+   */
+  DM_AUTOMATIONS_DRY_RUN: process.env.DM_AUTOMATIONS_DRY_RUN === "1",
   /** Resend key for reminder delivery. Empty fails the target with a clear message. */
   RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
   /** The verified sender, e.g. "Torerone <hello@torerone.com>". */

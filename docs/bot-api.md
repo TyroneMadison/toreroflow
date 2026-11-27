@@ -26,6 +26,13 @@ in `apps/api/src/auth/botAccess.ts`; anything not on it answers 403.
 - `apps/api/src/dm/dm.check.ts` drives every DM write route with a viewer, a
   Polly and a plain bot token and fails if any of them is not refused;
   `botAccess.check.ts` pins that no DM route is on the whitelist.
+- **Automations** (`/clients/:id/dm/automations...`, F4) follow the same rule:
+  Polly can read the list, one automation, the post picker and recent
+  comments; creating, saving, publishing, turning on or off, testing, the
+  test code, the per-account kill switch, Move to native and deleting answer
+  `403 {"reason":"bot_read_only"}` for every bot and
+  `403 {"reason":"viewer_read_only"}` for viewers
+  (`apps/api/src/dm/automations.check.ts` walks every write route).
 
 Mint one (as the operator, with your normal app login token; viewers are
 refused):

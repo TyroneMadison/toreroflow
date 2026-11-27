@@ -66,7 +66,9 @@ fake("dmMessage", {
     return row;
   },
   findFirst: async ({ where }: Row) =>
-    db.messages.find((m) => m.externalId === where.externalId && db.threads.find((t) => t.id === m.threadId)?.dmAccountId === where.thread.dmAccountId) ?? null,
+    where.threadId
+      ? (db.messages.find((m) => m.threadId === where.threadId && m.direction === where.direction) ?? null)
+      : (db.messages.find((m) => m.externalId === where.externalId && db.threads.find((t) => t.id === m.threadId)?.dmAccountId === where.thread.dmAccountId) ?? null),
   update: async ({ where, data }: Row) => apply(db.messages.find((m) => m.id === where.id)!, data),
 });
 fake("dmWebhookEvent", {
@@ -74,6 +76,8 @@ fake("dmWebhookEvent", {
   update: async ({ where, data }: Row) => apply(db.events.find((e) => e.id === where.id)!, data),
 });
 fake("client", { findUnique: async () => ({ agencyId: "A" }) });
+// No automations here (automations.check.ts covers them): every message passes through untouched.
+fake("dmAutomation", { findMany: async () => [], findFirst: async () => null });
 fake("systemAlert", { upsert: async ({ create }: Row) => (db.alerts.push(create), create) });
 
 let conversations: Row = { data: [] };

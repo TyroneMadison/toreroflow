@@ -5,6 +5,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.67] - 2026-11-27
+
+### Added - Automations (F4)
+
+- **Automations** (Workflows > Automations, desktop, web and phone): every DM automation of the brand in one list grouped by folder, with a status dot, the trigger as one line with its keywords, the account, runs, CTR and an 8 day trend line, an on/off switch and a "..." menu (Edit, Live, Test with a code, Duplicate, Move to folder, Delete). State tabs All, Live, Drafts and Off with counts, search, Filters (trigger, account, folder), sort, the trash with Restore. Beside it: Recent comments (DM sent, Queued, Ignored, Failed, Expired, Repeat, with "Private replies this hour: N of 700" and a Pause all kill switch per account) and Basic replies (welcome message and story mention reply open their automation; conversation starters, main menu and the AI default reply come later)
+- **Triggers**: a comment on any post, one picked post or the next post published (and live comments); a reply to your story; a mention in their story; a DM with a keyword; someone's very first DM (welcome). Keywords match by Contains, Whole word or Exact, or Any comment, with a Never match list
+- **New automation**: account, folder and six templates (comment keyword to DM link, the same for followers only, DM keyword to link, story reply, welcome message, blank)
+- **Editor** (`/create/workflows/automations/<id>`): four steps, only the one you are on open, each with a one line summary: When this happens (account, trigger, keywords, match, which posts, never match), Reply in public (up to 5 replies, one picked at random), Send the DM (message with {first_name} and {username}, an optional link button) and Options (followers only, track link opens, also answer DMs with the keyword, once per person). Beside it: a preview on the post and in their DMs, Test it (a 3 digit code: DM it to the account and the draft runs for you, plus a dry run check that says whether a comment matches and sends nothing) and Runs, Link opens and CTR. Every change saves as a draft after a moment; people get the published version until Publish. The phone opens the DM, the post picker and Never match in sheets
+- **Post picker**: only the chosen Instagram account's posts and reels, with thumbnails, live from Instagram once the account is connected through Torerone's Meta app, else from the posts the app already has for that account. Never YouTube videos: the scope refuses anything but an Instagram post id
+- **Zernio campaigns move in**: the DM campaigns still running at Zernio show in the same list under "Still at Zernio" (Zernio badge) and keep working: on/off, Leads and delete. "Move to native" recreates one here as a draft once its Instagram account is connected (Messenger stays at Zernio). When a native automation answers the same keyword on the same account, the list warns and Publish offers to pause the Zernio campaign; it is never paused unless you tick it. An account not connected yet can still run a new comment automation at Zernio from the publish dialog
+- **States**: loading, could not load (retries every 15 seconds), no automations yet, Instagram not connected through Torerone's Meta app (automations wait, nothing sends), and a viewer's read-only list and editor
+
+### Engine (worker)
+
+- Comments and live comments from the webhook (our own public replies are skipped), story replies, story mentions, DM keywords and first DMs are matched against the live automations: one event, one reply (stories first, then keywords, the welcome only when nothing else matched; a post-specific automation beats an account-wide one)
+- A comment gets its private reply (one per comment, within 7 days), a DM answer goes out only inside the 24 hour window, never with the HUMAN_AGENT tag. Then the optional public reply, and a run row saying what happened. Each event is claimed once per account, so a redelivered webhook never sends twice; once per person is kept per automation
+- Followers only asks people who do not follow yet to follow first; tracked links go through `/dm/l/<run>` and count link opens once per person
+- About 700 automated sends an hour per account; the rest wait in a queue drained every minute, oldest first, and expire past the window. Instagram hiccups retry with a backoff; refusals fail with the reason
+- Dark launch: nothing sends unless the account is connected natively with an active token and the automation is Live and published. A per-account kill switch stops everything on that account. `DM_AUTOMATIONS_DRY_RUN=1` matches and records what would have gone out without calling Instagram
+
+### API
+
+- `GET/POST /clients/:id/dm/automations`, `GET/PATCH/DELETE /clients/:id/dm/automations/:aid` and `.../publish`, `.../status`, `.../duplicate`, `.../restore`, `.../test` (dry run), `.../test-code`; `GET .../posts?accountId=` (the Instagram post picker), `GET .../runs` (recent comments), `POST .../kill` (per-account kill switch), `POST .../move` (Move to native); public `GET /dm/l/:runId` (tracked link). Reads for anyone signed in; every write is operator only: viewers and every bot token, Polly included, get 403
+
+### Removed
+
+- The old DM campaigns card (Workflows Overview and Automations) and its styles: the Automations list covers its campaigns, toggle, delete and leads, and creates new ones. The `/clients/:id/dm-campaigns` API stays (the list uses it)
+
+### Database
+
+- `DmAutomation` and `DmAutomationRun`, and `DmAccount.automationsPausedAt` (migration `20261127180000_dm_automations`: new tables and one nullable column)
+
 ## [0.3.66] - 2026-11-27
 
 ### Added - Inbox and Contacts (F3)

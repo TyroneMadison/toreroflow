@@ -91,6 +91,12 @@ for (const [method, path] of [
   ["PATCH", "/clients/c1/dm/contacts/ct1"],
   ["POST", "/oauth/instagram/start/a1"],
   ["POST", "/clients/c1/inbox/conv1/reply"],
+  // Automations (F4): the same, and dm/automations.check.ts drives the writes with Polly's token.
+  ["GET", "/clients/c1/dm/automations"],
+  ["POST", "/clients/c1/dm/automations"],
+  ["POST", "/clients/c1/dm/automations/a1/publish"],
+  ["POST", "/clients/c1/dm/automations/kill"],
+  ["DELETE", "/clients/c1/dm/automations/a1"],
 ] as const) {
   assert.equal(botAllowed(method, path), false, `${method} ${path} is not on the bot whitelist`);
 }

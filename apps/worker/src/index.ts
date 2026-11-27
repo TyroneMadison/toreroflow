@@ -43,6 +43,7 @@ import { sendReminder } from "./reminder";
 import { syncYouTubeAnalytics } from "./youtubeAnalytics";
 import { syncDmStats } from "./dmStats";
 import { runDmJob, syncAll as syncDms, type DmJob } from "./dm";
+import { drainAutomations } from "./automations";
 import { sweepYouTubeEnrichment } from "./youtubeEnrich";
 import { sweepThumbnailTests } from "./abThumbs";
 import { confirmPublishing } from "./confirmPublish";
@@ -1243,6 +1244,17 @@ const dmTick = () => {
 };
 setTimeout(dmTick, 90_000).unref();
 setInterval(dmTick, 5 * 60_000).unref();
+// DM automations (F4): queued runs (hourly budget, retries) every minute, one tick at a time.
+let draining = false;
+setInterval(() => {
+  if (draining) return;
+  draining = true;
+  void drainAutomations()
+    .catch((e: unknown) => console.error("[automations] drain", e instanceof Error ? e.message : e))
+    .finally(() => {
+      draining = false;
+    });
+}, 60_000).unref();
 
 void work<{ analysisId: string }>("analyze", { concurrency: 1 }, async ({ analysisId }) => {
   await runAnalysis(analysisId);
