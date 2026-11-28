@@ -645,10 +645,18 @@ function ThreadList({
 }) {
   const now = Date.now();
   const c = list.counts;
+  // Phone: the word, in the row under the tabs. Desktop: a dot by the title
+  // (the header line is full), the word for screen readers and on hover.
   const liveWord = live === "live" ? "Live" : live === "reconnecting" ? "Reconnecting" : null;
   const liveTag = liveWord && (
-    <span className={`ibx-live${live === "live" ? " on" : ""}`} role="status" data-testid="dm-live" data-state={live}>
-      {liveWord}
+    <span
+      className={`ibx-live${live === "live" ? " on" : ""}${phone ? "" : " dot"}`}
+      aria-live="polite"
+      title={phone ? undefined : live === "live" ? "Live: new messages show as they arrive" : "Reconnecting: checking every 10 seconds meanwhile"}
+      data-testid="dm-live"
+      data-state={live}
+    >
+      <span className={phone ? undefined : "sr"}>{liveWord}</span>
     </span>
   );
   const markAll = (
@@ -785,10 +793,10 @@ function ThreadList({
     <section className="pane-list" aria-label="Conversations">
       <div className="lhead">
         <div className="sb ibx-lh1">
-          <h3>Inbox</h3>
+          <h3>Inbox{liveTag}</h3>
           <span className="row">
             <span className="tiny">
-              {lastLoaded ? `Offline. Loaded ${clock(lastLoaded)} · ` : liveTag ? <>{liveTag} · </> : ""}
+              {lastLoaded ? `Offline. Loaded ${clock(lastLoaded)} · ` : ""}
               <button type="button" className={`ibx-unread${filters.unread ? " on" : ""}`} aria-pressed={filters.unread} title={filters.unread ? "Show every conversation" : "Show unread only"} onClick={() => setFilters({ ...filters, unread: !filters.unread })} data-testid="dm-unread">
                 {c.unread} unread
               </button>{" "}

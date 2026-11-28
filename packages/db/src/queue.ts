@@ -260,7 +260,9 @@ export interface JobMeta {
  *
  * pg-boss hands the handler a batch; this unwraps it and runs them one at a
  * time so a handler only ever deals with a single job, the way the worker code
- * was already written. `concurrency` is how many are taken per poll.
+ * was already written. `concurrency` is how many are taken per poll;
+ * `pollSeconds` how long an idle worker waits between polls (pg-boss: 2, at
+ * least 0.5).
  *
  * Metadata is always requested, because retryCount only arrives with it and a
  * handler silently receiving undefined there would mark first failures final.
@@ -271,7 +273,7 @@ export interface JobMeta {
  */
 export async function work<T extends object>(
   queue: QueueName,
-  options: { concurrency?: number },
+  options: { concurrency?: number; pollSeconds?: number },
   handler: (data: T, meta: JobMeta) => Promise<void>,
 ): Promise<void> {
   const b = await getBoss();
@@ -279,9 +281,9 @@ export async function work<T extends object>(
   // with-metadata handler shape from the literal type of the options object, so
   // naming only the payload type leaves the options generic at its default and
   // the job arrives without retryCount on it.
-  await b.work<T, void, { batchSize: number; includeMetadata: true }>(
+  await b.work<T, void, { batchSize: number; includeMetadata: true; pollingIntervalSeconds?: number }>(
     queue,
-    { batchSize: options.concurrency ?? 1, includeMetadata: true },
+    { batchSize: options.concurrency ?? 1, includeMetadata: true, ...(options.pollSeconds ? { pollingIntervalSeconds: options.pollSeconds } : {}) },
     async (jobs) => {
       for (const job of jobs) await handler(job.data, { retryCount: job.retryCount });
     },
