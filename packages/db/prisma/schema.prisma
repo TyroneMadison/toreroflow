@@ -1999,6 +1999,10 @@ model DriveImport {
   postId    String?
   /// Dry-run payload or other structured detail (never secrets).
   detail    Json?
+  /// Storage key of a frame taken from the Drive file itself, for a row whose
+  /// upload has no picture (a skipped file is never downloaded). "" when Drive
+  /// could not give one, so it is not asked again. Null: not looked at yet.
+  thumbKey  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

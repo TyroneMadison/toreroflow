@@ -5,6 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.71] - 2026-11-28
+
+### Fixed - Real thumbnails in Recent videos (F8)
+
+- **Recent videos** (Workflows > Auto-post, desktop, web and phone) shows each video's own frame instead of a coloured tile: the cover picked for the post when there is one, otherwise the thumbnail made when the video was downloaded. The coloured tile now only shows while a frame loads, or when there is none to show
+- Files that were skipped before downloading (over Instagram's size limit) get a frame too: the worker takes one frame, 1 second in, straight from the Drive file with ffmpeg, reading only the few MB it needs. It does this for each brand's last 20 rows on its 5 minute Drive check, at most 4 a check, so rows from before this release fill in on their own after the deploy. A file gone from Drive keeps the coloured tile and is not asked again
+
+### API
+
+- `GET /clients/:clientId/drive-source`: each row in `imports` carries `thumbUrl`, a signed `/files/...` link (the same signing as the upload list), or null. New column `DriveImport.thumbKey` (migration `20261128090000_drive_import_thumb`); frames are stored at `<clientId>/drive-frames/<fileId>.jpg`
+
 ## [0.3.70] - 2026-11-27
 
 ### Added - Mark all as read in the Workflows Inbox (F7)

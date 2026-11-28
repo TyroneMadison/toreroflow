@@ -162,6 +162,8 @@
 .wa-thumb.g1{background:linear-gradient(160deg,#c2553f,#3b1d2a 60%,#121016)} .wa-thumb.g2{background:linear-gradient(160deg,#3d6fb8,#1d2440 60%,#0f1018)}
 .wa-thumb.g3{background:linear-gradient(160deg,#c49a4a,#3a2a18 60%,#141210)} .wa-thumb.g4{background:linear-gradient(160deg,#8a5ad6,#2a1d40 60%,#121018)}
 .wa-thumb.g5{background:linear-gradient(160deg,#3fae84,#16302a 60%,#0f1412)} .wa-thumb.g6{background:linear-gradient(160deg,#d65a8a,#3a1a2a 60%,#141012)}
+.wa-thumb img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover}
+.wa-thumb::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inherit;pointer-events:none}
 .wa-vrow .t{min-width:0;display:flex;flex-direction:column;gap:3px}
 .wa-vrow .t b{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-width:0}
 .wa-vrow .t b>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

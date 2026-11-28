@@ -309,3 +309,49 @@ export function decideDriveAction(input: {
 
   return { kind: "post", mode: settings.mode };
 }
+
+/** The upload a Drive row became, as far as its picture goes. */
+export interface DriveThumbAsset {
+  id: string;
+  clientId: string;
+  kind: string;
+  status: string;
+  coverKey: string | null;
+  thumbDeletedAt: Date | null;
+  updatedAt: Date;
+}
+
+/**
+ * The image a Recent videos row draws, as a storage key, or null for the
+ * coloured placeholder. The operator's cover first, then a frame taken from
+ * the Drive file (set only when the upload has no usable picture, so it wins
+ * over thumb.jpg), then the upload's own thumbnail. version busts the
+ * webview's cache when a cover is re-picked under the same key.
+ */
+export function driveRowThumb(
+  row: { thumbKey: string | null },
+  asset: DriveThumbAsset | null,
+): { key: string; version: number | null } | null {
+  const images = asset && !asset.thumbDeletedAt ? asset : null;
+  if (images?.coverKey) return { key: images.coverKey, version: images.updatedAt.getTime() };
+  if (row.thumbKey) return { key: row.thumbKey, version: null };
+  if (images && images.kind === "video" && images.status === "ready") return { key: `${images.clientId}/${images.id}/thumb.jpg`, version: null };
+  return null;
+}
+
+/**
+ * Whether the worker should take a frame from the Drive file for this row.
+ * thumbKey "" means Drive could not give one, so it is not asked again. An
+ * upload still processing makes its own thumbnail soon; one that is ready
+ * only needs Drive when its thumbnail file is missing.
+ */
+export function needsDriveFrame(row: { thumbKey: string | null }, asset: DriveThumbAsset | null, thumbOnDisk: boolean): boolean {
+  if (row.thumbKey !== null) return false;
+  if (!asset || asset.thumbDeletedAt || asset.status === "failed") return true;
+  if (asset.coverKey) return false;
+  if (asset.status !== "ready") return false;
+  return !thumbOnDisk;
+}
+
+/** Where a frame taken from a Drive file is kept: beside the client's uploads, one per file. */
+export const driveFrameKey = (clientId: string, fileId: string) => `${clientId}/drive-frames/${fileId}.jpg`;

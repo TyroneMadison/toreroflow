@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DRIVE_CHECK_MINUTES, DRIVE_DEFAULT_PER_DAY, driveRunState, readDriveSource } from "@toreroflow/core";
 import Pf from "../Pf";
 import { useToast } from "../Toasts";
-import { api, checkDriveFolder, getDriveSource, saveDriveSource, type ClientSummary, type DriveFolderCheck, type DriveSourceSave, type DriveSourceView, type WorkflowInfo } from "../../lib/api";
+import { api, checkDriveFolder, fileUrl, getDriveSource, saveDriveSource, type ClientSummary, type DriveFolderCheck, type DriveSourceSave, type DriveSourceView, type WorkflowInfo } from "../../lib/api";
 import { openExternal } from "../../lib/external";
 import { useIsPhone } from "../../lib/phone";
 import { usePageHead } from "../../lib/pageHead";
@@ -36,6 +36,20 @@ function whenText(iso: string): string {
 }
 const nextText = (iso: string, phone: boolean) =>
   new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", ...(phone ? {} : { minute: "2-digit" }) }).replace(",", "");
+
+/**
+ * A Recent videos tile: the video's frame over its coloured placeholder. The
+ * colour shows while the frame loads, and stays when there is no frame yet or
+ * it fails to load.
+ */
+function VideoThumb({ url, i }: { url: string | null | undefined; i: number }) {
+  const [bad, setBad] = useState<string | null>(null);
+  return (
+    <span className={`wa-thumb g${(i % 6) + 1}`} data-testid="autopost.thumb" data-frame={url && url !== bad ? "yes" : "no"}>
+      {url && url !== bad && <img src={fileUrl(url) ?? undefined} alt="" loading="lazy" decoding="async" onError={() => setBad(url)} />}
+    </span>
+  );
+}
 
 export default function AutoPost({ client }: { client: ClientSummary }) {
   const isPhone = useIsPhone();
@@ -640,7 +654,7 @@ export default function AutoPost({ client }: { client: ClientSummary }) {
               const p = VIDEO_PILL[v.status] ?? { cls: "", label: v.status };
               return (
                 <div key={v.id} className="wa-vr">
-                  <span className={`wa-thumb g${(i % 6) + 1}`} />
+                  <VideoThumb url={v.thumbUrl} i={i} />
                   <span className="t">
                     <b>{v.name}</b>
                     <small>{v.reason ?? `Added ${whenText(v.createdAt)}`}</small>
@@ -825,7 +839,7 @@ export default function AutoPost({ client }: { client: ClientSummary }) {
               const p = VIDEO_PILL[v.status] ?? { cls: "", label: v.status };
               return (
                 <div key={v.id} className="wa-vrow" title={new Date(v.createdAt).toLocaleString()}>
-                  <span className={`wa-thumb g${(i % 6) + 1}`} />
+                  <VideoThumb url={v.thumbUrl} i={i} />
                   <span className="t">
                     <b>
                       <span>{v.name}</span> <span className={`au-pill${p.cls ? ` ${p.cls}` : ""}`}>{p.label}</span>

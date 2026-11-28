@@ -126,6 +126,15 @@ export async function listFolderVideos(folderId: string, opts: DriveOptions): Pr
 }
 
 /**
+ * The file's bytes, for a reader that sends the key itself in X-Goog-Api-Key
+ * (ffmpeg grabbing one frame with range requests). The URL holds no key.
+ */
+export function driveMediaUrl(fileId: string, base = DRIVE_API_BASE_DEFAULT): string {
+  if (!isDriveId(fileId)) throw new DriveError(400, "That is not a Drive file id.");
+  return `${base}/files/${fileId}?${new URLSearchParams({ alt: "media", supportsAllDrives: "true" })}`;
+}
+
+/**
  * Streams one file to destPath, stopping past maxBytes.
  *
  * Anything that stops the download removes the partial file, so a half
@@ -136,9 +145,7 @@ export async function downloadDriveFile(
   destPath: string,
   opts: DriveOptions & { maxBytes: number },
 ): Promise<{ bytes: number; contentType: string }> {
-  if (!isDriveId(fileId)) throw new DriveError(400, "That is not a Drive file id.");
-  const qs = new URLSearchParams({ alt: "media", supportsAllDrives: "true" });
-  const res = await driveGet(`${opts.base ?? DRIVE_API_BASE_DEFAULT}/files/${fileId}?${qs}`, opts, opts.timeoutMs ?? 30 * 60_000);
+  const res = await driveGet(driveMediaUrl(fileId, opts.base), opts, opts.timeoutMs ?? 30 * 60_000);
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
   const tooLarge = `The file is over ${Math.round(opts.maxBytes / (1024 * 1024))} MB, so the download was stopped.`;
   if (!res.body || !/^(video\/|application\/octet-stream)/.test(contentType)) {

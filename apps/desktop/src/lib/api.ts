@@ -1052,6 +1052,12 @@ export interface DriveImportRow {
   reason: string | null;
   assetId: string | null;
   postId: string | null;
+  /**
+   * Signed link to the row's picture: the cover, a frame from the Drive file,
+   * or the upload's thumbnail. Null (or missing, from older servers) draws the
+   * coloured placeholder.
+   */
+  thumbUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

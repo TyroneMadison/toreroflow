@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 import {
   decideDriveAction,
   driveAccountIds,
+  driveFrameKey,
+  driveRowThumb,
+  needsDriveFrame,
   driveUsedToday,
   isDriveId,
   driveRunState,
@@ -268,6 +271,34 @@ assert.match(reasonOf(tooLong), /2,201 characters/);
     "a check from before it was relinked does not count",
   );
   assert.equal(driveRunState(base, at("2026-11-17T10:00:00Z")).tone, "bad", "saved two hours ago and never checked: the worker may be stopped");
+}
+
+// Recent videos pictures: cover, then the Drive frame, then the upload's thumbnail; null draws the placeholder.
+{
+  const asset = { id: 'a1', clientId: 'c1', kind: 'video', status: 'ready', coverKey: null, thumbDeletedAt: null, updatedAt: new Date(5) };
+  const none = { thumbKey: null };
+  assert.deepEqual(driveRowThumb(none, asset), { key: 'c1/a1/thumb.jpg', version: null }, 'a ready upload draws its thumbnail');
+  assert.deepEqual(driveRowThumb(none, { ...asset, coverKey: 'c1/a1/cover.jpg' }), { key: 'c1/a1/cover.jpg', version: 5 }, 'a picked cover wins, versioned');
+  assert.deepEqual(driveRowThumb({ thumbKey: 'c1/drive-frames/f.jpg' }, { ...asset, coverKey: 'c1/a1/cover.jpg' })?.key, 'c1/a1/cover.jpg', 'the cover beats a Drive frame');
+  assert.deepEqual(driveRowThumb({ thumbKey: 'c1/drive-frames/f.jpg' }, asset), { key: 'c1/drive-frames/f.jpg', version: null }, 'a Drive frame beats a missing thumb.jpg');
+  assert.deepEqual(driveRowThumb({ thumbKey: 'c1/drive-frames/f.jpg' }, null)?.key, 'c1/drive-frames/f.jpg', 'a skipped file draws its Drive frame');
+  assert.equal(driveRowThumb(none, null), null, 'nothing yet: placeholder');
+  assert.equal(driveRowThumb({ thumbKey: '' }, null), null, 'Drive gave none: placeholder');
+  assert.equal(driveRowThumb(none, { ...asset, status: 'processing' }), null, 'still processing: placeholder');
+  assert.equal(driveRowThumb(none, { ...asset, kind: 'carousel' }), null, 'never thumb.jpg for a carousel');
+  assert.equal(driveRowThumb(none, { ...asset, coverKey: 'k', thumbDeletedAt: new Date() }), null, 'swept images are never linked');
+  assert.equal(driveRowThumb({ thumbKey: 'c1/drive-frames/f.jpg' }, { ...asset, thumbDeletedAt: new Date() })?.key, 'c1/drive-frames/f.jpg', 'swept upload falls back to the Drive frame');
+
+  assert.equal(needsDriveFrame(none, null, false), true, 'skipped or failed download: ask Drive');
+  assert.equal(needsDriveFrame({ thumbKey: '' }, null, false), false, 'Drive already said no');
+  assert.equal(needsDriveFrame({ thumbKey: 'k' }, null, false), false, 'already has one');
+  assert.equal(needsDriveFrame(none, asset, true), false, 'thumb.jpg is there');
+  assert.equal(needsDriveFrame(none, asset, false), true, 'thumb.jpg went missing');
+  assert.equal(needsDriveFrame(none, { ...asset, status: 'processing' }, false), false, 'the media job makes it soon');
+  assert.equal(needsDriveFrame(none, { ...asset, status: 'failed' }, false), true, 'the media job failed');
+  assert.equal(needsDriveFrame(none, { ...asset, coverKey: 'k' }, false), false, 'a cover is enough');
+  assert.equal(needsDriveFrame(none, { ...asset, thumbDeletedAt: new Date() }, false), true, 'swept images: ask Drive');
+  assert.equal(driveFrameKey('c1', 'f1aaaaaaaaaa'), 'c1/drive-frames/f1aaaaaaaaaa.jpg');
 }
 
 console.log("drive: all checks passed");

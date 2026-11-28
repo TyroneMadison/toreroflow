@@ -228,14 +228,20 @@ export async function sampleFrames(
   return names.slice(0, n).map((f) => join(outDir, f));
 }
 
+/**
+ * One frame, 640 wide. inputArgs go before -i: a URL input takes its
+ * headers and read timeout there.
+ */
 export async function extractThumbnail(
   input: string,
   output: string,
   atSec: number,
+  inputArgs: string[] = [],
 ): Promise<void> {
   await run(ffmpegBin(), [
     "-y",
     "-ss", atSec.toFixed(2),
+    ...inputArgs,
     "-i", input,
     "-frames:v", "1",
     "-vf", "scale=640:-2",
