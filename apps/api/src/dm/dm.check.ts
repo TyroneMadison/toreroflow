@@ -14,7 +14,10 @@ process.env.JWT_SECRET = "dm-check-secret";
 
 const { default: Fastify } = await import("fastify");
 const { default: jwt } = await import("@fastify/jwt");
-const { decryptSecret, encryptSecret, getPrisma } = await import("@toreroflow/db");
+const { decryptSecret, encryptSecret, getPrisma, setDmNotify } = await import("@toreroflow/db");
+// H1: what the routes tell open Inboxes (pg_notify in production).
+const notified: Row[] = [];
+setDmNotify(async (_channel, payload) => void notified.push(JSON.parse(payload)));
 const { env } = await import("../env");
 const { signState } = await import("../oauth/state");
 const { dmCampaignRoutes } = await import("../routes/dmCampaigns");
@@ -466,6 +469,11 @@ const lastSend = JSON.parse(calls.filter((c) => c.url.endsWith("/me/messages")).
 assert.deepEqual(lastSend.recipient, { id: "999" });
 assert.equal(lastSend.messaging_type, undefined, "inside the window: a plain reply");
 assert.equal(messages.at(-1)!.sentByUserId, "u1", "who pressed Send is kept");
+assert.deepEqual(
+  [notified.at(-1)!.kind, notified.at(-1)!.threadId, notified.at(-1)!.clientId, notified.at(-1)!.messageId],
+  ["out", "t1", "c1", messages.at(-1)!.id],
+  "a send tells the other open Inboxes",
+);
 
 env.META_IG_HUMAN_AGENT = true;
 thread = nativeThread(hoursAgo(30));
@@ -605,6 +613,7 @@ assert.equal(res.statusCode, 200, res.body);
 assert.equal(threadUpdates.at(-1)!.unread, 0, "the operator's open clears the count");
 assert.ok(threadUpdates.at(-1)!.readAt instanceof Date, "and stamps readAt, so Zernio's count cannot bring it back");
 assert.equal(seens(), seen + 1, "the operator's read sends Instagram's Seen");
+assert.deepEqual([notified.at(-1)!.kind, notified.at(-1)!.threadId], ["read", "t1"], "a read clears the dot on the other devices too");
 for (const [who, auth] of [["viewer", VIEWER], ["logged-in viewer", LOGGED_IN_VIEWER], ["pre-F2 viewer token", OLD_VIEWER]] as const) {
   threadUpdates.length = 0;
   seen = seens();
@@ -630,6 +639,8 @@ for (const [who, auth] of [["owner", OWNER], ["viewer", VIEWER], ["logged-in vie
   assert.ok(readAlls[0]!.data.readAt instanceof Date, "readAt keeps Zernio's count from undoing it");
 }
 assert.equal(sends(), sentBefore, "mark all sends nothing to Instagram, not even Seen");
+assert.deepEqual([notified.at(-1)!.kind, notified.at(-1)!.threadId, notified.at(-1)!.clientId], ["read", "*", "c1"], "mark all is one event for the brand");
+assert.ok(!JSON.stringify(notified).includes("Thanks for writing"), "no message text on the channel");
 readAlls.length = 0;
 assert.equal((await call("POST", "/clients/c2/dm/threads/read-all", VIEWER)).statusCode, 404, "a viewer cannot mark another agency's brand");
 assert.equal((await call("POST", "/clients/c2/dm/threads/read-all", OWNER)).statusCode, 404, "nor can its owner");

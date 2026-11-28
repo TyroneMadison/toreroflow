@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { decryptSecret, getPrisma, Prisma, type DmAccount, type DmAiDraft } from "@toreroflow/db";
+import { decryptSecret, getPrisma, Prisma, publishDmEvent, type DmAccount, type DmAiDraft } from "@toreroflow/db";
 import {
   costCents,
   DM_AI_DECISION_SCHEMA,
@@ -335,6 +335,7 @@ export async function sendDueDrafts(now = new Date()): Promise<number> {
       where: { id: t.id },
       data: { lastMessageAt: new Date(), lastPreview: previewOf(last, []), lastDirection: "out" },
     });
+    await publishDmEvent({ clientId: t.dmAccount.clientId, threadId: t.id, kind: "out" });
     if (d.stage && d.stage !== t.contact.stage) await prisma.dmContact.update({ where: { id: t.contactId }, data: { stage: d.stage } });
     await finish({ status: "sent", sentHow: "auto", sentAt: now, messageExternalId: mids[0] ?? null, reason: null });
     sent++;

@@ -1,4 +1,4 @@
-import { decryptSecret, encryptSecret, getPrisma, Prisma, type DmAccount } from "@toreroflow/db";
+import { decryptSecret, encryptSecret, getPrisma, Prisma, publishDmEvent, type DmAccount } from "@toreroflow/db";
 import { DM_WINDOW_MS } from "@toreroflow/core";
 import {
   igConversations,
@@ -80,8 +80,10 @@ async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string
   // Their first message ever here: no earlier inbound row (an echo of a private reply does not count).
   const firstMessage =
     ev.direction === "in" && !(await prisma.dmMessage.findFirst({ where: { threadId: thread.id, direction: "in" }, select: { id: true } }));
+  let row: { id: string };
   try {
-    await prisma.dmMessage.create({
+    row = await prisma.dmMessage.create({
+      select: { id: true },
       data: {
         threadId: thread.id,
         externalId: ev.mid,
@@ -116,6 +118,7 @@ async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string
   if (inbound && (!contact.lastSeenAt || ev.at > contact.lastSeenAt)) {
     await prisma.dmContact.update({ where: { id: contact.id }, data: { lastSeenAt: ev.at } });
   }
+  await publishDmEvent({ clientId: account.clientId, threadId: thread.id, messageId: row.id, kind: ev.direction });
   return inbound
     ? { mid: ev.mid, contactId: ev.contactId, username: contact.handle, text: ev.text, parts: ev.parts, firstMessage, at: ev.at }
     : null;
@@ -125,9 +128,10 @@ async function ingestMessage(account: DmAccount, ev: MessageEvent, token: string
 async function applyUpdate(account: DmAccount, ev: Exclude<IgEvent, MessageEvent>): Promise<void> {
   const row = await prisma.dmMessage.findFirst({
     where: { externalId: ev.mid, thread: { dmAccountId: account.id } },
-    select: { id: true, reactions: true },
+    select: { id: true, threadId: true, reactions: true },
   });
   if (!row) return;
+  const changed = () => publishDmEvent({ clientId: account.clientId, threadId: row.threadId, messageId: row.id, kind: ev.kind });
   if (ev.kind === "reaction") {
     const reactions = { ...((row.reactions as Record<string, string> | null) ?? {}) };
     if (ev.emoji) reactions[ev.who] = ev.emoji;
@@ -145,6 +149,7 @@ async function applyUpdate(account: DmAccount, ev: Exclude<IgEvent, MessageEvent
       data: { text: null, attachments: Prisma.JsonNull, reactions: Prisma.JsonNull, transcript: null, unsentAt: new Date() },
     });
   }
+  await changed();
 }
 
 /**

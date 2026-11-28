@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 process.env.BUSINESS_TIMEZONE = "UTC";
 
-const { encryptSecret, getPrisma, Prisma } = await import("@toreroflow/db");
+const { encryptSecret, getPrisma, Prisma, setDmNotify } = await import("@toreroflow/db");
+const notified: Array<Record<string, unknown>> = [];
+setDmNotify(async (_c, payload) => void notified.push(JSON.parse(payload)));
 const { aiTick, draftQuietThreads, draftThread, sendDueDrafts, setAiPause, setAiWriter, setAiZernio, DM_AI_KILL_KEY } = await import("./aiReplies");
 
 type Row = Record<string, any>;
@@ -220,6 +222,7 @@ assert.equal(typing().length, 1, "the typing dots first");
 assert.equal(db.drafts[0]!.status, "sent");
 assert.equal(db.drafts[0]!.sentHow, "auto");
 assert.equal(t3.lastDirection, "out");
+assert.ok(notified.some((e) => e.threadId === t3.id && e.kind === "out"), "an AI send tells the open Inboxes");
 assert.equal(db.contacts.find((c) => c.id === t3.contactId)!.stage, "engaged", "the stage it chose");
 assert.ok(db.messages.some((m) => m.threadId === t3.id && m.direction === "out" && m.text === "Hi! We are open 7 AM to 8 PM."));
 await sendDueDrafts(at(120));
