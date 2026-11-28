@@ -10,9 +10,11 @@ import {
   decodeEscapes,
   DRIVE_AHEAD_DAYS,
   driveAlertKey,
+  driveFrameKey,
   drivePerDay,
   driveUsedToday,
   instagramVideoError,
+  needsDriveFrame,
   nextDriveSlot,
   pickDriveFiles,
   PLATFORM_MAX_UPLOAD_BYTES,
@@ -30,9 +32,11 @@ import {
   DriveError,
   DryRunPublisher,
   downloadDriveFile,
+  driveMediaUrl,
   listFolderVideos,
   type InstagramScheduleOptions,
 } from "@toreroflow/publishers";
+import { extractThumbnail } from "@toreroflow/media";
 import { env } from "./env";
 import { transcribeStrict } from "./transcribe";
 
@@ -214,9 +218,72 @@ export async function driveAll(): Promise<void> {
         console.error(`[drive] alert for client ${c.id}: ${plain(e)}`),
       );
     }
+    // Pictures last, so they never hold up a post. Stopped folders too: their rows still show.
+    for (const c of clients) await driveFrames(c.id).catch((e) => console.error(`[drive] frames for client ${c.id}: ${plain(e)}`));
   } finally {
     running = false;
   }
+}
+
+/** Drive frames one check takes per client, so a backfill of old rows is spread over a few checks. */
+const FRAMES_PER_CHECK = 4;
+
+/**
+ * Whether ffmpeg's failure to read a Drive file is about the file (gone, not
+ * shared, not a video), so the row is not asked again. Anything else (Drive
+ * busy, a timeout, no network) is tried on the next check.
+ */
+// ponytail: Drive's rate-limit 403 reads as final too; that row keeps its placeholder. Parse the reason if it ever bites.
+export const frameFailureFinal = (message: string) => /(Server returned|HTTP error) 4(0[0-4]|1[05])\b|Invalid data found|does not contain any stream|Output file is empty/i.test(message);
+
+/**
+ * Recent videos pictures for the client's last 20 rows that have none: a
+ * skipped file is never downloaded, a failed one is deleted, and a swept or
+ * missing thumbnail leaves an old row blank. One frame, 1 s in, straight from
+ * the Drive file: ffmpeg reads it with range requests, so even a 360 MB video
+ * costs a few MB. The key travels in a header, never in the URL or a log.
+ */
+export async function driveFrames(clientId: string): Promise<number> {
+  if (!env.GOOGLE_DRIVE_API_KEY) return 0;
+  const rows = await prisma.driveImport.findMany({
+    where: { clientId },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { id: true, fileId: true, assetId: true, thumbKey: true },
+  });
+  const todo = rows.filter((r) => r.thumbKey === null);
+  if (!todo.length) return 0;
+  const assets = await prisma.mediaAsset.findMany({
+    where: { id: { in: todo.flatMap((r) => (r.assetId ? [r.assetId] : [])) }, clientId },
+    select: { id: true, clientId: true, kind: true, status: true, coverKey: true, thumbDeletedAt: true, updatedAt: true },
+  });
+  let taken = 0;
+  for (const row of todo) {
+    if (taken >= FRAMES_PER_CHECK) break;
+    const asset = assets.find((a) => a.id === row.assetId) ?? null;
+    const onDisk = asset
+      ? await fs.access(path.join(env.STORAGE_DIR, asset.clientId, asset.id, "thumb.jpg")).then(() => true, () => false)
+      : false;
+    if (!needsDriveFrame(row, asset, onDisk)) continue;
+    taken++;
+    const key = driveFrameKey(clientId, row.fileId);
+    try {
+      await fs.mkdir(path.dirname(path.join(env.STORAGE_DIR, key)), { recursive: true });
+      await extractThumbnail(driveMediaUrl(row.fileId, env.DRIVE_API_BASE), path.join(env.STORAGE_DIR, key), 1, [
+        "-v", "error",
+        "-rw_timeout", "30000000",
+        "-headers", `X-Goog-Api-Key: ${env.GOOGLE_DRIVE_API_KEY}\r\n`,
+      ]);
+      await prisma.driveImport.update({ where: { id: row.id }, data: { thumbKey: key } });
+      console.log(`[drive] frame for import ${row.id} saved`);
+    } catch (e) {
+      const final = frameFailureFinal(e instanceof Error ? e.message : String(e));
+      if (final) await prisma.driveImport.update({ where: { id: row.id }, data: { thumbKey: "" } });
+      // The tail only: ffmpeg's words can name the URL, which holds no key.
+      console.error(`[drive] frame for import ${row.id} ${final ? "unavailable" : "tried again next check"}: ${plain(e).slice(-160)}`);
+    }
+  }
+  return taken;
 }
 
 /**

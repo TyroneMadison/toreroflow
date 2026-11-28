@@ -64,6 +64,9 @@ copy link, sync, Stop), `autopost.edit` (dialog `autopost.settings`, Save
 `autopost.save`), the fan-out rules (`workflow-new` opens `autopost.rules`;
 rows `workflow-<id>`, `workflow-delete-<id>`, destinations
 `workflow-dest-<platform>`, `workflow-create`). The rules are saved, not run.
+Each Recent videos row has a tile `autopost.thumb` with `data-frame="yes"`
+when it draws the video's frame (the picked cover, a frame from the Drive file,
+or the upload's thumbnail) and `"no"` while it shows the coloured placeholder.
 
 The Automations area is `automations` (`data-state` loading, error, empty or
 ready): rows `automations.row.<id>` (native automations by id, Zernio

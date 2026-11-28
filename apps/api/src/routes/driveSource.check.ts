@@ -33,9 +33,9 @@ const accounts = [
   { ...ig, id: "igB", clientId: "c2", handle: "other", connectedAt: new Date(5) },
 ];
 const imports = [
-  { id: "d1", clientId: "c1", fileId: "f1aaaaaaaaaa", name: "a.mp4", status: "held", reason: "No speech.", createdAt: new Date() },
-  { id: "d2", clientId: "c1", fileId: "f2aaaaaaaaaa", name: "b.mp4", status: "dryrun", reason: null, createdAt: new Date() },
-  { id: "d3", clientId: "c1", fileId: "f3aaaaaaaaaa", name: "c.mp4", status: "scheduled", reason: null, createdAt: new Date(Date.now() - 72 * 3600_000) },
+  { id: "d1", clientId: "c1", fileId: "f1aaaaaaaaaa", name: "a.mp4", status: "held", reason: "No speech.", assetId: "a1", thumbKey: null, createdAt: new Date() },
+  { id: "d2", clientId: "c1", fileId: "f2aaaaaaaaaa", name: "b.mp4", status: "dryrun", reason: null, assetId: null, thumbKey: "c1/drive-frames/f2aaaaaaaaaa.jpg", createdAt: new Date() },
+  { id: "d3", clientId: "c1", fileId: "f3aaaaaaaaaa", name: "c.mp4", status: "scheduled", reason: null, assetId: "a3", thumbKey: null, createdAt: new Date(Date.now() - 72 * 3600_000) },
 ];
 
 const prisma = getPrisma();
@@ -56,6 +56,13 @@ stub("driveImport", {
       status,
       _count: imports.filter((i) => i.clientId === where.clientId && i.status === status).length,
     })),
+});
+const assetRows = [
+  { id: "a1", clientId: "c1", kind: "video", status: "ready", coverKey: "c1/a1/cover.jpg", thumbDeletedAt: null, updatedAt: new Date(7) },
+  { id: "a3", clientId: "c1", kind: "video", status: "ready", coverKey: null, thumbDeletedAt: null, updatedAt: new Date(8) },
+];
+stub("mediaAsset", {
+  findMany: async ({ where }: any) => assetRows.filter((a) => where.id.in.includes(a.id) && a.clientId === where.clientId),
 });
 stub("botIdentity", { findUnique: async () => null });
 let liveRows: Array<{ postId: string; at: Date; pending: boolean }> = [];
@@ -102,6 +109,11 @@ assert.deepEqual(
 );
 assert.equal(first.imports.length, 3);
 assert.equal(first.imports[0].reason, "No speech.");
+// Each row carries a signed picture link: the cover, the Drive frame, the upload thumbnail. Never the raw key.
+assert.match(first.imports[0].thumbUrl, /^\/files\/c1\/a1\/cover\.jpg\?.*&v=7$/, "a picked cover, versioned");
+assert.match(first.imports[1].thumbUrl, /^\/files\/c1\/drive-frames\/f2aaaaaaaaaa\.jpg\?/, "a skipped file draws its Drive frame");
+assert.match(first.imports[2].thumbUrl, /^\/files\/c1\/a3\/thumb\.jpg\?/, "a scheduled upload draws its thumbnail");
+assert.ok(first.imports.every((i: any) => /[?&]s=/.test(i.thumbUrl) && !("thumbKey" in i)), "signed links only, the key stays server-side");
 assert.deepEqual(
   first.counts,
   { today: 1, posted: 1, dryRuns: 1, ahead: 0, next: null },

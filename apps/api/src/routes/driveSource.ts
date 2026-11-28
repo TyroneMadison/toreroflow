@@ -5,6 +5,7 @@ import {
   businessDay,
   driveAccountIds,
   driveAlertKey,
+  driveRowThumb,
   DRIVE_DEFAULT_PER_DAY,
   driveUsedToday,
   isDriveId,
@@ -17,6 +18,7 @@ import {
 import { DriveError, listFolderVideos } from "@toreroflow/publishers";
 import { clearAlert } from "../alerts/alerts";
 import { env } from "../env";
+import { fileLinkVersioned } from "../files/link";
 import { requireAuth } from "../plugins/requireAuth";
 
 /**
@@ -91,7 +93,7 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { createdAt: "desc" },
         take: 20,
         // detail (the dry-run payload) stays out: the list shows status and reason.
-        select: { id: true, fileId: true, name: true, status: true, reason: true, assetId: true, postId: true, createdAt: true, updatedAt: true },
+        select: { id: true, fileId: true, name: true, status: true, reason: true, assetId: true, postId: true, thumbKey: true, createdAt: true, updatedAt: true },
       }),
       instagramAccounts(clientId),
       // Two days back covers today in any timezone; the day is decided in code.
@@ -107,6 +109,18 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
         (t."status" = 'scheduled' AND t."scheduledAt" > NOW()) AS pending
       FROM "PostTarget" t JOIN "DriveImport" d ON d."postId" = t."postId"
       WHERE d."clientId" = ${clientId} AND t."scheduledAt" >= ${new Date(Date.now() - 48 * 3600_000)}`;
+    const assetIds = imports.flatMap((i) => (i.assetId ? [i.assetId] : []));
+    const assets = assetIds.length
+      ? await prisma.mediaAsset.findMany({
+          where: { id: { in: assetIds }, clientId },
+          select: { id: true, clientId: true, kind: true, status: true, coverKey: true, thumbDeletedAt: true, updatedAt: true },
+        })
+      : [];
+    // A signed link, as the upload list hands out: <img> cannot send the login header. Null draws the placeholder.
+    const rows = imports.map(({ thumbKey, ...i }) => {
+      const t = driveRowThumb({ thumbKey }, assets.find((a) => a.id === i.assetId) ?? null);
+      return { ...i, thumbUrl: t ? fileLinkVersioned(t.key, t.version) : null };
+    });
     const now = new Date();
     const tz = env.BUSINESS_TIMEZONE;
     const pendingRows = live.filter((r) => r.pending);
@@ -130,7 +144,7 @@ export async function driveSourceRoutes(app: FastifyInstance): Promise<void> {
     return {
       settings: { ...settings, socialAccountId: legacy },
       keyReady: !!env.GOOGLE_DRIVE_API_KEY,
-      imports,
+      imports: rows,
       instagramAccounts: accounts,
       counts,
     };

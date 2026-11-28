@@ -136,6 +136,10 @@ const ap = read("src/components/ai/AutoPost.tsx");
 for (const t of ["Saved, not running yet", "drive-auto-post", "workflow-create", "workflow-delete-", "workflow-dest-", "Stop Drive auto-post", "Copy connect link", "Sync accounts", "Connect another Instagram account", "Check folder"]) {
   if (!ap.includes(t)) throw new Error(`Auto-post lost "${t}" from the old Drive card and rules`);
 }
+// Recent videos draw the real frame (F8): both rows go through VideoThumb, which keeps the gradient only under a loading or failed image.
+if ((ap.match(/<VideoThumb url=\{v\.thumbUrl\}/g) ?? []).length !== 2) throw new Error("both Recent videos rows (desktop and phone) must draw v.thumbUrl through VideoThumb");
+if (/<span className=\{`wa-thumb g\$\{\(i % 6\) \+ 1\}`\} \/>/.test(ap)) throw new Error("a bare gradient tile is left in Recent videos");
+if (!/onError=\{\(\) => setBad\(url\)\}/.test(ap) || !/fileUrl\(url\)/.test(ap)) throw new Error("VideoThumb must sign through fileUrl and fall back to the gradient on error");
 const ai = read("src/components/ai/AiReplies.tsx");
 for (const t of ["Never pretends to be a person", "Needs you", "Reply timing", "Never auto-reply to", "What the AI knows", "Try a test message", "Let the AI answer again", "Tag as friend", "Stop all AI sending"]) {
   if (!ai.includes(t)) throw new Error(`AI replies lost "${t}"`);
