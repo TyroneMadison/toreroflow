@@ -9,6 +9,7 @@ import {
   CONVO_LABEL,
   CONVO_STATES,
   LIST_TABS,
+  markedRead,
   messageSummary,
   NO_FILTERS,
   previewLine,
@@ -46,7 +47,8 @@ import "./inbox.css";
  * Polls every 4 seconds while the page is visible and stops while the tab is
  * hidden; the API asks Zernio at most every 15 seconds behind that. Viewers
  * read everything; every write control turns into the read-only notice, and
- * the server refuses their writes anyway (403).
+ * the server refuses their writes anyway (403). Marking read is the exception
+ * (F7): opening a conversation and Mark all as read work for viewers too.
  */
 
 const POLL_MS = 4000;
@@ -146,14 +148,17 @@ export default function Inbox({
   }, [searchText]);
 
   // Newest request wins: a slow poll never overwrites a newer filter's answer.
+  // While a mark read is on its way, polls are dropped too: they could still
+  // carry the old counts and bring the dots back. Its own reread follows it.
   const seq = useRef(0);
+  const marking = useRef(0);
   const loadList = useCallback(
     async (silent: boolean) => {
       const n = ++seq.current;
       if (!silent) setRefreshing(true);
       try {
         const r = await api.get<ListResp>(`/clients/${client.id}/dm/threads${threadQuery(filters, limit)}`);
-        if (n !== seq.current) return;
+        if (n !== seq.current || marking.current) return;
         setList(r);
         setListErr(null);
         setLastLoaded(new Date());
@@ -212,16 +217,11 @@ export default function Inbox({
         if (n !== detailSeq.current) return;
         setDetail(r);
         setDetailErr(null);
-        // Reading it here marks it read; a viewer only looks, so nothing is written for them.
-        if (r.thread.unread > 0 && !viewer) {
-          api.post(`/clients/${client.id}/dm/threads/${id}/read`).catch(() => undefined);
-          setList((l) => (l ? { ...l, threads: l.threads.map((t) => (t.id === id ? { ...t, unread: 0 } : t)) } : l));
-        }
       } catch (e) {
         if (n === detailSeq.current) setDetailErr(errText(e, "could not load this conversation"));
       }
     },
-    [client.id, viewer],
+    [client.id],
   );
 
   useEffect(() => {
@@ -229,8 +229,45 @@ export default function Inbox({
     else setDetail(null);
   }, [openId, loadDetail]);
 
-  // A poll that shows the open conversation moved reads it again.
+  /**
+   * Mark one conversation read, or with no id the whole brand (F7). The dots
+   * and counts clear at once; the server saves it for every device, and a
+   * reread of the list reconciles. Viewers may too (it sends nobody anything).
+   */
+  const markRead = useCallback(
+    async (threadId?: string) => {
+      const cid = client.id;
+      marking.current++;
+      setList((l) => (l ? markedRead(l, threadId) : l));
+      setDetail((d) => (d && (!threadId || d.thread.id === threadId) ? { ...d, thread: { ...d.thread, unread: 0 } } : d));
+      try {
+        await api.post(`/clients/${cid}/dm/threads/${threadId ? `${threadId}/read` : "read-all"}`);
+        // The Dock's count rereads now, not at its next 2-minute tick.
+        window.dispatchEvent(new Event("toreroflow:dm-read"));
+      } catch (e) {
+        if (!threadId) toast.fail("Could not mark everything as read", e);
+      } finally {
+        marking.current--;
+        if (shownClient.current === cid) void loadList(true);
+      }
+    },
+    [client.id, loadList, toast],
+  );
+
+  // Opening a conversation marks it read: a click, the desktop's first pick,
+  // Contacts' "Open conversation", and a new message while it is open. Once
+  // per message: a read the server refused is not retried in a loop.
   const openRow = list?.threads.find((t) => t.id === openId) ?? null;
+  const openShown = openRow ?? (detail && detail.thread.id === openId ? detail.thread : null);
+  const openKey = openShown ? `${openShown.id}:${openShown.lastMessageAt ?? ""}` : "";
+  const triedRead = useRef("");
+  useEffect(() => {
+    if (!openShown || openShown.unread <= 0 || triedRead.current === openKey) return;
+    triedRead.current = openKey;
+    void markRead(openShown.id);
+  }, [openShown, openKey, markRead]);
+
+  // A poll that shows the open conversation moved reads it again.
   useEffect(() => {
     if (!openRow || !detail || detail.thread.id !== openRow.id) return;
     if (openRow.lastMessageAt !== detail.thread.lastMessageAt || openRow.lastPreview !== detail.thread.lastPreview) {
@@ -378,6 +415,8 @@ export default function Inbox({
       onOpen={setOpenId}
       onMore={() => setLimit((l) => l + PAGE)}
       onFilter={() => setFilterOpen(true)}
+      onMarkAll={() => void markRead()}
+      brand={client.name}
       lastLoaded={listErr ? lastLoaded : null}
     />
   );
@@ -502,6 +541,8 @@ function ThreadList({
   onOpen,
   onMore,
   onFilter,
+  onMarkAll,
+  brand,
   lastLoaded,
 }: {
   phone: boolean;
@@ -516,10 +557,25 @@ function ThreadList({
   onOpen(id: string): void;
   onMore(): void;
   onFilter(): void;
+  /** F7: every conversation of the brand, whatever the filters show. */
+  onMarkAll(): void;
+  brand: string;
   lastLoaded: Date | null;
 }) {
   const now = Date.now();
   const c = list.counts;
+  const markAll = (
+    <button
+      type="button"
+      className={phone ? "ibx-markall" : "ibx-btn ghost ibx-markall"}
+      disabled={c.unread === 0}
+      title={`Mark every ${brand} conversation as read`}
+      onClick={onMarkAll}
+      data-testid="dm-mark-all-read"
+    >
+      Mark all as read
+    </button>
+  );
   const chips = (
     <nav className={`ibx-chips${phone ? " accs" : " scroll"}`} aria-label="Accounts">
       <button type="button" className={`ibx-chip${!filters.accountId ? " on" : ""}`} aria-pressed={!filters.accountId} onClick={() => setFilters({ ...filters, accountId: null })}>
@@ -626,7 +682,7 @@ function ThreadList({
           <span>
             {c.all} conversations, {c.unread} unread
           </span>
-          <span>{lastLoaded ? `Offline. Loaded ${clock(lastLoaded)}` : "Pull to refresh"}</span>
+          {lastLoaded ? <span>Offline. Loaded {clock(lastLoaded)}</span> : c.unread > 0 ? markAll : <span>Pull to refresh</span>}
         </div>
         <section className="mb-card list ibx-list" aria-label="Conversations">
           {rows}
@@ -641,14 +697,17 @@ function ThreadList({
   return (
     <section className="pane-list" aria-label="Conversations">
       <div className="lhead">
-        <div className="sb">
+        <div className="sb ibx-lh1">
           <h3>Inbox</h3>
-          <span className="tiny">
-            {lastLoaded ? `Offline. Loaded ${clock(lastLoaded)} · ` : ""}
-            <button type="button" className={`ibx-unread${filters.unread ? " on" : ""}`} aria-pressed={filters.unread} title={filters.unread ? "Show every conversation" : "Show unread only"} onClick={() => setFilters({ ...filters, unread: !filters.unread })} data-testid="dm-unread">
-              {c.unread} unread
-            </button>{" "}
-            · {c.open} open
+          <span className="row">
+            <span className="tiny">
+              {lastLoaded ? `Offline. Loaded ${clock(lastLoaded)} · ` : ""}
+              <button type="button" className={`ibx-unread${filters.unread ? " on" : ""}`} aria-pressed={filters.unread} title={filters.unread ? "Show every conversation" : "Show unread only"} onClick={() => setFilters({ ...filters, unread: !filters.unread })} data-testid="dm-unread">
+                {c.unread} unread
+              </button>{" "}
+              · {c.open} open
+            </span>
+            {markAll}
           </span>
         </div>
         {seg}

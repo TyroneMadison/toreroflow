@@ -83,9 +83,12 @@ export default function Dock({
         .catch(() => undefined);
     read();
     const t = window.setInterval(read, 2 * 60 * 1000);
+    // The Inbox marked something read (F7): the count follows at once.
+    window.addEventListener("toreroflow:dm-read", read);
     return () => {
       live = false;
       window.clearInterval(t);
+      window.removeEventListener("toreroflow:dm-read", read);
     };
   }, [clientId, activeScreen, section]);
 

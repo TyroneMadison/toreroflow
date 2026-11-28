@@ -5,6 +5,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.70] - 2026-11-27
+
+### Added - Mark all as read in the Workflows Inbox (F7)
+
+- **Mark all as read** (Workflows > Inbox, desktop, web and phone): one button marks every conversation of the brand read. Desktop: beside the unread and open counts at the top of the list. Phone: in the count row ("57 conversations, 22 unread"), in place of "Pull to refresh" while anything is unread. The dots and counts clear at once, then the list rereads from the server; if the server refuses, the dots come back with a message
+- **Opening a conversation marks it read**, the same way: a click or tap, the conversation the desktop opens first, Contacts' "Open conversation", and a new message while it is open. The dot and the count clear at once
+- Saved on the server, so a reload and every other device show it read, and the Workflows rail and the Dock count follow at once. A read stays read through the next Zernio poll for Messenger and Instagram read through Zernio
+- Viewers may mark read too (opening and Mark all as read): it only clears the team's unread counts, for the viewer's own agency's brands. A viewer still cannot send, and a viewer's read sends Instagram no "Seen"
+
+### API
+
+- `POST /clients/:id/dm/threads/read-all` (every unread conversation of the brand, one write, `{ ok, updated }`; no "Seen" goes to Instagram). `POST /clients/:id/dm/threads/:threadId/read` and the new route answer viewers too; every bot token, Polly included, still gets 403
+
 ## [0.3.69] - 2026-11-27
 
 ### Changed - Workflow redesign, final pass (F6)

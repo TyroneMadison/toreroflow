@@ -38,6 +38,7 @@ const dmAccounts = new Map<string, Row>();
 const events: Row[] = [];
 const messages: Row[] = [];
 const threadUpdates: Row[] = [];
+const readAlls: Row[] = [];
 let thread: Row;
 
 const prisma = getPrisma() as unknown as Record<string, unknown>;
@@ -94,8 +95,9 @@ fake("dmWebhookEvent", {
 });
 fake("dmThread", {
   findFirst: async ({ where }: Row) =>
-    where.id === thread.id && where.dmAccount.clientId === "c1" && where.dmAccount.client.agencyId === "A" ? thread : null,
+    thread && where.id === thread.id && where.dmAccount.clientId === "c1" && where.dmAccount.client.agencyId === "A" ? thread : null,
   update: async ({ data }: Row) => (threadUpdates.push(data), { ...thread, ...data }),
+  updateMany: async (q: Row) => (readAlls.push(q), { count: 3 }),
   findMany: async (q: Row) => (threadQueries.push(q.where), []),
   groupBy: async () => [],
   count: async () => 0,
@@ -234,6 +236,7 @@ const writes = routes.filter((r) => (r.plugin === "dm" || r.plugin === "dmCampai
 for (const expected of [
   "POST /clients/:id/dm/threads/:threadId/reply",
   "POST /clients/:id/dm/threads/:threadId/read",
+  "POST /clients/:id/dm/threads/read-all",
   "PATCH /clients/:id/dm/threads/:threadId",
   "POST /clients/:id/dm/threads/:threadId/pause",
   "POST /clients/:id/dm/threads/:threadId/resume",
@@ -249,11 +252,15 @@ for (const expected of [
   assert.ok(writes.some((r) => `${r.method} ${r.url}` === expected), `${expected} is registered and covered`);
 }
 const before = calls.length;
+// F7: viewers may mark read (and only that); bots still may not.
+const { VIEWER_MAY } = await import("./guard");
+assert.deepEqual([...VIEWER_MAY].sort(), ["/clients/:id/dm/threads/:threadId/read", "/clients/:id/dm/threads/read-all"], "marking read is the only viewer write");
 for (const r of writes) {
   const url = r.url.replace(/:\w+/g, "x1");
   for (const [who, auth] of [["viewer", VIEWER], ["logged-in viewer", LOGGED_IN_VIEWER], ["pre-F2 viewer token", OLD_VIEWER], ["polly", POLLY], ["nova", NOVA]] as const) {
     const out = await call(r.method, url, auth, { text: "hi", message: "hi", accountId: "sa-ig" });
-    assert.equal(out.statusCode, 403, `${who} ${r.method} ${r.url} must be 403`);
+    if (VIEWER_MAY.has(r.url) && who.includes("viewer")) assert.equal(out.statusCode, 404, `${who} ${r.method} ${r.url} passes the guard, and finds no brand x1`);
+    else assert.equal(out.statusCode, 403, `${who} ${r.method} ${r.url} must be 403`);
   }
 }
 assert.equal(calls.length, before, "a refused write never reached Meta or Zernio");
@@ -537,6 +544,56 @@ assert.deepEqual(bulkWrites.map((w) => w.op), ["stage", "add", "remove"]);
 assert.deepEqual(bulkWrites[1]!.data, [{ contactId: "ct1", tagId: "tag-vip" }, { contactId: "ct2", tagId: "tag-vip" }]);
 assert.deepEqual(bulkWrites[2]!.where.tag, { clientId: "c1", name: { in: ["lead"] } }, "only this client's tag is removed");
 assert.equal((await call("POST", "/clients/c1/dm/contacts/bulk", POLLY, { ids: ["ct1"], stage: "won" })).statusCode, 403, "Polly reads, never edits");
+
+// ---------------------------------------------------------------------------
+// 10. F7: mark one read (opening it) and mark all as read
+// ---------------------------------------------------------------------------
+
+const seens = () => calls.filter((c) => c.url.endsWith("/me/messages") && c.body.includes("mark_seen")).length;
+thread = nativeThread(hoursAgo(1));
+let seen = seens();
+threadUpdates.length = 0;
+res = await call("POST", "/clients/c1/dm/threads/t1/read", OWNER);
+assert.equal(res.statusCode, 200, res.body);
+assert.equal(threadUpdates.at(-1)!.unread, 0, "the operator's open clears the count");
+assert.ok(threadUpdates.at(-1)!.readAt instanceof Date, "and stamps readAt, so Zernio's count cannot bring it back");
+assert.equal(seens(), seen + 1, "the operator's read sends Instagram's Seen");
+for (const [who, auth] of [["viewer", VIEWER], ["logged-in viewer", LOGGED_IN_VIEWER], ["pre-F2 viewer token", OLD_VIEWER]] as const) {
+  threadUpdates.length = 0;
+  seen = seens();
+  res = await call("POST", "/clients/c1/dm/threads/t1/read", auth);
+  assert.equal(res.statusCode, 200, `${who} marks a thread read: ${res.body}`);
+  assert.equal(threadUpdates.at(-1)!.unread, 0, `${who}'s read is saved`);
+  assert.equal(seens(), seen, `${who}'s read sends Instagram nothing`);
+}
+assert.equal((await call("POST", "/clients/c1/dm/threads/t9/read", VIEWER)).statusCode, 404, "a thread the viewer cannot see is not marked");
+assert.equal((await call("POST", "/clients/c2/dm/threads/t1/read", VIEWER)).statusCode, 404, "nor through another brand's id");
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/read")).statusCode, 401, "mark read needs a session");
+assert.equal((await call("POST", "/clients/c1/dm/threads/t1/read", POLLY)).statusCode, 403, "bots still only read");
+
+const sentBefore = sends();
+for (const [who, auth] of [["owner", OWNER], ["viewer", VIEWER], ["logged-in viewer", LOGGED_IN_VIEWER], ["pre-F2 viewer token", OLD_VIEWER]] as const) {
+  readAlls.length = 0;
+  res = await call("POST", "/clients/c1/dm/threads/read-all", auth);
+  assert.equal(res.statusCode, 200, `${who} marks all as read: ${res.body}`);
+  assert.deepEqual(res.json(), { ok: true, updated: 3 });
+  assert.equal(readAlls.length, 1, "one write");
+  assert.deepEqual(readAlls[0]!.where, { dmAccount: { clientId: "c1" }, unread: { gt: 0 } }, "every unread conversation of this brand, and only this brand");
+  assert.equal(readAlls[0]!.data.unread, 0);
+  assert.ok(readAlls[0]!.data.readAt instanceof Date, "readAt keeps Zernio's count from undoing it");
+}
+assert.equal(sends(), sentBefore, "mark all sends nothing to Instagram, not even Seen");
+readAlls.length = 0;
+assert.equal((await call("POST", "/clients/c2/dm/threads/read-all", VIEWER)).statusCode, 404, "a viewer cannot mark another agency's brand");
+assert.equal((await call("POST", "/clients/c2/dm/threads/read-all", OWNER)).statusCode, 404, "nor can its owner");
+assert.equal(readAlls.length, 0, "and nothing was written");
+assert.equal((await call("POST", "/clients/c1/dm/threads/read-all")).statusCode, 401, "mark all needs a session");
+for (const auth of [POLLY, NOVA]) assert.equal((await call("POST", "/clients/c1/dm/threads/read-all", auth)).statusCode, 403, "bots still only read");
+// Marking read opens nothing else to viewers: a send is still 403.
+for (const auth of [VIEWER, LOGGED_IN_VIEWER, OLD_VIEWER]) {
+  assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", auth, { text: "hi" })).statusCode, 403, "a viewer still cannot send");
+}
+assert.equal(sends(), sentBefore, "no viewer send reached Instagram");
 
 await app.close();
 console.log("dm.check: all checks passed");

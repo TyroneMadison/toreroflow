@@ -27,7 +27,11 @@
   .ibx-wrap.ph .ibx-seg .on,.ibx-seg.ph .on{background:var(--mb-raised2);color:var(--mb-ink);box-shadow:0 1px 2px rgba(0,0,0,.4),inset 0 0 0 1px var(--mb-hair2)}
   .mb-sheet .ibx-seg.ph{background:var(--mb-raised2)}
   .mb-sheet .ibx-seg.ph .on{background:var(--mb-sheet2)}
-  .ibx-metarow{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--mb-muted)}
+  .ibx-metarow{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;color:var(--mb-muted)}
+  /* F7: Mark all as read takes the "Pull to refresh" place while anything is unread. The
+     row keeps its text height (no jump when it turns back), the ::after makes the 44px target. */
+  .ibx-wrap.ph .ibx-markall{position:relative;flex:none;min-height:0;font-size:13px;font-weight:650;color:var(--mb-ink);white-space:nowrap}
+  .ibx-wrap.ph .ibx-markall::after{content:"";position:absolute;inset:-14px -8px}
   .ibx-list.mb-card{padding:4px 16px}
   .ibx-wrap.ph .ibx-crow{min-height:76px;padding:10px 0;align-items:center;gap:12px}
   .ibx-wrap.ph .ibx-crow+.ibx-crow{border-top:0}
