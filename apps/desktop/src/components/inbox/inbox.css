@@ -80,6 +80,10 @@
 .ibx-crow .pv{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ibx-crow.unread .pv{color:var(--text);font-weight:600}
 .udot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+/* H1: the stream's state, a word with a small dot: green while live, grey while it reconnects (never coral, it is not an action). */
+.ibx-live{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.ibx-live::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.55}
+.ibx-live.on::before{background:var(--ibx-ok,#16784f);opacity:1}
 .ibx-unread{font-size:11.5px;color:var(--text-2);text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px}
 .ibx-unread.on{color:var(--text);font-weight:700;text-decoration-color:var(--text)}
 .lhead .sb .tiny{white-space:nowrap}

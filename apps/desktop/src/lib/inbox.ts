@@ -297,3 +297,40 @@ export function csvField(v: string | number | null | undefined): string {
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+/*
+ * Live updates (H1). The server's stream (GET /clients/:id/dm/stream) says
+ * "this conversation changed", ids only; the Inbox rereads through the normal
+ * routes. These are the rules, kept here so inbox.check.ts runs them.
+ */
+
+/** What one stream event is about: a conversation of the brand, or "*" for all of them. */
+export interface DmLiveEvent {
+  clientId: string;
+  threadId: string;
+  messageId: string | null;
+  kind: "in" | "out" | "reaction" | "edit" | "unsend" | "read" | "thread";
+  at: string;
+}
+
+export type LiveState = "connecting" | "live" | "reconnecting" | "off";
+
+/** What an event makes the Inbox reread: the list always, the open thread when it is about that thread. */
+export function liveRefresh(e: Pick<DmLiveEvent, "threadId" | "kind">, openId: string | null): { list: boolean; thread: boolean } {
+  return { list: true, thread: !!openId && e.threadId === openId && e.kind !== "read" };
+}
+
+/**
+ * How often the list and the open conversation poll. Live and nothing on
+ * Zernio: once a minute as a safety net. Zernio has no push to us, so with a
+ * Zernio account the poll is what pulls its new messages; and with the stream
+ * down every 10 seconds is the fallback.
+ */
+export function pollEvery(live: LiveState, zernioAccounts: boolean): number {
+  return live === "live" && !zernioAccounts ? 60_000 : 10_000;
+}
+
+/** The wait before stream reconnect attempt n: 1 s doubling to 30 s, spread so screens do not all come back at once. */
+export function reconnectDelay(attempt: number, rand = Math.random()): number {
+  return Math.round(Math.min(30_000, 1000 * 2 ** attempt) * (0.75 + rand * 0.5));
+}
