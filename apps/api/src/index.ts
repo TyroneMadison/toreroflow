@@ -3,6 +3,7 @@ import { buildServer } from "./server";
 import { startOnboardingSweep } from "./onboardingSweep";
 import { startMonthlyReportJob } from "./ideas/monthlyReport";
 import { gmailMailer, gmailMissing } from "./mail/mailer";
+import { ensureListening } from "./dm/live";
 
 const app = await buildServer();
 startOnboardingSweep(app.log);
@@ -10,6 +11,8 @@ if (gmailMissing().length) {
   app.log.warn(`[reports] monthly report emails cannot send until ${gmailMissing().join(", ")} are set (docs/monthly-report.md)`);
 }
 startMonthlyReportJob(app.log, gmailMailer());
+// The Inbox live stream's one LISTEN connection, up before the first screen asks (it reconnects on its own).
+void ensureListening();
 
 /*
  * What to bind to.

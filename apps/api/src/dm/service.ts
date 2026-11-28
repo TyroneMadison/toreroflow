@@ -1,5 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import { decryptSecret, getPrisma, signedFilePath, type DmAccount, type Prisma } from "@toreroflow/db";
+import { decryptSecret, getPrisma, publishDmEvent, signedFilePath, type DmAccount, type Prisma } from "@toreroflow/db";
 import {
   DM_STAGES,
   type DmAttachmentView,
@@ -167,6 +167,8 @@ async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocia
               ...(moved && have.status === "done" ? { status: "open" } : {}),
             },
           });
+          // Zernio has no push to us: this poll is how a Zernio message reaches the other open Inboxes.
+          await publishDmEvent({ clientId: client.id, threadId: have.id, kind: "thread" });
         }
         if (c.participantPicture !== have.contact.avatarUrl || (c.participantName && c.participantName !== have.contact.displayName)) {
           await prisma.dmContact.update({
@@ -187,7 +189,7 @@ async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocia
         },
         update: { displayName: c.participantName ?? undefined, avatarUrl: c.participantPicture },
       });
-      await prisma.dmThread.upsert({
+      const created = await prisma.dmThread.upsert({
         where: { dmAccountId_contactId: { dmAccountId: account.id, contactId: contact.id } },
         create: {
           dmAccountId: account.id,
@@ -201,6 +203,7 @@ async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocia
         },
         update: { externalId: c.id, lastMessageAt: at, lastPreview: preview, lastDirection, unread },
       });
+      if (created?.id) await publishDmEvent({ clientId: client.id, threadId: created.id, kind: "thread" });
     }
   }
   return warnings;

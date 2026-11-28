@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
 
-const { decryptSecret, encryptSecret, getPrisma, Prisma } = await import("@toreroflow/db");
+const { decryptSecret, encryptSecret, getPrisma, Prisma, setDmNotify, DM_CHANNEL } = await import("@toreroflow/db");
 const { processWebhookEvent, refreshTokens, syncAccount } = await import("./dm");
 
 type Row = Record<string, any>;
@@ -93,6 +93,14 @@ globalThis.fetch = (async (input: string | URL) => {
   return ok({ error: { message: "not stubbed" } }, 500);
 }) as typeof fetch;
 
+// H1: every stored change is announced on dm_events, ids only.
+const notified: Row[] = [];
+setDmNotify(async (channel, payload) => {
+  assert.equal(channel, DM_CHANNEL);
+  notified.push(JSON.parse(payload));
+});
+const lastEvent = () => notified[notified.length - 1]!;
+
 const ME = "17841400000000001";
 db.accounts.push({ id: "acc1", clientId: "c1", platform: "instagram", transport: "native", status: "active", externalId: ME, username: "sample.studio", accessTokenEnc: encryptSecret("IG-TOKEN"), lastSyncAt: null });
 
@@ -115,11 +123,19 @@ assert.equal(t.unread, 1);
 assert.equal(t.lastDirection, "in");
 assert.equal(t.lastInboundAt.getTime(), T0);
 assert.equal(t.windowEndsAt.getTime(), T0 + 24 * 3600_000, "the 24h window starts at their message");
+assert.equal(notified.length, 1, "one event for one new message");
+assert.deepEqual(
+  { ...lastEvent(), at: undefined },
+  { clientId: "c1", threadId: t.id, messageId: db.messages[0]!.id, kind: "in", at: undefined },
+  "the event names the brand, thread and row",
+);
+assert.ok(!JSON.stringify(notified).includes("guide"), "no message text on the channel");
 
 // 2. The same delivery again (Meta retries): still one message, still one unread.
 await deliver([inbound("mid.1", { text: "Do you still have the guide?" })]);
 assert.equal(db.messages.length, 1, "idempotent on the platform message id");
 assert.equal(t.unread, 1);
+assert.equal(notified.length, 1, "a redelivery announces nothing");
 
 // 3. Our reply, recorded by the API at send time, then its echo: one row.
 db.messages.push({ id: "sent1", threadId: t.id, externalId: "mid.out1", direction: "out", text: "Here it is", sentByUserId: "u1", reactions: null });
@@ -132,10 +148,12 @@ assert.equal(phone.direction, "out");
 assert.equal(phone.sentByUserId, undefined);
 assert.equal(t.unread, 1, "echoes are not unread");
 assert.equal(t.lastPreview, "From my phone");
+assert.deepEqual([lastEvent().kind, lastEvent().messageId], ["out", phone.id], "an echo from the Instagram app is announced as ours");
 
 // 4. Reactions, edits, unsends.
 await deliver([{ sender: { id: "999" }, recipient: { id: ME }, timestamp: T0, reaction: { mid: "mid.out1", action: "react", emoji: "❤" } }]);
 assert.deepEqual(db.messages.find((m) => m.externalId === "mid.out1")!.reactions, { contact: "❤️" }, "a bare heart gets the emoji selector");
+assert.deepEqual([lastEvent().kind, lastEvent().messageId, lastEvent().threadId], ["reaction", "sent1", t.id], "a reaction is announced on its message");
 await deliver([{ sender: { id: "999" }, recipient: { id: ME }, timestamp: T0, reaction: { mid: "mid.out1", action: "unreact" } }]);
 assert.equal(db.messages.find((m) => m.externalId === "mid.out1")!.reactions, null);
 await deliver([{ sender: { id: "999" }, recipient: { id: ME }, timestamp: T0, message_edit: { mid: "mid.1", text: "Do you have the guide?" } }]);

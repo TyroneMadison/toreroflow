@@ -16,7 +16,7 @@ import {
   replyWindow,
   type DmContactRow,
 } from "@toreroflow/core";
-import { encryptSecret, enqueue, getPrisma, Prisma, verifyFileLink } from "@toreroflow/db";
+import { encryptSecret, enqueue, getPrisma, Prisma, publishDmEvent, verifyFileLink } from "@toreroflow/db";
 import {
   igAuthUrl,
   igExchangeCode,
@@ -445,6 +445,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
         where: { id: t.id },
         data: { lastMessageAt: now, lastPreview: body.text!.slice(0, 200), lastDirection: "out", unread: 0, readAt: now },
       });
+      await publishDmEvent({ clientId: t.dmAccount.clientId, threadId: t.id, kind: "out" });
       await teamReplied(t, body.text ?? null, body.draftId, userId, now);
       return { ok: true, messages: [] };
     }
@@ -511,6 +512,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
           readAt: now,
         },
       });
+      await publishDmEvent({ clientId: t.dmAccount.clientId, threadId: t.id, messageId: saved[saved.length - 1]?.id, kind: "out" });
       await teamReplied(t, body.text ?? null, body.draftId, userId, now);
       const origin = originOf(request);
       return { ok: true, messages: saved.map((m) => nativeMessageView(origin, m)) };
@@ -557,6 +559,7 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
     const t = await ownedThread(request.params.threadId, request.params.id, request.user.agencyId);
     if (!t) return reply.status(404).send({ error: "thread not found" });
     await prisma.dmThread.update({ where: { id: t.id }, data: { unread: 0, readAt: new Date() } });
+    await publishDmEvent({ clientId: t.dmAccount.clientId, threadId: t.id, kind: "read" });
     // A viewer's read clears the count but tells Instagram nothing: "Seen" is
     // a message to the person, and viewers never message anyone.
     const token = t.source === "native" && !(await isViewer(request)) ? accountToken(t.dmAccount) : null;
@@ -578,6 +581,8 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       where: { dmAccount: { clientId: client.id }, unread: { gt: 0 } },
       data: { unread: 0, readAt: new Date() },
     });
+    // "*": every conversation of the brand.
+    if (count) await publishDmEvent({ clientId: client.id, threadId: "*", kind: "read" });
     return { ok: true, updated: count };
   });
 

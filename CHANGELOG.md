@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.73] - 2026-11-28
+
+### Added - Inbox live updates (H1)
+
+- **New DMs appear in Workflows > Inbox as they arrive**, without a refresh (desktop, web and phone): the conversation moves to the top of the list with its preview, unread dot, count and time, and if it is the open conversation the new bubble appears (at the bottom you follow it; reading further up, the New messages button shows instead). Messages sent from the Instagram app, replies sent from Toreroflow on another device, reactions, edits, unsends and reads show the same way. Locally a signed webhook reached the open Inbox in about a quarter of a second
+- A small dot by the Inbox title (desktop and web) or the word in the count row (phone) says **Live**, or **Reconnecting** when the connection dropped. While it reconnects, and for accounts read through Zernio (which cannot tell us about new messages), the Inbox checks every 10 seconds, and again when you come back to the tab or window
+- The Dock's unread count follows new messages while the Inbox is open
+
+### API
+
+- `GET /clients/:id/dm/stream`: Server-Sent Events for one brand. `event: ready` on connect, then `event: dm` with `{ clientId, threadId, messageId, kind, at }` (kind `in`, `out`, `reaction`, `edit`, `unsend`, `read` or `thread`; `threadId` `*` means every conversation of the brand); ids only, never message text. A heartbeat comment every 20 seconds, `retry: 5000`. Auth: the usual bearer token (curl, bots), or `?ticket=` from `POST /clients/:id/dm/stream-ticket` (signed in as usual; one brand, one use, 60 seconds, its own signing key, so a ticket is never a login token). 401 without either, 403 for another agency's brand, viewers may stream, 6 streams per sign-in (429), 503 `live_unavailable` while the database listener is down (the Inbox polls meanwhile)
+- Events travel over Postgres `NOTIFY dm_events` (packages/db `publishDmEvent`): the worker's webhook ingest and AI replies, and the API's sends, reads and Zernio list sync, publish; the API holds one `LISTEN` connection (reconnects with backoff) and fans out to the open streams of that brand only
+- The worker polls the `dm` queue every half second (was pg-boss's 2 seconds), so a webhook is stored and announced within about a second
+- Caddy passes the stream unbuffered (`flush_interval -1`) and uncompressed; Caddy's access log and the API's request log no longer keep stream tickets, Meta's webhook verify token, OAuth codes or file link signatures from query strings (the API logged the verify token on each Meta handshake before)
+
 ## [0.3.72] - 2026-11-28
 
 ### Fixed - Conversations open on their newest messages (G1)

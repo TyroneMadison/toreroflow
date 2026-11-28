@@ -11,11 +11,13 @@ import {
   LIST_TABS,
   isPinned,
   keptScrollTop,
+  liveRefresh,
   markedRead,
   mergeMessages,
   messageCount,
   messageSummary,
   NO_FILTERS,
+  pollEvery,
   prependOlder,
   previewLine,
   replyState,
@@ -28,9 +30,12 @@ import {
   windowOpen,
   ago,
   type ConvoState,
+  type DmLiveEvent,
   type InboxFilters,
+  type LiveState,
   type ReplyState,
 } from "../../lib/inbox";
+import { useDmStream } from "../../lib/dmStream";
 import { useIsPhone } from "../../lib/phone";
 import { usePhoneBar } from "../../lib/phoneBar";
 import { navigate } from "../../lib/routes";
@@ -49,15 +54,20 @@ import "./inbox.css";
  * list, then the conversation full screen with the tab bar hidden, details
  * and the long-press actions in sheets.
  *
- * Polls every 4 seconds while the page is visible and stops while the tab is
- * hidden; the API asks Zernio at most every 15 seconds behind that. Viewers
+ * Live (H1): a stream from the API says which conversation changed the
+ * moment a webhook, a send or a read is saved, and the list and the open
+ * conversation reread at once. Polling is the fallback (every 10 seconds
+ * while the stream is down) and the Zernio path (every 10 seconds while a
+ * Zernio account is on screen: Zernio has no push to us; the API asks it at
+ * most every 15 seconds). Hidden tabs do not poll; coming back rereads. Viewers
  * read everything; every write control turns into the read-only notice, and
  * the server refuses their writes anyway (403). Marking read is the exception
  * (F7): opening a conversation and Mark all as read work for viewers too.
  */
 
-const POLL_MS = 4000;
 const RETRY_MS = 15_000;
+/** Stream events in a burst (a sync, a run of bubbles) become one reread. */
+const LIVE_SETTLE_MS = 150;
 const PAGE = 30;
 
 interface ListResp {
@@ -189,15 +199,6 @@ export default function Inbox({
     void loadList(false);
   }, [loadList]);
 
-  // Every 4 seconds while visible; at once when the tab comes back.
-  useEffect(() => {
-    const tick = () => !document.hidden && void loadList(true);
-    const id = window.setInterval(tick, POLL_MS);
-    const vis = () => !document.hidden && void loadList(true);
-    document.addEventListener("visibilitychange", vis);
-    return () => (clearInterval(id), document.removeEventListener("visibilitychange", vis));
-  }, [loadList]);
-
   // Could not load at all: try again every 15 seconds on its own (mockup 10d).
   useEffect(() => {
     if (list || !listErr) return;
@@ -257,14 +258,52 @@ export default function Inbox({
     else setDetail(null);
   }, [openId, loadDetail]);
 
-  // Back on the tab or the window: the open conversation reads again (polls stop while hidden).
+  // Live (H1): the stream names what changed; a burst settles into one reread
+  // of the list and, when it is about the open conversation, of the thread.
+  const openRef = useRef(openId);
+  openRef.current = openId;
+  const pending = useRef<{ list: boolean; thread: boolean; dock: boolean; timer?: number }>({ list: false, thread: false, dock: false });
+  const onLive = useCallback(
+    (e: DmLiveEvent | "resync") => {
+      const want = e === "resync" ? { list: true, thread: !!openRef.current } : liveRefresh(e, openRef.current);
+      const p = pending.current;
+      p.list ||= want.list;
+      p.thread ||= want.thread;
+      p.dock ||= e === "resync" || e.kind === "in" || e.kind === "read" || e.kind === "thread";
+      if (p.timer) return;
+      p.timer = window.setTimeout(() => {
+        const { list: l, thread, dock } = p;
+        Object.assign(p, { list: false, thread: false, dock: false, timer: undefined });
+        if (thread && openRef.current) void loadDetail(openRef.current, true);
+        if (l) void loadList(true);
+        // The Dock's unread count rereads too (it listens for this, F7).
+        if (dock) window.dispatchEvent(new Event("toreroflow:dm-read"));
+      }, LIVE_SETTLE_MS);
+    },
+    [loadList, loadDetail],
+  );
+  useEffect(() => () => window.clearTimeout(pending.current.timer), []);
+  const live = useDmStream(accounts.length ? client.id : null, onLive);
+
+  // Polling: the fallback while the stream is down, and Zernio's only way in.
+  // The open conversation rereads on the tick too when it is not live or is
+  // read through Zernio. Hidden tabs wait; coming back or refocusing rereads.
+  const zernioAccounts = (status?.accounts ?? []).some((a) => a.transport === "zernio" && a.state === "zernio");
+  const every = pollEvery(live, zernioAccounts);
+  const openZernio = useRef(false);
+  openZernio.current = detail?.thread.source === "zernio";
   useEffect(() => {
-    if (!openId) return;
-    const back = () => !document.hidden && void loadDetail(openId, true);
+    const reread = (thread: boolean) => {
+      if (document.hidden) return;
+      void loadList(true);
+      if (thread && openRef.current) void loadDetail(openRef.current, true);
+    };
+    const id = window.setInterval(() => reread(live !== "live" || openZernio.current), every);
+    const back = () => reread(true);
     document.addEventListener("visibilitychange", back);
     window.addEventListener("focus", back);
-    return () => (document.removeEventListener("visibilitychange", back), window.removeEventListener("focus", back));
-  }, [openId, loadDetail]);
+    return () => (clearInterval(id), document.removeEventListener("visibilitychange", back), window.removeEventListener("focus", back));
+  }, [loadList, loadDetail, every, live]);
 
   /**
    * Mark one conversation read, or with no id the whole brand (F7). The dots
@@ -455,6 +494,7 @@ export default function Inbox({
       onMarkAll={() => void markRead()}
       brand={client.name}
       lastLoaded={listErr ? lastLoaded : null}
+      live={live}
     />
   );
 
@@ -582,6 +622,7 @@ function ThreadList({
   onMarkAll,
   brand,
   lastLoaded,
+  live,
 }: {
   phone: boolean;
   list: ListResp;
@@ -599,9 +640,25 @@ function ThreadList({
   onMarkAll(): void;
   brand: string;
   lastLoaded: Date | null;
+  /** H1: the stream's state, shown as a word: "Live", or "Reconnecting" after it dropped. */
+  live: LiveState;
 }) {
   const now = Date.now();
   const c = list.counts;
+  // Phone: the word, in the row under the tabs. Desktop: a dot by the title
+  // (the header line is full), the word for screen readers and on hover.
+  const liveWord = live === "live" ? "Live" : live === "reconnecting" ? "Reconnecting" : null;
+  const liveTag = liveWord && (
+    <span
+      className={`ibx-live${live === "live" ? " on" : ""}${phone ? "" : " dot"}`}
+      aria-live="polite"
+      title={phone ? undefined : live === "live" ? "Live: new messages show as they arrive" : "Reconnecting: checking every 10 seconds meanwhile"}
+      data-testid="dm-live"
+      data-state={live}
+    >
+      <span className={phone ? undefined : "sr"}>{liveWord}</span>
+    </span>
+  );
   const markAll = (
     <button
       type="button"
@@ -720,7 +777,7 @@ function ThreadList({
           <span>
             {c.all} conversations, {c.unread} unread
           </span>
-          {lastLoaded ? <span>Offline. Loaded {clock(lastLoaded)}</span> : c.unread > 0 ? markAll : <span>Pull to refresh</span>}
+          {lastLoaded ? <span>Offline. Loaded {clock(lastLoaded)}</span> : c.unread > 0 ? markAll : (liveTag ?? <span>Pull to refresh</span>)}
         </div>
         <section className="mb-card list ibx-list" aria-label="Conversations">
           {rows}
@@ -736,7 +793,7 @@ function ThreadList({
     <section className="pane-list" aria-label="Conversations">
       <div className="lhead">
         <div className="sb ibx-lh1">
-          <h3>Inbox</h3>
+          <h3>Inbox{liveTag}</h3>
           <span className="row">
             <span className="tiny">
               {lastLoaded ? `Offline. Loaded ${clock(lastLoaded)} · ` : ""}

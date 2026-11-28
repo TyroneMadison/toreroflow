@@ -14,6 +14,20 @@
 		max_size 11GB
 	}
 
+	# The Inbox live stream (Server-Sent Events, apps/api/src/dm/live.ts):
+	# every event and heartbeat passes the moment the API writes it, and it is
+	# never compressed, because a compressor holds bytes back until it has
+	# enough of them. The API sends a heartbeat every 20 seconds, well inside
+	# the read timeout.
+	@dmstream path /clients/*/dm/stream
+	reverse_proxy @dmstream api:4700 {
+		flush_interval -1
+		transport http {
+			read_timeout 3h
+			write_timeout 3h
+		}
+	}
+
 	# Uploads and PDF renders both outlast a default timeout. Generous rather
 	# than unlimited, so a genuinely stuck request still lets go.
 	reverse_proxy api:4700 {
@@ -23,7 +37,8 @@
 		}
 	}
 
-	encode zstd gzip
+	@compress not path /clients/*/dm/stream
+	encode @compress zstd gzip
 
 	header {
 		# The API answers a desktop app, never a browsing session, so there is
@@ -45,10 +60,14 @@
 		}
 		# The signature on a file link is a credential for that file. Logging
 		# full query strings would write a working link to every invoice and
-		# tax export into a file that outlives the link's expiry.
+		# tax export into a file that outlives the link's expiry. The same goes
+		# for an Inbox stream ticket, Meta's verify token and an OAuth code.
 		format filter {
 			request>uri query {
 				delete s
+				delete ticket
+				delete hub.verify_token
+				delete code
 			}
 		}
 	}

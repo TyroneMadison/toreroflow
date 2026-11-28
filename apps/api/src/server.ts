@@ -32,6 +32,8 @@ import { dmRoutes, publicDmRoutes } from "./routes/dm";
 import { dmAutomationRoutes, publicAutomationRoutes } from "./routes/dmAutomations";
 import { dmAiRoutes } from "./routes/dmAi";
 import { metaWebhookRoutes } from "./routes/metaWebhook";
+import { dmLiveRoutes } from "./dm/live";
+import { logReq } from "./logRedact";
 import { mediaRoutes } from "./routes/media";
 import { postRoutes } from "./routes/posts";
 import { reportRoutes } from "./routes/reports";
@@ -84,7 +86,7 @@ export interface BuildServerOptions {
 export async function buildServer(
   options: BuildServerOptions = {},
 ): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? true });
+  const app = Fastify({ logger: options.logger === false ? false : { serializers: { req: logReq } } });
 
   /*
    * Who may make a cross-site request.
@@ -203,6 +205,7 @@ export async function buildServer(
   await app.register(dmRoutes);
   await app.register(dmAutomationRoutes);
 await app.register(dmAiRoutes);
+  await app.register(dmLiveRoutes);
   await app.register(publicDmRoutes);
   await app.register(publicAutomationRoutes);
   await app.register(metaWebhookRoutes);

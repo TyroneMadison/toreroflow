@@ -15,6 +15,9 @@ import {
   agoWords,
   contactQuery,
   convoState,
+  liveRefresh,
+  pollEvery,
+  reconnectDelay,
   csvField,
   isPinned,
   keptScrollTop,
@@ -182,5 +185,29 @@ if (!/\.ibx-pbox \.tx\{[^}]*font-size:16px/.test(phoneCss)) throw new Error("the
 // Reduced motion: the desktop sheet and hover transitions stop.
 const css = read("src/components/inbox/inbox.css");
 if (!/prefers-reduced-motion:reduce/.test(css) || !/data-motion="reduced"/.test(css)) throw new Error("inbox.css lacks the reduced motion fallback");
+
+// H1 live updates: what an event rereads, how often the Inbox polls, the reconnect backoff.
+eq(liveRefresh({ threadId: "t1", kind: "in" }, "t1"), { list: true, thread: true }, "a new message in the open thread rereads both");
+eq(liveRefresh({ threadId: "t2", kind: "in" }, "t1"), { list: true, thread: false }, "another thread moves its row only");
+eq(liveRefresh({ threadId: "t1", kind: "reaction" }, "t1"), { list: true, thread: true }, "a reaction redraws the open bubble");
+eq(liveRefresh({ threadId: "t1", kind: "read" }, "t1"), { list: true, thread: false }, "a read clears dots, no thread reread");
+eq(liveRefresh({ threadId: "*", kind: "read" }, null), { list: true, thread: false }, "mark all");
+eq(pollEvery("live", false), 60_000, "live and nothing on Zernio: a slow safety poll");
+eq(pollEvery("live", true), 10_000, "Zernio has no push: keep polling");
+for (const st of ["connecting", "reconnecting", "off"] as const) eq(pollEvery(st, false), 10_000, `stream ${st}: the 10 s fallback`);
+eq(reconnectDelay(0, 0.5), 1000, "first retry after a second");
+eq(reconnectDelay(3, 0.5), 8000, "doubling");
+eq(reconnectDelay(20, 0.5), 30_000, "capped at 30 s");
+if (reconnectDelay(0, 0) < 750 || reconnectDelay(0, 1) > 1250) throw new Error("jitter stays within a quarter");
+// Wiring: one stream per open Inbox, a ticket per connect, the login token never in a URL.
+const stream = read("src/lib/dmStream.ts");
+for (const want of ["new EventSource(", "/dm/stream-ticket", "?ticket=", `addEventListener("ready"`, `addEventListener("dm"`, "es?.close()"]) {
+  if (!stream.includes(want)) throw new Error(`dmStream.ts lacks ${want}`);
+}
+if (/getToken|Bearer/.test(stream)) throw new Error("the stream must never carry the login token");
+for (const want of ["useDmStream(", "liveRefresh(e, openRef.current)", "pollEvery(live, zernioAccounts)", `data-testid="dm-live"`, `addEventListener("focus"`]) {
+  if (!inbox.includes(want)) throw new Error(`Inbox.tsx lacks ${want}`);
+}
+if (/POLL_MS = 4000/.test(inbox)) throw new Error("the fixed 4 second poll is replaced by pollEvery");
 
 console.log("inbox: all checks passed");

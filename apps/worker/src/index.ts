@@ -1229,9 +1229,11 @@ setInterval(driveTick, DRIVE_CHECK_MINUTES * 60_000).unref();
  * Native Instagram DMs (F2): webhook deliveries one at a time in arrival
  * order, so a message and its edit or unsend never race. The missed-DM sync
  * every 5 minutes on a timer (skipping a tick while one is running), token
- * refresh and webhook-log pruning once a day.
+ * refresh and webhook-log pruning once a day. Polled every half second (the
+ * least pg-boss allows): a webhook is a person waiting for their message to
+ * show in an open Inbox (H1).
  */
-void work<DmJob | { kind: "ai-draft"; threadId: string; by?: string | null }>("dm", { concurrency: 1 }, async (job) => {
+void work<DmJob | { kind: "ai-draft"; threadId: string; by?: string | null }>("dm", { concurrency: 1, pollSeconds: 0.5 }, async (job) => {
   // A person pressed "Draft with AI" in the Inbox (F5).
   if (job.kind === "ai-draft") await draftThread(job.threadId, "request", new Date(), job.by ?? null);
   else await runDmJob(job);
