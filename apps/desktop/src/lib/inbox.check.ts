@@ -209,5 +209,9 @@ for (const want of ["useDmStream(", "liveRefresh(e, openRef.current)", "pollEver
   if (!inbox.includes(want)) throw new Error(`Inbox.tsx lacks ${want}`);
 }
 if (/POLL_MS = 4000/.test(inbox)) throw new Error("the fixed 4 second poll is replaced by pollEvery");
+// 0.3.74: the desktop dot sits by the title. A bare "dot" class picks up the global .dot
+// (position:absolute, top right, styles.css) and the dot lands in the corner of the screen.
+if (/[" ]dot["`]/.test(inbox.slice(inbox.indexOf("const liveTag"), inbox.indexOf("const liveTag") + 600))) throw new Error("the live dot must not use the global .dot class");
+if (!/.ibx-live.ibx-live-dot{/.test(read("src/components/inbox/inbox.css"))) throw new Error("inbox.css lacks the live dot rule");
 
 console.log("inbox: all checks passed");
