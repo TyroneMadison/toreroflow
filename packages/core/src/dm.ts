@@ -171,6 +171,8 @@ export interface DmThreadView {
 export interface DmThreadActivity {
   /** Messages in the thread, both ways. */
   messages: number;
+  /** False when the thread was too long to count to its start: "at least" `messages`. Missing on older servers (exact). */
+  messagesExact?: boolean;
   /** When the person first reached the account here. */
   firstSeenAt: string | null;
   /** What started it: "Story reply", "Story mention", "Direct message". Null when unknown (Zernio). */

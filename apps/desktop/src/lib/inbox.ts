@@ -192,6 +192,42 @@ export function threadItems(messages: DmMessageView[], now = Date.now()): Item[]
   return out;
 }
 
+const sentMs = (m: Pick<DmMessageView, "sentAt">): number => (m.sentAt ? Date.parse(m.sentAt) || 0 : 0);
+const sameList = (a: DmMessageView[], b: DmMessageView[]) =>
+  a.length === b.length && a.every((m, i) => m === b[i] || JSON.stringify(m) === JSON.stringify(b[i]));
+
+/**
+ * A fresh newest page (a poll, a send, the live stream) into the messages on
+ * screen (G1). The page is the truth for its own time span, by message id
+ * (edits, unsends and reactions land); anything older than the page stays,
+ * which is what Load older messages brought in. Nothing new: the very same
+ * array comes back, so a quiet poll redraws nothing.
+ */
+export function mergeMessages(shown: DmMessageView[], fresh: DmMessageView[]): DmMessageView[] {
+  const ids = new Set(fresh.map((m) => m.id));
+  const from = fresh.length ? sentMs(fresh[0]!) : Infinity;
+  const merged = [...shown.filter((m) => !ids.has(m.id) && sentMs(m) < from), ...fresh];
+  return sameList(merged, shown) ? shown : merged;
+}
+
+/** An older page above the messages on screen, without doubles. */
+export function prependOlder(shown: DmMessageView[], older: DmMessageView[]): DmMessageView[] {
+  const ids = new Set(shown.map((m) => m.id));
+  return [...older.filter((m) => !ids.has(m.id)), ...shown];
+}
+
+/** The details pane's count: "1,204", or "500+" when the thread was too long to count to its start. */
+export const messageCount = (a: { messages: number; messagesExact?: boolean }): string =>
+  `${a.messages.toLocaleString("en-US")}${a.messagesExact === false ? "+" : ""}`;
+
+/** Within this many pixels of the bottom the reader is following the conversation. */
+export const PINNED_PX = 80;
+export const isPinned = (el: { scrollHeight: number; scrollTop: number; clientHeight: number }): boolean =>
+  el.scrollHeight - el.scrollTop - el.clientHeight < PINNED_PX;
+/** Where scrollTop goes after older messages were added above, so the reader's line stays put. */
+export const keptScrollTop = (before: { scrollHeight: number; scrollTop: number }, afterHeight: number): number =>
+  afterHeight - before.scrollHeight + before.scrollTop;
+
 /** What a part is called when there is nothing to draw (row previews, the actions sheet). */
 export const PART_LABEL: Record<string, string> = {
   image: "Photo",

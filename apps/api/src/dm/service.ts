@@ -149,14 +149,20 @@ async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocia
       const have = existing.get(c.id);
       // Read here after their last message: Zernio still counts it unread, we do not.
       const unread = have?.readAt && at && have.readAt >= at ? 0 : c.unreadCount;
+      const preview = c.lastMessage?.slice(0, 200) ?? null;
+      // Zernio's list does not say who wrote last. Our own reply keeps its "out"
+      // (same words), unread words are theirs, anything else is not guessed
+      // (opening the thread fills it in from the messages).
+      const lastDirection = have && preview === have.lastPreview ? have.lastDirection : c.unreadCount > 0 ? "in" : null;
       if (have) {
         const moved = (at?.getTime() ?? 0) !== (have.lastMessageAt?.getTime() ?? 0);
-        if (moved || unread !== have.unread || (c.lastMessage ?? null) !== have.lastPreview) {
+        if (moved || unread !== have.unread || preview !== have.lastPreview) {
           await prisma.dmThread.update({
             where: { id: have.id },
             data: {
               lastMessageAt: at,
-              lastPreview: c.lastMessage?.slice(0, 200) ?? null,
+              lastPreview: preview,
+              lastDirection,
               unread,
               ...(moved && have.status === "done" ? { status: "open" } : {}),
             },
@@ -189,10 +195,11 @@ async function pullZernio(z: ZernioProvider, client: ClientRow, targets: DmSocia
           source: "zernio",
           externalId: c.id,
           lastMessageAt: at,
-          lastPreview: c.lastMessage?.slice(0, 200) ?? null,
+          lastPreview: preview,
+          lastDirection,
           unread,
         },
-        update: { externalId: c.id, lastMessageAt: at, lastPreview: c.lastMessage?.slice(0, 200) ?? null, unread },
+        update: { externalId: c.id, lastMessageAt: at, lastPreview: preview, lastDirection, unread },
       });
     }
   }
@@ -321,6 +328,54 @@ export function zernioMessageView(origin: string, socialAccountId: string, conve
     error: null,
     sentAt: m.createdAt,
   };
+}
+
+/**
+ * A Zernio thread's message count. Zernio has none, so the thread is walked
+ * once and the count kept with its newest message; later reads add only what
+ * came after that message (no walk at all while nothing new arrived).
+ * ponytail: per-process and capped like zernioHints; deletions are not taken off.
+ */
+const zernioCounts = new Map<string, { newest: string | null; count: number; exact: boolean }>();
+export async function zernioCount(
+  z: ZernioProvider,
+  conversationId: string,
+  accountId: string,
+  /** The newest message on the page just read, or null for an older page. */
+  newest: string | null,
+): Promise<{ count: number; exact: boolean }> {
+  const key = `${accountId}:${conversationId}`;
+  const hit = zernioCounts.get(key);
+  if (hit && (newest === null || hit.newest === newest)) return hit;
+  const walked = await z.countMessages(conversationId, accountId, hit?.newest ?? undefined);
+  const out = walked.stopped && hit ? { count: hit.count + walked.count, exact: hit.exact } : { count: walked.count, exact: walked.exact };
+  zernioCounts.delete(key);
+  zernioCounts.set(key, { newest: newest ?? hit?.newest ?? null, ...out });
+  if (zernioCounts.size > 5000) zernioCounts.delete(zernioCounts.keys().next().value!);
+  return out;
+}
+/** Checks reset it between cases. */
+export const resetZernioCounts = (): void => zernioCounts.clear();
+
+/**
+ * Messages stored here that a Zernio page does not show (yet): an account
+ * that moved to Torerone's Meta app keeps its old Zernio threads, and the
+ * webhook writes their new messages here, often before Zernio has them.
+ * Same Instagram message id, or the same words the same way within 10
+ * seconds, is the same message.
+ */
+export function notInZernio(page: DmMessageView[], stored: DmMessageView[]): DmMessageView[] {
+  const ids = new Set(page.map((m) => m.externalId));
+  const t = (m: DmMessageView) => Date.parse(m.sentAt ?? "");
+  const same = (a: DmMessageView, b: DmMessageView) =>
+    a.direction === b.direction && (a.text ?? "") === (b.text ?? "") && Math.abs(t(a) - t(b)) <= 10_000;
+  return stored.filter((s) => !ids.has(s.externalId) && !page.some((m) => same(m, s)));
+}
+
+/** Oldest first; equal or unknown times keep their order. */
+export function byTime(ms: DmMessageView[]): DmMessageView[] {
+  const t = (m: DmMessageView) => Date.parse(m.sentAt ?? "") || 0;
+  return ms.map((m, i) => [m, i] as const).sort((a, b) => t(a[0]) - t(b[0]) || a[1] - b[1]).map(([m]) => m);
 }
 
 type MessageRow = Prisma.DmMessageGetPayload<object>;

@@ -290,7 +290,53 @@ export interface InboxMessage {
   attachments: Array<{ type: string | null; url: string | null }>;
 }
 
-const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+/** One page as Zernio sent it. nextCursor null: the last page. */
+export interface InboxMessagePage {
+  messages: InboxMessage[];
+  nextCursor: string | null;
+  sortOrderApplied: "asc" | "desc" | null;
+}
+
+/** What the Inbox draws: oldest first, the cursor for the page before, the count when it is known. */
+export interface ThreadPage {
+  messages: InboxMessage[];
+  /** Pass back as `before` for the older page; null at the start of the thread. */
+  before: string | null;
+  /** Every message in the thread, when this read saw all of them. */
+  total: number | null;
+}
+
+/**
+ * How far an oldest-first walk goes. Meta replays a thread's 500 most recent
+ * messages into Zernio, so 20 pages of 100 cover it with room.
+ * ponytail: a thread past 2,000 messages on a Zernio that ignores sortOrder
+ * shows message 2,000 as its newest; only that fallback has the ceiling.
+ */
+const MAX_WALK_PAGES = 20;
+
+const at = (m: InboxMessage): number => Date.parse(m.createdAt ?? "") || 0;
+/** Oldest first; equal times keep the order Zernio gave. */
+const chatOrder = (ms: InboxMessage[]): InboxMessage[] => ms.map((m, i) => [m, i] as const).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([m]) => m);
+const isOldestFirst = (ms: InboxMessage[]): boolean => ms.length < 2 || at(ms[0]!) <= at(ms[ms.length - 1]!);
+
+function inboxMessage(raw: unknown): InboxMessage {
+  const m = (raw ?? {}) as Record<string, unknown>;
+  const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+  return {
+    id: String(m.id ?? ""),
+    message: String(m.message ?? ""),
+    senderId: str(m.senderId),
+    senderName: str(m.senderName),
+    direction: m.direction === "outgoing" ? "outgoing" : "incoming",
+    createdAt: str(m.createdAt),
+    attachments: attachments.map((a) => {
+      const x = (a ?? {}) as Record<string, unknown>;
+      return { type: str(x.type), url: str(x.url) };
+    }),
+  };
+}
+
+const num =(v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 const strs = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -1007,7 +1053,7 @@ export class ZernioProvider {
   }
 
   /**
-   * One thread, oldest message first.
+   * The newest `limit` messages of a thread, oldest first (chat order).
    *
    * Attachment URLs on Instagram and Facebook expire, so they are handed
    * straight to the screen and never stored; attachmentUrl below re-reads one
@@ -1018,28 +1064,117 @@ export class ZernioProvider {
     accountId: string,
     limit = 50,
   ): Promise<InboxMessage[]> {
-    const query = new URLSearchParams({ accountId, limit: String(Math.min(limit, 100)) });
-    const data = await this.request<{ messages?: unknown }>(
+    return (await this.threadPage(conversationId, accountId, { limit })).messages;
+  }
+
+  /**
+   * One page of a thread, newest first by default.
+   *
+   * Zernio's own default is oldest first, which is how the Inbox used to open
+   * long threads on their first 50 messages. Facebook pages always walk newest
+   * to oldest whatever is asked; sortOrderApplied says what Zernio did.
+   */
+  async conversationMessagesPage(
+    conversationId: string,
+    accountId: string,
+    opts: { limit?: number; cursor?: string; sortOrder?: "asc" | "desc" } = {},
+  ): Promise<InboxMessagePage> {
+    const query = new URLSearchParams({
+      accountId,
+      limit: String(Math.min(Math.max(opts.limit ?? 100, 1), 100)),
+      sortOrder: opts.sortOrder ?? "desc",
+    });
+    if (opts.cursor) query.set("cursor", opts.cursor);
+    const data = await this.request<{ messages?: unknown; pagination?: { hasMore?: unknown; nextCursor?: unknown }; sortOrderApplied?: unknown }>(
       "GET",
       `/inbox/conversations/${encodeURIComponent(conversationId)}/messages?${query}`,
     );
     const rows = Array.isArray(data.messages) ? data.messages : [];
-    return rows.map((raw) => {
-      const m = (raw ?? {}) as Record<string, unknown>;
-      const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+    const applied = data.sortOrderApplied;
+    return {
+      messages: rows.map(inboxMessage),
+      nextCursor: data.pagination?.hasMore === false ? null : str(data.pagination?.nextCursor),
+      sortOrderApplied: applied === "asc" || applied === "desc" ? applied : null,
+    };
+  }
+
+  /**
+   * The page the Inbox draws: the newest `limit` messages (or the ones just
+   * before `before`), oldest first, with the cursor for the page before them.
+   *
+   * Asks Zernio newest first. A Zernio that answers oldest first anyway is
+   * walked to its end and the tail kept, with an offset cursor ("w:") into
+   * that walk; Zernio's own cursor travels as "z:". Opaque to the caller.
+   */
+  async threadPage(
+    conversationId: string,
+    accountId: string,
+    opts: { limit?: number; before?: string } = {},
+  ): Promise<ThreadPage> {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
+    const before = opts.before ?? "";
+    if (before.startsWith("w:")) return this.walkedPage(conversationId, accountId, limit, Number(before.slice(2)) || 0);
+    const cursor = before.startsWith("z:") ? before.slice(2) : undefined;
+    const page = await this.conversationMessagesPage(conversationId, accountId, { limit, cursor, sortOrder: "desc" });
+    const newestFirst = (page.sortOrderApplied ?? (isOldestFirst(page.messages) ? "asc" : "desc")) === "desc";
+    if (newestFirst || cursor) {
       return {
-        id: String(m.id ?? ""),
-        message: String(m.message ?? ""),
-        senderId: str(m.senderId),
-        senderName: str(m.senderName),
-        direction: m.direction === "outgoing" ? "outgoing" : "incoming",
-        createdAt: str(m.createdAt),
-        attachments: attachments.map((a) => {
-          const at = (a ?? {}) as Record<string, unknown>;
-          return { type: str(at.type), url: str(at.url) };
-        }),
+        messages: chatOrder(page.messages),
+        before: page.nextCursor ? `z:${page.nextCursor}` : null,
+        total: !cursor && !page.nextCursor ? page.messages.length : null,
       };
-    });
+    }
+    return this.walkedPage(conversationId, accountId, limit, null, page);
+  }
+
+  /** Oldest first all the way: walk to the end, keep `limit` messages ending at `end` (null: the newest). */
+  private async walkedPage(
+    conversationId: string,
+    accountId: string,
+    limit: number,
+    end: number | null,
+    first?: InboxMessagePage,
+  ): Promise<ThreadPage> {
+    const all: InboxMessage[] = [];
+    let page = first ?? (await this.conversationMessagesPage(conversationId, accountId, { limit: 100, sortOrder: "asc" }));
+    for (let i = 1; ; i++) {
+      all.push(...page.messages);
+      if (!page.nextCursor || i >= MAX_WALK_PAGES) break;
+      page = await this.conversationMessagesPage(conversationId, accountId, { limit: 100, cursor: page.nextCursor, sortOrder: "asc" });
+    }
+    const sorted = chatOrder(all);
+    const stop = end === null ? sorted.length : Math.min(end, sorted.length);
+    const start = Math.max(0, stop - limit);
+    return {
+      messages: sorted.slice(start, stop),
+      before: start > 0 ? `w:${start}` : null,
+      total: page.nextCursor ? null : sorted.length,
+    };
+  }
+
+  /**
+   * How many messages a thread holds. Zernio has no count, so this walks it
+   * newest first, 100 a page, and stops at `stopAt` (a message already
+   * counted: the caller adds what it knew) or after MAX_WALK_PAGES (exact
+   * false). A Zernio that ignores the order is counted to its end.
+   */
+  async countMessages(
+    conversationId: string,
+    accountId: string,
+    stopAt?: string,
+  ): Promise<{ count: number; exact: boolean; stopped: boolean }> {
+    let count = 0;
+    let cursor: string | undefined;
+    for (let i = 0; i < MAX_WALK_PAGES; i++) {
+      const page = await this.conversationMessagesPage(conversationId, accountId, { limit: 100, cursor, sortOrder: "desc" });
+      const desc = (page.sortOrderApplied ?? (isOldestFirst(page.messages) ? "asc" : "desc")) === "desc";
+      const at = stopAt && desc ? chatOrder(page.messages).reverse().findIndex((m) => m.id === stopAt) : -1;
+      if (at >= 0) return { count: count + at, exact: true, stopped: true };
+      count += page.messages.length;
+      if (!page.nextCursor) return { count, exact: true, stopped: false };
+      cursor = page.nextCursor;
+    }
+    return { count, exact: false, stopped: false };
   }
 
   /** Reply in a thread as the connected account. */
