@@ -650,7 +650,7 @@ function ThreadList({
   const liveWord = live === "live" ? "Live" : live === "reconnecting" ? "Reconnecting" : null;
   const liveTag = liveWord && (
     <span
-      className={`ibx-live${live === "live" ? " on" : ""}${phone ? "" : " dot"}`}
+      className={`ibx-live${live === "live" ? " on" : ""}${phone ? "" : " ibx-live-dot"}`}
       aria-live="polite"
       title={phone ? undefined : live === "live" ? "Live: new messages show as they arrive" : "Reconnecting: checking every 10 seconds meanwhile"}
       data-testid="dm-live"

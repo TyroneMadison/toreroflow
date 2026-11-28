@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.74] - 2026-11-28
+
+### Fixed - The Inbox live dot sits by its title (H1 follow-up)
+
+- On desktop and web the small Live / Reconnecting dot of 0.3.73 showed in the top right corner of the window instead of beside the "Inbox" title: its class name matched the app-wide `.dot` style. It now sits by the title, green while live and grey while reconnecting, with the word in its tooltip. The phone count row was not affected
+
 ## [0.3.73] - 2026-11-28
 
 ### Added - Inbox live updates (H1)
