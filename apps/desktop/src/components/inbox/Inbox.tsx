@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DM_STAGE_LABEL, type DmAiDraftView, type DmMessageView, type DmStage, type DmThreadActivity, type DmThreadView } from "@toreroflow/core";
 import { api, ApiError, type ClientSummary, type DmStatus } from "../../lib/api";
@@ -9,9 +9,14 @@ import {
   CONVO_LABEL,
   CONVO_STATES,
   LIST_TABS,
+  isPinned,
+  keptScrollTop,
   markedRead,
+  mergeMessages,
+  messageCount,
   messageSummary,
   NO_FILTERS,
+  prependOlder,
   previewLine,
   replyState,
   shortDate,
@@ -64,6 +69,10 @@ interface ListResp {
 interface Detail {
   thread: DmThreadView;
   messages: DmMessageView[];
+  /** The page before the oldest message on screen (G1); null at the start of the thread. */
+  nextCursor: string | null;
+  /** Load older messages ran: a fresh newest page must not reset the cursor. */
+  olderLoaded?: boolean;
   activity: DmThreadActivity;
   /** AI replies (F5): on for this account, the draft waiting, the AI's note. Missing on older servers. */
   ai?: ThreadAi;
@@ -207,6 +216,8 @@ export default function Inbox({
     if (!isPhone && !openId && list?.threads.length) setOpenId(list.threads[0]!.id);
   }, [isPhone, openId, list]);
 
+  // The newest page of the open conversation. A silent reread (poll, send,
+  // tab back) merges by message id into what is on screen, older pages kept.
   const detailSeq = useRef(0);
   const loadDetail = useCallback(
     async (id: string, silent: boolean) => {
@@ -215,7 +226,11 @@ export default function Inbox({
       try {
         const r = await api.get<Detail>(`/clients/${client.id}/dm/threads/${id}`);
         if (n !== detailSeq.current) return;
-        setDetail(r);
+        setDetail((d) =>
+          silent && d && d.thread.id === r.thread.id
+            ? { ...r, messages: mergeMessages(d.messages, r.messages), nextCursor: d.olderLoaded ? d.nextCursor : r.nextCursor, olderLoaded: d.olderLoaded }
+            : r,
+        );
         setDetailErr(null);
       } catch (e) {
         if (n === detailSeq.current) setDetailErr(errText(e, "could not load this conversation"));
@@ -224,9 +239,31 @@ export default function Inbox({
     [client.id],
   );
 
+  /** Load older messages: the page before `cursor`, above what is on screen. */
+  const loadOlder = useCallback(
+    async (id: string, cursor: string) => {
+      const r = await api.get<Detail>(`/clients/${client.id}/dm/threads/${id}?before=${encodeURIComponent(cursor)}`);
+      setDetail((d) =>
+        d && d.thread.id === id && d.nextCursor === cursor
+          ? { ...d, messages: prependOlder(d.messages, r.messages), nextCursor: r.nextCursor, olderLoaded: true }
+          : d,
+      );
+    },
+    [client.id],
+  );
+
   useEffect(() => {
     if (openId) void loadDetail(openId, false);
     else setDetail(null);
+  }, [openId, loadDetail]);
+
+  // Back on the tab or the window: the open conversation reads again (polls stop while hidden).
+  useEffect(() => {
+    if (!openId) return;
+    const back = () => !document.hidden && void loadDetail(openId, true);
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => (document.removeEventListener("visibilitychange", back), window.removeEventListener("focus", back));
   }, [openId, loadDetail]);
 
   /**
@@ -437,6 +474,7 @@ export default function Inbox({
       onBack={() => setOpenId(null)}
       onInfo={() => setInfoOpen(true)}
       onReload={() => void loadDetail(t.id, true)}
+      onOlder={(cursor) => loadOlder(t.id, cursor)}
       onSent={() => (void loadDetail(t.id, true), void loadList(true))}
       onPause={(p) => void setPause(t, p)}
       onConvo={(s) => void setConvo(t, s)}
@@ -829,6 +867,7 @@ function Conversation({
   onBack,
   onInfo,
   onReload,
+  onOlder,
   onSent,
   onPause,
   onConvo,
@@ -842,6 +881,7 @@ function Conversation({
   onBack(): void;
   onInfo(): void;
   onReload(): void;
+  onOlder(cursor: string): Promise<void>;
   onSent(): void;
   onPause(pause: boolean): void;
   onConvo(s: ConvoState): void;
@@ -858,31 +898,91 @@ function Conversation({
   const name = who(thread.contact);
   const handle = atHandle(thread.contact);
 
-  // Newest at the bottom, scrolled into view when it arrives.
+  /*
+   * G1: a conversation opens on its newest message (it remounts per thread,
+   * so a switch does too). A new message follows only a reader pinned near
+   * the bottom; anyone scrolled up keeps their place and gets the New messages
+   * chip. Older pages come in above with the reader's line kept where it was.
+   */
   const lastId = detail?.messages.at(-1)?.id;
+  const firstId = detail?.messages[0]?.id;
   const hasDetail = !!detail;
+  const cursor = detail?.nextCursor ?? null;
+  const pinned = useRef(true);
+  const seen = useRef<{ firstId?: string; lastId?: string; scrollHeight: number; scrollTop: number }>({ scrollHeight: 0, scrollTop: 0 });
+  const [newBelow, setNewBelow] = useState(false);
+  const [older, setOlder] = useState<"idle" | "busy" | "failed">("idle");
+  const olderBusy = useRef(false);
+  const loadOlder = useCallback(async () => {
+    if (!cursor || olderBusy.current) return;
+    olderBusy.current = true;
+    setOlder("busy");
+    try {
+      await onOlder(cursor);
+      setOlder("idle");
+    } catch {
+      setOlder("failed");
+    } finally {
+      olderBusy.current = false;
+    }
+  }, [cursor, onOlder]);
+  const olderRef = useRef(loadOlder);
+  olderRef.current = loadOlder;
+  const atTop = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = msgsRef.current;
+    // Reloading from scratch: the list comes back at the bottom again.
+    if (!el || !detail) return void (seen.current = { scrollHeight: 0, scrollTop: 0 });
+    const was = seen.current;
+    // Their old first message is still there with more above it: older came in.
+    if (was.firstId && firstId !== was.firstId && detail.messages.some((m) => m.id === was.firstId)) {
+      el.scrollTop = keptScrollTop(was, el.scrollHeight);
+    }
+    if (lastId !== was.lastId) {
+      if (!was.lastId || pinned.current) (el.scrollTop = el.scrollHeight), setNewBelow(false);
+      else setNewBelow(true);
+    }
+    seen.current = { firstId, lastId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+  }, [firstId, lastId, detail]);
+
   useEffect(() => {
     const el = msgsRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const onScroll = () => {
+      pinned.current = isPinned(el);
+      seen.current = { ...seen.current, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+      if (pinned.current) setNewBelow(false);
+      // Reaching the top loads the page before, once per arrival.
+      const top = el.scrollTop < 120 && !pinned.current;
+      if (top && !atTop.current) void olderRef.current();
+      atTop.current = top;
+    };
     // Photos and videos load after the first paint and push the newest message
     // down; follow them while the reader is still at the bottom.
-    let pinned = true;
-    const onScroll = () => (pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 80);
-    const onLoad = () => pinned && (el.scrollTop = el.scrollHeight);
+    const follow = () => pinned.current && (el.scrollTop = el.scrollHeight);
     el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("load", onLoad, true);
-    el.addEventListener("loadedmetadata", onLoad, true);
+    el.addEventListener("load", follow, true);
+    el.addEventListener("loadedmetadata", follow, true);
     // The composer growing (Replying to, a photo) shrinks the list: stay at the bottom.
-    const ro = new ResizeObserver(onLoad);
+    const ro = new ResizeObserver(follow);
     ro.observe(el);
     return () => {
       ro.disconnect();
       el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("load", onLoad, true);
-      el.removeEventListener("loadedmetadata", onLoad, true);
+      el.removeEventListener("load", follow, true);
+      el.removeEventListener("loadedmetadata", follow, true);
     };
-  }, [lastId, hasDetail]);
+  }, [hasDetail]);
+
+  // A jump, not a smooth scroll: halfway down a reader is not "pinned", and a
+  // message landing then would raise the chip again.
+  const toNewest = () => {
+    const el = msgsRef.current;
+    pinned.current = true;
+    setNewBelow(false);
+    if (el) el.scrollTop = el.scrollHeight;
+  };
 
   const copy = (m: DmMessageView) => {
     const text = m.transcript && !m.text ? m.transcript : messageSummary(m);
@@ -967,7 +1067,21 @@ function Conversation({
       </div>
     )
   ) : (
-    <div className="ibx-msgs" ref={msgsRef} role="log" aria-label={`Messages with ${name}`}>
+    <div className="ibx-msgwrap">
+    <div className="ibx-msgs" ref={msgsRef} role="log" aria-label={`Messages with ${name}`} data-testid="dm-messages">
+      {cursor && (
+        <button
+          type="button"
+          className="ibx-btn ghost sm ibx-older"
+          onClick={() => void loadOlder()}
+          disabled={older === "busy"}
+          aria-busy={older === "busy"}
+          data-testid="dm-load-older"
+        >
+          <I name="i-chev-u" />
+          {older === "busy" ? "Loading older messages…" : older === "failed" ? "Could not load. Try again" : "Load older messages"}
+        </button>
+      )}
       {items.length === 0 && <p className="ibx-nomatch">No messages in this conversation yet.</p>}
       {items.map((it) =>
         it.kind === "sep" ? (
@@ -1004,6 +1118,13 @@ function Conversation({
         ),
       )}
     </div>
+      {newBelow && (
+        <button type="button" className="ibx-newchip" onClick={toNewest} data-testid="dm-new-messages">
+          <I name="i-chev" />
+          New messages
+        </button>
+      )}
+    </div>
   );
 
   return (
@@ -1019,7 +1140,8 @@ function Conversation({
         ai={detail?.ai ?? null}
         onReload={onReload}
         onCancelReply={() => setReplyTo(null)}
-        onSent={() => (setReplyTo(null), onSent())}
+        // Their own message: back to the bottom, wherever they had scrolled.
+        onSent={() => (toNewest(), setReplyTo(null), onSent())}
       />
       {phone && actionsFor && (
         <Sheet label="Message actions" title={<span className="vh">Message actions</span>} onClose={() => setActionsFor(null)} className="ibx-actsheet" testId="dm-actions" top
@@ -1684,7 +1806,7 @@ function Details({
           )}
           <div className={phone ? "mb-lrow" : "kv"}>
             <span>Messages</span>
-            <b>{activity ? activity.messages : "…"}</b>
+            <b data-testid="dm-activity-messages">{activity ? messageCount(activity) : "…"}</b>
           </div>
           {activity?.cameFrom && (
             <div className={phone ? "mb-lrow" : "kv"}>

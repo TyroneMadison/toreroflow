@@ -98,11 +98,14 @@ fake("dmThread", {
     thread && where.id === thread.id && where.dmAccount.clientId === "c1" && where.dmAccount.client.agencyId === "A" ? thread : null,
   update: async ({ data }: Row) => (threadUpdates.push(data), { ...thread, ...data }),
   updateMany: async (q: Row) => (readAlls.push(q), { count: 3 }),
-  findMany: async (q: Row) => (threadQueries.push(q.where), []),
+  // The Zernio sync asks for its mirror rows by externalId; the list asks without.
+  findMany: async (q: Row) => (q.where.externalId ? (syncHave ? [syncHave] : []) : (threadQueries.push(q.where), [])),
   groupBy: async () => [],
   count: async () => 0,
-  upsert: async () => ({}),
+  upsert: async (q: Row) => (threadUpserts.push(q), {}),
 });
+const threadUpserts: Row[] = [];
+let syncHave: Row | null = null;
 fake("dmMessage", {
   upsert: async ({ create }: Row) => {
     const row = { id: `msg${messages.length}`, reactions: null, unsentAt: null, editedAt: null, transcript: null, ...create };
@@ -111,6 +114,21 @@ fake("dmMessage", {
   },
   findUnique: async ({ where }: Row) => messages.find((m) => m.id === where.id) ?? null,
   update: async ({ where, data }: Row) => Object.assign(messages.find((m) => m.id === where.id)!, data),
+  // Newest first by sentAt then id, from a cursor row, as Postgres pages them.
+  findMany: async (q: Row) => {
+    const w = q.where ?? {};
+    let rows = messages
+      .filter((m) => m.threadId === w.threadId && (!w.sentAt?.gte || m.sentAt >= w.sentAt.gte))
+      .sort((a, b) => b.sentAt - a.sentAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+    if (q.cursor) {
+      const i = rows.findIndex((m) => m.id === q.cursor.id);
+      rows = i < 0 ? [] : rows.slice(i + (q.skip ?? 0));
+    }
+    return rows.slice(0, q.take ?? rows.length);
+  },
+  count: async ({ where }: Row) => messages.filter((m) => m.threadId === where.threadId).length,
+  findFirst: async ({ where }: Row) =>
+    messages.filter((m) => m.threadId === where.threadId && (!where.direction || m.direction === where.direction)).sort((a, b) => a.sentAt - b.sentAt)[0] ?? null,
 });
 fake("dmTag", {
   findMany: async () => [],
@@ -152,6 +170,7 @@ globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
   if (url.endsWith("/me/messages")) return ok({ message_id: `mid.sent${calls.filter((c) => c.url.endsWith("/me/messages")).length}` });
   if (url.includes("/mid.old?fields=")) return ok({ id: "mid.old", attachments: { data: [{ mime_type: "image/jpeg", image_data: { url: "https://scontent.cdninstagram.com/fresh.jpg" } }] } });
   if (url.includes("zernio.com") && url.includes("/attachments/0")) return ok({ url: "https://scontent.cdninstagram.com/zernio-fresh.jpg" });
+  if (url.includes("zernio.com") && url.includes("/inbox/conversations/convL/messages")) return zernioLong(new URL(url));
   if (url.includes("zernio.com") && url.includes("/inbox/conversations/conv1/messages")) {
     if (init?.method === "POST") return ok({ success: true });
     return ok({ messages: [{ id: "m1", message: "look", direction: "incoming", createdAt: "2026-11-20T10:00:00Z", attachments: [{ type: "image", url: "https://scontent.cdninstagram.com/z-original.jpg" }] }] });
@@ -163,6 +182,34 @@ globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
   return ok({ error: { message: `unexpected ${url}` } }, 500);
 }) as typeof fetch;
 let meAnswer: Row = { user_id: "17841400000000001", username: "sample.studio" };
+
+/*
+ * A long Zernio thread (G1), oldest first in zMsgs, served three ways:
+ * "honors" sortOrder and its cursor (Instagram), "ignores" it (always oldest
+ * first, no sortOrderApplied), and "newest-pages" (pages walk newest to
+ * oldest, each page oldest first, no sortOrderApplied: Facebook's way). The
+ * cursor is an offset into that order.
+ */
+type ZMode = "honors" | "ignores" | "newest-pages" | "fails";
+let zMode: ZMode = "honors";
+const zAt = (i: number) => new Date(Date.UTC(2026, 9, 1) + i * 3600_000).toISOString();
+const zMsg = (i: number) => ({ id: `zm${i}`, message: `z ${i}`, direction: i % 3 ? "incoming" : "outgoing", createdAt: zAt(i), attachments: [] });
+const zMsgs: Row[] = Array.from({ length: 120 }, (_, i) => zMsg(i));
+function zernioLong(u: URL): Response {
+  const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  if (zMode === "fails") return json({ error: "upstream down" }, 503);
+  const limit = Number(u.searchParams.get("limit"));
+  const off = Number(u.searchParams.get("cursor") ?? 0);
+  const desc = u.searchParams.get("sortOrder") === "desc";
+  const order = zMode === "ignores" || (zMode === "honors" && !desc) ? zMsgs : [...zMsgs].reverse();
+  const items = order.slice(off, off + limit);
+  const next = off + limit < order.length ? String(off + limit) : null;
+  return json({
+    messages: zMode === "newest-pages" ? [...items].reverse() : items,
+    pagination: { hasMore: !!next, nextCursor: next },
+    ...(zMode === "honors" ? { sortOrderApplied: desc ? "desc" : "asc" } : {}),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // The app, with every route recorded by the plugin that registered it
@@ -594,6 +641,135 @@ for (const auth of [VIEWER, LOGGED_IN_VIEWER, OLD_VIEWER]) {
   assert.equal((await call("POST", "/clients/c1/dm/threads/t1/reply", auth, { text: "hi" })).statusCode, 403, "a viewer still cannot send");
 }
 assert.equal(sends(), sentBefore, "no viewer send reached Instagram");
+
+// ---------------------------------------------------------------------------
+// 11. G1: a long thread opens on its newest messages, pages back, counts true
+// ---------------------------------------------------------------------------
+
+const { resetZernioCounts } = await import("./service");
+const contactRow = { ...nativeThread(null).contact, createdAt: new Date("2026-09-01T00:00:00Z") };
+const ids = (r: { json(): Row }) => r.json().messages.map((m: Row) => m.externalId);
+const range = (from: number, to: number, p = "zm") => Array.from({ length: to - from + 1 }, (_, i) => `${p}${from + i}`);
+
+// Native: 120 stored messages, two of them at the same second (the id breaks the tie).
+thread = { ...nativeThread(hoursAgo(1)), id: "tN", contact: contactRow };
+const nAt = (i: number) => new Date(Date.UTC(2026, 9, 1) + Math.min(i, 118) * 60_000);
+for (let i = 0; i < 120; i++) {
+  messages.push({ id: `n${String(i).padStart(3, "0")}`, threadId: "tN", externalId: `mid.n${i}`, direction: i % 2 ? "in" : "out", text: `n ${i}`, attachments: null, replyToExternalId: null, reactions: null, unsentAt: null, editedAt: null, transcript: null, status: "sent", error: null, sentAt: nAt(i) });
+}
+const nIds = (from: number, to: number) => range(from, to, "mid.n");
+res = await call("GET", "/clients/c1/dm/threads/tN", VIEWER);
+assert.equal(res.statusCode, 200, res.body);
+assert.deepEqual(ids(res), nIds(70, 119), "native: the newest 50, oldest first, the newest last");
+assert.deepEqual(res.json().activity, { messages: 120, messagesExact: true, firstSeenAt: "2026-09-01T00:00:00.000Z", cameFrom: "Direct message" }, "native: the true count");
+res = await call("GET", `/clients/c1/dm/threads/tN?before=${res.json().nextCursor}`, VIEWER);
+assert.deepEqual(ids(res), nIds(20, 69), "native: ?before is the 50 before");
+res = await call("GET", `/clients/c1/dm/threads/tN?before=${res.json().nextCursor}`, VIEWER);
+assert.deepEqual(ids(res), nIds(0, 19), "native: then the first 20");
+assert.equal(res.json().nextCursor, null, "and nothing before the first message");
+
+// Zernio that honors sortOrder: 50 newest, Zernio's cursor back, a true count walked once.
+const zThread = (lastDirection: string | null): Row => ({
+  ...nativeThread(hoursAgo(1)),
+  id: "tL",
+  source: "zernio",
+  externalId: "convL",
+  lastDirection,
+  lastMessageAt: new Date(zAt(119)),
+  contact: contactRow,
+  dmAccount: { ...nativeThread(null).dmAccount, transport: "zernio" },
+});
+const zCalls = () => calls.filter((c) => c.url.includes("/inbox/conversations/convL/messages")).length;
+thread = zThread("in");
+resetZernioCounts();
+let zc = zCalls();
+res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+assert.equal(res.statusCode, 200, res.body);
+assert.deepEqual(ids(res), range(70, 119), "zernio: the newest 50, oldest first");
+assert.match(calls.filter((c) => c.url.includes("convL")).at(zc - zCalls())!.url, /sortOrder=desc/, "asked newest first");
+assert.deepEqual([res.json().activity.messages, res.json().activity.messagesExact], [120, true], "zernio: the true count, not the page size");
+assert.equal(zCalls(), zc + 3, "one page, then a two-page count walk");
+zc = zCalls();
+res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+assert.equal(zCalls(), zc + 1, "the next read (a poll) reuses the count");
+assert.equal(res.json().activity.messages, 120);
+const z1 = res.json().nextCursor as string;
+assert.match(z1, /^z:/, "an opaque cursor for older");
+res = await call("GET", `/clients/c1/dm/threads/tL?before=${encodeURIComponent(z1)}`, VIEWER);
+assert.deepEqual(ids(res), range(20, 69), "zernio: ?before is the 50 before");
+res = await call("GET", `/clients/c1/dm/threads/tL?before=${encodeURIComponent(res.json().nextCursor)}`, VIEWER);
+assert.deepEqual(ids(res), range(0, 19), "zernio: then the first 20");
+assert.equal(res.json().nextCursor, null);
+// A new message: on the page at once, the count grows by one page read, not a walk.
+zMsgs.push(zMsg(120));
+zc = zCalls();
+res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+assert.equal(ids(res).at(-1), "zm120", "the new message is last");
+assert.equal(res.json().activity.messages, 121);
+assert.equal(zCalls(), zc + 2, "page plus one count page that stops at the known newest");
+
+// Zernio that ignores sortOrder (always oldest first): walked to the end, the tail kept, offset cursors.
+for (const mode of ["ignores", "newest-pages"] as const) {
+  zMode = mode;
+  resetZernioCounts();
+  res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(ids(res), range(71, 120), `${mode}: still the newest 50, oldest first`);
+  assert.deepEqual([res.json().activity.messages, res.json().activity.messagesExact], [121, true], `${mode}: counted by the walk`);
+  assert.equal(res.json().nextCursor, "w:71");
+  res = await call("GET", "/clients/c1/dm/threads/tL?before=w%3A71", VIEWER);
+  assert.deepEqual(ids(res), range(21, 70), `${mode}: older page`);
+  res = await call("GET", `/clients/c1/dm/threads/tL?before=${encodeURIComponent(res.json().nextCursor)}`, VIEWER);
+  assert.deepEqual(ids(res), range(0, 20), `${mode}: the start`);
+  assert.equal(res.json().nextCursor, null);
+}
+zMode = "honors";
+
+// The live case (Elina): a Zernio thread on an account moved to Torerone's Meta
+// app. The webhook stored the newest messages here; Zernio has some of them.
+const stored = (externalId: string, direction: string, text: string, sentAt: string) =>
+  messages.push({ id: `s-${externalId}`, threadId: "tL", externalId, direction, text, attachments: null, replyToExternalId: null, reactions: null, unsentAt: null, editedAt: null, transcript: null, status: "sent", error: null, sentAt: new Date(sentAt) });
+stored("zm120", "out", "z 120", zAt(120)); // the same Instagram message id
+stored("mid.fuzzy", "in", "z 119", new Date(Date.parse(zAt(119)) + 3000).toISOString()); // same words, 3 seconds off
+stored("mid.new", "out", "this is a message from my app", new Date(Date.parse(zAt(120)) + 60_000).toISOString());
+thread = zThread("in");
+threadUpdates.length = 0;
+resetZernioCounts();
+res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+assert.equal(res.statusCode, 200, res.body);
+assert.deepEqual(ids(res).slice(-3), ["zm119", "zm120", "mid.new"], "stored messages Zernio lacks are added once, in time order");
+assert.equal(res.json().messages.at(-1).text, "this is a message from my app", "the newest message is last");
+assert.equal(ids(res).length, 51, "no duplicate of zm119 or zm120");
+assert.equal(res.json().activity.messages, 122, "the count includes it");
+assert.equal(threadUpdates.at(-1)?.lastDirection, "out", "the row learns who wrote last");
+assert.equal(res.json().thread.lastDirection, "out");
+// Zernio down: the stored messages still draw rather than an error.
+zMode = "fails";
+res = await call("GET", "/clients/c1/dm/threads/tL", VIEWER);
+assert.equal(res.statusCode, 200, "falls back to the stored messages");
+assert.deepEqual(ids(res), ["mid.fuzzy", "zm120", "mid.new"]);
+assert.equal(res.json().activity.messagesExact, true);
+assert.equal((await call("GET", `/clients/c1/dm/threads/tL?before=${encodeURIComponent(z1)}`, VIEWER)).statusCode, 502, "an older Zernio page cannot fall back");
+for (const m of [...messages]) if (m.threadId === "tL") messages.splice(messages.indexOf(m), 1);
+assert.equal((await call("GET", "/clients/c1/dm/threads/tL", VIEWER)).statusCode, 502, "nothing stored: Zernio's error");
+zMode = "honors";
+assert.equal((await call("GET", "/clients/c1/dm/threads/tL")).statusCode, 401, "the thread needs a session");
+
+// The list sync now writes who wrote last.
+resetZernioSync();
+threadUpserts.length = 0;
+await call("GET", "/clients/c1/dm/threads?accountId=sa-fb", VIEWER);
+assert.equal(threadUpserts.at(-1)?.create.lastDirection, "in", "a new mirror row with unread words is theirs");
+resetZernioSync();
+threadUpdates.length = 0;
+syncHave = { id: "tz", externalId: "conv1", contactId: "ct-z", status: "open", unread: 2, readAt: null, lastPreview: "hi", lastDirection: "out", lastMessageAt: new Date("2026-11-19T10:00:00Z"), contact: { avatarUrl: null, displayName: "Jordan" } };
+await call("GET", "/clients/c1/dm/threads?accountId=sa-fb", VIEWER);
+assert.equal(threadUpdates.at(-1)?.lastDirection, "out", "our own reply (same words) keeps its You:");
+resetZernioSync();
+syncHave = { ...syncHave, lastPreview: "something we sent earlier" };
+await call("GET", "/clients/c1/dm/threads?accountId=sa-fb", VIEWER);
+assert.equal(threadUpdates.at(-1)?.lastDirection, "in", "new words with unread are theirs, never You:");
+syncHave = null;
 
 await app.close();
 console.log("dm.check: all checks passed");

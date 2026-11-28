@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Every change ships to both surfaces: the web app at app.torerone.com and the
 desktop app (a `v*` tag publishes it through auto-update).
 
+## [0.3.72] - 2026-11-28
+
+### Fixed - Conversations open on their newest messages (G1)
+
+- **A long conversation in Workflows > Inbox opened on its oldest 50 messages** when it came through Zernio, so the newest message (the one the list row shows) was missing and Activity said "Messages: 50". It now opens on the newest 50, scrolled to the bottom, every time a conversation opens or you switch to another (desktop, web and phone)
+- **Load older messages**: scrolling to the top (or the button there) adds the 50 before, without moving what you were reading. It goes away at the start of the conversation
+- **New messages appear in an open conversation** without a reload, on the Inbox's own refresh and when you come back to the tab or window. If you are reading further up, you stay there and a **New messages** button takes you down; at the bottom, the conversation follows on its own. Your own reply always takes you to the bottom
+- **Activity > Messages** is the conversation's real count. A thread too long to count to its start shows the number counted with a "+"
+- Instagram accounts connected through Torerone's Meta app keep their older Zernio conversations: those now show Zernio's history together with the messages the Meta webhook stored, each once, so a new message is there even before Zernio has it. If Zernio cannot be read, the stored messages still show
+- The list row now says "You:" only when you wrote last: a Zernio conversation with a new message from them no longer reads as yours. Opening a conversation corrects the row from its messages
+- AI replies read the newest messages of a Zernio conversation too (they read the oldest before)
+
+### API
+
+- `GET /clients/:id/dm/threads/:threadId`: the newest 50 messages, oldest first, for both sources; `nextCursor` is an opaque string for both (pass it back as `?before=`); `activity.messages` is the whole thread's count, with `activity.messagesExact` false when a Zernio thread was too long to count (over 2,000 messages). Zernio is asked newest first (`sortOrder=desc`, its own cursor); a Zernio that answers oldest first anyway is walked to its end and the tail kept. The Zernio count is walked once per conversation and kept per process, so a poll costs one Zernio read
+
 ## [0.3.71] - 2026-11-28
 
 ### Fixed - Real thumbnails in Recent videos (F8)

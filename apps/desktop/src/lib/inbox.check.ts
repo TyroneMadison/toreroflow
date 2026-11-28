@@ -16,7 +16,12 @@ import {
   contactQuery,
   convoState,
   csvField,
+  isPinned,
+  keptScrollTop,
   markedRead,
+  mergeMessages,
+  messageCount,
+  prependOlder,
   NO_CONTACT_FILTERS,
   NO_FILTERS,
   previewLine,
@@ -98,6 +103,33 @@ eq(all.threads.map((t) => t.unread), [0, 0, 0], "Mark all as read clears every r
 eq(all.counts.unread, 0, "and the count, rows on later pages included");
 eq(lst.threads[0]!.unread, 2, "the old list is not changed in place");
 
+// G1: a fresh newest page merges by id; older pages stay; a quiet poll is the same array.
+const at = (i: number) => new Date(Date.UTC(2026, 10, 1) + i * 60_000).toISOString();
+const msg = (i: number, extra: Partial<DmMessageView> = {}) => ({ ...m(`m${i}`, i % 2 ? "in" : "out", at(i)), ...extra });
+const page = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => msg(from + k));
+const idsOf = (ms: DmMessageView[]) => ms.map((x) => x.id);
+const shown = page(70, 119);
+eq(mergeMessages(shown, page(70, 119)) === shown, true, "nothing new: the same array, no redraw");
+const grown = mergeMessages(shown, page(71, 120));
+eq(idsOf(grown).slice(0, 2), ["m70", "m71"], "a message that slid off the fresh page stays");
+eq(idsOf(grown).at(-1), "m120", "the new message is last");
+eq(grown.length, 51, "no doubles");
+const edited = mergeMessages(shown, [...page(70, 118), msg(119, { text: "edited", edited: true })]);
+eq([edited.at(-1)!.text, edited.length], ["edited", 50], "an edit lands in place");
+const withOlder = prependOlder(shown, page(20, 70));
+eq([withOlder.length, withOlder[0]!.id, withOlder[50]!.id], [100, "m20", "m70"], "older above, the overlap once");
+const thenPoll = mergeMessages(withOlder, page(72, 121));
+eq([thenPoll[0]!.id, thenPoll.at(-1)!.id, thenPoll.length], ["m20", "m121", 102], "a poll after Load older keeps the older pages");
+eq(mergeMessages(shown, []) === shown, true, "an empty answer clears nothing");
+eq(idsOf(mergeMessages([], page(0, 2))), ["m0", "m1", "m2"], "first page");
+// The count, and the scroll arithmetic the conversation uses.
+eq(messageCount({ messages: 1204, messagesExact: true }), "1,204", "the true count");
+eq(messageCount({ messages: 500, messagesExact: false }), "500+", "too long to count to the start");
+eq(messageCount({ messages: 50 }), "50", "older servers say nothing: exact");
+eq(isPinned({ scrollHeight: 4000, scrollTop: 3330, clientHeight: 600 }), true, "70px from the bottom is following");
+eq(isPinned({ scrollHeight: 4000, scrollTop: 2000, clientHeight: 600 }), false, "scrolled up is not");
+eq(keptScrollTop({ scrollHeight: 4000, scrollTop: 40 }, 6500), 2540, "older messages above: the reader's line stays put");
+
 // CSV: quoted when needed, never a formula.
 eq(csvField('Maya "R."'), '"Maya ""R."""', "quotes");
 eq(csvField("=HYPERLINK(1)"), "'=HYPERLINK(1)", "formula injection");
@@ -117,6 +149,27 @@ for (const want of ['data-testid="dm-mark-all-read"', "Mark all as read", '"read
   if (!inbox.includes(want)) throw new Error(`Inbox.tsx lacks ${want}`);
 }
 if (/unread > 0 && !viewer/.test(inbox)) throw new Error("mark read on open must work for viewers too");
+// G1: opens at the newest, loads older with the place kept, never yanks a reader who scrolled up.
+for (const want of [
+  'data-testid="dm-load-older"',
+  "Load older messages",
+  'data-testid="dm-new-messages"',
+  "New messages",
+  "mergeMessages(d.messages, r.messages)",
+  "prependOlder(d.messages, r.messages)",
+  "?before=${encodeURIComponent(cursor)}",
+  "keptScrollTop(was, el.scrollHeight)",
+  "pinned.current = isPinned(el)",
+  "else setNewBelow(true)",
+  'addEventListener("focus", back)',
+  "messageCount(activity)",
+]) {
+  if (!inbox.includes(want)) throw new Error(`Inbox.tsx lacks ${want}`);
+}
+if (/useEffect\(\(\) => \{\s*const el = msgsRef\.current;\s*if \(!el\) return;\s*el\.scrollTop = el\.scrollHeight;/.test(inbox)) {
+  throw new Error("the conversation must not jump to the bottom on every new message");
+}
+if (!/\.ibx-newchip\{[^}]*position:absolute/.test(read("src/components/inbox/inbox.css"))) throw new Error("the New messages chip must float over the list");
 if (/\u2014/.test(inbox)) throw new Error("no em dashes in Inbox copy");
 if (!read("src/components/Dock.tsx").includes('addEventListener("toreroflow:dm-read"')) throw new Error("the Dock count must follow a mark read");
 for (const f of ["src/components/inbox/Contacts.tsx", "src/screens/WorkflowsScreen.tsx", "src/components/Dock.tsx"]) {

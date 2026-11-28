@@ -37,11 +37,13 @@ import { dmWriteGuard } from "../dm/guard";
 import { draftView } from "./dmAi";
 import {
   accountToken,
+  byTime,
   contactView,
   dmSocialAccounts,
   mediaLink,
   nativeConfigured,
   nativeMessageView,
+  notInZernio,
   originOf,
   ownedClient,
   setContactTags,
@@ -50,6 +52,7 @@ import {
   threadView,
   transportOf,
   zernio,
+  zernioCount,
   zernioHint,
   zernioMessageView,
 } from "../dm/service";
@@ -322,6 +325,12 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
     }
   }
 
+  /**
+   * One thread: the newest 50 messages, oldest first, or the 50 before
+   * `before` (the nextCursor of the page after it, opaque for both sources).
+   * activity.messages is the whole thread's count; messagesExact false when a
+   * Zernio thread was too long to count to its start.
+   */
   app.get<{ Params: { id: string; threadId: string }; Querystring: { before?: string } }>(
     "/clients/:id/dm/threads/:threadId",
     async (request, reply) => {
@@ -329,44 +338,80 @@ export async function dmRoutes(app: FastifyInstance): Promise<void> {
       if (!t) return reply.status(404).send({ error: "thread not found" });
       const origin = originOf(request);
       const firstSeenAt = t.contact.createdAt.toISOString();
+      const before = request.query.before || undefined;
       const ai = await aiOfThread(t.id, t.dmAccountId);
-      if (t.source === "native") {
+
+      /** The messages stored here, newest first from `before` (a message id). */
+      const stored = async (cursor = before) => {
         const [rows, count, first] = await Promise.all([
           prisma.dmMessage.findMany({
             where: { threadId: t.id },
             orderBy: [{ sentAt: "desc" }, { id: "desc" }],
             take: 51,
-            ...(request.query.before ? { cursor: { id: request.query.before }, skip: 1 } : {}),
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
           }),
           prisma.dmMessage.count({ where: { threadId: t.id } }),
           prisma.dmMessage.findFirst({ where: { threadId: t.id, direction: "in" }, orderBy: { sentAt: "asc" }, select: { attachments: true } }),
         ]);
-        const page = rows.slice(0, 50);
+        const page = rows.slice(0, 50).reverse();
         return {
           thread: threadView(t),
-          messages: page.reverse().map((m) => nativeMessageView(origin, m)),
+          messages: page.map((m) => nativeMessageView(origin, m)),
           nextCursor: rows.length > 50 ? page[0]!.id : null,
-          activity: { messages: count, firstSeenAt, cameFrom: first ? cameFrom(first.attachments) : null },
+          activity: { messages: count, messagesExact: true, firstSeenAt, cameFrom: first ? cameFrom(first.attachments) : null },
           ai,
         };
-      }
+      };
+      if (t.source === "native") return stored();
+
+      // Zernio, read live. Older pages of the stored fallback below carry a message id.
+      if (before && !/^[zw]:/.test(before)) return stored();
       const z = zernio();
       const providerAccountId = t.dmAccount.socialAccount.providerAccountId;
+      const hasStored = async () => !before && (await prisma.dmMessage.count({ where: { threadId: t.id } })) > 0;
       if (!z || !t.externalId || !providerAccountId) {
+        if (await hasStored()) return stored();
         return reply.status(502).send({ error: "Zernio cannot read this conversation right now." });
       }
       try {
-        const messages = await z.conversationMessages(t.externalId, providerAccountId);
+        const page = await z.threadPage(t.externalId, providerAccountId, { before });
+        let messages = page.messages.map((m) => zernioMessageView(origin, t.dmAccount.socialAccount.id, t.externalId!, m));
+        // An account moved to Torerone's Meta app keeps its Zernio threads, and
+        // the webhook stores their new messages here: shown with Zernio's, once.
+        let extra = 0;
+        if (!before) {
+          const oldest = page.before && page.messages[0]?.createdAt ? new Date(page.messages[0].createdAt) : null;
+          const rows = await prisma.dmMessage.findMany({
+            where: { threadId: t.id, ...(oldest ? { sentAt: { gte: oldest } } : {}) },
+            orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+            take: 100,
+          });
+          const missing = notInZernio(messages, rows.map((r) => nativeMessageView(origin, r)));
+          extra = missing.length;
+          if (extra) messages = byTime([...messages, ...missing]);
+        }
+        const counted =
+          page.total !== null
+            ? { count: page.total, exact: true }
+            : await zernioCount(z, t.externalId, providerAccountId, before ? null : (page.messages.at(-1)?.id ?? null));
+        // Who wrote last, from the messages: Zernio's list cannot say, so the row may not know.
+        let view = threadView(t);
+        const last = messages.at(-1);
+        if (!before && last && last.direction !== t.lastDirection && (!t.lastMessageAt || Date.parse(last.sentAt ?? "") >= t.lastMessageAt.getTime() - 60_000)) {
+          await prisma.dmThread.update({ where: { id: t.id }, data: { lastDirection: last.direction } });
+          view = { ...view, lastDirection: last.direction };
+        }
         return {
-          thread: threadView(t),
-          messages: messages.map((m) => zernioMessageView(origin, t.dmAccount.socialAccount.id, t.externalId!, m)),
-          nextCursor: null,
-          activity: { messages: messages.length, firstSeenAt, cameFrom: null },
+          thread: view,
+          messages,
+          nextCursor: page.before,
+          activity: { messages: counted.count + extra, messagesExact: counted.exact, firstSeenAt, cameFrom: null },
           ai,
         };
       } catch (e) {
-        if (e instanceof ZernioError) return reply.status(502).send({ error: `Zernio: ${e.message}` });
-        throw e;
+        if (!(e instanceof ZernioError)) throw e;
+        if (await hasStored()) return stored();
+        return reply.status(502).send({ error: `Zernio: ${e.message}` });
       }
     },
   );

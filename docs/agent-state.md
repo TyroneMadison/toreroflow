@@ -102,6 +102,12 @@ reads through Zernio; `dm-connect-pending` while Torerone's Meta app is not
 set up, docs/meta-instagram-setup.md), `dm-reconnect` (Instagram refused the
 token), `dm-empty`, `dm-inbox.error` with `dm-retry`. `GET /dm/status?clientId=`
 says which transport each account uses.
+A conversation opens scrolled to its newest message (the list `dm-messages`).
+Scrolling to the top, or `dm-load-older` (Load older messages, gone at the start
+of the thread), adds the 50 before with the reader's place kept. A new message
+follows only a reader near the bottom; scrolled up, `dm-new-messages` (New
+messages) appears and jumps to it. The details pane's count is
+`dm-activity-messages` ("500+" when Zernio's thread was too long to count).
 
 The Contacts area is `contacts` (rows `contact-<contactId>`, `contacts-search`,
 `contacts-unread`, `contacts-stage-filter`, `contacts-account`,
